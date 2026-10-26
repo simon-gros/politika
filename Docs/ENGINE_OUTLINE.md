@@ -1,0 +1,92 @@
+# POLITIKA Engine — foundational outline
+
+**Status:** first-pass architecture, 2026-10-27  
+**Target runtime:** Unreal Engine 5.8.3  
+**Primary design reference:** Command & Conquer 4: Tiberian Twilight  
+**Resolution requirement:** full native 4K (3840×2160), including usable/readable UI
+
+## 1. Goal and boundary
+
+“C&C4 level” means a complete, polished real-time strategy game feature set and production quality, not reproducing EA's proprietary engine. POLITIKA should use UE as its rendering, platform, editor, asset, and packaging foundation, with a game-specific RTS layer implemented primarily in C++ and UE authoring/configuration assets. C# remains suitable for external content/build tools where it earns its keep; it is not required in the runtime.
+
+The game-specific layer needs to support faction/unit content, squad/vehicle combat, tactical objectives, campaign missions, skirmish/multiplayer rules, AI, maps, cinematics, audio, save/replay, and localization. Final gameplay choices (including how closely to copy C&C4's crawler/class/resource loop) remain design decisions; this outline establishes the systems capable of supporting them.
+
+## 2. Proposed layers
+
+| Layer | Responsibilities | UE-facing implementation |
+|---|---|---|
+| Platform & application | Startup, settings, input devices, display modes, save/config paths, localization | UE GameInstance, GameUserSettings, Enhanced Input, SaveGame, platform services |
+| Presentation | Camera, selection feedback, HUD, menus, audio, VFX, animation, cinematics | PlayerController, Camera components, UMG/CommonUI, Niagara, Audio, Sequencer |
+| RTS match framework | Match lifecycle, teams/players, faction selection, rules, objectives, victory/defeat, pause/spectate | GameMode/GameState/PlayerState plus POLITIKA subsystem/components |
+| Simulation | Commands, movement, targeting, combat, health/status, abilities, resources, vision/fog, squad cohesion | C++ components/systems; authoritative simulation boundary kept separate from UI and effects |
+| World & navigation | Maps, terrain, roads, cover, blockers, capture/resource locations, pathing, visibility | UE World/landscape plus RTS-specific grid/region and navigation data |
+| Content definitions | Factions, units, weapons, abilities, upgrades, buildings, objectives, AI profiles | PrimaryDataAssets/DataTables and validated asset references; values data-driven, rules in code |
+| Content pipeline & tools | Map authoring, validation, import, localization, balance iteration, packaging | UE Editor utilities and dedicated validation/import tools; World Partition only if map scale warrants it |
+
+Keep authoritative game rules independent of presentation: UI, animations, sound, and VFX observe simulation events rather than own game state. This allows campaign, skirmish, replay, and eventual multiplayer to share the same match rules.
+
+## 3. Core RTS systems
+
+1. **Command and selection:** single/multi-select, group control, contextual orders, attack-move/guard/stop, rally points, command queue, hotkeys, feedback and cancellation.
+2. **World movement:** order resolution, path requests, formation spacing, collision/avoidance, terrain constraints, bridges/roads and blocked routes. Use UE navigation where it fits; add an RTS cost/grid layer for tactical movement and deterministic query needs.
+3. **Combat:** weapon/ability execution, range and line-of-sight rules, damage/armor, suppression or morale if desired, cooldowns, target priorities, death/destruction and readable combat feedback.
+4. **Squads and entities:** shared unit identity/selection with individual members where animation and casualties matter; vehicles and structures as separate archetypes. Do not force every entity into the same movement/health model.
+5. **Strategic loop:** resources, production/deployment, upgrades/loadouts, capture/control points, reinforcements and respawn/redeployment rules. Make the chosen POLITIKA loop a ruleset rather than an assumption inside generic unit code.
+6. **Information:** player ownership/alliances, vision, fog/shroud, detection, radar/intel and observer/spectator visibility.
+7. **Objectives and scripting:** campaign objectives, triggers, waves, dialogue, scripted events, checkpoints, success/failure and mission transitions.
+8. **AI:** strategic planner, production/deployment choices, tactical squad coordinator, navigation/engagement behavior, difficulty/personality profiles and debug visualization.
+9. **Match shell:** teams, faction/loadout choice, lobby/rules, map rotation, results, progression hooks, pause and reconnect expectations.
+
+## 4. Content model and authoring
+
+Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
+
+The C&C4 mod-support pack is a useful design reference: its XML is separated into object templates, unit/vehicle examples, terrain, map-specific data, skirmish AI, progression, audio, and WorldBuilder data. Sample unit/vehicle definitions expose fields such as side, command set, armor, speed, weapon, health, geometry, vision, and behavior modules. POLITIKA should preserve that inspectable/data-oriented authoring quality while using native UE assets and editor tooling. The mod-support XML is reference evidence, not proof of the shipped game's full runtime architecture.
+
+Maps need authored playable bounds, terrain/navigation representation, spawn/deployment points, control/resource objectives, blockers, scripted regions, camera bounds, lighting/audio setup, and validation rules. Build a map validation pass early (missing spawns, unreachable objectives, invalid references, camera bounds, faction-specific constraints).
+
+## 5. 4K as a first-class target
+
+Treat 3840×2160 as a supported baseline, not a later high-resolution toggle.
+
+- **Display:** windowed, borderless, and fullscreen modes; correct 16:9 aspect; runtime resolution changes; DPI-aware UI scale; safe margins; configurable text/UI scale.
+- **UI:** design in logical layout units, anchor responsively, and test HUD, menus, tactical map, tooltips, text, selection rings and cursor at 1080p, 1440p, ultrawide, and 4K. At 4K, preserve readable world scale without making the command surface tiny.
+- **Rendering:** configure UE scalability and screen-percentage/upscaling options; validate temporal upscaling, anti-aliasing, shadow quality, and post-processing at 4K. Expose quality presets instead of assuming all hardware renders native 4K at max settings.
+- **Assets:** provide appropriate source resolution/mips for UI, terrain, decals and faction insignia; use texture streaming and memory budgets so 4K does not require every asset resident at maximum mip.
+- **Camera/input:** ensure selection, placement and cursor precision work across DPI scaling and display changes; keep world-space camera behavior independent from HUD scaling.
+- **Acceptance target:** no clipped/overlapping controls, text legible at normal viewing distance, correct aspect/camera bounds, and stable input after resolution/DPI changes on a 4K display.
+
+4K support is not equivalent to a 4K render target alone: UI scaling, asset sharpness, memory/performance, and usability must all pass.
+
+## 6. Performance, determinism, and networking posture
+
+Set target player count, entity counts, map size, minimum hardware, and frame-rate target before selecting detailed simulation strategies. Avoid one heavyweight Actor/Tick per small gameplay concern: batch perception, timers, movement updates and UI notifications; profile representative combat scenes early. UE Mass can be evaluated for very high entity counts, but should not be adopted without a prototype demonstrating a concrete benefit.
+
+Keep simulation state and commands explicit and serializable. If multiplayer is required, use server-authoritative rules and replicate commands/state/events rather than trusting clients; design bandwidth and late-join/reconnect behavior deliberately. If deterministic replay or lockstep is required, validate floating-point and physics assumptions in a prototype first—UE's general simulation should not be presumed deterministic across machines. A replay can instead record timestamped player commands plus synchronized state checkpoints if that meets the product goal.
+
+## 7. Suggested implementation sequence
+
+1. **Project foundation:** establish UE project/module layout, build targets, input/settings/save shell, coding conventions, CI/package baseline and source-control asset policy.
+2. **Vertical RTS slice:** one test map, camera, selection, move/attack orders, two unit archetypes, health/damage/death, simple HUD and one objective. Validate interaction at 4K immediately.
+3. **Simulation/content contracts:** formalize faction/entity/weapon/ability data assets, ownership, orders, pathing, combat events, and map validation.
+4. **Full match loop:** resources/deployment or chosen C&C4-inspired strategic loop, capture/objectives, fog/intel, victory/defeat, pause and results.
+5. **Mission and AI:** mission scripting/objective framework, skirmish AI and debugging tools; author a representative campaign mission.
+6. **Scale and delivery:** benchmark target entity/map counts, add multiplayer/replay if in scope, optimize assets and validate 4K across quality tiers and supported hardware.
+
+## 8. Decisions to lock before detailed implementation
+
+- Exact strategic loop: classic construction/economy, C&C4-style mobile HQ/loadout/objective loop, or POLITIKA-specific hybrid.
+- Infantry control granularity: individual soldiers, squads as the controllable entity, or mixed by archetype.
+- Single-player/campaign, skirmish, multiplayer and modding scope for the first release.
+- Required platforms, minimum/target hardware, unit counts, map sizes, frame-rate and network player count.
+- Replay requirements and whether deterministic simulation is actually needed.
+- Whether maps/mods are editor-only or user-authored and loadable at runtime.
+
+## 9. Evidence and limits of this pass
+
+- The POLITIKA repository contains a short concept README, local tool notes, and faction banner/logo assets, but no `.uproject`, source modules, or engine architecture documents yet.
+- The installed C&C4 inventory and UM/REA reports are surface inspections. They establish executable/package layout and report that the launcher is managed while `Data/CNC4.game` is native; they do not establish internal runtime architecture or verify gameplay behavior.
+- The separate C&C Modding Support/Tiberian Twilight XML pack was sampled directly for unit, vehicle, AI, and WorldBuilder organization. It is an authoring/reference surface, not the game executable's source.
+- Operational reports used: `/mnt/data/CommandAndConquer/UM/Command and Conquer 4 Tiberian Twilight/surface-inspection.md` and `/mnt/data/CommandAndConquer/REA/Command and Conquer 4 Tiberian Twilight/surface-inspection.md`.
+
+This outline is a starting contract, not a locked design. Detailed C&C4 behavior research should be done system-by-system against the relevant manuals, maps/configuration, and runtime evidence before claiming exact parity.
