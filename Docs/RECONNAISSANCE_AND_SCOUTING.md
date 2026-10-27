@@ -60,6 +60,12 @@ The Meridian Pact is both the game's best early reconnaissance faction and its s
 
 Atlantic Concord and Iron Ascendancy light unarmed planes, and Red Directorate rifle-armed motorbikes, are reconnaissance units and are not sabotage agents. Their three factions gain conventional attached-charge sabotage later, at greater cost, through spy units only. A scout's sighting of a target can inform an authorized spy operation but does not place a charge, grant nuclear research access or trigger other special actions. See [Explosive Sabotage](SABOTAGE_SYSTEM.md).
 
+### False sightings and Unaligned planted intelligence
+
+The Unaligned has the strongest counterintelligence system and may plant false reports about rival deployments, facilities or alleged nuclear construction. Such an intelligence report is not the same as a genuine sighting by a Meridian truck, Concord/Ascendancy scout aircraft or Directorate motorcycle. Ordinary reconnaissance can test or disprove a false location and should never display a reported structure as a physically observed one before confirmation.
+
+These misleading reports may be issued when an active playable faction with very low resources and a very small army is near defeat, encouraging stronger rivals to investigate competing threats instead of eliminating it. The Unaligned cannot force the player to turn scouts around, override line of sight or conjure real buildings. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 6. Suggested simulation and UI contracts
 
 Represent cheap scouts with normal unit data rather than a global reveal cheat:
