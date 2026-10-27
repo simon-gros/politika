@@ -1,6 +1,6 @@
 use politika_version::{
-    build_identity, current_tag, header, identity_json, load_manifest, repo_root,
-    validate_release, validate_tag, write_if_changed,
+    build_identity, current_tag, header, identity_json, load_manifest, repo_root, validate_release,
+    validate_tag, write_if_changed,
 };
 use std::env;
 use std::path::PathBuf;
@@ -25,7 +25,10 @@ fn run() -> Result<(), String> {
             _ => return Err(format!("unrecognized or repeated option: {option}")),
         }
     }
-    if !matches!(command.as_str(), "print" | "check" | "identity" | "generate") {
+    if !matches!(
+        command.as_str(),
+        "print" | "check" | "identity" | "generate"
+    ) {
         return Err(format!("unknown command: {command}"));
     }
     if command == "print" && (release || tag_override.is_some() || output.is_some()) {
@@ -48,15 +51,22 @@ fn run() -> Result<(), String> {
     }
     let build = build_identity(&root);
     match command.as_str() {
-        "check" => println!(
+        "check" => {
+            println!(
             "POLITIKA {} · build {} · git {} · protocol {} · save {} · persistence {} · world {}",
             data.game_version, build.build_number, build.git_revision,
             data.network_protocol, data.save_schema, data.persistence_schema, data.world_schema
-        ),
+        )
+        }
         "identity" => println!("{}", identity_json(&data, &build)),
         "generate" => {
-            let output = output.unwrap_or_else(|| root.join("build/generated/PolitikaVersion.generated.h"));
-            let output = if output.is_absolute() { output } else { root.join(output) };
+            let output =
+                output.unwrap_or_else(|| root.join("build/generated/PolitikaVersion.generated.h"));
+            let output = if output.is_absolute() {
+                output
+            } else {
+                root.join(output)
+            };
             write_if_changed(&output, &header(&data, &build))?;
             println!("{}", output.display());
         }
