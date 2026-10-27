@@ -61,6 +61,18 @@ Represent spy progression, facility ownership, unlocked infiltration actions, in
 
 Psy-Ops and intelligence theft should be simulation-owned game actions rather than scripted UI effects. Validate Concord-only permission, target category/eligibility, authorized application of `UnitResolve` loss and a full-break event before Psy-Ops self-destruction. The rampage path uses a temporary, expiring friendly-target override that does not permanently alter owner, faction or diplomacy. The enemy unit must have a valid in-game attack capability. Directorate intelligence theft applies modest, data-driven reductions to cost and duration only for qualifying intelligence-acquisition operations; all research-site infiltration requirements remain unchanged. Unit ownership changes belong solely to separately authorized mechanisms such as Ascendancy Intimidation.
 
+### Building infiltration, resource diversion and staffed-facility disruption
+
+Represent special facility espionage actions as authoritative RTS state transitions with their own eligibility, resolution, visibility and recovery. These are separate from unit `UnitResolve`.
+
+- Atlantic Concord building Psy-Ops: after authorized infiltration, either trigger an eligible building's destruction or apply a capped covert resource-waste status, debiting the victim without crediting the Concord.
+- Red Directorate budget diversion: atomically debit a valid enemy budget/inventory and credit a compatible amount to the Directorate budget. Respect availability, item type, storage limits, transaction idempotency and protection against duplicate credit; the opponent may initially lack attribution.
+- Iron Ascendancy contamination: use an abstract facility-level poison/disease disruption state to cause simulated deaths in assigned workers/researchers. Calculate reduced staffing, impaired throughput, complete stoppage below staffing requirements, and a finite propagation chain among nearby eligible facilities. Containment, staffing replacement, clearing the status and repair are gameplay recovery conditions.
+
+Maintain `FacilitySpyAction`, `IncidentVisibility`, `IncidentAttribution`, `CovertBudgetTransfer`, `ResourceWaste`, `FacilityWorkforce`, `StaffLossEvent`, `FacilityThroughputModifier`, `FacilityContaminationState`, `AffectedNeighborIds`, `SpreadDepthCap`, `AffectedFacilityCap` and `ContainmentResult` or equivalent data-driven components. Do not treat a hidden incident as an invisible change to actual resource amounts: simulation data remains correct while the defending UI may not reveal its cause.
+
+Buildings are not soldiers and do not have a combat Discipline meter. An unattended facility can still have workforce/production state. Nuclear research acquisition, first-bomb victory and player-faction ownership remain gated by their existing separate authoritative checks. These poison/disease effects are purely fictional facility statuses with no modeled real-world chemical or biological process. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) and [Resource Economy](RESOURCE_ECONOMY.md).
+
 ### Shared unit resolve: combat Discipline and civilian Morale
 
 One unit meter, two UI names. Each combat or civilian/non-combat unit owns one authoritative `UnitResolve` value, with the same depletion, recovery and broken threshold mechanics. Combatants display “Discipline”; civilians/non-combat units display “Morale.” Do not instantiate separate discipline and morale component classes for individual units. Every faction additionally exposes Population Morale, a faction-level summary of the shared morale framework informing production and soldiers' baseline Discipline.
