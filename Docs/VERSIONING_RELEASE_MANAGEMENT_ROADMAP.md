@@ -34,17 +34,19 @@ Content *format* and content *revision* are different. Future build tooling shou
 
 ## 3. Build tooling and identity
 
-The Python standard-library-only [tools/version.py](../tools/version.py) implements:
+The Rust [`tools/version`](../tools/version/Cargo.toml) Cargo package implements the canonical CLI. It uses `semver`, `serde` and `serde_json` for validated parsing, with tests maintained in Rust. There is no Python dependency or Python versioning script. From the repository root:
+ 
+- `cargo run --quiet --manifest-path tools/version/Cargo.toml -- print` — show the canonical SemVer.
+- `cargo run --quiet --manifest-path tools/version/Cargo.toml -- check` — validate SemVer, compatibility counters and any matching Git tag; print build identity.
+- `cargo run --quiet --manifest-path tools/version/Cargo.toml -- identity` — emit JSON with game/protocol/schema identity plus Git revision, build number and dirty flag.
+- `cargo run --quiet --manifest-path tools/version/Cargo.toml -- generate` — produce `build/generated/PolitikaVersion.generated.h` for future Unreal C++ integration (custom `--output` accepted).
+- `cargo run --quiet --manifest-path tools/version/Cargo.toml -- check --release` — require an exact `vVERSION` Git tag, clean source and a matching checked-out commit.
+- `cargo test --manifest-path tools/version/Cargo.toml --all-targets` — run the Rust regression suite.
+- `cargo fmt --manifest-path tools/version/Cargo.toml -- --check` — validate Rust source formatting.
 
-- python3 tools/version.py print — show the canonical SemVer.
-- python3 tools/version.py check — validate SemVer, compatibility counters and any matching Git tag; print build identity.
-- python3 tools/version.py identity — emit JSON with game/protocol/schema identity plus Git revision, build number and dirty flag.
-- python3 tools/version.py generate — produce build/generated/PolitikaVersion.generated.h for future Unreal C++ integration (custom --output accepted).
-- python3 tools/version.py check --release — require an exact vVERSION tag, clean source and the matching checked-out commit.
+Generated C++ constants live under politika::version and cover GAME_VERSION, NETWORK_PROTOCOL, SAVE_SCHEMA, PERSISTENCE_SCHEMA, WORLD_SCHEMA, BUILD_NUMBER and GIT_REVISION. The version is **never** hand-copied into another Unreal config, module, data asset or HUD. Rust owns the versioning utility; the generated C++ header is a future Unreal integration artifact, not a second hand-maintained implementation.
 
-Generated C++ constants live under politika::version and cover GAME_VERSION, NETWORK_PROTOCOL, SAVE_SCHEMA, PERSISTENCE_SCHEMA, WORLD_SCHEMA, BUILD_NUMBER and GIT_REVISION. The version is **never** hand-copied into another Unreal config, module, data asset or HUD.
-
-Build number derives from POLITIKA_BUILD_NUMBER or GITHUB_RUN_NUMBER (otherwise local); Git revision derives from GITHUB_SHA or the local checkout, with -dirty when appropriate. Neither belongs in version.json. A release package should later carry a generated build manifest with exact Unreal source/toolchain pin, platform, target, configuration, content/cook identity and SHA-256 checksums. Do not copy Marburgum-specific Godot/GDExtension tooling or world-protocol assumptions.
+The standalone Rust crate is defined in `tools/version/Cargo.toml`; its dependency lockfile is committed for repeatable builds. Build number derives from POLITIKA_BUILD_NUMBER or GITHUB_RUN_NUMBER (otherwise local); Git revision derives from GITHUB_SHA or the local checkout, with -dirty when appropriate. Neither belongs in version.json. A release package should later carry a generated build manifest with exact Unreal source/toolchain pin, platform, target, configuration, content/cook identity and SHA-256 checksums. Do not copy Marburgum-specific Godot/GDExtension tooling or world-protocol assumptions.
 
 ## 4. Coding agent/version advancement authority
 
@@ -85,7 +87,7 @@ The distribution channel does not replace the SemVer. GitHub Releases should doc
 
 ## 8. Automated validation and promotion
 
-The lightweight [.github/workflows/versioning.yml](../.github/workflows/versioning.yml) workflow validates the manifest, executes unit tests and checks deterministic header generation on PRs, main and version tags. Passing this gate certifies **only versioning infrastructure**, not a playable release, a packaged Unreal build or Steam Deck/Android compatibility.
+The lightweight [.github/workflows/versioning.yml](../.github/workflows/versioning.yml) workflow runs Cargo formatting validation, Rust unit tests, manifest/tag verification and deterministic header generation on PRs, main and version tags. Passing this gate certifies **only versioning infrastructure**, not a playable release, a packaged Unreal build or Steam Deck/Android compatibility.
 
 When playable builds exist, candidate promotion additionally needs real Unreal compile/cook/package evidence, verified platform-specific input/UI and hardware performance, RTS/gameplay acceptance, save migration checks and checksum/reproducibility evidence. Run qualified target tests on Linux, Windows, SteamOS/Steam Deck and Android separately before promoting their supported status.
 
@@ -94,7 +96,7 @@ When playable builds exist, candidate promotion additionally needs real Unreal c
 | Phase | Status |
 | --- | --- |
 | V0: Canonical manifest, policy, changelog and contributor rules | Introduced |
-| V1: Version validator, build identity header generator and tests | Implemented as standalone tooling |
+| V1: Rust/Cargo version validator, build identity header generator and Rust tests | Implemented as standalone tooling |
 | V2: GitHub versioning CI | Workflow added; execution must be verified |
 | V3: Actual Unreal compile/runtime integration and menu display | Pending executable source |
 | V4: Save/map/protocol/replay compatibility fixtures | Pending runtime systems |
