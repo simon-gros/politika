@@ -8,7 +8,7 @@ POLITIKA combines asymmetric military strategy, Cold War espionage, political in
 
 The country is more than a battlefield. Its cities, industries, transport networks, armed forces, civilians, borders, and institutions form a living political environment. Players must decide when to cooperate with that environment, when to operate secretly within it, and when the consequences of open conflict are worth the cost.
 
-> Project status: POLITIKA has a native Unreal application shell and a bounded RTS prototype with selection, movement, combat, and one control-point objective. The prototype was verified in a Linux Development package; it is not a complete skirmish, campaign, or release-qualified game. See the [RTS vertical-slice acceptance record](Docs/RTS_VERTICAL_SLICE_MILESTONE.md) and [shell build and verification guide](Docs/SHELL_SKELETON.md). The next development milestone is simulation/content contracts and map validation; full match rules, AI, faction rosters, balance, and economy remain incomplete or design-stage.
+> Project status: POLITIKA has a native Unreal application shell and a bounded RTS prototype with selection, movement, combat, one control-point objective, and an accepted typed command/simulation contract. The vertical slice and command contract have scoped Linux Development package evidence; the latter also has coordinator rejection-state tests, fixed-step repeatability, invalid-content recovery, and a Shipping fixture-isolation/default-menu check. This is not a complete skirmish, campaign, or release-qualified game. See the [RTS vertical-slice acceptance record](Docs/RTS_VERTICAL_SLICE_MILESTONE.md), [command/simulation contract record](Docs/RTS_COMMAND_SIMULATION_CONTRACT.md), and [shell build and verification guide](Docs/SHELL_SKELETON.md). The broader data-driven content and map-validation roadmap gate remains in progress; full match rules, AI, faction rosters, balance, and economy remain incomplete or design-stage.
 
 ## Versioning and release management
 
@@ -138,7 +138,7 @@ The main README introduces the project; concrete gameplay concepts and system-le
 
 ## Development and contributions
 
-POLITIKA is a developing independent RTS project, and the repository currently focuses on its design documents and faction artwork. The intended implementation will be developed against those materials, with changes evaluated for consistency with the alternate-history canon and the asymmetrical, neutral-world gameplay design.
+POLITIKA is a developing independent RTS project with an Unreal application shell and a bounded, locally verified gameplay prototype. Further implementation and documentation are developed against the design materials, with changes evaluated for consistency with the alternate-history canon and the asymmetrical, neutral-world gameplay design.
 
 Feedback, bug reports, design discussions, documentation improvements, and contributions can be proposed through this repository's [issues](https://github.com/simon-gros/politika/issues) and pull requests. Proposed features should distinguish between established canon, design proposals, and working implementations, and should not treat planned mechanics as already completed.
 
