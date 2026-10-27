@@ -6,15 +6,15 @@
 
 > **Design boundary:** Nuclear weapons, intelligence and scarce inputs are fictional, abstract RTS assets and states. This specification describes game mechanics, not real-world nuclear-weapons design, fabrication, handling or technical deployment.
 
-## 1. Canonical distinction: two nuclear powers, three conditional producers
+## 1. Canonical distinction: two nuclear powers, one conditional producer
 
-The **Atlantic Concord** and **Red Directorate** are the game's **two established nuclear powers**. Their ultimate weapons are **tactical nuclear bombs** produced only after acquiring the appropriate nuclear-weapons intelligence, scarce abstract strategic resources, a valid production facility and a **very long game-time construction process**.
+The **Atlantic Concord** and **Red Directorate** are the game's **two established nuclear powers**. Their ultimate weapons are **tactical nuclear bombs** produced after acquiring intelligence, **refining crude nuclear materials into a processed game resource**, and completing the expensive, very long production process.
 
-**The Iron Ascendancy is NOT a nuclear power at the start of the game.** It has **no independent nuclear weapon, nuclear stockpile or already unlocked nuclear research**. Its spies must infiltrate a **nuclear research facility belonging to either the Atlantic Concord or the Red Directorate** and successfully acquire nuclear-weapons intelligence. Only then can the Ascendancy attempt to construct **its first nuclear bomb**, subject to scarce resources and the full, very long construction period.
+**The Iron Ascendancy is NOT a nuclear power at the start of the game.** It has **no independent nuclear weapon, nuclear stockpile or already unlocked nuclear research**. Its spies must infiltrate a **nuclear research facility belonging to either the Atlantic Concord or the Red Directorate** and successfully acquire **nuclear-refining technology intelligence and nuclear-weapons intelligence**. It can then **refine crude nuclear materials for bomb production only**, but **cannot build nuclear power plants**, and may attempt to construct **its first nuclear bomb**, subject to scarce resources and the full, very long construction period.
 
 **As soon as the Iron Ascendancy successfully finishes building its own nuclear bomb, the current game immediately ends and it wins.** No bomber, missile, launch command, deployment, explosion or target selection is necessary. This is a unique production-triggered instant-victory condition, not a bonus to damage or a normal nuclear attack.
 
-The **Meridian Pact** has **no indigenous nuclear research or production**. Both the Meridian Pact and Iron Ascendancy can, however, **sabotage, seize or steal an already completed nuclear weapon** and may deploy it on the map if they control a compatible means of delivery. **Theft is not production**: capturing and deploying a finished enemy bomb does not make either faction a nuclear producer, and never satisfies the Iron Ascendancy's special instant-win condition.
+The **Meridian Pact cannot refine nuclear materials at all**, and has no nuclear research, nuclear power-plant construction or weapon-production capability. Both the Meridian Pact and Iron Ascendancy can, however, **sabotage, seize or steal an already completed nuclear weapon** and may deploy it on the map if they control a compatible means of delivery. **Theft is not production**: capturing and deploying a finished enemy bomb does not make either faction a nuclear producer, and never satisfies the Iron Ascendancy's special instant-win condition.
 
 The **Unaligned** is a **non-nuclear, NPC-only** Yugoslav world authority, not an additional playable nuclear power.
 
@@ -30,17 +30,25 @@ The **Unaligned** is a **non-nuclear, NPC-only** Yugoslav world authority, not a
 
 **Terminology:** the Concord and Directorate are the **two existing nuclear powers**; the Ascendancy is the **third faction capable of manufacturing a nuclear weapon only after espionage**, and completing its first bomb makes it the winner. The Meridian Pact is the other non-nuclear playable faction, but may operate a stolen bomb. Thus **ability to capture/deploy** does not equal **nuclear-power status or ability to produce**.
 
-## 3. Nuclear production gate and timing
+## 3. Nuclear refining and production gate
+
+**Crude nuclear materials must first be refined at an eligible facility** into an abstract processed nuclear-material game resource. Only processed materials can be used to construct nuclear power plants or nuclear weapons.
+
+**Atlantic Concord and Red Directorate:** can refine nuclear material and build **nuclear power plants** and rare tactical nuclear weapons. **Iron Ascendancy:** starts without refining capability; it must steal **refining-technology intelligence from a Concord or Directorate nuclear research facility**, as well as weapons intelligence. After those unlocks, it may refine materials **for weapons only**, not power plants; it **cannot construct and is not interested in nuclear power plants**. **Meridian Pact:** cannot refine crude nuclear materials at all. The Unaligned remains a non-nuclear NPC world authority.
+
+**Abstract game chain:** `CrudeNuclearMaterial → RefinedNuclearMaterial → NuclearPowerPlant or NuclearBomb`; the **Ascendancy has only the bomb endpoint**, and Meridian has neither endpoint. Electricity generated from completed Concord/Directorate nuclear power plants feeds the game's power network. These are game-state transformations, not physical refining instructions. See [Resource Economy](RESOURCE_ECONOMY.md).
+
+
 
 Every locally manufactured nuclear bomb requires:
 
-1. **Nuclear-weapons intelligence.** A validated faction technology/intelligence state. The Concord and Directorate may start with this knowledge if the scenario allows; the Ascendancy must steal it by successful spy infiltration of an **actual Concord or Directorate nuclear research facility**.
+1. **Two intelligence unlocks:** nuclear-refining technology **and** nuclear-weapons production intelligence. Concord and Directorate may already possess these in eligible scenarios; the Ascendancy must steal both through verified infiltration of an **actual Concord or Directorate nuclear research facility**.
 2. **Scarce strategic resources.** Finite, expensive, abstract RTS resource commitments (quantities and names determined during balancing).
 3. **An eligible production facility.** A controllable, secured game structure with necessary inputs and player-faction permissions.
 4. **Very long, vulnerable gameplay-time construction.** An interruptible build that forces players to defend their facility while rivals can investigate, raid, or sabotage it.
 5. **Actual completed bomb.** Intelligence, partial build progress and stored resources are not equivalent to ownership of a finished weapon.
 
-**Common progression:** `Intel locked/available → Intelligence validated → Scarce resources secured → Production started → Long build progresses → Bomb completed`.
+**Common progression:** `Refinement and weapon intelligence validated → Crude nuclear materials acquired → Refined nuclear materials produced → Long bomb construction → Bomb completed`.
 
 **Branch on completion:**
 
@@ -52,7 +60,7 @@ There must be no alternate Ascendancy starting blueprint, preexisting arsenal, g
 
 ## 4. Spy infiltration and intelligence provenance
 
-The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy must penetrate a **nuclear research facility owned by the Atlantic Concord or Red Directorate**, perform an authored intelligence acquisition objective, and have that success recognized by match authority.
+The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy must penetrate a **nuclear research facility owned by the Atlantic Concord or Red Directorate**, acquire both **nuclear-refining technology intelligence** and **nuclear-weapons production intelligence**, and have those events independently recognized by match authority. One qualified facility can contain both required pieces of intelligence.
 
 A regular barracks, arbitrary archive, empty research lab, another Ascendancy site or Meridian Pact merchant location **does not qualify**. Merely spotting a research complex also does not qualify. The intelligence record should contain **source faction, eligible facility, spy acquisition event, verified completion, and owning player/match identity**.
 
@@ -89,13 +97,13 @@ Evaluate the condition from **authoritative simulation and mission state**, not 
 
 1. Active player is **Iron Ascendancy**.
 2. A spy of that faction **successfully infiltrated an Atlantic Concord or Red Directorate nuclear research facility**.
-3. The spy acquired and validated the required nuclear-weapons intelligence.
-4. Using that unlock and the required scarce resources, the Iron Ascendancy **successfully completed production of its own nuclear bomb**.
+3. The spy acquired and validated **both nuclear-refining technology intelligence and nuclear-weapons intelligence**.
+4. Using both unlocks, the required **processed nuclear-material game resources**, and the full long build, the Iron Ascendancy **successfully completed production of its own first nuclear bomb**.
 5. **Immediately resolve WIN for the Iron Ascendancy and GAME OVER for the current match.** No launch, delivery, detonation, or additional turn is required.
 
 Not sufficient: seeing a facility, possessing generic intelligence, entering a non-qualifying building, stealing an already-completed enemy bomb, possessing a captured weapon, sabotaging a facility, collecting resources, beginning production, or firing a stolen weapon.
 
-**Design invariant:** `InstantWin = IronPlayer && QualifiedEnemyResearchInfiltration && ValidNuclearIntel && OwnBombProductionCompleted`.
+**Design invariant:** `InstantWin = IronPlayer && QualifiedResearchInfiltration && ValidNuclearRefinementIntel && ValidNuclearWeaponIntel && OwnFirstBombProductionCompleted`.
 
 The event must be atomic and happen at the **production completion event**. If other victory conditions are met on the same simulation tick, apply the deterministic winner-resolution policy of the match framework. In story campaigns, **game over** refers to the active game/match or mission, not erasure of the canonical 1989 revelation and Yugoslavia's collapse.
 
@@ -116,8 +124,8 @@ The event must be atomic and happen at the **production completion event**. If o
 The system should maintain distinct, inspectable authoritative states:
 
 - **Faction capability:** existing nuclear power (Concord/Directorate only), conditional production permission (Ascendancy), no-production (Meridian), NPC neutrality (Unaligned).
-- **Intelligence state:** `HasNuclearIntel`, `IntelSourceFaction`, `NuclearResearchFacilityID`, `SpyInfiltrationVerified`; Ascendancy unlock only for Concord/Directorate research facilities.
-- **Scarce-resource state:** fiction-only game resource availability, commitments and consumption.
+- **Intelligence state:** distinct `HasNuclearRefinementIntel` and `HasNuclearWeaponIntel`, plus `IntelSourceFaction`, `NuclearResearchFacilityID`, `SpyInfiltrationVerified`; Ascendancy unlock only for Concord/Directorate research sites.
+- **Scarce-resource state:** separate crude/processed nuclear inventories, authorized nuclear-refinement jobs, output custody, resource commitments and consumption.
 - **Build state:** `NuclearBuildInProgress`, `NuclearBuildCompleted`, remaining time, current owner/producer and producing facility.
 - **Finished-asset state:** unique bomb ID, original producer, present custodian, readiness, stolen status and compatible delivery capability.
 - **Victory state:** explicit `IronOwnBombCompleted` event checked together with the mandatory spy-intelligence provenance.
@@ -137,7 +145,7 @@ Present appropriate prerequisites, resource scarcity, long production progress, 
 
 **Starting nuclear powers:** **Atlantic Concord and Red Directorate only**.  
 **Conditional third producer:** **Iron Ascendancy**, initially non-nuclear, unlocked **only** by spy infiltration of a **Concord or Directorate nuclear research facility** and acquisition of its nuclear intelligence.  
-**Production completion:** scarce abstract resources + verified nuclear intelligence + **very long build time** + finished bomb.  
+**Production completion:** verified refining and weapons intelligence + **refined nuclear materials** + **very long build time** + finished bomb.  
 **Iron Ascendancy win:** **immediate game over on completion of its own first bomb; no deployment required**.  
 **Concord delivery:** **nuclear bomber**.  
 **Directorate delivery:** **ICBM**.  
