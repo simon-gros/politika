@@ -363,12 +363,85 @@ fn preflight(root: &Path) -> Vec<Check> {
     checks
 }
 
+/// Compile and execute the platform-neutral C++20 rules regression suite.
+/// This checks real command-admission decisions, not Unreal gameplay integration.
+fn core_tests(root: &Path) -> Vec<Check> {
+    let compiler = env::var("CXX").unwrap_or_else(|_| "c++".to_owned());
+    let output_path = root.join("build/diagnostics/politika-core-tests");
+    if let Some(parent) = output_path.parent() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            return vec![Check::new(
+                "core.compile", Verdict::InfraError,
+                format!("cannot create C++ test output directory: {error}"),
+            )];
+        }
+    }
+    let result = Command::new(&compiler)
+        .arg("-std=c++20")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg("-pedantic")
+        .arg("-I")
+        .arg(root.join("Source/PolitikaCore"))
+        .arg(root.join("Tests/Core/RulesTests.cpp"))
+        .arg("-o")
+        .arg(&output_path)
+        .current_dir(root)
+        .output();
+    let compile = match result {
+        Ok(compile) => compile,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return vec![Check::new(
+                "core.compile", Verdict::Blocked,
+                format!("C++20 compiler {compiler:?} is not installed"),
+            )];
+        }
+        Err(error) => {
+            return vec![Check::new(
+                "core.compile", Verdict::InfraError,
+                format!("cannot launch compiler: {error}"),
+            )];
+        }
+    };
+    if !compile.status.success() {
+        let detail: String = String::from_utf8_lossy(&compile.stderr)
+            .chars().take(2000).collect();
+        return vec![Check::new("core.compile", Verdict::Fail, detail)];
+    }
+    let mut checks = vec![Check::new(
+        "core.compile", Verdict::Pass,
+        "C++20 rules tests compiled with warnings treated as errors",
+    )];
+    match Command::new(&output_path).current_dir(root).output() {
+        Ok(execution) if execution.status.success() => {
+            checks.push(Check::new(
+                "core.command_rules", Verdict::Pass,
+                "ownership, selection, move admission, atomic resources and faction-gating assertions passed",
+            ));
+        }
+        Ok(execution) => {
+            let detail: String = String::from_utf8_lossy(&execution.stderr)
+                .chars().take(2000).collect();
+            checks.push(Check::new(
+                "core.command_rules", Verdict::Fail,
+                format!("C++ regression executable failed ({}): {detail}", execution.status),
+            ));
+        }
+        Err(error) => checks.push(Check::new(
+            "core.command_rules", Verdict::InfraError,
+            format!("cannot execute C++ tests: {error}"),
+        )),
+    }
+    checks
+}
+
 fn execute() -> Result<u8, String> {
     let mut args = env::args().skip(1);
     let stage = args.next().ok_or(
-        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|preflight|all> [--output PATH]",
+        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|core|preflight|all> [--output PATH]",
     )?;
-    if !matches!(stage.as_str(), "audit" | "preflight" | "all") {
+    if !matches!(stage.as_str(), "audit" | "core" | "preflight" | "all") {
         return Err(format!("invalid quality stage: {stage}"));
     }
     let mut output = None;
@@ -380,10 +453,13 @@ fn execute() -> Result<u8, String> {
     }
     let root = repo_root();
     let mut checks = Vec::new();
-    if stage != "preflight" {
+    if stage == "audit" || stage == "all" {
         checks.extend(audit(&root));
     }
-    if stage != "audit" {
+    if stage == "core" || stage == "all" {
+        checks.extend(core_tests(&root));
+    }
+    if stage == "preflight" || stage == "all" {
         checks.extend(preflight(&root));
     }
     let report = Report::new(&root, &stage, checks);
