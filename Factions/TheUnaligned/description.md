@@ -49,6 +49,12 @@ The JNA maintains conventional armored formations, mechanized infantry, artiller
 
 Atlantic Concord Psy-Ops can cause an eligible unit's Discipline (combat) or Morale (non-combat) to collapse into in-game self-destruction, or temporarily redirect attacks in a brief friendly-fire rampage. The Red Directorate's basic rival-intelligence theft is slightly faster and cheaper than that of other powers. Neither ability grants indiscriminate control of Unaligned civilians or infrastructure: jurisdiction, target eligibility, identification, protected locations and diplomatic consequences are enforced by the NPC security AI. Such operations do not alter the Unaligned's status as a non-playable autonomous authority.
 
+### Neutral-facility espionage and public security response
+
+Unaligned factories, laboratories and staffed infrastructure can be eligible targets for the three principal espionage specialties, subject to scenario permissions and sovereign access rules. Concord Psy-Ops can destroy a targeted building or cause finite hidden resource waste; Directorate infiltrators can covertly divert eligible resources into their faction budgets; Ascendancy facility contamination can cause simulated worker/researcher deaths and bounded chain disruptions in nearby eligible sites. The Unaligned's security AI investigates observable damage, staffing failures, unexplained ledger discrepancies and other intelligence indicators, with consequences governed by jurisdiction and faction identity.
+
+No neutral civilian site is automatically targetable merely because it exists. The game applies explicit eligibility, attribution and recovery constraints; contamination is an abstract fictional production/status system, not a biological simulation. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Internal Security and Civil Administration
 
 Internal security and civilian administration constitute equally important dimensions of the faction's activities. Police forces, border authorities, customs administrations, security agencies and municipal institutions maintain a visible presence throughout the game world. These organizations regulate access to restricted facilities, administer border crossings, enforce governmental regulations, investigate unauthorized activities and respond to disturbances affecting public order.
