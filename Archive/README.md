@@ -92,6 +92,12 @@ POLITIKA's different early reconnaissance platforms—fast, cheap, lightly armed
 
 Meridian's special early, inexpensive conventional explosive sabotage of eligible vehicles/buildings through designated non-spy units is likewise a fictional RTS mechanic. Atlantic Concord, Red Directorate and Iron Ascendancy receive comparable actions later, at greater cost and restricted to spies. Archive references may inform authentic-looking period vehicles, roads, aircraft and visual design, but should not be mistaken for real explosive-handling instructions. See [Reconnaissance and Scouting](../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../Docs/SABOTAGE_SYSTEM.md).
 
+### Fictional Unaligned counterintelligence and false-flag balance
+
+In POLITIKA's invented game world, the Unaligned possesses the strongest counterintelligence and uses intercepted intelligence, fabricated reports and false-flag attribution to preserve Yugoslav stability and sometimes divert stronger military factions away from a weak opponent nearing defeat. A misleading report of a nuclear facility is an authored RTS information mechanic and is not a claim about a real historical Yugoslav nuclear program or an actual Cold War operation.
+
+Historical intelligence and propaganda sources in the archive may support period terminology and presentation, but must not be cited as proof of this fictional system-AI behavior. See [Unaligned Counterintelligence](../Docs/UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## Historical evidence versus fictional worldbuilding
 
 POLITIKA's campaign, events and factions are fictionalized. The archive documents historical Yugoslavia and its international context, not the fictional history of the game. In particular, do not present the fictional organizations documented in [`Factions/`](../Factions/) as real historical actors. Conversely, historical institutions should not be retroactively assigned fictional activities without clearly labelling the departure from fact.
