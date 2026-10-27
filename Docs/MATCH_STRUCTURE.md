@@ -45,6 +45,10 @@ Player actions may alter relationships with the Unaligned, but cannot directly t
 
 The resource, morale, Intimidation, propaganda, Black Market and nuclear rules remain **faction specific** regardless of whether a playable slot is occupied by a human or AI. In particular, a player cannot add a fifth controllable faction by converting an isolated enemy unit with Intimidation: that ability transfers **unit control**, not faction/player ownership.
 
+### Captured individual units versus faction control
+
+The Iron Ascendancy's Intimidation affects **eligible isolated combat units after Discipline is broken** and **eligible isolated civilian/non-combat units after Morale is broken**. They are **the same underlying resolve meter** with category-dependent names. Conversion transfers an **individual unit's controller** and never allocates a new player/faction slot or allows one player to command two factions. The match remains **2–4 playable factions + Unaligned**, regardless of how many units change allegiance.
+
 ## 5. Engine/UI contracts and acceptance tests
 
 Suggested authoritative fields: `ParticipantSlots` (2–4), `ParticipantControllerType` (human or AI), `ParticipantFactionId` (one of four), `UnalignedSystemFaction` (always true, non-slot), `MatchRosterValidated`, `MapSpawnValidated`, and optional `SpectatorControllers` (separate from playing participants).
