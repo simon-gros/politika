@@ -80,7 +80,7 @@ Only after qualifying espionage may the Ascendancy operate nuclear-material refi
 
 ## Formation Discipline and the Intimidation Sequence
 
-Like the Red Directorate, Meridian Pact and Unaligned, Iron Ascendancy soldiers **retain morale and discipline more reliably in larger, coherently supported formations**. Individually deployed troops and very small groups have the normal size-based morale vulnerability, while **only Atlantic Concord soldiers do not**.
+Like the Red Directorate, Meridian Pact and Unaligned, Iron Ascendancy soldiers **retain morale and discipline more reliably in larger, coherently supported formations**. **But the Iron Ascendancy and Red Directorate alone receive an extra morale/discipline bonus when their fighting forces constitute very massive, cohesive armies**—beyond the ordinary larger-group benefit available to Meridian and Unaligned. Individually deployed Ascendancy troops and very small groups retain the normal size-based morale vulnerability, while **only Atlantic Concord soldiers avoid it**.
 
 **Intimidation proceeds in two stages: first destroy the morale of an eligible isolated enemy, then convert the morale-broken unit to Ascendancy ownership.** No conversion occurs if the target still has morale remaining, even when unsupported. Concord individual soldiers are unaffected by the *automatic small-group penalty*, though direct Intimidation may still break their morale. Reinforcement, recovery and interruption can prevent conversion; the exact numerical threshold and time costs remain balance decisions. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
