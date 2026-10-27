@@ -124,6 +124,10 @@ Suggested data-driven abstractions:
 
 **Validation checks:** every Meridian spawn has an eligible reachable fossil source in range; all declared materials exist on the map or have valid supply methods; storage cannot underflow; a fuel deposit is not confused with refined fuel; electricity outages apply predictably; neither crude oil nor crude nuclear material bypasses refining; Meridian nuclear refinement and nuclear-plant construction are unavailable; Ascendancy nuclear-material refining and weapon construction require stolen Concord/Directorate refinement intelligence and cannot create power plants; nuclear production requires fully committed **processed nuclear materials**; Ascendancy completion invokes immediate game victory.
 
+### Map population and resource placement
+
+Every playable map supports **2–4 player factions plus one autonomous Unaligned NPC/system-AI faction**. A player or AI-opponent controller owns **only one playable faction**. The Unaligned is not a fifth player. Maps must validate that the resources and field proximity relevant to each selected faction are available; in particular, **every selected Meridian Pact spawn must be near an existing oil or gas field** even on a 2-player map. The resource system must not allocate extra player slots for neutral Unaligned resource ownership or independent market services. See [Match Structure](MATCH_STRUCTURE.md).
+
 ## 8. Open decisions
 
 Set actual resource names, costs, volumes, extraction rates, refinery operating costs and field distribution; implement crude oil and refined fuels as distinct resource states; establish electricity as flow or stock; decide whether nuclear materials are solely captured from nodes or also earned via authored objectives; design how civilian power networks and resource ownership interact with the Unaligned; and test fuel advantages against fair map starts.
