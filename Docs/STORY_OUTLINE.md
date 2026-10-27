@@ -217,6 +217,12 @@ The primary story's **1989 exposure of Tito's murder and resulting Yugoslav disi
 
 See the [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) for the authoritative gameplay conditions and faction distinctions.
 
+### Media propaganda and morale during the conspiracy
+
+**All five factions track population morale**, and high morale improves production output and army discipline. The **Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned** possess distinct advanced propaganda capabilities using **radio, newspapers and television**. The **Meridian Pact lacks advanced propaganda** but retains a morale meter affected by ordinary conditions and unfolding events.
+
+The Unaligned's radio speeches, television appearances and newspaper accounts support the fictional public image of Tito's continued leadership after 1984. Its media are also plausible campaign objectives whose seizure, interruption or contradictory messages may damage confidence. The 1989 public revelation is fixed; morale reflects destabilization rather than allowing the conspiracy's exposure to be prevented through propaganda. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 8. Principal Character Functions
 
 Names, biographies, and personal identities remain open for subsequent writing. These roles support a character-driven story without replacing the RTS perspective:
