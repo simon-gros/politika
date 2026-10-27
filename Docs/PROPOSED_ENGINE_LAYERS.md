@@ -100,7 +100,7 @@ Acceptance criteria: map/content validators detect missing spawns, broken asset 
 
 ### 3.8 Espionage, Intimidation, resources and nuclear ultimate weapons
 
-World canon and rules: Concord and Directorate are the two existing nuclear powers; Ascendancy begins non-nuclear; Meridian and Unaligned remain non-nuclear. Concord and Directorate have distinct specialist espionage systems (their exact special features are not yet locked). Ascendancy has more limited espionage and must fully develop its spy progression before it can infiltrate a Concord or Directorate nuclear research facility and steal both nuclear-refining technology and nuclear-weapons intelligence.
+World canon and rules: Concord and Directorate are the two existing nuclear powers; Ascendancy begins non-nuclear; Meridian and Unaligned remain non-nuclear. Concord's specialist intelligence subdivision, **Psy-Ops**, can make an eligible combat/non-combat unit self-destruct after fully breaking **Discipline/Morale**, or cause a brief attack on its own allied units through a timed targeting override. Directorate's ordinary spying is **slightly faster and cheaper at stealing rival intelligence**. Ascendancy has more limited spying and must fully develop its spy progression before infiltrating a Concord or Directorate nuclear research facility for the two required intelligence unlocks.
 
 Simulation: own espionage upgrade levels, isolation/support evaluation for combat units, identity and ability permissions, covert-action success, capture/transfer of unit control, protection/detection, resource balances, oil-to-petroleum/kerosene refinery jobs, crude-to-processed nuclear-resource refinery jobs, facility power/production, and completed weapon custody. Intimidation is Ascendancy-exclusive and can convert isolated eligible enemy units, not groups protected by allied support. The engine must reject intimidation from any other faction.
 
@@ -111,6 +111,10 @@ Match framework: issue the immediate Ascendancy win on completion of its first *
 Content/presentation/tools: data assets define refinery recipes, resource rankings, faction bonuses, spy-tree completion requirements, eligible nuclear research facilities, Intimidation users/targets and mission rules. UI shows locked/unlocked infiltration, enemy isolation/Intimidation eligibility, processing queues and the Ascendancy instant-win threat without leaking unknown intelligence. Validators check absent Meridian fossil-fuel spawn nodes, forbidden nuclear refinery/nuclear plant construction, non-max spy infiltration, illegal unit conversion and mismatched own-produced/stolen bomb events.
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
+
+### Psy-Ops and espionage economy contracts
+
+The simulation owns Psy-Ops `UnitResolve` depletion and fully-broken self-destruction resolution or temporary friendly-fire rampage, including start, expiry, interruption, valid friendly targets, and preservation of unit ownership. Content definitions gate it to **Atlantic Concord only** and to eligible combat/non-combat units. UI indicates a target's **Discipline/Morale** label and short rampage expiry. Red Directorate rival-intelligence theft receives a **slight time and resource-cost discount**, defined by espionage-operation category rather than blanket spying speed. The match authority validates both effects and prevents them from bypassing Ascendancy's nuclear-intelligence research gates. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Shared resolve, combat Discipline and civilian Morale
 
