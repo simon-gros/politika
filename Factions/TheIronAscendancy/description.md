@@ -62,6 +62,14 @@ The Ascendancy's ambitions in Yugoslavia directly threaten the independence of t
 
 Yugoslavia's geography complicates expansionist operations. Mountainous terrain, river crossings, developed urban centers and transport bottlenecks can hinder the concentration of mechanized forces, while local resistance may continue beyond the capture of a major installation. Political repression and discriminatory occupation policies deepen hostility and undermine claims of lasting control. These conditions should ensure that territorial conquest is not interchangeable with legitimate governance and that the human and institutional consequences of aggression remain visible within the game's wider strategic simulation.
 
+## Limited Espionage and Exclusive Intimidation
+
+The Iron Ascendancy has **more limited spying capabilities** than either the Atlantic Concord or Red Directorate, both of which possess their own special espionage features. The Ascendancy must invest in and **fully develop its spy progression** before it is allowed to attempt infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**. Only a successful infiltration after reaching the full espionage tier can obtain the nuclear-refining and nuclear-weapons intelligence it needs for production of its first bomb.
+
+Its distinguishing alternative is **Intimidation**, a power **exclusive to the Iron Ascendancy**. Eligible **isolated enemy combat units**—those without nearby supporting allies—can be forced to **change sides and join Ascendancy forces**. This transfers the surviving target's battlefield allegiance, not merely its appearance. An enemy in a supported formation is not an eligible isolated target. The exact range, target classifications, cost, cooldown and counterplay remain to be balanced. Neutral civilians and ordinary non-hostile Unaligned units should not be freely converted.
+
+**Intimidation does not count as spying or nuclear intelligence acquisition**, and it cannot substitute for full spy development, nuclear research infiltration, material refining or bomb construction. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Nuclear Espionage, Refining Restriction and Instant Victory
 
 **The Iron Ascendancy is initially a non-nuclear power.** It has no nuclear weapons, no nuclear-refining capability, and no indigenous nuclear-weapons production knowledge. Its spies must infiltrate an **Atlantic Concord or Red Directorate nuclear research facility** and steal **both nuclear-refining technology intelligence and nuclear-weapons research**.
