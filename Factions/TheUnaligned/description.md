@@ -45,6 +45,10 @@ The Unaligned's military organization is represented principally through the Yug
 
 The JNA maintains conventional armored formations, mechanized infantry, artillery, military aviation, naval forces, engineering units and strategic installations throughout the federation. Territorial Defence organizations provide additional capabilities through locally organized formations, reserve mobilization, defensive preparations and geographically dispersed military resources. These institutions allow the Unaligned to protect strategically significant territory, respond to security emergencies and resist attempts to undermine Yugoslav sovereignty.
 
+### Outside Psy-Ops and intelligence activity
+
+Atlantic Concord Psy-Ops can cause an eligible unit's Discipline (combat) or Morale (non-combat) to collapse into in-game self-destruction, or temporarily redirect attacks in a brief friendly-fire rampage. The Red Directorate's basic rival-intelligence theft is slightly faster and cheaper than that of other powers. Neither ability grants indiscriminate control of Unaligned civilians or infrastructure: jurisdiction, target eligibility, identification, protected locations and diplomatic consequences are enforced by the NPC security AI. Such operations do not alter the Unaligned's status as a non-playable autonomous authority.
+
 ## Internal Security and Civil Administration
 
 Internal security and civilian administration constitute equally important dimensions of the faction's activities. Police forces, border authorities, customs administrations, security agencies and municipal institutions maintain a visible presence throughout the game world. These organizations regulate access to restricted facilities, administer border crossings, enforce governmental regulations, investigate unauthorized activities and respond to disturbances affecting public order.
