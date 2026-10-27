@@ -44,6 +44,12 @@ Research and development occur through universities, commercial laboratories, st
 
 The game's 1980s setting provides a foundation in reconnaissance satellites, surveillance aircraft, advanced radar, early digital command systems and guided munitions. Its alternate technological history may introduce experimental sensors, sophisticated countermeasures and limited prototype platforms. Such systems remain expensive to manufacture and maintain, and may depend upon specialist operators and vulnerable infrastructure.
 
+## Distinctive Espionage Specialization
+
+The **Atlantic Concord has its own special espionage features**, distinct from those of the Red Directorate. The exact specialist abilities and numerical advantages remain to be authored; the faction's established intelligence and reconnaissance identity provides the design direction. These advantages should matter when protecting research sites, detecting intruders and exposing enemy operations.
+
+The **Iron Ascendancy's spying starts more limited** than the Concord's; Ascendancy spies cannot infiltrate a Concord nuclear research facility until their faction has **fully developed its espionage progression**. This facility may then yield both nuclear-refining technology and nuclear-weapons research intelligence if an infiltration succeeds. The Concord **does not have Intimidation** and cannot force isolated enemy units into its army using that Ascendancy-exclusive ability. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Intelligence and Diplomacy
 
 The Concord's intelligence organizations combine diplomatic reporting, signals interception, aerial reconnaissance, commercial information and specialist analysis. Multinational coordination facilitates intelligence sharing, although agencies may disagree over assessments or protect national interests. Reliable information can guide negotiations, uncover opposing operations and identify infrastructure vulnerabilities. Incorrect analysis can instead produce costly deployments or political crises.
