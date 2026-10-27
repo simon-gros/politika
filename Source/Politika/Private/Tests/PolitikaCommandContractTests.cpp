@@ -328,6 +328,32 @@ bool FPolitikaCommandCoordinatorAcceptanceAutomationTest::RunTest(const FString&
     }
 
     ResetState();
+    Match->SubmitCommand(1, Issuer, nullptr, MoveOrder{{300, 250}});
+    Match->SubmitCommand(1, Issuer, nullptr, GuardOrder{});
+    Match->SubmitCommand(1, Issuer, Friendly, AttackOrder{303});
+    Match->AdmitPendingOrders();
+    TestEqual(TEXT("Three-request queue is consumed"), Match->PendingOrders.Num(), 0);
+    TestEqual(TEXT("Last successfully admitted command becomes active in submission order"),
+        Issuer->GetCurrentOrder(), EPolitikaPrototypeOrder::Guard);
+    TestEqual(TEXT("Guard clears the replaced attack target"), Issuer->GetOrderTarget(), static_cast<APolitikaPrototypeUnit*>(nullptr));
+    TestEqual(TEXT("Three-request queue publishes outcome and transitions"), Match->PendingGameplayEvents.Num(), 5);
+    if (Match->PendingGameplayEvents.Num() == 5)
+    {
+        const CommandOutcomeEvent* First = std::get_if<CommandOutcomeEvent>(&Match->PendingGameplayEvents[0]);
+        const CommandOutcomeEvent* Second = std::get_if<CommandOutcomeEvent>(&Match->PendingGameplayEvents[2]);
+        const CommandOutcomeEvent* Third = std::get_if<CommandOutcomeEvent>(&Match->PendingGameplayEvents[4]);
+        TestNotNull(TEXT("First request outcome exists"), First);
+        TestNotNull(TEXT("Second request outcome exists"), Second);
+        TestNotNull(TEXT("Third request outcome exists"), Third);
+        if (First && Second && Third)
+        {
+            TestTrue(TEXT("Move is admitted before Guard"), First->accepted && First->sequence < Second->sequence);
+            TestTrue(TEXT("Guard is admitted before the final rejection"), Second->accepted && Second->sequence < Third->sequence);
+            TestFalse(TEXT("Final friendly Attack is rejected"), Third->accepted);
+        }
+    }
+
+    ResetState();
     Match->SubmitCommand(1, Issuer, nullptr, MoveOrder{{100, 100}});
     Issuer->Destroy();
     Match->AdmitPendingOrders();
