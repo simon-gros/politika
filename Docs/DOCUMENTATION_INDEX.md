@@ -9,6 +9,7 @@
 - [Match Structure](MATCH_STRUCTURE.md) — match roster and faction participation boundaries.
 - [Resource Economy](RESOURCE_ECONOMY.md), [Nuclear Weapons](NUCLEAR_WEAPONS_SYSTEM.md), [Sabotage](SABOTAGE_SYSTEM.md), [Reconnaissance](RECONNAISSANCE_AND_SCOUTING.md), [Intelligence](ESPIONAGE_AND_INTIMIDATION.md), [Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md), [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) — specialist gameplay rules and planned mechanics.
 - [Faction descriptions](../Factions/) — faction-specific narratives and visual identity.
+- [Proposed Five-Faction Unit and Building Rosters](POLITIKA_FIVE_FACTION_ROSTERS.md) — design-stage faction equipment and structure catalogue with original C&C inspirations (not implemented or locked).
 
 ## Engine and development
 
