@@ -34,8 +34,8 @@ pub fn repo_root() -> PathBuf {
 }
 
 pub fn parse_manifest(source: &str) -> Result<Manifest, String> {
-    let data: Manifest = serde_json::from_str(source)
-        .map_err(|error| format!("invalid version.json: {error}"))?;
+    let data: Manifest =
+        serde_json::from_str(source).map_err(|error| format!("invalid version.json: {error}"))?;
     Version::parse(&data.game_version)
         .map_err(|error| format!("invalid SemVer game_version: {error}"))?;
     for (name, value) in [
@@ -59,7 +59,11 @@ pub fn load_manifest(root: &Path) -> Result<Manifest, String> {
 }
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {
-    let output = Command::new("git").args(args).current_dir(root).output().ok()?;
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -114,11 +118,7 @@ pub fn validate_tag(manifest: &Manifest, tag: Option<&str>) -> Result<(), String
 
 /// In release mode, fail if the checkout is dirty, untracked, missing or
 /// detached from the requested tag, even if its display version is correct.
-pub fn validate_release(
-    root: &Path,
-    manifest: &Manifest,
-    tag: Option<&str>,
-) -> Result<(), String> {
+pub fn validate_release(root: &Path, manifest: &Manifest, tag: Option<&str>) -> Result<(), String> {
     validate_tag(manifest, tag)?;
     let tag = tag.ok_or("release builds require an exact vVERSION tag")?;
     if git(root, &["rev-parse", "--is-inside-work-tree"]).as_deref() != Some("true") {
@@ -129,8 +129,7 @@ pub fn validate_release(
     if !status.is_empty() {
         return Err("release builds require a clean Git worktree".into());
     }
-    let head = git(root, &["rev-parse", "HEAD"])
-        .ok_or("release builds require a Git revision")?;
+    let head = git(root, &["rev-parse", "HEAD"]).ok_or("release builds require a Git revision")?;
     let tag_commit = git(root, &["rev-list", "-n", "1", tag])
         .ok_or("release builds require a valid Git version tag")?;
     if head != tag_commit {
@@ -173,8 +172,14 @@ pub fn header(manifest: &Manifest, build: &BuildIdentity) -> String {
 pub fn identity_json(manifest: &Manifest, build: &BuildIdentity) -> String {
     let mut value = serde_json::to_value(manifest).expect("manifest can be serialized");
     let map = value.as_object_mut().expect("manifest is a JSON object");
-    map.insert("build_number".to_owned(), serde_json::json!(build.build_number));
-    map.insert("git_revision".to_owned(), serde_json::json!(build.git_revision));
+    map.insert(
+        "build_number".to_owned(),
+        serde_json::json!(build.build_number),
+    );
+    map.insert(
+        "git_revision".to_owned(),
+        serde_json::json!(build.git_revision),
+    );
     map.insert("git_dirty".to_owned(), serde_json::json!(build.git_dirty));
     serde_json::to_string_pretty(&value).expect("identity can be serialized")
 }
@@ -209,9 +214,15 @@ mod tests {
     #[test]
     fn accepts_semver_examples() {
         let values = [
-            "0.1.0-dev.0", "0.1.0-alpha.1", "0.1.0-beta.2",
-            "0.1.0-rc.1", "0.1.0", "0.1.1", "1.0.0",
-            "1.2.3+ci.42.gabc", "1.2.3-alpha.1+ci.7",
+            "0.1.0-dev.0",
+            "0.1.0-alpha.1",
+            "0.1.0-beta.2",
+            "0.1.0-rc.1",
+            "0.1.0",
+            "0.1.1",
+            "1.0.0",
+            "1.2.3+ci.42.gabc",
+            "1.2.3-alpha.1+ci.7",
         ];
         for version in values {
             parse_manifest(&GOOD.replace("0.1.0-dev.0", version)).unwrap();
@@ -221,10 +232,20 @@ mod tests {
     #[test]
     fn rejects_invalid_semver() {
         for version in [
-            "", "v0.1.0", "01.0.0", "1.02.3", "1.2",
-            "1.2.3-01", "1.2.3-alpha.01", "1.2.3+", "1.2.3-",
+            "",
+            "v0.1.0",
+            "01.0.0",
+            "1.02.3",
+            "1.2",
+            "1.2.3-01",
+            "1.2.3-alpha.01",
+            "1.2.3+",
+            "1.2.3-",
         ] {
-            assert!(parse_manifest(&GOOD.replace("0.1.0-dev.0", version)).is_err(), "{version}");
+            assert!(
+                parse_manifest(&GOOD.replace("0.1.0-dev.0", version)).is_err(),
+                "{version}"
+            );
         }
     }
 
@@ -265,15 +286,18 @@ mod tests {
         let result = header(&data, &identity);
         for field in [
             "GAME_VERSION[] = \"0.1.0-dev.0\"",
-            "NETWORK_PROTOCOL = 1", "SAVE_SCHEMA = 1",
-            "PERSISTENCE_SCHEMA = 1", "WORLD_SCHEMA = 1",
+            "NETWORK_PROTOCOL = 1",
+            "SAVE_SCHEMA = 1",
+            "PERSISTENCE_SCHEMA = 1",
+            "WORLD_SCHEMA = 1",
             "BUILD_NUMBER[] = \"37\"",
             "GIT_REVISION[] = \"abc123-dirty\"",
         ] {
             assert!(result.contains(field), "missing: {field}");
         }
         assert_eq!(result, header(&data, &identity));
-        let json: serde_json::Value = serde_json::from_str(&identity_json(&data, &identity)).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&identity_json(&data, &identity)).unwrap();
         assert_eq!(json["git_dirty"], true);
     }
 
