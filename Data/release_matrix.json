@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "purpose": "Release gate evidence ledger, not a certification or a version bump.",
+  "gates": [
+    {
+      "id": "engine_build",
+      "status": "blocked",
+      "evidence": [],
+      "note": "No Unreal executable/project verified"
+    },
+    {
+      "id": "first_skirmish",
+      "status": "blocked",
+      "evidence": [],
+      "note": "No playable match"
+    },
+    {
+      "id": "gameplay_regressions",
+      "status": "blocked",
+      "evidence": [],
+      "note": "Portable rules tests are not Unreal gameplay tests"
+    },
+    {
+      "id": "content_and_rights",
+      "status": "blocked",
+      "evidence": [],
+      "note": "Historical research and authored assets need production rights review"
+    },
+    {
+      "id": "performance",
+      "status": "blocked",
+      "evidence": [],
+      "note": "No measured RTS benchmarks"
+    },
+    {
+      "id": "accessibility_and_inputs",
+      "status": "blocked",
+      "evidence": [],
+      "note": "No real-device interaction tests"
+    },
+    {
+      "id": "packaged_release",
+      "status": "blocked",
+      "evidence": [],
+      "note": "No packaged, clean-install verified build"
+    }
+  ]
+}
