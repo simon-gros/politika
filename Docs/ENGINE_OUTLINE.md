@@ -63,6 +63,12 @@ Provide an **authoritative per-faction morale state for all five factions**, inc
 
 Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Match-size and player-to-faction invariant
+
+**Ordinary matches have exactly 2, 3 or 4 occupied playable faction slots**, drawn from Concord, Directorate, Ascendancy and Meridian, **plus one always-present Unaligned NPC/system-AI faction**. Each player or AI-opponent controller is assigned **exactly one distinct playable faction**; Unaligned has its own autonomous system controller and does **not** consume a player slot. The local single-player case may therefore be one human and one or more AI-controlled playable opponents.
+
+The match framework validates unique faction selection, player/faction mappings and capacity (2–4), and spawns Unaligned separately. World/content validation ensures correct spawn counts and Meridian's nearby fossil field. The UI must distinguish **player slots** from **faction presences** and never show the Unaligned as a selectable player. An Ascendancy nuclear-infiltration victory requires a qualifying opposing Concord or Directorate research facility when enabled; the framework must not manufacture one from the Unaligned just to satisfy the rule. See [Match Structure](MATCH_STRUCTURE.md).
+
 ## 4. Content model and authoring
 
 Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
