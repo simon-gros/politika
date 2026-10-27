@@ -44,6 +44,12 @@ The discount and time advantage concern ordinary rival-intelligence theft, not a
 
 The Iron Ascendancy has more limited spying, and cannot infiltrate a Directorate nuclear research facility until its espionage capabilities are fully developed. Eligible, successfully infiltrated Directorate sites can provide the Ascendancy with both nuclear-refinement technology and nuclear-weapons intelligence. The Directorate does not have Intimidation, which belongs exclusively to the Ascendancy. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Covert diversion of rival resources
+
+The Red Directorate's espionage also includes building-level financial and logistics diversion. A successfully infiltrated eligible enemy facility can have resources quietly transferred out of its owner faction's inventories or budget and into the Directorate's own account. The transaction subtracts the same eligible resource amount from the source that it credits to the Directorate, respecting resource types and storage/currency rules. This can remain unattributed or unnoticed by the opponent until counterintelligence, financial audits or other gameplay discovery.
+
+This is not the same as the Directorate's separate advantage in ordinary intelligence theft, which is slightly faster and cheaper. It is also not Atlantic Concord Psy-Ops, which wastes rather than appropriates resources, or the Iron Ascendancy's contamination-based workforce sabotage. No real-world financial method is modeled. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Air Defense, Intelligence and Electronic Warfare
 
 A distinctive element of Directorate doctrine is the integration of ground-based air defenses with broader operational planning. Radar stations, mobile surface-to-air missile units, interceptor aviation and layered defensive positions protect important industrial centers and troop concentrations. Rather than assuming permanent control of the air, Directorate commanders seek to deny opponents easy access to protected territory and create conditions in which large formations can continue maneuvering despite hostile aviation.
