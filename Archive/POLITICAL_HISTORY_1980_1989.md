@@ -1,6 +1,6 @@
 # POLITIKA — Political history of Yugoslavia and its neighborhood, 1980–1989
 
-**Status:** researched historical event index, **not campaign canon**. Created 27 October 2026. Contains **68 individually linked political developments** across the decade in addition to the pre-existing art-reference and historical records in [CATALOG.csv](CATALOG.csv). [Structured political events CSV](POLITICAL_EVENTS.csv) · [Full historical archive](README.md) · [Story outline](../Docs/STORY_OUTLINE.md) · [Concepts outline](../Docs/CONCEPTS_OUTLINE.md).
+**Status:** researched historical event index, **not campaign canon**. Created 27 October 2026. Contains **69 individually linked political developments** across the decade in addition to the pre-existing art-reference and historical records in [CATALOG.csv](CATALOG.csv). [Structured political events CSV](POLITICAL_EVENTS.csv) · [Full historical archive](README.md) · [Story outline](../Docs/STORY_OUTLINE.md) · [Concepts outline](../Docs/CONCEPTS_OUTLINE.md).
 
 ## Editorial boundary
 
@@ -358,13 +358,7 @@ Ante Marković assumed federal executive leadership in 1989 and pursued economic
 
 *POLITIKA applications:* economic_mechanics, cabinets, finance, diplomatic_news. *Chronology status:* HIGH. *Research caution:* Appointment date not fixed from this source; avoid a day-specific claim.
 
-#### Late November 1989 — Tenth Congress of the League of Communists of Macedonia signals reform
 
-**Region:** SR Macedonia; **place:** Skopje. **Record:** [`POL-1989-POL-MACEDONIA-TRANSITION`](POLITICAL_EVENTS.csv). **Source:** [Židas Daskalovski, *Elite Transformation and Democratic Transition in Macedonia and Slovenia*](https://doi.org/10.4000/balkanologie.281) (1999 comparative scholarly analysis).
-
-During the League of Communists of Macedonia's late-November 1989 congress and leadership change, reformists advanced political pluralism and new approaches to federal negotiations. **Political significance:** Macedonia's republican elite followed a trajectory distinct from both Serbia and Slovenia; democratization was not a uniform simultaneous process across all six republics.
-
-*POLITIKA applications:* Skopje republican offices, party press, constitutional debate, civilian political groups. *Chronology status:* divergence review. *Research caution:* Consult contemporaneous Macedonian newspapers and congress records before assigning an exact day or verbatim political resolutions.
 
 #### 1989-01 — Montenegrin leadership resigns amid mass demonstrations
 
@@ -445,6 +439,14 @@ Tone Pavček read a declaration advocating Slovenian sovereignty at a gathering 
 Milošević assumed the presidency of Serbia's collective republican presidency in May 1989. **Political significance:** Important distinction between republican presidency and federal Yugoslav office.
 
 *POLITIKA applications:* state_governance, diplomatic_cables, factions_as_fiction. *Chronology status:* HIGH.
+
+#### 1989-05-15 — Janez Drnovšek takes chair of Yugoslav collective presidency
+
+**Region:** SFRY / SR Slovenia; **place:** Belgrade / Ljubljana. **Record:** [`POL-1989-POL-DRNOVSEK-PRESIDENCY`](POLITICAL_EVENTS.csv). **Source:** [Slovenska biografija](https://www.slovenska-biografija.si/oseba/sbi1024150/) (scholarly biographical reference).
+
+Janez Drnovšek, elected Slovenia's member of the federal collective presidency in April, assumed the rotating chair of the Presidency of the SFRY on 15 May 1989. **Political significance:** A reform-oriented republican figure simultaneously led Yugoslavia's collective head-of-state institution amid constitutional crisis and hosted the September Belgrade Non-Aligned summit.
+
+*POLITIKA applications:* presidency, federal_orders, diplomatics, constitutional_continuity, state_broadcasts. *Chronology status:* HARD DIVERGENCE. *Research caution:* Tito's fictional survival fundamentally changes constitutional succession; a game script must explain the relationship between the publicly alive Tito and real-world collective presidency, rather than treating both as simultaneously historical.
 
 #### 1989-05-20 — Croatian Social Liberal Alliance founded
 
@@ -533,6 +535,14 @@ East German authorities' announcement was followed by mass crossing and opening 
 The Bulgarian Communist Party Central Committee removed Zhivkov on 10 November 1989. **Political significance:** Directly changes leadership of a Yugoslav neighbor and the southern-east political context.
 
 *POLITIKA applications:* border_intelligence, radio, diplomacy. *Chronology status:* background.
+
+#### Late November 1989 — Tenth Congress of the League of Communists of Macedonia signals reform
+
+**Region:** SR Macedonia; **place:** Skopje. **Record:** [`POL-1989-POL-MACEDONIA-TRANSITION`](POLITICAL_EVENTS.csv). **Source:** [Židas Daskalovski, *Elite Transformation and Democratic Transition in Macedonia and Slovenia*](https://doi.org/10.4000/balkanologie.281) (1999 comparative scholarly analysis).
+
+During the League of Communists of Macedonia's late-November 1989 congress and leadership change, reformists advanced political pluralism and new approaches to federal negotiations. **Political significance:** Macedonia's republican elite followed a trajectory distinct from both Serbia and Slovenia; democratization was not a uniform simultaneous process across all six republics.
+
+*POLITIKA applications:* Skopje republican offices, party press, constitutional debate, civilian political groups. *Chronology status:* divergence review. *Research caution:* Consult contemporaneous Macedonian newspapers and congress records before assigning an exact day or verbatim political resolutions.
 
 #### 1989-12 — Croatian Communist leadership accepts multiparty turn
 
