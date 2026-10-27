@@ -66,7 +66,7 @@ Yugoslavia's geography complicates expansionist operations. Mountainous terrain,
 
 The Iron Ascendancy has **more limited spying capabilities** than either the Atlantic Concord or Red Directorate, both of which possess their own special espionage features. The Ascendancy must invest in and **fully develop its spy progression** before it is allowed to attempt infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**. Only a successful infiltration after reaching the full espionage tier can obtain the nuclear-refining and nuclear-weapons intelligence it needs for production of its first bomb.
 
-Its distinguishing alternative is **Intimidation**, a power **exclusive to the Iron Ascendancy**. Eligible **isolated enemy combat units**—those without nearby supporting allies—can be forced to **change sides and join Ascendancy forces**. This transfers the surviving target's battlefield allegiance, not merely its appearance. An enemy in a supported formation is not an eligible isolated target. The exact range, target classifications, cost, cooldown and counterplay remain to be balanced. Neutral civilians and ordinary non-hostile Unaligned units should not be freely converted.
+Its distinguishing alternative is **Intimidation**, a power **exclusive to the Iron Ascendancy**. Eligible **isolated enemy combat units**—those without nearby supporting allies—must first have their **battlefield morale completely broken** by Intimidation. **Only after the target's morale has collapsed to its broken threshold** can the surviving unit **change sides and join Ascendancy forces**. Isolation alone never causes instant conversion. This transfers the surviving target's battlefield allegiance, not merely its appearance. An enemy in a supported formation is not an eligible isolated target. The exact range, target classifications, cost, cooldown and counterplay remain to be balanced. Neutral civilians and ordinary non-hostile Unaligned units should not be freely converted.
 
 **Intimidation does not count as spying or nuclear intelligence acquisition**, and it cannot substitute for full spy development, nuclear research infiltration, material refining or bomb construction. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
@@ -77,6 +77,12 @@ Its distinguishing alternative is **Intimidation**, a power **exclusive to the I
 Only after qualifying espionage may the Ascendancy operate nuclear-material refinement, **solely to produce its first atomic bomb**. It **cannot construct nuclear power plants and has no interest in them**. The player must secure scarce crude nuclear resources, refine them in the game's abstract production system, and complete a very long bomb-construction process.
 
 **The instant the Ascendancy finishes its first independently produced bomb, it wins the game without deploying it.** It may also sabotage, steal or deploy a *completed enemy bomb*, but theft never counts toward the unique production victory. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
+
+## Formation Discipline and the Intimidation Sequence
+
+Like the Red Directorate, Meridian Pact and Unaligned, Iron Ascendancy soldiers **retain morale and discipline more reliably in larger, coherently supported formations**. Individually deployed troops and very small groups have the normal size-based morale vulnerability, while **only Atlantic Concord soldiers do not**.
+
+**Intimidation proceeds in two stages: first destroy the morale of an eligible isolated enemy, then convert the morale-broken unit to Ascendancy ownership.** No conversion occurs if the target still has morale remaining, even when unsupported. Concord individual soldiers are unaffected by the *automatic small-group penalty*, though direct Intimidation may still break their morale. Reinforcement, recovery and interruption can prevent conversion; the exact numerical threshold and time costs remain balance decisions. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
 ## Advanced Propaganda and Population Morale
 
