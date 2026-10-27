@@ -1,0 +1,43 @@
+name: POLITIKA version contract
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+# Never cancel main/tag verdicts; supersede only older runs of a PR.
+concurrency:
+  group: versioning-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  version-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate canonical version and tag matching
+        run: python3 tools/version.py check
+      - name: Run version-contract tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify deterministic header generation
+        run: |
+          python3 tools/version.py generate --output "${RUNNER_TEMP}/PolitikaVersion.generated.h"
+          cp "${RUNNER_TEMP}/PolitikaVersion.generated.h" "${RUNNER_TEMP}/version-first.h"
+          python3 tools/version.py generate --output "${RUNNER_TEMP}/PolitikaVersion.generated.h"
+          cmp "${RUNNER_TEMP}/version-first.h" "${RUNNER_TEMP}/PolitikaVersion.generated.h"
+      - name: Require clean matching release checkout for version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 tools/version.py check --release
