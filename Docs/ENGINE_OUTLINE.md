@@ -1,0 +1,270 @@
+# POLITIKA Engine — foundational outline
+
+Status: first-pass architecture, 2026-10-27  
+Target runtime: Unreal Engine 5.8.3  
+Design emphasis: clear RTS command interactions and POLITIKA-specific mechanics  
+Display requirement: 4K (3840×2160) desktop capability plus adaptive handheld/mobile layouts and performance
+
+Planned primary target platforms: Linux, Windows, SteamOS/Steam Deck, and Android; consoles and Apple platforms may follow later. See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
+
+## 1. Goal and boundary
+
+The goal is a complete, polished real-time strategy game, not a reproduction of a proprietary engine. POLITIKA should use UE as its rendering, platform, editor, asset, and packaging foundation, with a game-specific RTS layer implemented primarily in C++ and UE authoring/configuration assets. C# remains suitable for external content/build tools where it earns its keep; it is not required in the runtime.
+
+The game-specific layer needs to support faction/unit content, squad/vehicle combat, tactical objectives, campaign missions, skirmish and possible multiplayer rules, AI, maps, in-game briefings and dialogue, audio, save/replay, and localization. The economy, production, deployment, reinforcement and objective-control rules remain POLITIKA design decisions; this outline establishes systems capable of supporting those choices.
+
+## 2. Proposed layers
+
+Treat these as ownership boundaries and data flows, not necessarily separate UE modules. Start with a small number of runtime/editor modules and split only when build, ownership, or team boundaries justify it. The key contract is: **input becomes validated player commands; the match/simulation applies rules; state changes emit events; presentation observes those events.** UI, animation, audio, and VFX must not be the source of gameplay truth.
+
+| Layer | Owns / exposes | UE mapping and boundary |
+|---|---|---|
+| Platform & application shell | Process startup/shutdown, user/device settings, display and UI scale, input mapping, localization, save slots, platform services. Exposes initialized local-player services; owns no match rules. | `UGameInstance`/`UGameInstanceSubsystem` for process lifetime; `ULocalPlayerSubsystem` for per-player preferences/input; `UGameUserSettings`, Enhanced Input, `USaveGame`, and UE Internationalization APIs. Keep platform-specific services behind interfaces so headless/server targets do not depend on UI. See [Platform & application layer](#platform--application-layer) below. |
+| Player interaction & presentation | Camera/navigation controls, selection and hover, command palette/HUD, menus, accessibility, audio/VFX/animation/cinematics. Converts gestures into command requests and renders a read-only projection of match state. | `APlayerController` and local-player subsystems for input/selection; camera pawn/components; UMG/CommonUI, Niagara, Audio, Sequencer. Never directly mutate health, ownership, resources, or objective state from widgets/Blueprint presentation logic. |
+| Match orchestration & rules | Match phases and configuration; player/team/faction roster; command admission; objective and victory evaluation; pause/spectator policy; match start/end and results. Provides the authoritative context used by simulation and mode-specific rules. | `AGameMode` for server/standalone authority and setup, `AGameState` for shared match state, `APlayerState` for replicated player identity/score, plus focused match/rules subsystems. GameMode is not the home for every rule; campaign/skirmish variants should compose or select rule policies. |
+| Command & simulation | Typed, validated orders (move, attack, attack-move, stop, guard, ability); ownership/permission checks; entity lifecycle; movement intent, targeting, combat resolution, health/status, cooldowns, resources, squad/member state, and simulation events. This is the gameplay source of truth. | C++ domain types and server-authoritative Actors/components first. Use fixed-step or explicitly scheduled systems where measurement warrants; make commands and state snapshots serializable. Keep simulation APIs callable without UI, and isolate cosmetic callbacks from state mutation. |
+| World model, spatial queries & navigation | Playable bounds; terrain/buildability; occupancy/blockers; movement layers and costs; reachability; path requests/results; formations and local avoidance; line of sight; per-player vision, explored/shroud state, and detection/intel queries. | UE World/landscape and collision remain rendering/editor foundations. Add RTS-specific grid, sectors, or nav data for tactical costs, occupancy, visibility, and batch queries; bridge to UE NavMesh only where its semantics fit. Avoid making render meshes or fog materials authoritative. |
+| Content schema & runtime content | Stable IDs and versioned definitions for factions, unit/squad archetypes, weapons, abilities, upgrades, structures, objectives, AI profiles, and rulesets; validation/migration and asset resolution. Definitions parameterize code-owned behavior; they do not contain hidden per-instance state. | `UPrimaryDataAsset`/Asset Manager for identity, loading, bundles, and references; DataTables/Curve assets for suitable bulk tuning. Validate IDs, references, ranges, and compatibility in editor/CI. Use Blueprint subclasses mainly for authored presentation and exceptional scripted composition, not duplicated core rules. |
+| Mission, scripting & AI | Mission triggers/objectives/checkpoints/dialogue/event sequencing; strategic AI decisions (composition, deployment, objectives) and tactical coordination (orders, threat response, retreat). AI emits the same command types as players, subject to the same rules and visibility constraints. | Mission/rules services plus data-authored triggers or a constrained scripting interface; StateTree/Behavior Tree can orchestrate behaviors but should call simulation command APIs. Separate AI planning cadence from per-entity movement/combat updates and provide debug traces/overlays. |
+| Networking, persistence & replay | Transport/session integration, authority and replication policy, reconnect/late-join if required; versioned save snapshots; replay recording/playback and diagnostics. Records canonical commands and relevant checkpoints/events, not presentation state. | UE networking/session APIs for transport and replicated state as appropriate; keep a transport-independent command/state contract. Choose server authority for conventional online play. Do not promise deterministic lockstep until cross-platform determinism is demonstrated; timestamped commands plus checkpoints are the lower-risk replay baseline. |
+| Editor, validation & build pipeline | Map/faction authoring workflows, import/conversion, linting, balance iteration, localization checks, cook/package automation, and reproducible diagnostics. Fails early on invalid content and unreachable/illegal map setup. | UE Editor modules, asset validation/Data Validation, commandlets/automation, source-control hooks and CI. World Partition is conditional on demonstrated map scale/streaming needs, not a default RTS requirement. Keep third-party binary research and conversion utilities outside runtime dependencies. |
+
+### Layering decisions and tool fit
+
+- **Independence and provenance:** Implement POLITIKA-specific gameplay rules, architecture and content in owned source and Unreal Engine assets. External open-source RTS designs can inform general patterns only after license and provenance review; they are not runtime dependencies.
+- **Asset inspection and tooling:** Use Ghidra, angr, ImHex and similar inspection tools only for narrowly scoped and legally permitted research when necessary. Do not incorporate proprietary assets, undocumented binaries or unrelated engine-specific formats into the playable product.
+- **UE-native choices to prototype, not assume:** Epic's [MassEntity](https://dev.epicgames.com/documentation/unreal-engine/overview-of-mass-entity-in-unreal-engine?lang=en-US) uses data fragments, archetypes, and processors; [MassGameplay](https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-mass-gameplay-in-unreal-engine) adds spawning, representation, movement, LOD, StateTree, signals, and Smart Objects. Evaluate it if profiling shows Actor/component overhead at target unit counts. Keep player-commanded/hero entities as Actors if that simplifies interaction, and use Mass selectively for numerous background/simulated entities only if integration and replication costs are acceptable.
+- **Navigation and fog are separate contracts:** first prototype a coarse strategic path graph/grid with terrain costs and blockers, then local steering/avoidance; decide whether UE NavMesh is sufficient for the map and movement semantics. For fog, keep per-player visibility/exploration queries authoritative and treat textures/materials as presentation. A community [UE5 FogOfWar](https://github.com/zhmyh1337/FogOfWar) project is a candidate for inspection, not a production dependency until UE 5.8.3 compatibility, license, performance, multiplayer semantics, and maintenance are checked. The older [ue4-rts](https://github.com/npruehs/ue4-rts) is a useful end-to-end feature reference but targets UE 4.27/early UE5; do not assume it is current-engine compatible.
+- **Technical references:** Prefer Epic's Unreal Engine documentation, engine APIs, instrumented POLITIKA prototypes and measured target-platform behavior over comparisons with individual commercial games.
+
+### Platform & application layer
+
+This layer is the game's **shell and local-user services**, not a second gameplay framework. Its job is to turn a process launch into a configured local player and a loadable game session, then provide stable settings, input, localization, persistence, audio, and platform-service APIs for the rest of the game. It must remain usable in editor, standalone, packaged, and (where applicable) headless/server contexts.
+
+#### Ownership and contracts
+
+| Service | Owns | Initial UE implementation / contract |
+|---|---|---|
+| Application lifecycle | Startup options, startup failure/recovery, main-menu/session transitions, clean shutdown, command-line/URL arguments, crash-safe return to menu. | `UGameInstance` plus a small `UGameInstanceSubsystem` coordinator. Keep transitions explicit (`Boot → LoadUserSettings → ResolveProfile/OfflineMode → MainMenu → Session → Shutdown`) and make startup idempotent. No map-specific or match-rule state here. |
+| Device/display preferences | Window mode, resolution, monitor, frame cap, VSync/upscaler/scalability preset, render scale, audio device and master bus preferences, UI scale. | Subclass `UGameUserSettings` for display/render settings; persist only supported values and call `ApplySettings` through a preview/confirm flow. Keep display resolution separate from logical UI scale and world-camera zoom. |
+| User/profile preferences | User-facing preferences that follow a local profile (language, accessibility, audio mix, camera behavior, UI scale if profile-scoped, input bindings). Support a safe default profile and offline use. | A versioned settings object/service, optionally `ULocalPlayerSubsystem` for per-local-player state and `UEnhancedInputUserSettings` for rebinds. Do not make online identity/account credentials a prerequisite for launching a local campaign. |
+| Input setup | Semantic actions, default mapping contexts, device/gamepad detection, remapping, conflict resolution, reset-to-default, and context priority (menu/gameplay/overlay). Emits player intent only. | Enhanced Input assets and `UEnhancedInputLocalPlayerSubsystem`; store user overrides separately from shipped defaults. Use action names such as `Select`, `AddToSelection`, `MoveOrder`, `AttackMove`, `Stop`, `CameraPan`, `CameraZoom`, `OpenMenu`, not raw key codes in gameplay code. |
+| Save/profile storage | Slot enumeration, metadata, thumbnails, schema version, migration, corruption handling, async load/save, autosave policy, and platform user ID association. | `USaveGame` subclasses behind a save service; separate campaign/match snapshots from user settings and profile metadata. Use stable IDs, versioned payloads, async I/O for large snapshots, and recoverable temp/commit behavior. Never serialize widget, Actor pointer, or machine-path state as durable identity. |
+| Localization/accessibility | Culture selection and fallback, localized text/audio assets, subtitle policy, font fallback, number/date formatting, text scale, color/contrast options, input prompts, and screen-reader hooks where feasible. | UE Localization Dashboard/Internationalization APIs and localized asset groups; resolve culture at startup before building the main menu, permit runtime language change only where assets/UI can safely refresh. Test diacritics and long-string expansion (important for South Slavic languages) at 4K and 1080p. |
+| Platform adapters | Optional achievements, cloud saves, overlay/invites, entitlement/session identity, and platform shutdown callbacks. | A narrow `IPolitikaPlatformServices` abstraction with a no-op/offline implementation; adapt Steam/EOS or another provider only after release/platform scope is decided. Keep account/login, commerce, and online service failures recoverable and outside core settings/save serialization. |
+
+**State separation is a hard rule:** device settings (machine/display/audio device), local-user settings (input/language/accessibility), account/profile data (if online is chosen), and game saves (campaign/match progress) are different stores with different lifetimes and migration rules. Gameplay systems read preferences through services but never write their own ad-hoc config files. A server target must not initialize local-player UI/input services.
+
+#### POLITIKA settings and accessibility requirements
+
+- **Action-oriented input:** Define semantic commands such as selection, movement, stop and group assignment. Persist rebinding by action, key, modifiers and device; validate conflicts and provide reset-to-default.
+- **Typed settings:** Organize user preferences by graphics, audio, controls, localization and accessibility. Validate type, range, default and platform availability. Keep user preferences separate from balance parameters.
+- **Explicit shell states:** Separate profile selection, save/load, video, audio and gameplay options without making online account creation a prerequisite.
+- **Responsive layouts:** Use DPI, safe-area and controller/touch-aware scaling rather than a single fixed-resolution menu canvas.
+- **Complete localization:** Check glyph coverage, South Slavic diacritics, font fallback, subtitles, culture formatting and text expansion under real target resolutions.
+
+#### POLITIKA build order and acceptance
+
+1. **Shell skeleton:** establish the UE-owned startup path, local/offline entry, early diagnostics, and recovery behavior before gameplay systems depend on it. Keep the runtime implementation in one C++ bootstrap contract; use engine config for defaults, not a second custom settings format.
+2. **Settings contract:** typed settings schema, defaults, validation, versioning/migration, config reset, and separate device/user stores. Build a minimal settings menu and verify values survive restart and display-mode changes.
+3. **Input contract:** semantic Enhanced Input actions and contexts; keyboard/mouse defaults first, then rebinding, conflict reporting, reset, and controller prompts. Verify menu and gameplay contexts do not leak input through overlays.
+4. **Persistence/localization:** versioned save metadata plus async save/load service; culture selection/fallback, font coverage, subtitles, and accessibility settings. Keep profile/settings migration independent of campaign save migration.
+5. **Platform integration:** implement an offline adapter first; add a real provider only after platform scope is locked. Exercise missing service, no network, invalid/corrupt save, and first-run paths without blocking entry to offline play.
+
+**Acceptance gates:** boot to menu with no online dependency; defaults/reset are deterministic; invalid or old settings recover with a logged explanation; remapped bindings persist and conflicts are actionable; settings survive restart; language applies before UI construction and localized fonts cover Latin Extended diacritics; display previews can be reverted after timeout; saves enumerate/load/migrate without blocking the game thread; headless/server mode never constructs local-player widgets; all menus and text remain usable at the project's 4K baseline and supported lower/ultrawide resolutions.
+
+##### Shell skeleton implementation contract
+
+| Concern | First implementation | Boundary / failure behavior |
+|---|---|---|
+| Entry map and game mode | Set the packaged main-menu map and shell GameMode in `Config/DefaultEngine.ini` (`[/Script/EngineSettings.GameMapsSettings]`); use Project Settings → Maps & Modes to keep editor-start map separate from game default. Keep the menu map lightweight and dependent only on cooked core UI/assets. | UE's configured default is the normal route; an explicit map URL/command-line map remains a deliberate override for development. Validate the default map reference during packaging. Do not hide required startup logic in a level Blueprint. |
+| Boot coordinator | A small `UPolitikaGameInstance` / `UGameInstanceSubsystem` owns a phase enum and idempotent coordinator: `EngineReady → ParseLaunchOptions → LoadLocalSettings → ResolveLocalProfile → SelectStartupRoute → Ready`. `UGameInstance::Init()` should do early, non-visual work and emit phase markers; construct widgets only after a local world/player exists. | Main-menu/offline availability does not wait for account, cloud, news, patch, or multiplayer services. Treat those as optional follow-on tasks with timeouts and fallback states. Do not put match state or per-map actors in the GameInstance. |
+| Local/offline profile | On first run, create/use a local profile with a stable local ID and local save root; account/provider linking can be added later without blocking that profile. Keep “offline” as a supported launch route, not an error mode. | No network, entitlement, or platform SDK should be necessary to reach the main menu and start the first local campaign/skirmish. Never persist passwords/tokens in user settings or logs. |
+| Launch options | Define a typed `FPolitikaLaunchOptions` once in C++ and parse Unreal's command line in bootstrap using `FCommandLine`/`FParse` or UE's argument helpers. Preserve built-in engine switches and map URL parsing. Initial POLITIKA-only switches: `-PolitikaSafeMode`, `-PolitikaResetUserConfig`, and optionally a documented `-PolitikaOffline`; `-NoSplash`, `-log`, `-ABSLOG=...`, `-LogCmds=...`, `-server`, and `-nullrhi` are engine-owned/diagnostic conventions, not flags to reimplement. | Specify precedence: explicit command-line overrides defaults; safe mode suppresses risky optional overrides/caches but does not rewrite settings; reset backs up/resets only user settings (never saves); server mode uses a Server target and omits local-player UI. Do not invent an ambiguous `-headless` path—document whether the build is a dedicated server or a local diagnostic `-nullrhi` run. |
+| Structured startup logging | Add UE log categories such as `LogPolitikaStartup`, `LogPolitikaSettings`, and `LogPolitikaPlatform`; at each phase record event, run/correlation ID, elapsed time, outcome/error code, build/version, selected route, and sanitized option names. Use UE log output under `Saved/Logs` and engine crash reporting; flush on orderly exit and handled fatal errors. | Do not log credentials, full account identifiers, or sensitive paths. Keep an early engine log even if settings, profile, renderer, or menu initialization fails; report the last completed phase and a repair action. |
+| Recovery UI | For recoverable application-level failures (invalid user settings/profile, optional service unavailable, requested local profile missing), route to the main menu with a non-blocking error/recovery panel offering retry, continue offline, safe mode, or reset settings. Keep any required recovery screen/assets in the minimal cooked shell set. | A fatal engine/bootstrap/package failure before a world/UI exists cannot be represented by a UMG screen; preserve the log/crash report, return a meaningful process failure, and use the platform's native error channel where available. Do not claim every startup failure can display an in-game dialog. |
+
+**Single source of truth across languages:** UE C++ owns runtime phase transitions, option parsing, validation, and exit/error codes. `DefaultEngine.ini`/`DefaultGame.ini` hold shipped defaults and map/module configuration; `UGameUserSettings` and the later settings service own user overrides. C# is not needed for the runtime shell or a second launcher in phase 1; only add a C# launcher/tool later if a specific platform workflow justifies another process, and have it pass documented arguments rather than duplicate settings or boot policy. Use Rust for offline developer/release helpers (packaging manifest checks, launch-matrix/log collection, reproducible build orchestration) when useful; those helpers should invoke UE's commandlet/runtime and must not become a parallel runtime config parser. Use Rust as the preferred language for developer tools and project automation.
+
+**Startup and settings policy:** Maintain a single Unreal-owned application lifecycle with clear initialization phases, typed configuration defaults, early diagnostic logging, recoverable errors and optional network/platform adapters. Keep menu initialization distinct from simulation and dedicated-server execution. Any separate launcher would require a concrete platform or packaging rationale; POLITIKA should not duplicate Unreal's settings/configuration facilities.
+
+#### Shell skeleton build steps
+
+1. Create a minimal packaged main-menu map and GameMode; set it as `GameDefaultMap` in `DefaultEngine.ini`. Ensure the map can render a local/offline entry even when optional platform services are absent.
+2. Add a C++ bootstrap phase enum/coordinator, typed launch-options struct, and log categories. Initially recognize only the agreed custom flags plus engine-provided diagnostics; log the resolved route and reject malformed custom values with a recoverable explanation.
+3. Implement the local profile/default settings path. Add safe mode and reset-user-config semantics with a backup before reset; prove that reset does not touch campaign saves.
+4. Add a minimal recovery panel for post-map application errors and an early fatal-report path for pre-UI failures. Capture startup phase, error code, engine/game version, and log location; keep online/platform initialization optional.
+5. Add a dedicated Server target only when server operation is in scope. Verify that its startup route does not create `ULocalPlayer`, widgets, audio, or menu-only services; use UE's `-server`/null-RHI conventions where appropriate rather than a parallel custom headless mode.
+
+**Shell acceptance:** clean first-run package reaches the main menu and starts offline play with no profile/network; configured default map and explicit development map override behave predictably; `-NoSplash` is passed through to UE; `-PolitikaSafeMode` reaches menu without mutating saved preferences; `-PolitikaResetUserConfig` backs up and resets settings but leaves saves intact; malformed/unsupported custom switches produce a concise explanation and diagnostic log; corrupt settings fall back to defaults and report the recovery; simulated missing optional service does not block menu; injected profile/settings failure reaches the recovery UI; fatal pre-UI failure leaves a flushed log with phase and error code; dedicated server launch creates no UI/local-player objects.
+
+UE references for this step: [GameInstance lifecycle](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/UGameInstance), [changing the default level](https://dev.epicgames.com/documentation/unreal-engine/changing-the-default-level-of-an-unreal-engine-project), [command-line arguments](https://dev.epicgames.com/documentation/unreal-engine/command-line-arguments-in-unreal-engine), [configuration files](https://dev.epicgames.com/documentation/unreal-engine/configuration-files-in-unreal-engine), and [logging](https://dev.epicgames.com/documentation/unreal-engine/logging-in-unreal-engine). The engine supports an explicit startup map override, so use that for development/smoke launches rather than inventing another map-selection setting.
+
+#### UE references and developer tooling
+
+Epic's UE documentation covers [UGameUserSettings](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UGameUserSettings), [Configuration Files](https://dev.epicgames.com/documentation/unreal-engine/configuration-files-in-unreal-engine), [Saving and Loading](https://dev.epicgames.com/documentation/en-us/unreal-engine/saving-and-loading-your-game-in-unreal-engine), [Enhanced Input](https://dev.epicgames.com/documentation/unreal-engine/enhanced-input-in-unreal-engine), [Enhanced Input user settings](https://dev.epicgames.com/documentation/unreal-engine/API/Plugins/EnhancedInput/UEnhancedInputUserSettings?lang=en-US), [runtime culture](https://dev.epicgames.com/documentation/en-us/unreal-engine/managing-the-active-culture-at-runtime), and [localization packaging/fallback](https://dev.epicgames.com/documentation/unreal-engine/localization-overview-for-unreal-engine). Use native systems where appropriate, with POLITIKA-owned schema/versioning and platform adapters rather than a parallel settings stack.
+
+| Tool | Use in POLITIKA | Boundary |
+|---|---|---|
+| Unreal Editor, Data Validation and commandlets | Author and validate maps, data assets, settings, and cooked packages. | Editor-only modules do not become game runtime dependencies. |
+| Rust and Cargo | Developer automation, version validation, packaging manifests and reproducibility checks. | The engine remains the authoritative runtime and gameplay configuration owner. |
+| Ghidra, angr and ImHex | Optional, scoped inspection of legally usable binary data or asset formats. | Static findings are not verified runtime behavior; require rights and provenance review. |
+| UE4SS | Optional investigation of compatible Windows Unreal runtimes when a demonstrable diagnostic need exists. | Do not assume compatibility with POLITIKA's Linux or other platform builds. |
+
+Validate POLITIKA's application-shell behavior through instrumented Unreal startup tests, configuration migration checks, fault injection and packaged target-platform diagnostics. Do not rely on third-party games as evidence that POLITIKA's own implementation works.
+
+Keep authoritative game rules independent of presentation: UI, animations, sound, and VFX observe simulation events rather than own game state. This allows campaign, skirmish, replay, and eventual multiplayer to share the same match rules.
+
+## 3. Core RTS systems
+
+1. Command and selection: single/multi-select, group control, contextual orders, attack-move/guard/stop, rally points, command queue, hotkeys, feedback and cancellation.
+2. World movement: order resolution, path requests, formation spacing, collision/avoidance, terrain constraints, bridges/roads and blocked routes. Use UE navigation where it fits; add an RTS cost/grid layer for tactical movement and deterministic query needs.
+3. Combat: weapon/ability execution, range and line-of-sight rules, damage/armor, suppression and shared unit resolve (called Discipline on combat units), cooldowns, target priorities, death/destruction and readable combat feedback.
+4. Squads and entities: shared unit identity/selection with individual members where animation and casualties matter; vehicles and structures as separate archetypes. Do not force every entity into the same movement/health model.
+5. Strategic loop: resources, production/deployment, upgrades/loadouts, capture/control points, reinforcements and respawn/redeployment rules. Make the chosen POLITIKA loop a ruleset rather than an assumption inside generic unit code.
+6. Information: player ownership/alliances, vision, fog/shroud, detection, radar/intel and observer/spectator visibility.
+7. Objectives and scripting: campaign objectives, triggers, waves, dialogue, scripted events, checkpoints, success/failure and mission transitions.
+8. AI: strategic planner, production/deployment choices, tactical squad coordinator, navigation/engagement behavior, difficulty/personality profiles and debug visualization.
+9. Match shell: teams, faction/loadout choice, lobby/rules, map rotation, results, progression hooks, pause and reconnect expectations.
+
+### Resource conversion and faction-specific nuclear permissions
+
+The game has two required resource-conversion chains. Crude oil from oil fields must be refined in refinery facilities into petroleum fuel or kerosene, with the Atlantic Concord paying a lower refining cost. Natural gas is a separate fossil-fuel source. Crude nuclear materials (the highest-valued resources) must be converted into processed nuclear-material game resources before supporting nuclear plants or weapons. Fossil fuels are second by value; electricity and other resources matter as infrastructure constraints.
+
+The Atlantic Concord and Red Directorate are the only starting nuclear powers and may refine nuclear materials to construct nuclear power plants or their rare, very-long-build tactical weapons. Concord deploys bombs by nuclear bomber, Directorate by ICBM. The Meridian Pact cannot refine nuclear materials at all, has no nuclear construction tree, but can seize completed weapons. It must always start near a valid oil or gas field. The Iron Ascendancy starts without nuclear capability, and its spies must infiltrate a Concord or Directorate nuclear research facility to obtain both nuclear-refining technology intelligence and weapons-production intelligence; only then may it refine for its own first bomb and it cannot construct nuclear power plants. Completion of its first own bomb triggers immediate active-match victory without deployment, whereas theft does not.
+
+Implement these as authoritative, data-driven rules: validated production recipes and costs; input/output inventories; permission and intelligence checks; immutable construction provenance; interruptible refinery/production queues; electricity generation/consumption; map-generation spawn constraints; and a match-level completion-to-victory event. Protect against refinery bypass, double spending, illegal construction permissions and completion through stolen inventory. Exact quantities and timing remain balance work, not real-world technical specifications.
+
+Other asymmetric rules: the Atlantic Concord and Red Directorate have different specialist espionage features, and the Iron Ascendancy alone has Intimidation to convert isolated enemy units. Red Directorate infantry is much cheaper to produce than other factions' infantry; Iron Ascendancy has a modest destructive-power advantage and some high-risk sacrificial attack behavior; Concord refining is modestly cheaper; Meridian starts near fossil-fuel fields. Balance this alongside standard faction doctrine and the Unaligned's neutral sovereignty AI.
+
+See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md). The 1984–1989 Tito conspiracy remains the primary authored story, independent of individual match victory results.
+
+### Espionage progression and Intimidation as gameplay systems
+
+Espionage specializations: Atlantic Concord Psy-Ops can cause a successful full Discipline/Morale breakdown and in-game self-destruction, or instead impose a short, timed friendly-fire rampage without changing ownership; it acts on eligible combat and non-combat units through the single `UnitResolve` state. Red Directorate basic infiltration for rival intelligence theft completes slightly faster and at slightly lower cost than an otherwise equivalent authorized operation. The Iron Ascendancy still has more limited spying, with an explicit upgrade tree whose full completion gates access to Concord/Directorate nuclear research facilities and the associated stolen refining/weapon intel flags.
+
+Intimidation: an Iron Ascendancy-exclusive command/ability may convert eligible isolated combat and non-combat units, but only after fully breaking the shared unit resolve meter (labeled Discipline for combat targets and Morale for civilian targets). Validate category, meter, eligibility and isolation before control transfer. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
+
+Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as authoritative state, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Psy-Ops and reduced intelligence-theft costs
+
+Psy-Ops and intelligence theft should be simulation-owned game actions rather than scripted UI effects. Validate Concord-only permission, target category/eligibility, authorized application of `UnitResolve` loss and a full-break event before Psy-Ops self-destruction. The rampage path uses a temporary, expiring friendly-target override that does not permanently alter owner, faction or diplomacy. The enemy unit must have a valid in-game attack capability. Directorate intelligence theft applies modest, data-driven reductions to cost and duration only for qualifying intelligence-acquisition operations; all research-site infiltration requirements remain unchanged. Unit ownership changes belong solely to separately authorized mechanisms such as Ascendancy Intimidation.
+
+### Building infiltration, resource diversion and staffed-facility disruption
+
+Represent special facility espionage actions as authoritative RTS state transitions with their own eligibility, resolution, visibility and recovery. These are separate from unit `UnitResolve`.
+
+- Atlantic Concord building Psy-Ops: after authorized infiltration, either trigger an eligible building's destruction or apply a capped covert resource-waste status, debiting the victim without crediting the Concord.
+- Red Directorate budget diversion: atomically debit a valid enemy budget/inventory and credit a compatible amount to the Directorate budget. Respect availability, item type, storage limits, transaction idempotency and protection against duplicate credit; the opponent may initially lack attribution.
+- Iron Ascendancy contamination: use an abstract facility-level poison/disease disruption state to cause simulated deaths in assigned workers/researchers. Calculate reduced staffing, impaired throughput, complete stoppage below staffing requirements, and a finite propagation chain among nearby eligible facilities. Containment, staffing replacement, clearing the status and repair are gameplay recovery conditions.
+
+Maintain `FacilitySpyAction`, `IncidentVisibility`, `IncidentAttribution`, `CovertBudgetTransfer`, `ResourceWaste`, `FacilityWorkforce`, `StaffLossEvent`, `FacilityThroughputModifier`, `FacilityContaminationState`, `AffectedNeighborIds`, `SpreadDepthCap`, `AffectedFacilityCap` and `ContainmentResult` or equivalent data-driven components. Do not treat a hidden incident as an invisible change to actual resource amounts: simulation data remains correct while the defending UI may not reveal its cause.
+
+Buildings are not soldiers and do not have a combat Discipline meter. An unattended facility can still have workforce/production state. Nuclear research acquisition, first-bomb victory and player-faction ownership remain gated by their existing separate authoritative checks. These poison/disease effects are purely fictional facility statuses with no modeled real-world chemical or biological process. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) and [Resource Economy](RESOURCE_ECONOMY.md).
+
+### Reconnaissance units and faction-access restrictions for explosive sabotage
+
+Create data-driven early scouting archetypes for the four playable factions: cheap, very fast, lightly armored/armed half-scout/half-combat trucks for Meridian Pact (the best overall reconnaissance faction); cheap, unarmed light scouting airplanes for Atlantic Concord and Iron Ascendancy; and rifle-armed motorcycle scouts for Red Directorate. Ordinary visibility, unit production, vehicle movement, air movement, target detection and combat abilities govern these units. Reconnaissance never grants a classified intelligence unlock, even after revealing a nuclear research facility.
+
+A separate conventional explosive-sabotage ability acts on eligible enemy vehicles and buildings through a fictional charge-placement game interaction and conventional damage event. Faction permission rules are strict: Meridian can use it cheaply and early through designated non-spy units; Concord, Directorate and Ascendancy can only unlock it later, at greater cost, and execute it with spy units alone. Scout identity is not an automatic sabotage permission: authorize Meridian truck archetypes explicitly if intended, and reject non-spy rival scouts regardless of target visibility.
+
+Suggested properties: `ReconUnitType`, `MovementLayer`, `MovementSpeed`, `SightRange`, `CanAttack`, `ScoutCombatRole`, `SabotageTechUnlocked`, `SabotageCost`, `ExplosiveSabotageActorEligible`, `TargetKind`, `ChargeStatus`, `ExplosionEvent`, `SabotageAttribution` and `DefenderCountermeasure`. Never mix this sabotage charge with nuclear weapons or with the faction-exclusive Psy-Ops, intelligence theft, contamination and Intimidation systems. The simulator, not the UI, enforces early/late availability, spy-only rivals, conventional damage and target eligibility. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
+### Shared unit resolve: combat Discipline and civilian Morale
+
+One unit meter, two UI names. Each combat or civilian/non-combat unit owns one authoritative `UnitResolve` value, with the same depletion, recovery and broken threshold mechanics. Combatants display “Discipline”; civilians/non-combat units display “Morale.” Do not instantiate separate discipline and morale component classes for individual units. Every faction additionally exposes Population Morale, a faction-level summary of the shared morale framework informing production and soldiers' baseline Discipline.
+
+Formation benefits apply to combat Discipline only. Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned units receive standard coherence/size bonuses; the Red Directorate and Iron Ascendancy additionally gain an extra bonus for very massive coherent armies. Atlantic Concord soldiers incur no solo/very-small-group Discipline penalty. Civilians' Morale does not receive mass-army Discipline modifiers.
+
+Intimidation targets both kinds of eligible isolated unit: the Iron Ascendancy must first fully break Discipline for a combat target or Morale for a civilian/non-combat target before converting it. Both use the same `UnitResolve <= BrokenThreshold` check; eligibility, isolation, meter loss and ownership transfer must be validated in order. The conversion of one civilian does not zero faction Population Morale or create another player faction.
+
+Tests: identical numeric threshold/recovery for both categories; proper labels; no conversion before the meter is broken; no conversion without isolation; no mass-army perk for civilians, Meridian or Unaligned; solo Concord combat immunity to formation-size penalty but not direct coercion. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Advanced propaganda and faction morale
+
+Provide an authoritative per-faction morale state for all five factions, including the NPC Unaligned and non-propaganda Meridian Pact. High morale boosts eligible production throughput and army discipline by data-driven, capped modifiers. Propaganda actions are available only to Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned, with different faction-specific methods expressed through radio, newspapers and television. Meridian Pact has no advanced propaganda ability tree.
+
+Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
+### Unaligned AI intelligence director and dynamic equilibrium
+
+Add a distinct Unaligned NPC counterintelligence and false-information director to the match/simulation architecture. The Unaligned has the strongest such capability: it can intercept actual rival intelligence according to intelligence-coverage rules, fabricate claims or false-flag attributions, and disseminate them as plausible reports to specific active players. Claims may concern a nuclear research facility that does not exist. Never mutate true facility, nuclear intelligence, unit, resource, ownership or victory state merely to make a false report convincing.
+
+Keep authoritative ground truth separate from the recipient-specific intelligence layer: `IntelClaim`, `ClaimSource`, `RecipientFaction`, `Confidence`, `VerificationState`, `FalseIntelOperation`, `AttributionState`, `ClaimExpiry` and `ReportedLocation`. An actual scout observation can contradict a forged marker. NPC interception and disinformation have eligibility, cooldown, cost and discovery limitations rather than omniscient automatic visibility.
+
+The Unaligned balance director can evaluate faction strength—surviving troops, resources, production assets and imminent elimination risk—across the actual 2–4 participants. When one faction is very weak and faces imminent destruction, it may plant misinformation designed to redirect stronger rivals' attention to one another. This is a bounded AI choice, not a scripted veto of player victory, forced retargeting or free grant of resources. The Unaligned's exceptional hostility toward identified Ascendancy forces persists. Verify that no false nuclear research report can satisfy the Ascendancy's verified real-facility spy gates or delay an earned own-first-bomb match win.
+
+See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md), [Match Structure](MATCH_STRUCTURE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Match-size and player-to-faction invariant
+
+Ordinary matches have exactly 2, 3 or 4 occupied playable faction slots, drawn from Concord, Directorate, Ascendancy and Meridian, plus one always-present Unaligned NPC/system-AI faction. Each player or AI-opponent controller is assigned exactly one distinct playable faction; Unaligned has its own autonomous system controller and does not consume a player slot. The local single-player case may therefore be one human and one or more AI-controlled playable opponents.
+
+The match framework validates unique faction selection, player/faction mappings and capacity (2–4), and spawns Unaligned separately. World/content validation ensures correct spawn counts and Meridian's nearby fossil field. The UI must distinguish player slots from faction presences and never show the Unaligned as a selectable player. An Ascendancy nuclear-infiltration victory requires a qualifying opposing Concord or Directorate research facility when enabled; the framework must not manufacture one from the Unaligned just to satisfy the rule. See [Match Structure](MATCH_STRUCTURE.md).
+
+## 4. Content model and authoring
+
+Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
+
+Keep content definitions inspectable and data-oriented. Unit and vehicle archetypes should explicitly describe owning faction, available commands, armor, speed, weapons, health, collision geometry, vision, and reusable behavior modules. Keep map data, skirmish AI, mission parameters, progression, audio and interface definitions in validated, versioned UE-native assets or clearly specified schemas. This enables designers to review and balance content without reverse-engineering the gameplay code.
+
+Maps need authored playable bounds, terrain/navigation representation, spawn/deployment points, control/resource objectives, blockers, scripted regions, camera bounds, lighting/audio setup, and validation rules. Build a map validation pass early (missing spawns, unreachable objectives, invalid references, camera bounds, faction-specific constraints).
+
+## 5. 4K as a first-class target
+
+Treat 3840×2160 as a **desktop high-resolution target**, not a universal minimum or a requirement for Steam Deck/Android devices. Support adaptive resolutions, screen sizes, input methods, scalability tiers and safe areas across the declared platform scope.
+
+- Display: windowed, borderless, and fullscreen modes; correct 16:9 aspect; runtime resolution changes; DPI-aware UI scale; safe margins; configurable text/UI scale.
+- UI: design in logical layout units, anchor responsively, and test HUD, menus, tactical map, tooltips, text, selection rings and cursor at 1080p, 1440p, ultrawide, and 4K. At 4K, preserve readable world scale without making the command surface tiny.
+- Rendering: configure UE scalability and screen-percentage/upscaling options; validate temporal upscaling, anti-aliasing, shadow quality, and post-processing at 4K. Expose quality presets instead of assuming all hardware renders native 4K at max settings.
+- Assets: provide appropriate source resolution/mips for UI, terrain, decals and faction insignia; use texture streaming and memory budgets so 4K does not require every asset resident at maximum mip.
+- Camera/input: ensure selection, placement and cursor precision work across DPI scaling and display changes; keep world-space camera behavior independent from HUD scaling.
+- Acceptance target: no clipped/overlapping controls, text legible at normal viewing distance, correct aspect/camera bounds, and stable input after resolution/DPI changes on a 4K display.
+
+4K support is not equivalent to a 4K render target alone: UI scaling, asset sharpness, memory/performance, and usability must all pass.
+
+## 6. Performance, determinism, and networking posture
+
+Set target player count, entity counts, map size, minimum hardware, and frame-rate target before selecting detailed simulation strategies. Avoid one heavyweight Actor/Tick per small gameplay concern: batch perception, timers, movement updates and UI notifications; profile representative combat scenes early. UE Mass can be evaluated for very high entity counts, but should not be adopted without a prototype demonstrating a concrete benefit.
+
+Keep simulation state and commands explicit and serializable. If multiplayer is required, use server-authoritative rules and replicate commands/state/events rather than trusting clients; design bandwidth and late-join/reconnect behavior deliberately. If deterministic replay or lockstep is required, validate floating-point and physics assumptions in a prototype first—UE's general simulation should not be presumed deterministic across machines. A replay can instead record timestamped player commands plus synchronized state checkpoints if that meets the product goal.
+
+## 7. Suggested implementation sequence
+
+1. Project foundation: establish UE project/module layout, build targets, input/settings/save shell, coding conventions, CI/package baseline and source-control asset policy.
+2. Vertical RTS slice: one test map, camera, selection, move/attack orders, two unit archetypes, health/damage/death, simple HUD and one objective. Validate interaction at 4K immediately.
+3. Simulation/content contracts: formalize faction/entity/weapon/ability data assets, ownership, orders, pathing, combat events, and map validation.
+4. Full match loop: resources/deployment according to POLITIKA's chosen strategic loop, capture/objectives, fog/intel, victory/defeat, pause and results.
+5. Mission and AI: mission scripting/objective framework, skirmish AI and debugging tools; author a representative campaign mission.
+6. Scale and delivery: benchmark target entity/map counts, add multiplayer/replay if in scope, optimize assets and validate 4K across quality tiers and supported hardware.
+
+## 8. Decisions to lock before detailed implementation
+
+- Exact strategic loop: fixed-base construction/economy, mobile command-post deployment with loadouts and objectives, or a POLITIKA-specific hybrid.
+- Infantry control granularity: individual soldiers, squads as the controllable entity, or mixed by archetype.
+- Single-player/campaign, skirmish, multiplayer and modding scope for the first release.
+- Planned platforms are Linux, Windows, SteamOS/Steam Deck and Android; determine release order, exact supported OS/device/hardware baselines, frame-rate budgets, unit counts, map sizes and network player count.
+- Replay requirements and whether deterministic simulation is actually needed.
+- Whether maps/mods are editor-only or user-authored and loadable at runtime.
+
+## 9. Scope and validation limits
+
+- The architecture described here is a proposal for POLITIKA; documentation and faction artwork alone do not establish that corresponding Unreal modules or gameplay systems have been implemented.
+- The chosen subsystem boundaries, simulation update model, gameplay mechanics and technical targets must be validated against actual prototypes and source code as development progresses.
+- Before locking the design, test command latency, mixed-unit selection, pathfinding around blockers and bridges, gameplay-state serialization, and HUD usability at supported resolutions. Benchmark representative entity counts and frame-time budgets rather than assuming scalability.
+
+This outline is a starting architecture contract, not a claim of implemented features or a locked strategic design.
+
+## 10. Multi-platform architecture and acceptance
+
+POLITIKA is a multi-platform product by design, not a Windows-first product with unspecified ports. The initial target set is Linux, Windows, SteamOS/Steam Deck-class handheld PCs, and Android. PlayStation, Xbox, Nintendo, and Apple systems are future candidates, subject to separate feasibility and support decisions. None of these targets is a claim of an existing executable or a certified release. The maintained target matrix and cross-platform requirements live in [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
+
+- **Shared rules:** one portable RTS gameplay and mission simulation in C++ and data assets. No platform, store, controller or windowing API may control combat, resource, faction, mission or victory logic.
+- **Input abstraction:** translate mouse/keyboard, handheld gamepad/Steam Input and Android touch gestures into the same validated selection and order intents; support focus/navigation without assuming hover or right-click.
+- **Adaptive presentation:** preserve a 4K-capable desktop HUD while supporting handheld-readable controls, Android touch targets, screen safe areas, changed aspect ratios and density scaling. Mobile must not depend on desktop-only tooltips or precision-pointer gestures.
+- **Packaging and local services:** keep save/config paths, system dialogs, device input, graphics APIs and platform distribution adapters isolated from the match rules. Offline campaign and skirmish must remain accessible without mandatory accounts wherever a build is offered.
+- **Performance profiles:** separately define and benchmark PC high-resolution, handheld power/thermal and Android memory/GPU/thermal budgets. Scale VFX, textures, shadowing and UI without changing gameplay rule outcomes.
+- **Qualification:** test real builds on representative Linux, Windows, SteamOS/Steam Deck and Android devices; confirm launch, menus, mission loop, readable HUD, input, save/load, resume, performance and graceful quit. Cross-play, shared cloud saves, release dates and storefront certification are outside the current commitments.
+
+A single Unreal project with platform-specific targets and configurations is the desired direction. Validate actual Unreal/SDK/platform support, build-tool availability and device testing before locking packaging or release plans.

@@ -1,0 +1,3 @@
+# Local generated build artifacts
+/build/
+**/target/

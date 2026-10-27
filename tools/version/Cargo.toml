@@ -1,0 +1,11 @@
+[package]
+name = "politika-version"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "POLITIKA canonical version and build identity validator"
+
+[dependencies]
+semver = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

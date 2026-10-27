@@ -1,0 +1,203 @@
+# POLITIKA UI — product overview
+
+Status: first-pass product/UI direction, 2026-10-27
+Engine target: Unreal Engine 5.8.3
+Design emphasis: readable RTS commands, map awareness and fast tactical interaction
+Product constraints: no cinematics; no mandatory internet connection or online-account login
+Display target: desktop 4K (3840×2160) plus readable, adaptive handheld/mobile resolutions
+Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; console/Apple platforms are possible later expansions
+
+## 1. Product direction
+
+POLITIKA's interface should make the player feel like a commander managing a fluid operation, not an operator navigating a software dashboard. It should keep the map and tactical decisions central, surface the next useful action, and make the state of squads, vehicles, objectives, and orders easy to read at a glance.
+
+Use a compact RTS command loop—select, inspect, issue an order, see clear feedback—without committing the layout to any particular economic or production system. Establish POLITIKA-specific terminology and strategic rules as those systems are decided.
+
+The visual language should evoke plausible 1980s Yugoslav military and civil-administration materials: printed topographic maps, field reports, typed labels, stamped status marks, restrained institutional color, and period-appropriate symbols. Use these as framing and texture, not as a reason to reduce contrast, legibility, or interaction clarity. Avoid making every screen look like a faux terminal.
+
+## 2. Design principles
+
+1. Battlefield first: the map remains visible and is the primary command target; HUD panels organize decisions around it.
+2. Fast, predictable commands: keyboard/mouse, handheld controller and touch UI actions should invoke the same orders and share clear cancel/invalid-target behavior.
+3. Show what matters now: persistent HUD space is reserved for objectives, selected-force status, essential resource/production state, and match-critical alerts.
+4. Explain consequences: show costs, prerequisites, target requirements, cooldowns, and unavailable states before commitment where possible.
+5. Respect uncertainty: map and HUD only show what the player's units/sensors are allowed to know; stale or uncertain intel must not look current.
+6. Readable at every supported resolution: 4K is a desktop capability, not the required render size on Steam Deck or Android. Support responsive layouts, screen safe areas, suitable touch targets and useful scale/text settings.
+7. Offline by default: the game should reach its main menu and support its single-player modes without internet, account creation, or sign-in.
+8. Story without cinematics: narrative context is delivered in concise briefings, radio dialogue, mission events, debriefs, and documents; gameplay remains the visual focus.
+
+## 3. Main navigation and local-first operation
+
+The front end should prioritize direct play:
+
+- Continue when a resumable local campaign save exists;
+- Campaign for mission selection and briefing;
+- Skirmish for local match setup against AI;
+- Load / Save for local progress where supported;
+- Options for display, audio, controls, accessibility and gameplay settings;
+- Credits and Quit.
+
+No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. If optional online or LAN features are later chosen, they must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. Whether multiplayer is in scope is still a separate product decision.
+
+## 4. Campaign and narrative screens (no cinematics)
+
+Use authored in-game UI and audio rather than pre-rendered or real-time cinematic sequences:
+
+- Mission briefing: map/region, situation, friendly forces, known enemy activity, primary/secondary objectives, constraints, and a concise commander's note. Present it as a field dossier or operations map, with optional voice/radio delivery and captions.
+- Mission start: transition from briefing to playable map with a short title/objective cue, not a cinematic intro.
+- In-mission story: objective updates, radio exchanges, map annotations, field reports, and authored gameplay events. Keep dialogue skippable and never pause tactical input unexpectedly in an active match.
+- Debrief: mission outcome, objective completion, casualties or relevant performance summary, campaign consequences, and next action. Avoid mandatory cinematic reward sequences.
+
+Briefings and dialogue should be concise, pausable/skippable, subtitle-capable, and available in text for players who mute audio or need to revisit an instruction.
+
+### Parallel storylines, refining and faction ability presentation
+
+Keep the primary Tito assassination/cover-up narrative and secondary Ascendancy first-bomb nuclear race independently legible in mission briefings and debriefs.
+
+Only the Atlantic Concord and Red Directorate start with nuclear power. Both have rare tactical nuclear ultimate weapons: Concord deploys with a nuclear bomber and Directorate via an ICBM. The Iron Ascendancy begins non-nuclear and with limited espionage. It must fully upgrade its spy capabilities before it can infiltrate a Concord or Directorate nuclear research facility, obtain both nuclear-refinement and weapons intelligence, refine nuclear materials for bomb production, and complete the long build. As soon as its first own-built bomb completes, it immediately wins the current game—there is no launch/deployment action.
+
+Nuclear materials rank highest by value, fossil fuels second. The UI needs distinct inventory/progress indicators for crude oil, petroleum fuel, kerosene, crude and refined nuclear game materials, electricity and other resources. Crude oil is processed in refineries, at lower cost for the Concord. Only Concord and Directorate can construct nuclear power plants. Meridian cannot refine nuclear material, and Ascendancy cannot construct nuclear power plants. Meridian must always spawn near an eligible oil or gas field, without automatically owning it.
+
+Specialized espionage: provide a Concord Psy-Ops view with two outcomes—fully break Discipline (combat) or Morale (non-combat) and cause in-game self-destruction, or temporarily force a friendly-fire rampage with a clear short duration and expiry. The UI must identify valid targets, the shared `UnitResolve` state (labeled for the unit category), result, range, and prevention options without suggesting permanent capture. The Red Directorate shows a modest time and cost reduction for rival-intelligence theft in ordinary spy infiltration tooltips, with no promise of guaranteed success. Show the Ascendancy's spy-upgrade progress and clearly communicate that nuclear research infiltration requires full development. The Ascendancy alone has Intimidation, which may convert eligible isolated combat or non-combat units only after their Discipline or Morale has been fully broken. Its target cursor/tooltip must distinguish isolated and eligible from supported or ineligible, with clear success/failure and ownership-change feedback. Never display Intimidation as an available native action for any other faction.
+
+Use existing objective, production, selected-unit and intel UI patterns. Show only information the faction has legitimately discovered: do not expose hidden enemy nuclear-research locations or spy identities without detection. Nuclear weapons cannot be purchased in the Black Market, and stealing a completed bomb does not confer manufacturing knowledge or Ascendancy instant victory.
+
+See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
+
+### Population morale and propaganda controls
+
+Display the population morale meter for every faction, including Meridian Pact and NPC Unaligned where the game's information/fog rules permit it. Make the two principal positive consequences—production output and army discipline—understandable through tooltips, modifiers, unit inspection or production panels.
+
+Propaganda-capable factions (Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned) use distinct methods expressed through radio, newspapers and television. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. Do not display an advanced propaganda action tree for the Meridian Pact, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
+### Unaligned intelligence claims, false flags and verification
+
+The Unaligned can inject reports into a playable faction's intelligence feed, even though the source may appear to be a rival transmission, covert observation or seemingly credible third-party account. A report might allege that another player is building a nuclear facility when no such structure exists. Represent it as an intelligence claim or alleged-map marker, not a genuinely scouted building or real nuclear research asset.
+
+Support confidence/provenance cues, `unverified` or disputed states, report age, investigation or independent-reconnaissance actions, and correction when a claim is disproved. Do not show secret `is_fabricated` or the Unaligned's responsibility before discovery; equally do not suppress direct factual scouting that finds an empty location. False-flag attribution can change who an unverified report alleges is responsible without changing actual unit ownership or diplomacy.
+
+The Unaligned's NPC balance director may plant such reports when a playable faction has very few resources and surviving forces, attempting to divert stronger players and preserve overall competitive equilibrium. The UI must leave final decisions to the human player, provide no compulsory retargeting and not reveal the privileged strength analysis or fabricated nature of a report by default. Critical victory conditions and the truth of nuclear research are never decided by the presence of a report. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
+### Building espionage actions and incident visibility
+
+Facility target actions must be distinct from the individual-unit Discipline/Morale effects. A selected Concord spy can see eligible building Psy-Ops outcomes—self-destruction or resource waste; a Directorate infiltrator may redirect eligible resource budgets; an Ascendancy operative can initiate an abstract staffed-facility contamination action. None of these require reducing a building's `UnitResolve` (buildings do not use that meter).
+
+The attacker should see authorized action progress/costs and its own valid outcomes. The defender may initially see only ordinary-looking budget shortages or production losses: espionage success, discovery and attribution are separate. The UI must not automatically announce a covert waste or diversion when it has not been discovered. If the incident is detected, show contextual investigation, containment/cleanup, workforce replacement, repair and security options as appropriate.
+
+Building-inspection panels can represent assigned/required workers or researchers and effective throughput. Iron Ascendancy sabotage can cause fictional staff casualties, a production slowdown/stoppage, and a bounded local chain of impacted facilities; show nearby warning indicators only if observed/discovered. Avoid medical or technical real-world toxin/pathogen procedures. Directorate diversion should show a valid debit in the enemy's actual inventory and credit in the Directorate's, even if the enemy has no attacker-attribution. Nuclear infiltration and victory prerequisites remain independent of these sabotage controls.
+
+### Reconnaissance commands and sabotage targeting UI
+
+Early build cards must distinguish the cheap, fast, lightly armored and lightly armed Meridian Pact truck (dual scout/light-combat role; strongest overall reconnaissance faction), cheap unarmed Concord/Ascendancy light scouting airplanes, and rifle-armed Directorate motorbike scouts. Unarmed planes may reveal fog but cannot display a usable attack command. The scouting interface should convey movement type, visibility coverage, cost and threat exposure without implying a flyover steals classified intelligence.
+
+An eligible Meridian non-spy saboteur can target an enemy vehicle or building with early low-cost fictional explosive-charge sabotage. For the other three factions, the same type of sabotage must appear locked until late-game technology and must not be actionable by anything except an eligible spy. Targeting cursors should distinguish valid enemy vehicles/buildings, forbidden/protected targets, invalid actors, missing costs and unavailable tech. An ordinary scouting truck receives a charge command only if its unit definition grants it; rival scouting planes and motorcycles never gain the spy-only ability by default.
+
+The defending interface distinguishes whether a charge or responsible infiltrator is discovered from whether an explosion has occurred. Successful sabotage uses ordinary conventional target health and damage results, separate from Psy-Ops self-destruction, budget theft, facility contamination or nuclear armaments. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
+### Discipline and Morale: one meter, contextual labels
+
+Unit inspection: show “Discipline” for a combat unit and “Morale” for a civilian/non-combat unit, using the same underlying unit resolve value, scale, break threshold and recovery behavior. Do not display both gauges simultaneously for the same individual. Population Morale remains the faction-level public indicator and may appear on the strategic/economic HUD, with production and baseline army Discipline effects.
+
+Formation tooltips: Red Directorate, Iron Ascendancy, Meridian and Unaligned combat units gain standard Discipline stability from coherent allies. Directorate and Ascendancy gain a separate very-massive-army Discipline bonus; Concord solo/small-group combat units do not incur a group-size Discipline penalty. Civilian Morale does not show those military formation bonuses.
+
+Intimidation target feedback: eligible isolated targets show the relevant label: Discipline if combat, Morale if non-combat. Indicate Intimidation's meter reduction and conversion availability only after the meter is fully broken. Eligibility and fog rules control how much of an enemy gauge can be seen; the UI must not infer conversion simply from an isolation indicator. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Two-to-four-player match setup
+
+Map/match setup supports 2, 3 or 4 participant slots, with one distinct playable faction per slot (Concord, Directorate, Ascendancy or Meridian). In local single-player, remaining slots may be filled by AI opponents. The Unaligned always appears as a separate non-editable NPC/system AI presence, not a fifth selectable faction or player slot. Explain the map population as 2+1, 3+1 or 4+1; the +1 is always Unaligned.
+
+Match validation should flag too few/many participants, duplicate faction assignments, missing Unaligned initialization, missing Meridian nearby fossil-fuel source, or unavailable special nuclear infiltration objectives where no qualifying Concord/Directorate research facility is present. See [Match Structure](MATCH_STRUCTURE.md).
+
+## 5. In-match UI structure
+
+Exact placement can be tuned with prototypes, but the initial layout should provide these functional regions:
+
+| Region | POLITIKA role |
+|---|---|
+| Battlefield | Main view for movement, combat, selection, target designation, and tactical feedback |
+| Selection/force panel | Selected unit or squad identity, health/readiness, relevant status, and shared valid commands |
+| Command/ability panel | Contextual orders and selected unit abilities, with hotkey hints and unavailable reasons |
+| Strategic map | Camera navigation, objectives, friendly positions, and only currently known enemy/intel markers |
+| Objective panel | Current primary/secondary objectives, state changes, and explicit completion/failure feedback |
+| Resources/force status | The chosen POLITIKA economy, deployment/production state, and any unit/force cap that affects decisions |
+| Alert/status layer | Under-attack, completed order, lost communication, objective change, and other time-sensitive notices |
+
+The resource and production panel should reflect POLITIKA's own gameplay rules, whether those use mobile command posts, fixed-base production, reinforcements, or a hybrid. Show only the resources and limits the player can act upon.
+
+### Command interaction
+
+Use one consistent cycle:
+
+1. Select an individual unit, squad, vehicle, or group.
+2. Show identity, health/readiness, important effects, and commands valid for the full selection.
+3. Issue move, attack, attack-move, stop/hold, guard, capture/interact, or a unit-specific ability using contextual click, a button, or hotkey.
+4. Confirm the order in-world and in the HUD; communicate failure if the order is invalid, blocked, out of range, or interrupted.
+
+Support selection boxes, modifier-based add/remove, and numbered control groups. Mixed selections should present common commands clearly and avoid silently applying a command to only a subset. A targeted ability/order must have visible target mode and a reliable cancel action.
+
+## 6. Supporting screens and information
+
+- Skirmish setup: map, sides/factions if applicable, teams, AI difficulty, match rules, and start. No network lobby or account prompt for local play.
+- Pause menu: resume, save/load where allowed, controls, options, restart, abandon mission, and quit. It must clearly communicate whether simulation is paused.
+- Options: display/resolution and UI scale; text scale; graphics; audio and voice/subtitle settings; key remapping; camera and selection behavior; accessibility choices.
+- Map/intel view: legend, objective status, and known operational information. It should preserve the distinction between current vision, radar contact, and stale intelligence if those mechanics exist.
+- Post-match/debrief: result, objective status, concise performance information, and next steps. Do not require account-bound progression or online rewards.
+- Tutorial/help: explain selection, camera, orders, objectives, and any distinctive POLITIKA mechanic in-context; allow replay from a local help screen.
+
+## 7. Presentation and accessibility
+
+Use a restrained military-document palette, clear faction/unit iconography, disciplined typography, and strong visual hierarchy. Reserve distressed paper, stamps, grain, or map-grid decoration for backgrounds and transitions; never put important labels on noisy surfaces without a solid backing.
+
+The interface must not convey ownership, danger, or order state by color alone. Pair colors with icons, shape, labels, patterns, or animation. Provide adjustable text/UI scale, high-contrast option, subtitle controls, and remappable bindings. Keep cursor and selection feedback visible against both bright snow/sky and dark terrain.
+
+At desktop 4K, scale UI in logical units and preserve ergonomic text/icon sizes; do not simply anchor tiny 1080p controls to the corners. Validate 1920×1080, 2560×1440, 3840×2160 and ultrawide desktop layouts, and separately validate Steam Deck-class handheld and representative Android portrait/landscape constraints (with landscape-first gameplay if validated). Respect mobile system insets, device pixel density, touch occlusion and handheld viewing distance. Keep the tactical camera/world scale independent from HUD scale.
+
+## 8. Technical ownership in UE
+
+Treat UI as a presentation layer over the game state:
+
+- C++ match/simulation systems own units, orders, objectives, visibility, resources and match results.
+- PlayerController/input actions translate keyboard/mouse, handheld controller/Steam Input and Android touch actions into the same player command intents; gameplay remains independent of the originating device.
+- UMG/CommonUI presents selection, objectives, resources, menus, map and notifications.
+- UI reacts to state events and view models; it must not become the authority for gameplay rules or poll every unit every frame.
+- Local save/settings services handle progress and configuration without requiring a remote identity.
+- A shared command/action definition should drive both button availability and hotkey execution to prevent inconsistent behavior.
+
+This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md) and [PROPOSED_ENGINE_LAYERS.md](PROPOSED_ENGINE_LAYERS.md) for related architectural decisions.
+
+## 9. First playable UI slice
+
+Start with a single offline mission/test map containing:
+
+- camera, selection, and clear selected/hovered/owned state;
+- move, attack, stop, and one targeted ability, accessible by both button and hotkey;
+- compact selection panel with type/name, health/readiness, and status;
+- one objective display with update/completion/failure feedback;
+- strategic map with camera jump and visibility-correct markers;
+- the minimum production/reinforcement/resource panel needed by the prototype's rules;
+- pause, local save/load if in scope, and basic display/UI scale options;
+- a short text/radio briefing and debrief instead of cinematic sequences.
+
+Acceptance for the slice: no online login is needed to launch or play; keyboard and mouse commands agree; invalid orders are understandable; selection changes cannot leave stale panel data; subtitles/readable text work at 1080p and 4K; and the tactical screen remains uncluttered during combat.
+
+## 10. Decisions still open
+
+- Final economy, production, reinforcement and unit-cap model.
+- Whether any multiplayer is planned (and if so, local/LAN/online scope); this overview only fixes offline single-player access as a requirement.
+- Which unit categories are individually controlled versus grouped as squads.
+- The exact campaign briefing/debrief presentation and radio-dialogue cadence.
+- Supported display aspect ratios, per-platform minimum hardware, mobile/handheld orientation and the final accessibility/settings list.
+- Whether the strategic map is always visible, collapsible, or switchable to a larger planning view.
+
+These should be decided through interaction prototypes. The present document defines the UI's product posture, not final screen mockups or locked bindings.
+
+## 11. Multi-platform command and HUD profiles
+
+The first planned platforms are Windows, Linux, SteamOS/Steam Deck and Android. Preserve the same underlying order vocabulary and information integrity across them, while allowing purpose-built presentation and control mappings. These are product specifications for future prototypes, not evidence of shipped ports. See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
+
+- **Desktop (Linux/Windows):** pointer-precise unit selection, multi-select, drag selection, context orders and keyboard shortcuts; a scalable 4K-capable HUD.
+- **Handheld (SteamOS/Steam Deck):** gamepad-friendly focus paths, radial or context command menus where prototyping supports them, scalable overlays, legible mission text and selection without requiring a hardware mouse. Steam Input mapping and optional trackpad/touchscreen behavior should be tested on actual handheld hardware.
+- **Android:** tap/drag selection and camera movement without relying on hover/right-click; explicit target-confirm and cancel affordances, large enough touch controls, UI safe areas and a compressed or collapsible information hierarchy. Evaluate multi-touch, pause/slow-time accessibility and optional gamepad support through prototypes, not assumptions.
+- **Consistency:** all adaptations generate the same authoritative selection/order intents. Gameplay balance, fog-of-war visibility, enemy information and victory rules must not depend on controller type. Validate accidental orders, camera gestures, occlusion, readability and tutorial discoverability for each device.
+
+Consoles (PlayStation, Xbox, Nintendo) and Apple systems (macOS and possibly iOS/iPadOS) may be assessed later. Do not claim controller or mobile UX parity, platform certification or first-release commitments until validated.
