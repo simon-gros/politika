@@ -68,7 +68,9 @@ impl Report {
         let identity = build_identity(root);
         let mut verdict_counts = BTreeMap::new();
         for check in &checks {
-            *verdict_counts.entry(check.verdict.label().to_owned()).or_insert(0) += 1;
+            *verdict_counts
+                .entry(check.verdict.label().to_owned())
+                .or_insert(0) += 1;
         }
         Self {
             schema_version: 1,
@@ -90,9 +92,11 @@ impl Report {
             2
         } else if self.checks.iter().any(|c| c.verdict == Verdict::Blocked) {
             3
-        } else if self.checks.iter().any(|c| {
-            matches!(c.verdict, Verdict::Inconclusive | Verdict::NotRun)
-        }) {
+        } else if self
+            .checks
+            .iter()
+            .any(|c| matches!(c.verdict, Verdict::Inconclusive | Verdict::NotRun))
+        {
             4
         } else {
             0
@@ -123,7 +127,9 @@ fn safe_relative_path(s: &str) -> bool {
     let path = Path::new(s);
     !s.is_empty()
         && !path.is_absolute()
-        && path.components().all(|part| matches!(part, Component::Normal(_)))
+        && path
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
 }
 
 fn check_registry(root: &Path, text: &str) -> Check {
@@ -143,7 +149,10 @@ fn check_registry(root: &Path, text: &str) -> Check {
     let mut playable = 0;
     let mut npc = 0;
     for faction in &data.factions {
-        if !faction.id.bytes().all(|c| c.is_ascii_lowercase() || c == b'_')
+        if !faction
+            .id
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c == b'_')
             || faction.id.is_empty()
         {
             errors.push(format!("invalid faction id: {}", faction.id));
@@ -182,9 +191,11 @@ fn check_registry(root: &Path, text: &str) -> Check {
         errors.push("expected exactly four playable factions and one NPC faction".to_owned());
     }
     for (id, name, role) in expected {
-        if !data.factions.iter().any(|f| {
-            f.id == id && f.name == name && f.role == role
-        }) {
+        if !data
+            .factions
+            .iter()
+            .any(|f| f.id == id && f.name == name && f.role == role)
+        {
             errors.push(format!("missing or incorrect faction contract: {id}"));
         }
     }
@@ -213,17 +224,27 @@ fn parse_engine_pin(text: &str) -> Result<EnginePin, String> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let (key, value) = line.split_once('=')
+        let (key, value) = line
+            .split_once('=')
             .ok_or_else(|| format!("invalid toolchain setting: {line}"))?;
-        if !matches!(key, "UNREAL_VERSION" | "UNREAL_TAG" | "UNREAL_COMMIT" | "UNREAL_PROJECT") {
+        if !matches!(
+            key,
+            "UNREAL_VERSION" | "UNREAL_TAG" | "UNREAL_COMMIT" | "UNREAL_PROJECT"
+        ) {
             return Err(format!("unknown toolchain setting: {key}"));
         }
-        if map.insert(key.to_owned(), value.trim().to_owned()).is_some() {
+        if map
+            .insert(key.to_owned(), value.trim().to_owned())
+            .is_some()
+        {
             return Err(format!("duplicate toolchain setting: {key}"));
         }
     }
-    let get = |name: &str| map.get(name).cloned()
-        .ok_or_else(|| format!("missing setting: {name}"));
+    let get = |name: &str| {
+        map.get(name)
+            .cloned()
+            .ok_or_else(|| format!("missing setting: {name}"))
+    };
     let pin = EnginePin {
         version: get("UNREAL_VERSION")?,
         tag: get("UNREAL_TAG")?,
@@ -231,7 +252,10 @@ fn parse_engine_pin(text: &str) -> Result<EnginePin, String> {
         commit: get("UNREAL_COMMIT")?,
     };
     if pin.version != "5.8.3" {
-        return Err(format!("expected pinned UE 5.8.3, received {}", pin.version));
+        return Err(format!(
+            "expected pinned UE 5.8.3, received {}",
+            pin.version
+        ));
     }
     if pin.tag != "5.8.3-release" {
         return Err("engine version tag does not match 5.8.3-release".to_owned());
@@ -257,20 +281,25 @@ fn audit(root: &Path) -> Vec<Check> {
         Ok(data) => checks.push(Check::new(
             "version.manifest",
             Verdict::Pass,
-            format!("canonical version {} has valid compatibility counters", data.game_version),
+            format!(
+                "canonical version {} has valid compatibility counters",
+                data.game_version
+            ),
         )),
         Err(error) => checks.push(Check::new("version.manifest", Verdict::Fail, error)),
     }
     match fs::read_to_string(root.join("Data/content_manifest.json")) {
         Ok(text) => checks.push(check_registry(root, &text)),
         Err(error) => checks.push(Check::new(
-            "content.registry", Verdict::Fail,
+            "content.registry",
+            Verdict::Fail,
             format!("cannot read content registry: {error}"),
         )),
     }
     match read_pin(root) {
         Ok(pin) => checks.push(Check::new(
-            "engine.version_pin", Verdict::Pass,
+            "engine.version_pin",
+            Verdict::Pass,
             format!("configured Unreal {} ({})", pin.version, pin.tag),
         )),
         Err(error) => checks.push(Check::new("engine.version_pin", Verdict::Fail, error)),
@@ -280,9 +309,15 @@ fn audit(root: &Path) -> Vec<Check> {
 
 fn git_rev(root: &Path) -> Option<String> {
     let result = Command::new("git")
-        .arg("-C").arg(root).args(["rev-parse", "HEAD"]).output().ok()?;
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
     if result.status.success() {
-        String::from_utf8(result.stdout).ok().map(|s| s.trim().to_owned())
+        String::from_utf8(result.stdout)
+            .ok()
+            .map(|s| s.trim().to_owned())
     } else {
         None
     }
@@ -300,20 +335,29 @@ fn preflight(root: &Path) -> Vec<Check> {
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join(&pin.project));
     checks.push(if project.is_file() {
-        Check::new("engine.project", Verdict::Pass, format!("project: {}", project.display()))
+        Check::new(
+            "engine.project",
+            Verdict::Pass,
+            format!("project: {}", project.display()),
+        )
     } else {
         Check::new(
-            "engine.project", Verdict::Blocked,
-            format!("no Unreal project at {}; source project not yet available", project.display()),
+            "engine.project",
+            Verdict::Blocked,
+            format!(
+                "no Unreal project at {}; source project not yet available",
+                project.display()
+            ),
         )
     });
-    let engine = env::var_os("UNREAL_ENGINE_DIR")
-        .or_else(|| env::var_os("POLITIKA_UNREAL_ENGINE_DIR"));
+    let engine =
+        env::var_os("UNREAL_ENGINE_DIR").or_else(|| env::var_os("POLITIKA_UNREAL_ENGINE_DIR"));
     let engine = match engine {
         Some(path) if !path.is_empty() => PathBuf::from(path),
         _ => {
             checks.push(Check::new(
-                "engine.install", Verdict::Blocked,
+                "engine.install",
+                Verdict::Blocked,
                 "set UNREAL_ENGINE_DIR to an installed Unreal 5.8.3 source checkout",
             ));
             return checks;
@@ -324,7 +368,8 @@ fn preflight(root: &Path) -> Vec<Check> {
         Ok(source) => source,
         Err(error) => {
             checks.push(Check::new(
-                "engine.install", Verdict::Blocked,
+                "engine.install",
+                Verdict::Blocked,
                 format!("cannot read {}: {error}", build_json.display()),
             ));
             return checks;
@@ -333,7 +378,11 @@ fn preflight(root: &Path) -> Vec<Check> {
     let version: serde_json::Value = match serde_json::from_str(&source) {
         Ok(value) => value,
         Err(error) => {
-            checks.push(Check::new("engine.install", Verdict::Fail, error.to_string()));
+            checks.push(Check::new(
+                "engine.install",
+                Verdict::Fail,
+                error.to_string(),
+            ));
             return checks;
         }
     };
@@ -342,21 +391,35 @@ fn preflight(root: &Path) -> Vec<Check> {
         version["MajorVersion"], version["MinorVersion"], version["PatchVersion"]
     );
     checks.push(if actual == pin.version {
-        Check::new("engine.install", Verdict::Pass, format!("found Unreal {actual}"))
+        Check::new(
+            "engine.install",
+            Verdict::Pass,
+            format!("found Unreal {actual}"),
+        )
     } else {
-        Check::new("engine.install", Verdict::Fail,
-            format!("expected Unreal {}, found {actual}", pin.version))
+        Check::new(
+            "engine.install",
+            Verdict::Fail,
+            format!("expected Unreal {}, found {actual}", pin.version),
+        )
     });
     checks.push(match git_rev(&engine) {
         Some(actual) if actual.eq_ignore_ascii_case(&pin.commit) => Check::new(
-            "engine.revision", Verdict::Pass, "installed engine matches the pinned source SHA",
+            "engine.revision",
+            Verdict::Pass,
+            "installed engine matches the pinned source SHA",
         ),
         Some(actual) => Check::new(
-            "engine.revision", Verdict::Fail,
-            format!("Unreal source revision mismatch: expected {}, found {actual}", pin.commit),
+            "engine.revision",
+            Verdict::Fail,
+            format!(
+                "Unreal source revision mismatch: expected {}, found {actual}",
+                pin.commit
+            ),
         ),
         None => Check::new(
-            "engine.revision", Verdict::Blocked,
+            "engine.revision",
+            Verdict::Blocked,
             "cannot verify source SHA: engine is not an accessible Git checkout",
         ),
     });
@@ -371,7 +434,8 @@ fn core_tests(root: &Path) -> Vec<Check> {
     if let Some(parent) = output_path.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
             return vec![Check::new(
-                "core.compile", Verdict::InfraError,
+                "core.compile",
+                Verdict::InfraError,
                 format!("cannot create C++ test output directory: {error}"),
             )];
         }
@@ -393,24 +457,29 @@ fn core_tests(root: &Path) -> Vec<Check> {
         Ok(compile) => compile,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return vec![Check::new(
-                "core.compile", Verdict::Blocked,
+                "core.compile",
+                Verdict::Blocked,
                 format!("C++20 compiler {compiler:?} is not installed"),
             )];
         }
         Err(error) => {
             return vec![Check::new(
-                "core.compile", Verdict::InfraError,
+                "core.compile",
+                Verdict::InfraError,
                 format!("cannot launch compiler: {error}"),
             )];
         }
     };
     if !compile.status.success() {
         let detail: String = String::from_utf8_lossy(&compile.stderr)
-            .chars().take(2000).collect();
+            .chars()
+            .take(2000)
+            .collect();
         return vec![Check::new("core.compile", Verdict::Fail, detail)];
     }
     let mut checks = vec![Check::new(
-        "core.compile", Verdict::Pass,
+        "core.compile",
+        Verdict::Pass,
         "C++20 rules tests compiled with warnings treated as errors",
     )];
     match Command::new(&output_path).current_dir(root).output() {
@@ -422,14 +491,21 @@ fn core_tests(root: &Path) -> Vec<Check> {
         }
         Ok(execution) => {
             let detail: String = String::from_utf8_lossy(&execution.stderr)
-                .chars().take(2000).collect();
+                .chars()
+                .take(2000)
+                .collect();
             checks.push(Check::new(
-                "core.command_rules", Verdict::Fail,
-                format!("C++ regression executable failed ({}): {detail}", execution.status),
+                "core.command_rules",
+                Verdict::Fail,
+                format!(
+                    "C++ regression executable failed ({}): {detail}",
+                    execution.status
+                ),
             ));
         }
         Err(error) => checks.push(Check::new(
-            "core.command_rules", Verdict::InfraError,
+            "core.command_rules",
+            Verdict::InfraError,
             format!("cannot execute C++ tests: {error}"),
         )),
     }
@@ -449,7 +525,9 @@ fn execute() -> Result<u8, String> {
         if argument != "--output" || output.is_some() {
             return Err(format!("unrecognized or repeated argument: {argument}"));
         }
-        output = Some(PathBuf::from(args.next().ok_or("--output needs a file path")?));
+        output = Some(PathBuf::from(
+            args.next().ok_or("--output needs a file path")?,
+        ));
     }
     let root = repo_root();
     let mut checks = Vec::new();
@@ -463,10 +541,12 @@ fn execute() -> Result<u8, String> {
         checks.extend(preflight(&root));
     }
     let report = Report::new(&root, &stage, checks);
-    let target = output.unwrap_or_else(|| {
-        root.join(format!("build/diagnostics/{stage}.json"))
-    });
-    let target = if target.is_absolute() { target } else { root.join(target) };
+    let target = output.unwrap_or_else(|| root.join(format!("build/diagnostics/{stage}.json")));
+    let target = if target.is_absolute() {
+        target
+    } else {
+        root.join(target)
+    };
     let contents = serde_json::to_string_pretty(&report)
         .map_err(|error| format!("cannot encode diagnostic report: {error}"))?;
     if let Some(parent) = target.parent() {
@@ -520,7 +600,8 @@ mod tests {
                 "id":f.id,"name":f.name,"role":f.role,
                 "description":f.description,"logo":f.logo,"banner":f.banner
             })).collect::<Vec<_>>()
-        }).to_string();
+        })
+        .to_string();
         assert_eq!(check_registry(&repo_root(), &json).verdict, Verdict::Fail);
     }
 
@@ -533,28 +614,41 @@ mod tests {
 
     #[test]
     fn engine_pin_is_exact_and_validated() {
-        assert_eq!(
-            parse_engine_pin(VALID_PIN).unwrap().version, "5.8.3"
-        );
+        assert_eq!(parse_engine_pin(VALID_PIN).unwrap().version, "5.8.3");
         assert!(parse_engine_pin(&VALID_PIN.replace("5.8.3", "5.8.2")).is_err());
         assert!(parse_engine_pin(&(VALID_PIN.to_owned() + "UNREAL_TAG=bad\n")).is_err());
     }
 
     #[test]
     fn audit_passes_current_design_source() {
-        assert!(audit(&repo_root()).iter().all(|c| c.verdict == Verdict::Pass));
+        assert!(
+            audit(&repo_root())
+                .iter()
+                .all(|c| c.verdict == Verdict::Pass)
+        );
     }
 
     #[test]
     fn report_distinguishes_blocked_from_pass() {
-        let blocked = Report::new(Path::new("."), "preflight", vec![
-            Check::new("engine.project", Verdict::Blocked, "missing project"),
-        ]);
+        let blocked = Report::new(
+            Path::new("."),
+            "preflight",
+            vec![Check::new(
+                "engine.project",
+                Verdict::Blocked,
+                "missing project",
+            )],
+        );
         assert_eq!(blocked.code(), 3);
-        assert_eq!(serde_json::to_value(&blocked).unwrap()["checks"][0]["verdict"], "BLOCKED");
-        let failed = Report::new(Path::new("."), "audit", vec![
-            Check::new("content.registry", Verdict::Fail, "bad content"),
-        ]);
+        assert_eq!(
+            serde_json::to_value(&blocked).unwrap()["checks"][0]["verdict"],
+            "BLOCKED"
+        );
+        let failed = Report::new(
+            Path::new("."),
+            "audit",
+            vec![Check::new("content.registry", Verdict::Fail, "bad content")],
+        );
         assert_eq!(failed.code(), 1);
     }
 }

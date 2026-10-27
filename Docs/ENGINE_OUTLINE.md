@@ -90,6 +90,8 @@ This layer is the game's **shell and local-user services**, not a second gamepla
 
 #### Shell skeleton build steps
 
+**Implementation:** the native project, boot policy, local profile, recovery UI and map-generation/build tooling now live in this repository. See [Shell skeleton implementation and build guide](SHELL_SKELETON.md) for ownership, commands, exact recovery semantics and delivery/acceptance status. This is shell infrastructure and an offline travel destination, not a playable RTS; dedicated-server work remains conditional.
+
 1. Create a minimal packaged main-menu map and GameMode; set it as `GameDefaultMap` in `DefaultEngine.ini`. Ensure the map can render a local/offline entry even when optional platform services are absent.
 2. Add a C++ bootstrap phase enum/coordinator, typed launch-options struct, and log categories. Initially recognize only the agreed custom flags plus engine-provided diagnostics; log the resolved route and reject malformed custom values with a recoverable explanation.
 3. Implement the local profile/default settings path. Add safe mode and reset-user-config semantics with a backup before reset; prove that reset does not touch campaign saves.

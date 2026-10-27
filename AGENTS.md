@@ -1,6 +1,6 @@
 # POLITIKA — Contributor and Coding-Agent Rules
 
-POLITIKA is an alternate-history RTS set in 1980s Yugoslavia. The repository is at a foundational documentation/design stage; Unreal Engine 5.8.3 is the proposed runtime, not yet evidence of a playable build. Primary planned targets are Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple are possible later expansions.
+POLITIKA is an alternate-history RTS set in 1980s Yugoslavia. Unreal Engine 5.8.3 runs the initial native application shell; see Docs/SHELL_SKELETON.md for verified build/recovery evidence. The shell is not a playable RTS. Primary planned targets are Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple are possible later expansions.
 
 The authoritative version lives in [version.json](version.json). Follow [Versioning & Release Management](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md).
 
@@ -14,3 +14,9 @@ The authoritative version lives in [version.json](version.json). Follow [Version
 - Preserve historical sourcing, copyright and licenses, and distinguish fictional in-game factions from history.
 
 Keep POLITIKA's release process self-contained, with explicit game compatibility identities and no unrelated engine-specific assumptions.
+
+## Native shell recovery/build conventions
+
+- Finish source edits before starting compiler actions that read those files. After interruption, inspect UBT/UAT exit status and logs, then rerun the incremental build; never infer link/package success from a partial compiler log.
+- Keep player data isolated during tests with Unreal's `-UserDir=`. Use `Tools/Shell`'s Rust process checks for actual shell assertions; pure metadata tests cannot substitute for a packaged runtime check.
+- Profile slots use a versioned integrity envelope around UE SaveGame payloads. Validate it before UObject deserialization: UE's raw loader can assert on corrupt headers. Preserve invalid/unsupported files and offer a temporary profile.

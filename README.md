@@ -8,11 +8,11 @@ POLITIKA combines asymmetric military strategy, Cold War espionage, political in
 
 The country is more than a battlefield. Its cities, industries, transport networks, armed forces, civilians, borders, and institutions form a living political environment. Players must decide when to cooperate with that environment, when to operate secretly within it, and when the consequences of open conflict are worth the cost.
 
-> Project status: POLITIKA is in its foundational design and documentation stage. The faction identities, central story premise, and overarching design principles are established; unit rosters, balance, detailed economic rules, and many gameplay systems remain proposals rather than implemented features. This README describes the intended game, not a currently playable release.
+> Project status: POLITIKA has an initial native Unreal application shell: offline profile, menu, recovery controls and a sandbox travel destination. See the [shell build and verification guide](Docs/SHELL_SKELETON.md). RTS simulation, unit rosters, balance and economic rules remain design work. This README describes the intended game, not a currently playable RTS release.
 
 ## Versioning and release management
 
-**Current development identity: 0.1.0-dev.0** — this is an initial design-stage version, **not** a playable, packaged or publicly released game. POLITIKA uses Semantic Versioning and separate compatibility counters, with [version.json](version.json) as the canonical game/version manifest. Network, save, persistence and world/content schemas are versioned independently and their initial values are reserved placeholders until runtime implementations exist.
+**Current development identity: 0.1.0-dev.0** — an initial development identity, **not** a playable RTS or public release. POLITIKA uses Semantic Versioning and separate compatibility counters, with [version.json](version.json) as the canonical manifest. The initial local-profile format is schema 1; campaign, network and world contracts remain unimplemented. Runtime startup diagnostics include the generated canonical version and Git build identity.
 
 Verified development milestones can advance the version through dev, alpha, beta and release-candidate stages toward stable releases. Contributors and development agents may perform justified bumps alongside validated work; ordinary documentation/archive commits do not automatically increase the version. Future builds will record their Git revision, CI build number, engine/platform and artifact integrity independently from the public version.
 

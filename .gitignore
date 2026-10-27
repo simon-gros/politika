@@ -1,3 +1,17 @@
 # Local generated build artifacts
 /build/
 **/target/
+
+# Local tools and generated Unreal products
+/.tools/
+/TOOLS.md
+/Binaries/
+/DerivedDataCache/
+/Intermediate/
+/Saved/
+/Build/*/FileOpenOrder/
+/.vs/
+/.vscode/
+*.sln
+*.suo
+*.code-workspace

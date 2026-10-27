@@ -53,10 +53,15 @@ fn run() -> Result<(), String> {
     match command.as_str() {
         "check" => {
             println!(
-            "POLITIKA {} · build {} · git {} · protocol {} · save {} · persistence {} · world {}",
-            data.game_version, build.build_number, build.git_revision,
-            data.network_protocol, data.save_schema, data.persistence_schema, data.world_schema
-        )
+                "POLITIKA {} · build {} · git {} · protocol {} · save {} · persistence {} · world {}",
+                data.game_version,
+                build.build_number,
+                build.git_revision,
+                data.network_protocol,
+                data.save_schema,
+                data.persistence_schema,
+                data.world_schema
+            )
         }
         "identity" => println!("{}", identity_json(&data, &build)),
         "generate" => {

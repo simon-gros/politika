@@ -1,0 +1,12 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Games",
+  "Description": "POLITIKA offline-first RTS",
+  "DisableEnginePluginsByDefault": true,
+  "Modules": [
+    { "Name": "PolitikaBootstrap", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
+    { "Name": "Politika", "Type": "Runtime", "LoadingPhase": "Default" },
+    { "Name": "PolitikaEditor", "Type": "Editor", "LoadingPhase": "Default" }
+  ]
+}
