@@ -1,35 +1,83 @@
-# POLITIKA Historical Archive
+# POLITIKA — Historical Reference Archive
 
-This directory is the evidence layer for researching **Yugoslavia in the 1980s (1980–1989)** for POLITIKA. It is intended to preserve verifiable sources about the period's places, people, institutions, everyday life, built environment, material culture, politics, economy, and media.
+POLITIKA is an open-source real-time strategy game inspired by the original *Command & Conquer* series, set in an alternate-history **1980s Yugoslavia**. This directory is its historical research and reference archive: a structured record of the places, institutions, political ideas, technologies, environments, cultures and everyday realities that can inform the game's world.
 
-The archive is research reference, not a collection of game-ready assets. A source may inform a building, uniform, vehicle, map, prop, dialogue, or mission without granting permission to reproduce the source itself. Record provenance, uncertainty, and rights before relying on or copying archival material.
+**Primary period:** 1980–1989. **Primary setting:** the Socialist Federal Republic of Yugoslavia (SFRY), with relevant neighbouring countries, international relationships and Cold War context.
 
-## Research principles
+The archive is an **evidence layer, not a game-asset repository or a statement of game canon**. Its purpose is to make historical inspiration traceable while giving designers the freedom to create an original alternate history. Archival photographs, publications and recordings may inform original maps, buildings, vehicles, uniforms, interfaces, missions and faction designs without being licensed for direct inclusion in the game.
 
-- Prefer dated primary sources from Yugoslavia during 1980–1989; distinguish contemporary evidence from later recollection and scholarship.
-- Record what each item actually supports. Do not present a source about one republic, city, community, or year as representative of all Yugoslavia.
-- Preserve variant spellings, original-language titles, place names, and institutional names alongside normalized search terms.
-- Separate historical fact from interpretation and fictionalization. POLITIKA's fictional events and characters must not be attributed to real people.
-- Treat dates, borders, identities, political affiliations, and contested events with explicit sourcing and context.
-- Link to sources by default. Do not commit scans, recordings, photographs, or other protected material unless redistribution rights are clear.
+## Research priorities
 
-## Suggested structure
+The first priority is evidence from Yugoslavia itself during **1980–1989**. Research should cover the federation as a whole while respecting substantial differences between republics, autonomous provinces, regions, cities and communities.
 
-As the catalogue grows, organize material by evidence type or topic, while keeping one searchable index:
+Use the following source hierarchy:
 
-- `CATALOG.csv` — master index of individual sources and collection-level leads.
-- `SOURCES.md` — archives, libraries, museums, news collections, and discovery portals.
-- `RIGHTS_AND_PROVENANCE.md` — citation, rights, local-copy, and attribution practices.
-- `media/README.md` — handling of permitted local research copies; keep restricted or uncertain media outside Git.
+1. **Contemporary, dated primary evidence (1980–1989):** photographs, television and radio, newspapers, period maps, statistical publications, official records, industrial catalogues, manuals, advertisements, posters and other surviving material.
+2. **Contemporary material with uncertain dating:** potentially useful evidence from the decade, clearly marked as approximate or unverified.
+3. **Adjacent-period evidence:** material from the 1970s or early 1990s where continuity into the 1980s can be established; do not silently treat it as 1980s evidence.
+4. **Retrospective scholarship and testimony:** histories, academic research, memoirs, interviews and oral histories, with the distinction between later interpretation and contemporary observation preserved.
+5. **Modern reference material:** useful for long-lived geography or physical structures when corroborated, but not proof of their historical appearance, use or political meaning.
 
-Possible subject tags include: `politics`, `institutions`, `economy`, `industry`, `military`, `transport`, `architecture`, `urbanism`, `rural-life`, `everyday-life`, `clothing`, `vehicles`, `technology`, `music`, `film`, `television`, `press`, `sport`, `education`, `religion`, `ethnicity`, `language`, `maps`, and `oral-history`.
+Official publications, partisan reporting and propaganda are valuable evidence of how institutions or movements represented themselves, **not automatically independent confirmation of their claims**. Record the source's perspective, geographical scope and uncertainties.
 
-## Record metadata
+## Subject coverage
 
-For each useful item, capture where available: stable ID; title; creator; date created and period described; source institution and collection identifier; source URL; place and geographic scope; medium; language; subject tags; a note on what it evidences and its limitations; rights/licence; local-storage status; and confidence in the dating and identification.
+Prioritize research that can answer concrete game-design questions:
 
-Be precise about scope. Mark approximate or disputed dates as such, and distinguish a source's publication date from the events or period it describes.
+- **Politics and institutions:** the federal government, republics and provinces, League of Communists, Titoism, workers' self-management, nonalignment, political debate, state administration and international diplomacy.
+- **Economy and society:** factories, industrial production, energy, transport networks, agriculture, trade, inflation, household consumption, labour, education and regional development.
+- **Military and security:** the Yugoslav People's Army, Territorial Defence, civil defence, policing, equipment, vehicles, logistics, facilities, organization and historically accurate visual identification.
+- **Geography and built environment:** cities, rural settlements, roads, railways, ports, airfields, rivers, terrain, industrial complexes, monuments, architecture and changing infrastructure.
+- **Everyday life and culture:** clothing, signage, consumer technology, cars, broadcasting, newspapers, television, cinema, music, sport, language, slang, advertising and material culture.
+- **Cold War context:** NATO, the Warsaw Pact, the Non-Aligned Movement, neighbouring states, global trade and international tensions insofar as they illuminate the Yugoslav setting.
 
-## Production use
+Give particular attention to **RTS production uses**: terrain and map design; architectural and industrial tilesets; faction and unit silhouettes; equipment and vehicle references; user-interface styling; environmental storytelling; dialogue; campaign chronology; mission objectives; and the depiction of civilian institutions.
 
-Researchers and developers should cite archive IDs in historical asset, narrative, and mission notes. Use multiple independent sources for consequential historical claims. The archive records evidence and its limits; it does not by itself settle interpretation or authorize asset reproduction.
+## Archive organization
+
+At present, this directory contains this overview. Following Marburgum's historical-reference and media-library approach, the archive can gradually acquire the following components **as research is collected**:
+
+| Proposed path | Purpose |
+| --- | --- |
+| `CATALOG.csv` | Searchable master index of individual records and collection-level research leads. |
+| `SOURCES.md` | Curated guide to archives, libraries, museums, broadcasters, publications and discovery portals. |
+| `RIGHTS_AND_PROVENANCE.md` | Detailed rules for attribution, copyright, storage, reuse and archival integrity. |
+| `media/README.md` | Instructions for locally stored reference material and any redistribution-cleared media. |
+| `media/licensed/` | Material permitted to be distributed, with explicit source and licence records. |
+| `media/reference-only/` | Link/index information for research-only or rights-uncertain sources, not unauthorized copies. |
+
+These are **planned conventions**, not claims that the files or subdirectories already exist. The Git repository should primarily version metadata, citations, source links and permitted material. Large files and material without clear redistribution permission should remain outside the public repository.
+
+## Cataloguing and evidence standards
+
+Assign each entry a stable identifier (for example, `POL-1984-SARAJEVO-001`) and record, where available:
+
+- Title, description, creator, original language and medium.
+- Date of creation **and** the date or period depicted; indicate exact, approximate and disputed dates.
+- Place, republic/province, collection or institution, archival signature and source URL.
+- Subject tags, suggested production uses and what the source actually establishes.
+- Rights/licence and any restrictions; whether a local copy exists.
+- Confidence, missing context, interpretive limitations and the date the record was checked.
+
+Keep original-language names and scripts where useful, including Latin- and Cyrillic-script forms, with searchable transliterations. Do not generalize from one city, republic, social group or year to all Yugoslavia.
+
+For significant historical claims, distinguish **direct evidence**, **well-supported inference**, **contextual analogy** and **speculative reconstruction**. Important decisions should ideally be supported by more than one independent source.
+
+## Research-to-production workflow
+
+1. **Discover:** register a source or collection lead even if its contents are not yet available.
+2. **Verify:** check the date, place, provenance, identity and historical scope; preserve unresolved questions.
+3. **Classify:** identify which facts, designs or period details it can support.
+4. **Check rights:** determine whether it is research-only or may also be distributed or incorporated into an asset.
+5. **Apply:** use evidence to guide original gameplay, visual and narrative design; cite archive identifiers in relevant asset or mission notes.
+6. **Review:** check that the final result is plausible for the intended year and place, and distinguish deliberate alternate-history choices from accidental anachronisms.
+
+Do not upload protected scans, press photographs, music, broadcasts, film clips or third-party graphics simply because they are publicly viewable. Historical reference **does not equal permission to reproduce**. Prefer links and properly attributed metadata; check licences and permissions separately for redistribution, adaptation, promotional use and inclusion in a released game.
+
+## Historical evidence versus fictional worldbuilding
+
+POLITIKA's campaign, events and factions are fictionalized. The archive documents **historical Yugoslavia and its international context**, not the fictional history of the game. In particular, do not present the fictional organizations documented in [`Factions/`](../Factions/) as real historical actors. Conversely, historical institutions should not be retroactively assigned fictional activities without clearly labelling the departure from fact.
+
+Where the game portrays Yugoslav federal authorities through **The Unaligned**, maintain a clear distinction between documented Yugoslav administrative, political and military structures and their adaptation into an NPC-only game faction. The same historical-versus-fictional boundary applies to the game's other factions, technologies and conflicts.
+
+For design and implementation decisions, consult [`Docs/`](../Docs/); for the public project summary, see the [main README](../README.md). Those directories describe **what POLITIKA is building**. This archive records **the evidence informing how its 1980s world is represented**.
