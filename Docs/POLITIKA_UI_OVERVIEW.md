@@ -196,3 +196,374 @@ The first planned platforms are Windows, Linux, SteamOS/Steam Deck and Android. 
 - **Consistency:** all adaptations generate the same authoritative selection/order intents. Gameplay balance, fog-of-war visibility, enemy information and victory rules must not depend on controller type. Validate accidental orders, camera gestures, occlusion, readability and tutorial discoverability for each device.
 
 Consoles (PlayStation, Xbox, Nintendo) and Apple systems (macOS and possibly iOS/iPadOS) may be assessed later. Do not claim controller or mobile UX parity, platform certification or first-release commitments until validated.
+
+## 12. Interface contract derived from the RTS ontology
+
+The [RTS Ontology](RTS_GAME_ONTOLOGY.md#24-player-interaction-is-a-control-interface-not-a-world-ontology) clarifies that the UI is a *control and observation interface*, not an additional collection of world-state rules. Every on-screen element must either: **present an authorized observation**, **express a possible player intent**, **show the admission/execution result of an intent**, or **organize non-gameplay navigation and settings**. A decorative element may provide atmosphere, but must never be mistaken for a verified tactical report.
+
+### 12.1 Ontology-to-UI traceability
+
+| Underlying concern | What the player needs to distinguish | Owning surface | Non-negotiable rule |
+|---|---|---|---|
+| Definitions versus instances | Archetype and capabilities versus one unit's identity, damage and orders | Selected-unit card; roster tooltip | A changed display name/portrait cannot change stable gameplay identity |
+| Faction versus owner/controller | Unit's origin, present permitted commander, political affiliation and hostility | Inspection; allegiance badge; command eligibility | Owning a faction, hiring an asset and commanding an individual unit are different rights |
+| Match and world | Scenario, phase, timer, participant slots and terminal result | Setup, HUD objective summary, pause, results | A visual win banner is emitted **after** the authoritative result |
+| Space and movement class | Passable ground, legal destination, route uncertainty and camera bounds | Terrain cursor, path preview, minimap | A visual route or plausible map position cannot authorize an illegal movement-class order |
+| State and operability | Health, cooldown, order, status, facility service and availability | Selection, ability, facility and production views | Owning a factory does not imply it can operate or produce |
+| Resources and processes | Stock, flow, cost, reserved budget, capacity, progress, failure/cancel | Resource rail; production queue; detail panel | Funds are not deducted by a button animation; completion is not the same as a purchase request |
+| Commands and events | Requested, admitted/rejected, executing, interrupted, completed | Command card, feedback, event history | An input gesture is not proof the action happened |
+| Information and claims | Currently seen truth, last observation, report allegation, unknown and disproved | Battlefield intel markers; minimap; dossier | Neither a rumor nor a fabricated report may generate a real revealed entity |
+| Objectives and provenance | What exact state/event qualifies and what remains unknown | Objective list, progress, debrief | Own-producing a bomb is not equivalent to possessing or stealing it |
+
+This matrix is a **UI acceptance taxonomy**, not a proposal to build one class per row. Refer back to the [minimal gameplay contract](ENGINE_OUTLINE.md#minimal-rts-gameplay-contract) when questions of state authority arise.
+
+### 12.2 One canonical interaction pipeline
+
+```text
+device gesture -> semantic local action -> selection + target-mode state
+               -> typed command intent (issuer, selected instance IDs, target, modifiers)
+               -> authoritative command admission
+               -> accepted / rejected / limited admission feedback
+               -> simulation process and state events
+               -> participant-authorized observation projection
+               -> HUD, in-world feedback, notification and event history
+```
+
+A command preview represents the *intended* operation and its locally knowable restrictions, not a promise of acceptance. The final check always occurs in the current authoritative rules context. An accepted order can still become interrupted, delayed, out of range or impossible during execution; the UI must distinguish those outcomes. The HUD must not implement damage, capture, purchase, ownership conversion, construction or victory as independent widget-side side effects.
+
+Use a small common response vocabulary for all device profiles: **ready**, **requires target**, **provisional preview**, **requested**, **accepted**, **rejected**, **in progress**, **interrupted**, **completed** and **cancelled**. Do not present "successful" until the required simulation event exists. A command rejected for a hidden target must use a permission-safe generic reason rather than identifying a concealed unit or facility.
+
+### 12.3 Player observation, not omniscient game state
+
+Propose a *participant-specific presentation snapshot* containing only the fields permitted for that participant at that time. It should distinguish:
+
+- **Authoritative own/authorized assets:** current controllable health, status, orders and supported ability details, subject to any communications or gameplay restrictions.
+- **Currently observed foreign entities:** fields visible under reconnaissance, detection, diplomacy and mission rules; visual contact need not grant full statistics or classified content.
+- **Remembered contacts:** position and last-known type/status **at observation time**, with timestamp/age and no implied ongoing real-time tracking.
+- **Intelligence claims:** a report alleging a fact, with source *as represented to the player*, confidence, report timestamp, verification state and permitted attribution. A purported source can be false.
+- **Unknown/hidden:** no data beyond public or legitimately inferred scenario knowledge; disabled HUD widgets, minimap overlays, hovering and diagnostics must not leak it.
+- **Disproved/retracted:** retained in an intelligence history if useful, but explicitly no longer presented as live enemy presence.
+
+Prohibit UI code from grabbing unfiltered lists of enemy Actors or querying hidden objects merely to decide whether an ability button or cursor should be green. An inaccessible object's existence must not be detectable through hover hit testing, different rejection messages, minimap bounds, sound cues or a fluctuating resource readout. Distinguish **player-known** from **world-true** even when both happen to agree.
+
+## 13. Tactical screen information architecture
+
+### 13.1 Glance, inspection and investigation
+
+The battlefield is the main work surface. Organize content into **three levels of attention** rather than filling the screen with every possible statistic:
+
+1. **Persistent, glanceable:** selected-force headline, available direct orders, current primary objective, urgent alerts and only currently actionable strategic stocks/queues. Units and the strategic map remain the dominant visual signals.
+2. **On-demand inspection:** detailed per-unit and mixed-force comparison, weapon and movement capabilities, formation modifiers, production prerequisites, facility operability, resource throughput and richer objective descriptions.
+3. **Deliberate investigation/planning:** full map, intelligence claims and provenance, diplomatic/political developments, archival campaign documents, faction technology, Black Market and multi-step intelligence workflows—only once implemented.
+
+An unusual strategic emergency may elevate a lower-level datum temporarily (for example, power outage, nuclear-threat warning *as perceived*, mission deadline or suspected false-flag allegation) without making an entire investigation panel permanent.
+
+### 13.2 Desktop baseline HUD arrangement
+
+This is a *functional layout hypothesis*, not locked pixel coordinates or a reproduction of any C&C/StarCraft interface:
+
+```text
++---------------------------------------------------------------------+
+| mission/phase  | objective + alert strip                | compact stocks |
+|---------------------------------------------------------------------|
+|                                                                     |
+|                  BATTLEFIELD / PRIMARY TARGET AREA                  |
+|  contextual world markers, selection, path/target previews          |
+|                                                                     |
+|  [optional urgent alert]                                            |
+|                                                                     |
+|-----------------------+----------------------+----------------------|
+| strategic map         | selection / group    | orders / abilities   |
+| + viewport footprint  | portrait + state     | target/cost/ready    |
+| + intel legend        | aggregate/details    | production if active |
++-----------------------+----------------------+----------------------+
+```
+
+The design intentionally groups *strategic orientation* (map), *what is selected* (identity), and *what can be done* (orders) while minimizing pointer travel. Its compact desktop bottom-band form should be tested against a more transparent edge-anchored variant with larger battlefield visibility; the winning version should be chosen through usability evidence, not genre nostalgia. At lower vertical resolutions, convert secondary information to collapsible drawers instead of shrinking labels beyond legibility.
+
+| HUD zone | Always visible when implemented | Expandable/conditional content | Main failure to prevent |
+|---|---|---|---|
+| Main viewport | World, selection outline, active target state, tactical order acknowledgement | Route/formation/area preview, warnings, interaction ranges | Battlefield concealed by large permanent panels |
+| Strategic map | Friendly/authorized entities, currently allowed information, viewport footprint, important objectives | Layers, legends, filters, ping history, claim age, full planning mode | Hidden truth leaking through minimap actors or unexplained enemy dots |
+| Selection band | Count/type, identity, grouped status, order headline and key health/resolve indicators | Detailed health distribution, member list, formation, permitted cargo/worker details | One representative's health masquerading as a mixed group's health |
+| Context command card | Most relevant legal or potentially legal orders, target mode and cancellation; ability cooldown | Prerequisites, cost breakdown, queue, technology reasons | Greyed-out unexplained controls or buttons that bypass order validation |
+| Objective/status rail | Current primary objective, nearest deadline/contested state, essential progress | Secondary objectives, mission log, narrative context | Objective completing from an animation rather than match state |
+| Resources and production | Implemented actionable stock/capacity and active processes only | Full refining chains, allocation, energy grid, factories, auctions | Presenting design-only resources as if an actual economy exists |
+| Notification layer | New urgent event and acknowledgement; replayable event log | Filters, map-focus, pause/review | Flood that masks world clicks or exposes covert attacker identity |
+
+**Spatial policy:** fixed HUD regions should reserve touch/click input only within their actual interactive shapes; transparent decoration must not swallow battlefield input. Selection rectangle, minimap clicks, scroll/pan and tooltip hit regions need deterministic priority. World indicators (range, move target, damage, detection) should scale and declutter across zoom, use predictable z-order/occlusion, and be hidden when the observer is not entitled to their meaning.
+
+### 13.3 Minimap as a separate projection of knowledge
+
+The strategic map is not a downsized unrestricted world render. Derive its transform from validated playable bounds and camera orientation, not hardcoded pixel assumptions or archival-map art. Allow camera focus/pan and, when the command grammar allows, orders through the minimap using the *same* authorization and terrain-target rules as the main battlefield. Provide a legend for friendly/ally, observed hostile, neutral/Unaligned, objective, and reported/remembered markers. A reported nuclear site should use a distinct glyph or outline from an observed real structure. Preserve contact age and uncertainty when zooming between tactical view, minimap and full planning map. Icon clustering should not erase a critical objective or invent precision about uncertain contacts.
+
+For rivers, mountain passes, bridges, borders, industrial zones and road/rail networks, a map overlay may show **known** infrastructure and navigation classes. Historical map provenance is an authoring matter in the [Archive](../Archive/README.md) and [Production Standards](PRODUCTION_STANDARDS.md); it must never determine gameplay visibility by itself.
+
+## 14. Selection, orders and interaction grammar
+
+### 14.1 Selection invariants
+
+Selection is local player intent over currently visible/eligible entities, not an ownership transfer and not a match rule. The future implementation should support single selection, marquee/box selection, additive/subtractive modifiers, select-similar/type, double-select when appropriate, cycling, and remembered numbered groups. The existing prototype only establishes single-unit selection. Before broadening it:
+
+- Define **owned/controllable**, **friendly but not controllable**, **allied under contract**, **neutral Unaligned** and **hostile/unknown** selection behavior. Inspecting a non-controllable public or discovered asset must never expose its owner-only commands.
+- Keep a stable selected *instance-ID set*, not widget indices. Remove dead, transferred, no-longer-authorized or genuinely undiscoverable instances according to explicit selection policy; a recycled pointer must not select the next spawned entity by accident.
+- For a mixed group show count, role composition, actionable common orders and distribution of health/resolve; use "mixed / n of m eligible" rather than a misleading uniform value. Provide optional subgroup tabs or filters when complexity warrants them.
+- Expose the difference between **common to all**, **available to an eligible subset**, **temporarily unavailable**, and **not possessed** as separate command-card states. Do not silently send partial orders. If an explicitly requested subset action is supported, preview and acknowledge affected/omitted counts and allow confirmation where risk warrants it.
+- Numbered control groups store eligible instance sets, support assign/recall/focus and handle death/changed controller gracefully. Never automatically grant control after faction conversion without a new authority check.
+
+Selection presentation should preserve map readability: clear rings/shape outlines, a subtle group bounding cue, category/ownership symbol and hover feedback. Selection effect animation is not confirmation of an admitted gameplay order.
+
+### 14.2 Order families and targeting states
+
+| Family | Typical target | Required UI behavior | Failure/interrupt distinction |
+|---|---|---|---|
+| Move / attack-move | Legal ground or route point | Ground marker, queued waypoint preview where supported, movement-class hint | Invalid surface, inaccessible route, later route obstruction |
+| Attack / guard / hold / stop | Observed hostile actor, area or local stance | Target cursor and admitted stance/order; friendly/neutral permissions respected | Invalid/hidden target, cooldown, target death, attacker death |
+| Interact / capture / secure | Declared site/region/objective | Radius/contest and progress only when observable, qualifying unit shown | Not eligible, contested, paused, destroyed site |
+| Produce / deploy / reinforce | Eligible queue, producer or legal placement | True cost, reservation, time, capacity and cancellation terms | Insufficient resources, missing prerequisite, inactive building |
+| Recon / intel / inspect | Region, sensed contact or report | Scanner/vision scope with information-class label and timestamps | Range/detection restrictions, old or disproved report |
+| Sabotage / infiltration / ability | Legal actor/site/area selected by an eligible unit | Availability reason, targeting mode, cost, commitment and delay | Failed admission, detected action, interrupted process, completed effect |
+| Mercenary / contract / market | Offer, contract target, permitted hired asset | Price, ownership-versus-command rights, expiry/cancellation | Unavailable offer, expired permission, rival purchase |
+| Propaganda / Psy-Ops / Intimidation | Eligible media region, facility or unit | Faction-specific unlock and target/resolve/knowledge criteria | Wrong faction, unsupported target, insufficient intel, immunity |
+
+Canonical **interaction states** are idle → selecting → optional targeting/preview → submitted → accepted/rejected → executing → completed/interrupted. Preview overlays must clear on cancel, deselection, modal opening, ownership loss, invalidated target and match end. Escape/Back should cancel the deepest temporary state first, then close an overlay, and only subsequently open pause when no more local target state needs cancellation; verify these rules for each device input mapping.
+
+**Queue modifiers:** when order queuing is implemented, distinguish an order appended to a queue from an immediate replacement. The queue UI should expose only actually admitted steps and explain admission failure without pretending later steps executed. Queues require an explicit policy for path interruption, target death, ownership change and loaded-save restoration.
+
+### 14.3 Feedback semantics and attention control
+
+Acknowledge an order in both a low-clutter world cue and a small semantic status channel: *requested* may have a temporary cursor/ping, *accepted* an order marker, *rejected* a short accessible reason, *executing* a status indicator, *interrupted* a distinct notification. Use audio as redundant reinforcement, not the only channel. Avoid modal confirmations for ordinary frequent move/attack orders; reserve confirmation for irreversible or high-cost actions, explicitly destructive actions, unambiguous mixed-selection subset operations, and abandoning/restarting a match. Do not allow generic action sounds to imply a successful infiltration or production job before the simulation confirms it.
+
+Notification arbitration should prioritize immediate player harm or mission-critical state over routine successes. Coalesce identical low-priority damage alerts during high-entity battles, keep a scrollable local incident history with timestamp/map focus where permitted, provide alert-volume controls, and avoid repeated sounds overwhelming tactical attention. Contextual map pings must carry the same epistemic class as their originating event.
+
+## 15. Epistemic UX: fog, intelligence, fabricated reports and deception
+
+POLITIKA's unusual advantage over a conventional RTS is the distinction between *world truth* and what a faction believes about it. A trustworthy interface must be honest about the **status of evidence** without always knowing or revealing the truth. Apply this principle across tactical HUD, minimap, mission dossier, espionage buttons, notification wording and post-match review.
+
+### 15.1 Intelligence presentation types
+
+| Information kind | Proposed visual grammar | Detail panel should disclose | Must not imply |
+|---|---|---|---|
+| Live optical/sensor sighting | Solid current-contact marker with time-sensitive detection qualifier | Observed identity/type/position and sensor context actually known | Every hidden statistic or permanent tracking |
+| Last-known sighting | Muted/ghosted outline; explicit last-seen time | Recorded location, age, uncertainty and possible movement | That the unit remains at its old coordinate |
+| Intercepted communication | Signal/report icon, alleged author and capture time | Claim text and disclosed source/classification | Cryptographically verified origin or physically observed facility |
+| Anonymous or allegedly official report | Distinct document/rumor marker, uncertainty badge | Claimed fact, confidence *as estimated by recipient*, report history | That a reported source is truthful |
+| Corroborated in-world evidence | Verified-evidence state with traceable local sources | What was corroborated and by which accessible steps | Universal knowledge outside recipients or final objective completion without a qualifying event |
+| Disputed/disproved claim | Struck/retracted history entry; remove live-looking dot | Contradiction, correction time and remaining uncertainty | That absence of one sighting proves an entire region clear |
+| Unknown / fully hidden | No targetable gameplay entity marker | No secret type, cost, threat or facility data | That a locked action diagnoses an unseen building's existence |
+
+**Confidence is not truth.** A confident fabricated report should remain a confident *claim* until disproved; a low-confidence report could happen to be accurate. A detector that finds no facility at a claimed coordinate can update the belief/history without removing a facility that was never there. The same authored message may present different details to different players based on who has access to the corroboration.
+
+### 15.2 Concrete adversarial flows
+
+**Fabricated nuclear site:** an Unaligned-origin report purports to be enemy radio intelligence alleging that the Directorate has a nuclear facility. The recipient's feed displays an *unverified alleged location* with report age and attributed source; the main map does not spawn a selectable Directorate nuclear plant. A recon flight finds an empty site and the claim becomes disputed or disproved according to verification policy; it does not spawn/destroy any game entity. Other players neither gain the claim nor see the verification unless it is legitimately shared.
+
+**Covert budget diversion:** when an actual Directorate resource theft succeeds, the defender may see lower stocks or reduced production but not an enemy spy's identity; after a separately simulated detection/investigation event, the incident dossier may reveal attribution. The attacker sees its authorized outcome and credited stocks. Identical public resource deltas need not produce identical privileged alerts for both participants.
+
+**Neutral authority:** Unaligned patrols and institutions display as observed NPC actors with their own affiliation. The player's inability to issue commands to them must not depend on whether the Unaligned secretly knows the assassination story. The political interface may surface actual publicly known jurisdiction/mandate, but not internal hidden stability calculations, classified surveillance or conspiracy participation.
+
+**Nuclear provenance:** a stolen bomb icon may identify possession/custody if legitimately known; it must not grant a "produced our first bomb" victory indicator. For Ascendancy, the win panel must depend on the authoritative completion of its own qualified production event. The full design remains governed by [Nuclear Weapons](NUCLEAR_WEAPONS_SYSTEM.md).
+
+### 15.3 Intelligence and visibility testing
+
+Test the same fixture from **recipient, uninformed rival, genuine observer and privileged debug** viewpoints. The first three must differ only according to authorized information; development overlays may expose truth only behind explicit non-shipping controls. Negative assertions include: hovering over fog cannot discover a secret building; a false marker cannot be attack-targeted as a real Actor; a rejected command cannot reveal hidden armor/health; an unaligned false report cannot satisfy a research/victory prerequisite; an expired contract cannot leave control buttons enabled; minimap and dossier cannot disagree about whether a contact is live or reported. Screenshot testing alone is insufficient—assert the underlying projection records and emitted commands.
+
+## 16. Strategic and faction-specific surfaces
+
+These UI extensions are **conditional on the corresponding implemented rule**; Sections 4 and 5 already define their narrative and faction contracts. Do not construct simulated dashboards for mechanics that are still design proposals.
+
+### 16.1 Economy, infrastructure and deployment
+
+Show each actionable resource with a type/unit, current available stock, any reserved amount, production/consumption rate *if observable*, capacity when meaningful and an explicit source for negative balances or service interruptions. Keep oil and gas deposits distinct from refined petroleum/kerosene; distinguish raw versus refined nuclear material, energy-generation versus operability and ownership versus functional throughput. A breakdown drawer can show where an input was produced, refined, transferred, spent or stolen only to the level available to that player. Avoid reducing all shortages to one universal "credits" meter if the game's resource rules are more specific.
+
+Production/reinforcement controls should state the specific source/producer, recipe prerequisites, build time, queue position, reservation/cancellation policy, blocked state and legal deployment destination. Distinguish *can afford*, *is permitted*, *has required infrastructure*, *producer is operational*, *destination is legal* and *currently in progress*. A disabled card needs one or more actionable reason phrases, not a generic red tint.
+
+### 16.2 Faction-specific command and policy grammar
+
+| Faction | Distinct UI burden | Hard rule |
+|---|---|---|
+| Atlantic Concord | Precision/scouting, cheap aircraft reconnaissance, intelligence/Psy-Ops, cheaper oil refining and nuclear bomber readiness | An unarmed scout aircraft cannot receive an attack action; Psy-Ops may affect unit resolve or eligible buildings but is not an Intimidation capture |
+| Red Directorate | Mass formation/Discipline, rifle-motorcycle reconnaissance, intelligence theft cost/time advantage, industrial/nuclear ICBM processes | Do not portray economy theft as a standard combat hit or claim a nuclear launch without actual launch rules |
+| Iron Ascendancy | Spy progression, eligible isolated-unit Intimidation, espionage gate for research, production-dependent first-bomb win | Only this faction can issue Intimidation; break threshold is not conversion until a separate permitted action succeeds |
+| Meridian Pact | Truck reconnaissance, early conventional sabotage, mercenary contract state, Black Market, fuel-field opening constraint | Trading/contract rights do not equal faction ownership; no advanced propaganda action tree or nuclear refining |
+| The Unaligned (NPC) | Seen patrols, institutions, public alerts, contested authority, occasional reports and verification | Never show a playable Unaligned build/command panel or reveal internal balance director |
+
+Population Morale (faction-wide) and unit Discipline/combat versus civilian Morale (same per-unit resolve field with contextual labels) must never be collapsed into one UI variable. For mass-selection, aggregate military Discipline as a distribution/low-watermark where useful; civilian Morale and faction Population Morale stay separately labeled.
+
+### 16.3 Market, missions and political boundaries
+
+The Black Market is an explicitly authored transaction view, not a shortcut for purchasing units whose rules forbid acquisition. Display seller/offer *as publicly known*, price, eligible buyers, uniqueness/stock, auction state, ownership versus command authorization and transaction verification. Nuclear weapons cannot become Black Market listings. A mercenary's expiration should withdraw the customer's buttons and update eligible selection without changing the underlying archetype's origin.
+
+Mission objectives need event provenance: *capture*, *hold for duration*, *protect*, *extract*, *intercept*, *verify evidence*, *produce* and *survive* are distinct conditions. The panel must show the actual qualifying predicates or a spoiler-safe player description, the progress policy (reset/pause/persist), eligibility and failure state. A fictional assassination clue should not be described as historically verified evidence; historical source approval remains a production task, not part of the fictional intelligence system.
+
+## 17. Front-end, focus hierarchy and navigation flows
+
+### 17.1 Screen/state map
+
+```text
+Application shell
+  Main menu
+    Continue -> confirmed compatible local campaign save -> briefing/mission
+    Campaign -> mission selection -> dossier/briefing -> gameplay
+    Skirmish -> validated map + 2–4 faction slots (+ Unaligned NPC) -> gameplay
+    Settings -> display/audio/controls/interface/accessibility -> return
+    Help / credits / quit
+Gameplay
+  Tactical HUD + non-blocking notifications
+    Optional inspection drawer / strategic-map expansion / intel dossier
+    Command targeting preview -> confirm/cancel -> tactical HUD
+    Pause (blocks world commands)
+      resume / settings / save where valid / restart / exit
+    Terminal result -> debrief -> next action
+Error/recovery
+  missing/unsupported save, invalid content, failed map admission, settings rollback
+  -> actionable explanation -> recover to shell (never partial match)
+```
+
+Maintain a focus/back stack that restores the prior meaningful control and does not allow a gameplay click through a transparent modal. Modal transitions must release target modes and clear held/queued input according to the canonical input policy. A pause screen must communicate whether simulation time is stopped (local offline match) or continuing (possible later online match); do not promise online pause semantics before networking design exists.
+
+The skirmish setup should validate distinct playable factions, supported slot count (2–4), map legal starts and Unaligned auto-injection before enabling Start. Treat scenario-specific Meridian fuel access and special infiltration preconditions as checks according to the selected gameplay/map profile, not as conditions for the Stage 3 test fixture. If an invalid map cannot be started, show a useful localized reason without disclosing hidden campaign spoilers.
+
+### 17.2 Narrative without cinematics
+
+Campaign briefing, radio captions and debrief must support text-first consumption, transcript history, skip/review, neutral map annotations and user-adjustable dialogue pace. Use audiovisual layering for atmosphere—archival paper/typography, static dossier maps, stamps and broadcast indicators—but do not obstruct urgent tactical orders with mandatory spoken dialogue. A brief can withhold the game's alternate-history secrets while remaining mechanically honest about known objectives. Later transcript/dossier navigation should avoid autoplay media that conceals unsent commands or forces an unwanted pause.
+
+## 18. Adaptive device interaction and accessibility specification
+
+### 18.1 Shared semantic actions, distinct device grammars
+
+| Player intent | Linux/Windows mouse + keyboard | Desktop/Steam Deck controller | Android touch-first |
+|---|---|---|---|
+| Camera pan/zoom | Edge or keyboard pan; wheel/keys | Stick/trackpad pan; explicit zoom controls | Drag empty ground to pan; pinch to zoom; avoid accidental unit orders |
+| Select single / inspect | Click, modifier inspect | Cursor/reticle, focus/select confirmation | Tap entity; tap/hold for details where tested |
+| Multi-select / control group | Drag rectangle; modifiers; number groups | Selection modifier/radial and group list | Multi-select mode or drag selection that cannot conflict with camera pan |
+| Context order | Context click with safe inference | Explicit command/target selection and confirm | Context toolbar + target tap/confirmation |
+| Targeted ability | Button/hotkey + preview + target | Action wheel/card + reticle + cancel | Large ability card + preview + target + cancel |
+| Minimap/focus | Click/drag viewport footprint | Focusable map with accessible legend | Expandable map so finger does not occlude tactical area |
+| Cancel / back / pause | Escape and configured commands | Dedicated Back/Cancel; pause | Visible Back/Cancel and pause reachable without hover |
+| Rebinding/help | Keyboard/mouse mapping panel | Gamepad mapping + device prompts | Gesture tutorial and settings appropriate to touch |
+
+Do not pretend physical gestures are semantically equivalent just because they emit the same event ID; test accidental taps, pointer travel, target disambiguation and the full select → command → feedback loop separately for each profile. Avoid a mandatory synthetic mouse cursor for controller RTS gameplay unless a prototype establishes that it is quicker and clearer than focus/reticle controls. Controller support is a planned feature for both Linux and Windows, not only the Deck; Android may additionally support controllers.
+
+### 18.2 Responsive layouts and legibility
+
+- **Scale model:** use UE DPI scaling, logical size constraints, anchors and safe-area widgets; keep world camera zoom independent of HUD scale. Provide separately adjustable interface scale and text/subtitle scale with recovery if a selection makes controls inaccessible. Avoid coupling HUD text size to 3D screen percentage.
+- **Desktop checkpoints:** test at 1920×1080, 2560×1440, 3840×2160, at least one ultrawide aspect ratio and window resizing. Ensure selection, production, minimap, tooltip and objective rails do not collide as labels expand.
+- **Handheld/mobile checkpoints:** design a compact mode with contextual bottom drawer, easily focused actions, touch-safe minimap expansion, appropriate system insets and a non-hover information path. Validate at representative native aspect ratios, DPI/font scales and device orientation; landscape is the proposed Android starting point, not a shipped guarantee.
+- **Touch targets:** adopt and test a project-defined minimum comfortable physical target size per device tier rather than equating Unreal logical pixels with millimeters. Keep destructive/match-exit controls separated and require confirmation. Measure reach and finger occlusion on real devices.
+- **Contrast:** use WCAG 2.2's 4.5:1 ordinary-text, 3:1 large-text, and 3:1 non-text active-control contrast as useful *design review targets*, not as a claim of certified WCAG compliance or a universal game standard. Audit against real snowy, bright-sky, forest and night maps, including translucent HUD overlays. Pair color with shape/text/pattern.
+- **Accessibility:** remappable actions, alternate input paths, clear keyboard/gamepad focus, reduced motion/flashes, subtitle speaker labels, adjustable radio/subtitle timing, notification history, scalable cursor and selection rings, high-contrast/tactical-intel visual modes and color-vision-safe faction distinctions. Provide screen-reader/assistive-text hooks where feasible and test rather than assume accessibility from library presence.
+- **Localization:** use localized `FText` rather than raw user-facing IDs or unlocalized string concatenation; allow sentence-length expansion, language-dependent labels, numerical/date formatting and diacritics appropriate to Yugoslav languages. Do not assume compact English hotkey hints or fixed-width Latin glyphs are sufficient.
+
+### 18.3 Theme and visual language
+
+Create a small source-controlled UI style vocabulary before commissioning production screens: typography tiers, spacing/density tokens, HUD panel opacities, cursor/selection outlines, semantic colors *plus* symbols, alert priority, distinct contact/evidence glyphs, focus-ring states, icon size tiers and animation durations. Faction crests/logos remain visually stable under color-scheme changes and should not be substituted with invented icons. Use authentic-period map visual conventions **as a reviewed aesthetic reference**, never as a replacement for accessible contrast. Test readability at both strategic zoom and close combat without borrowing proprietary C&C interface sprites.
+
+## 19. Unreal Engine 5.8 technical implementation standard
+
+Epic's official documentation defines reusable UE UI technology and performance recommendations, **not a mandatory RTS HUD layout standard**. In fact, [CommonUI's design guidance](https://dev.epicgames.com/documentation/en-us/unreal-engine/design-guidelines-for-using-commonui-in-unreal-engine) explicitly notes that a simple PC-only RTS is a case where CommonUI may add unnecessary complexity, while complex multi-layered, cross-platform navigation is a stronger fit. POLITIKA has both battlefield and multi-device menu needs; make the distinction deliberately.
+
+### 19.1 Recommended responsibility boundaries
+
+```text
+UE 5.8 Enhanced Input / pointer / touch adapters  ->  local semantic intents
+Local PlayerController  ->  selection + targeting + camera state
+                       ->  typed command request to match rules
+Authoritative C++ simulation -> admitted orders, state changes, events
+Participant observation service -> filtered read-only UI snapshot/events
+Presentation adapter (C++) -> normalized labels, command affordances, statuses
+UMG/Slate battlefield widgets -> HUD and world indicators
+Optional CommonUI activatable menus -> modal focus/back/navigation
+User settings/local profile -> UI scale, bindings, accessibility, layouts
+```
+
+Do **not** add these as mandatory new Unreal modules or a duplicate gameplay database. Keep the prototype's directly functional C++/Slate HUD until a UI component actually needs reuse or sophisticated authoring. Presentation adapters may be ordinary C++ objects or small view models owned by local player context. A controller-facing tool should receive participant-filtered data, never privileged world-state pointers.
+
+| UE feature | Appropriate POLITIKA use | Caution / adoption criterion |
+|---|---|---|
+| **UMG / Slate** | Main tactical HUD, selection/production cards, minimap presentation, overlays and menus | Avoid tick-driven list scans and hidden simulation writes in widgets |
+| **Enhanced Input** | Contextual semantic RTS actions, mapping contexts, player rebinding, device-specific adapters | Registering mappable contexts is not equivalent to activating them; keep modal/world routing explicit |
+| **CommonUI** | Candidate for front-end/settings, skirmish setup, pause, nested dossiers and controller focus/back | Not needed for every battlefield widget; prototype before opting into `CommonGameViewportClient` and an input-router migration |
+| **UMG Viewmodel (MVVM)** | Optional efficient field-notify projection for reused, complex reactive widgets | Epic documents the feature as **Beta**; evaluate version-specific shipping maturity, correctness and cost; a small manual event adapter is sufficient initially |
+| **UI Invalidation / Retainers** | Cache infrequently changing panels; conditional retainer use after measurements | Do not assume every dynamic HUD panel should be invalidated/retained; cache invalidation and texture memory have costs |
+| **DPI Scaling / Safe Zones** | Responsive anchors, viewport-dependent scaling, screen insets | Test actual on-device bounds, not only editor simulator |
+| **Localized `FText` and asset styles** | Translatable labels, descriptions, alerts and theme consistency | Gameplay IDs/asset paths are not player-visible localized names |
+| **Automation, screenshot tools, Slate Insights** | Interaction assertions, editor comparisons, invalidation/update traces | A passing screenshot/editor test cannot certify packaged gameplay or physical devices |
+
+### 19.2 Input routing and focus discipline
+
+Use [Enhanced Input](https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine) action IDs and contexts for gameplay. Present actions such as `RTS.Select`, `RTS.ContextOrder`, `RTS.AttackMove`, `RTS.Stop`, `RTS.Guard`, `Camera.Pan`, `Camera.Zoom` and targeted ability intents independent of physical bindings. Follow the detailed [Engine input contract](ENGINE_OUTLINE.md#input-contract-implementation-notes), including active-context priority, player-mappable settings, conflict resolution, reset/persistence and device prompts.
+
+Use explicit UI routing states: **nonblocking tactical HUD**, **targeting mode**, **modal menu/rebind**, and **passive notification**. Modals must consume UI Accept/Back and prevent world orders behind them; closing a modal restores focus and contexts, clears held-trigger leakage and does not duplicate input listeners. For advanced multi-layer menus, [CommonUI Quickstart](https://dev.epicgames.com/documentation/en-us/unreal-engine/common-ui-quickstart-guide-for-unreal-engine) covers `CommonGameViewportClient`, activatable widgets, Back/Confirm, controller data and focus; this is a *candidate architecture*, not a claim the plugin is already enabled. Do not adopt CommonUI's Enhanced Input bridging merely because both plugins exist—the [integration documentation](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-commonui-with-enhanced-input-in-unreal-engine) carries explicit maturity cautions and must be checked against the pinned 5.8.3 build before relying on it for shipping-critical routing.
+
+### 19.3 Data-flow and update performance
+
+Prefer event/delegate-driven UI refresh for selection changes, observed health/order changes, objective events and known contact updates, not per-frame bound text getters or scans across every Actor. View-model or adapter updates should be keyed by selected instance ID and observation revision; coalesce high-frequency world events into a bounded view update cadence *where the design tolerates latency*, without delaying command acknowledgement or critical warnings. On selection change, unsubscribe stale sources and immediately clear outdated tooltips, targets and bound widgets.
+
+Build command buttons from the same C++ capability/admission descriptions used to check orders, while allowing a conservative *preview* that cannot leak hidden state. An enabled button does not guarantee admission after time has advanced; rejected requests must still have a legitimate result path. Data asset edits may change displayed stats, ranges and costs, but may not authorize ability use independently of the simulation.
+
+Epic's [UMG optimization guidelines](https://dev.epicgames.com/documentation/en-us/unreal-engine/optimization-guidelines-for-umg-in-unreal-engine) recommend reducing unnecessary widget Tick/OnPaint work, avoiding frequently evaluated bound attributes, and using invalidation caching where appropriate. Profile live tactical scenes with [Slate Insights](https://dev.epicgames.com/documentation/en-us/unreal-engine/slate-insights-in-unreal-engine), which identifies widgets being updated, repainted or invalidated; measure HUD cost within the overall RTS frame budget instead of declaring a fixed UI performance budget before target hardware is measured.
+
+### 19.4 Map/world-space rendering and assets
+
+Choose world-space widgets selectively. Distant health bars, floating names, capture markers, target indicators and selection effects should use a stable tested rendering strategy with clustering/LOD and access filtering. CommonUI's own guidelines discourage its use in WidgetComponents for world-space UI: favor simpler UMG/Slate or render primitives for such markers. Never spawn a permanent screen widget per every hidden unit. Keep navigation/minimap transforms independent of the rendering asset's projected image; map markers must be based on known state.
+
+Treat icon atlases, fonts, themes and portraits as content with provenance, source-control rules, localization coverage, fallback policy and validation. Art-only variations cannot change command availability, hitboxes for gameplay targets, faction permissions or authoritative visibility.
+
+### 19.5 Sources and supported inference
+
+Epic sources informing this technical specification (all are general UE guidance rather than bespoke RTS interface standards):
+
+- [CommonUI design guidelines](https://dev.epicgames.com/documentation/en-us/unreal-engine/design-guidelines-for-using-commonui-in-unreal-engine) — when *not* to adopt it for a simple PC RTS, and when layered multi-platform navigation justifies it.
+- [Common UI overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-advanced-multiplatform-user-interfaces-with-common-ui-for-unreal-engine) and [Quickstart](https://dev.epicgames.com/documentation/en-us/unreal-engine/common-ui-quickstart-guide-for-unreal-engine) — activatable input routing, back actions, controller prompt assets.
+- [Enhanced Input](https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine) and [UEnhancedInputUserSettings](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Plugins/EnhancedInput/UEnhancedInputUserSettings) — semantic contexts, device mappings and rebinding.
+- [UMG Viewmodel](https://dev.epicgames.com/documentation/en-us/unreal-engine/umg-viewmodel-for-unreal-engine) — optional push-updated binding layer, labelled Beta.
+- [UMG optimization](https://dev.epicgames.com/documentation/en-us/unreal-engine/optimization-guidelines-for-umg-in-unreal-engine) and [Slate Insights](https://dev.epicgames.com/documentation/en-us/unreal-engine/slate-insights-in-unreal-engine) — low-overhead event updates, caching and measurement.
+- [UMG Safe Zones](https://dev.epicgames.com/documentation/en-us/unreal-engine/umg-safe-zones-in-unreal-engine), [DPI Scaling](https://dev.epicgames.com/documentation/en-us/unreal-engine/dpi-scaling-in-unreal-engine), [FText](https://dev.epicgames.com/documentation/en-us/unreal-engine/ftext-in-unreal-engine) and [UI Accessibility](https://dev.epicgames.com/documentation/en-us/unreal-engine/designing-ui-for-accessibility-in-unreal-engine) — resilient layouts, localization and accessibility hooks.
+- [Automation Test Framework](https://dev.epicgames.com/documentation/en-us/unreal-engine/automation-test-framework-in-unreal-engine), [Screenshot Comparison](https://dev.epicgames.com/documentation/en-us/unreal-engine/screenshot-comparison-tool-in-unreal-engine) — independent functional and visual evidence.
+- [MDN/WCAG contrast explanation](https://developer.mozilla.org/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Perceivable/Color_contrast) — optional numerical contrast design-review reference.
+
+## 20. UI validation matrix and staged acceptance gates
+
+### 20.1 Test observable behavior rather than mockup existence
+
+| Fixture | State/interaction assertion | Visual / accessibility assertion | Earliest applicable stage |
+|---|---|---|---|
+| Selected friendly unit vs hostile/Unaligned | Only controllable friendly receives orders; identity and health update; enemy cannot become friendly by click | Distinct selection/inspection glyph and no stale selection card | Existing slice regression |
+| Successful, rejected and interrupted move/attack | Correct typed command and rejection reason; damage/death and clearing preserved | Non-confusing accepted/invalid/order-complete feedback | Existing slice regression |
+| Control-point progress, contest and pause | Authoritative progress pauses/advances/completes correctly | Progress/contested/secured states remain legible and synchronized | Existing slice regression |
+| Content asset changed, invalid map rejected | Widget shows new authored stat; bad content blocks admission without partial match | Recoverable error and return to main menu; no empty HUD | Stage 3 |
+| Multi-select + mixed commands | Count, common/partial eligibility and issued recipient IDs exactly match | Group health/readiness not misrepresented as one unit | Stage 4 |
+| Production, refinery and stopped facility | Available stock/queue/reservation match rules; unavailable operation cannot be requested | Costs/throughput/disabled reasons explicit | Stage 4+ |
+| Fog/no-contact/last-known | Participant-specific projection excludes hidden truth; old markers carry age | No hidden unit hover/map/tooltip leak | Stage 4+ |
+| False-flag report and correction | Claimed marker not Actor; independent reconnaissance updates recipient belief | Claim/sighting/disproof have distinct iconography | Stage 5 |
+| Mercenary expiry / Intimidation conversion | Contract/individual controller changes affect legal commands, not faction slots | Selection and badges update immediately | Corresponding faction mechanic |
+| Ascendancy stolen vs own-produced bomb | Only qualifying own-production event wins | Custody, production progress and victory clearly differentiated | Nuclear system slice |
+| UI modal opened during targeted order | Modal blocks gameplay; Cancel clears target state; no post-close click-through | Focus returns to legitimate control; visible Back | Cross-stage |
+| Device-specific command parity | Mouse/controller/touch issue equivalent typed intents for same legal action | Prompts, safe zones and focus readable per device | Device qualification |
+| Save/reload/rebind/UI scale | Restored local preferences and valid gameplay state; no stale selection leak | UI scale/labels/focus remain in view on restart | Relevant persistence stage |
+
+Use automated pure C++ tests for command/projection invariants; Unreal Automation/Functional/Automation Driver for HUD state and simulated input; screenshot baselines for layout regressions; and real packaged, rendered gameplay interaction for milestone claims. Use the same negative-fixture discipline as the [Engine Roadmap](ENGINE_OUTLINE.md#78-immediate-next-action-and-milestone-handoff). If test data is absent, mark **BLOCKED** or **NOT_RUN**, not PASS.
+
+### 20.2 Test passes by screen and display
+
+1. **Tactical viewport:** at desktop 1080p, 1440p and 4K, and a supported ultrawide mode, test single selection, right/context click, rejected order, target mode, objective contest, rapid selection/death and pause. Capture the actual viewport, UI scale, labels and command-result telemetry.
+2. **Modal/focus:** while a target preview is active, open pause/settings/intel screens; hold world-command inputs, navigate via keyboard/controller, cancel, close and resume. Ensure exactly one semantic intent is delivered to its correct recipient and never to a covered battlefield.
+3. **Intel/no-leak:** use two observer fixtures with unequal information and a deliberately fabricated claim; compare field-level projections, minimap contents and targetability. Repeat after claim expiry/retraction and fog rediscovery.
+4. **Stress and performance:** simulate large selections, rapid deaths, repeated combat alerts, many reported contacts and shrinking/expanding production queues. Collect Slate/UMG invalidation counts, frame time and memory; avoid rebuilding every row every tick.
+5. **Device-specific:** exercise handheld gamepad without keyboard, trackpad alternative if offered, and Android touch on *actual hardware* including system insets and text scale. Desktop simulated controls do not prove physical usability.
+6. **Offline and recovery:** start without network, return from invalid content/save/setting, reload the main shell and re-enter a valid local scenario. Confirm UI status text never promises unavailable campaign or multiplayer modes.
+
+For screenshot comparisons, use Epic's tools as a baseline **in addition to** semantic assertions, not as a replacement. UI-only screenshots can appear correct while selection authority, fog filtering or move requests are wrong. Logs should record semantic action ID, selected instance set, command admission rule, observation revision and test result, with privileged details omitted from shipping logs.
+
+### 20.3 Acceptance sequencing and explicit exclusions
+
+**Now:** preserve the accepted Linux Development vertical-slice HUD and shell, fix any incorrect presentation of currently simulated data, and bind display values to Stage 3 validated unit/weapon definitions when they exist. No new UI subsystem is a dependency for typed content validation.
+
+**First complete match:** implement only the command-card, mixed selection, minimap, resource/queue, fog, objective and results surfaces required for the concrete match-loop rules. Verify the minimum independently playable offline loop and command/state consistency before expanding the roster.
+
+**First campaign/AI mission:** add briefing/debrief, mission log, faction-specific actions and intelligence reporting along with genuine world/claim provenance. Test misleading reports as a designed game phenomenon without misleading the player about what is verified.
+
+**Later platforms/release:** qualify remapping, controller/touch tactical command parity, accessibility settings, localization, safe areas, performance and recoverable package behavior on each target device. Multiplayer/replay, full economy, all rosters, production art, screenshots-as-proof and console certification remain outside near-term Stage 3 scope.
+
+**Document governance:** this file owns the *player-facing semantic contract and interface presentation*. It does not supersede mechanics in [Concepts](CONCEPTS_OUTLINE.md), world truth in [Engine](ENGINE_OUTLINE.md), faction rules in specialist documents, evidence in the [Archive](../Archive/README.md), or release qualification in [Performance and Release Gates](PERFORMANCE_AND_RELEASE_GATES.md). When an underlying mechanic changes, update its owner and the corresponding UI acceptance row together. Preserve status distinctions: **design proposal ≠ source implementation ≠ packaged acceptance ≠ platform qualification**.
