@@ -55,6 +55,12 @@ Unaligned factories, laboratories and staffed infrastructure can be eligible tar
 
 No neutral civilian site is automatically targetable merely because it exists. The game applies explicit eligibility, attribution and recovery constraints; contamination is an abstract fictional production/status system, not a biological simulation. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Reconnaissance and explosive sabotage by foreign forces
+
+The four playable factions use different cheap reconnaissance platforms: Meridian Pact fields very fast, lightly armed/armored scouting trucks; Atlantic Concord and Iron Ascendancy use unarmed light reconnaissance airplanes; and Red Directorate uses basic-rifle-armed motorcycles. Their visibility and movement are governed by the Unaligned's ordinary territorial control and NPC security responses.
+
+Meridian also has superior low-cost, early conventional sabotage against eligible vehicles and buildings through qualified non-spy units. The other three powers can carry out comparable fictional explosive-charge sabotage only later and at greater cost, using spies alone. Unaligned security AI reacts to discoveries, attempted attacks, damaged facilities, public consequences and attribution; independent neutral NPC authority never becomes a player-controlled sabotage faction. See [Explosive Sabotage](../../Docs/SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](../../Docs/RECONNAISSANCE_AND_SCOUTING.md).
+
 ## Internal Security and Civil Administration
 
 Internal security and civilian administration constitute equally important dimensions of the faction's activities. Police forces, border authorities, customs administrations, security agencies and municipal institutions maintain a visible presence throughout the game world. These organizations regulate access to restricted facilities, administer border crossings, enforce governmental regulations, investigate unauthorized activities and respond to disturbances affecting public order.
