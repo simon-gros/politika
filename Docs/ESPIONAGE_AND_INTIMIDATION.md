@@ -34,31 +34,40 @@ The game must validate **both** the maxed spy progression and the correct resear
 
 ## 3. Iron Ascendancy exclusive ability: Intimidation
 
-**Intimidation is exclusive to the Iron Ascendancy.** No Atlantic Concord, Red Directorate, Meridian Pact or Unaligned unit gains this ability through native production, copying a technology tree or a Black Market purchase.
+**Intimidation belongs exclusively to the Iron Ascendancy.** It can target **eligible isolated combat units and eligible isolated non-combat/civilian units**. Intimidation does not instantly convert an isolated unit: it must **fully break the target's meter** before ownership changes.
 
-Its purpose is to **break the battlefield morale of an isolated enemy unit and only then force it to change sides and join the Ascendancy**. An eligible target must first lose its remaining morale under an intimidation attempt; until its morale reaches the defined **fully broken threshold**, it stays loyal to its original faction. After that threshold is reached and all eligibility checks pass, the surviving unit changes controllable allegiance/ownership instead of being destroyed or replaced with a new spawned unit.
+### One meter, two names
 
-**Core target rule:** an eligible enemy combat unit must be **isolated from supporting friendly units**, and its **battlefield morale must be fully broken before conversion**. A supported squad or a unit with nearby allies does not qualify as isolated regardless of morale, and an isolated unit with intact morale is not yet convertible. Neutral civilians or ordinary non-hostile Unaligned personnel should not be freely convertible. Isolation can enable applying Intimidation morale pressure, but **is never an instant-conversion trigger**.
+**Discipline and morale are the same underlying unit meter, not two separate resistance systems.** The distinction is exclusively the unit category and its user-facing label:
 
-### Formation size and the Concord exception
+| Target category | UI / documentation term | One shared underlying meter | Requirement before conversion |
+|---|---|---|---|
+| **Combat unit** | **Discipline** | `UnitResolve` | `UnitResolve <= BrokenThreshold` (**Discipline broken**) |
+| **Civilian or other eligible non-combat unit** | **Morale** | `UnitResolve` | `UnitResolve <= BrokenThreshold` (**Morale broken**) |
 
-Except for the **Atlantic Concord**, larger coherent army formations have **more stable morale/discipline** than individuals or very small detachments. For the **Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned**, separation from allies and small formation size make battlefield morale more vulnerable. **The Red Directorate and Iron Ascendancy alone also gain an extra morale/discipline stability bonus when operating very massive, coherently supported armies**—a distinct positive advantage above normal large-group stability. The Meridian Pact and Unaligned do not have this special massive-army bonus. **Concord is the sole faction without a morale/discipline penalty for deploying individuals or very small groups**; its troops retain their normal battlefield discipline under those conditions.
+Both categories use **the same state representation, depletion/recovery mechanism, break threshold and conversion pipeline**. Do **not** implement parallel `UnitDiscipline` and `NonCombatUnitMorale` systems. Gameplay modifiers may depend on unit type: the **formation-size discipline bonuses apply to combat units**, while civilian morale can respond to civilian conditions and propaganda.
 
-**The Concord exception is not immunity to Intimidation.** A lone Concord unit can still lose morale under direct intimidation pressure and other legitimate adverse battlefield effects. However, it is **not automatically softened by the small-group penalty**. To convert it, an Ascendancy intimidator must still fully break its morale while it remains an eligible isolated enemy target. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+**Population morale** remains the faction-wide morale indicator for all five factions, representing the broader civilian/population state and informing production and combat units' baseline discipline. It is a **faction-level view/aggregation of the same morale/resolve framework**, not a third independently invented meter with incompatible thresholds. **Breaking one civilian's morale does not zero the whole faction's population morale** or convert other units.
 
-### Intimidation progression and counterplay
+### Eligibility and isolation
 
-**Required sequence:** `eligible enemy + isolation → active Ascendancy intimidation → target battlefield morale reduced to fully broken/zero threshold → validated conversion into Ascendancy allegiance`. No partial morale depletion is sufficient for conversion. If isolation or eligibility ends before the threshold is met, conversion cannot occur; whether pressure immediately stops and how morale recovers are tuning decisions.
+The target must be an **eligible, isolated individual unit**, without qualifying nearby friendly support. A combat unit and a non-combat unit may both be targets. Civilians, workers, engineers, couriers and support units are **not automatically excluded simply because they do not fight**, but must pass authored eligibility and hostility/relationship rules. Neutral Unaligned civilians do not become universally convertible targets by default; eligibility and sovereignty consequences must be explicit.
 
-**Potential balancing/counterplay, pending implementation details:**
-- Clearly expose an eligibility indicator, isolation condition, **remaining unit morale**, and whether the **broken-morale threshold** has been reached.
-- Limit the action by unit archetype, range, time, cooldown, risk or other game costs; values are not yet locked.
-- Permit opposing players to respond by reinforcing or regrouping an isolated unit, detecting an intimidator, protecting morale, or interrupting the **morale-breaking phase** before conversion.
-- Define how leadership, specialist and vehicle units interact with the mechanic, rather than allowing unrestricted conversions by default.
-- Track the target's original faction and the Ascendancy as the new controller, with effects on diplomatic reputation, supply and AI recognition.
-- Keep the intimidation action separate from the general damaging attacks that sometimes prioritize destruction at the expense of the Ascendancy unit's survival.
+Isolation is necessary but **never sufficient** for conversion. While eligible and isolated, an Intimidation action erodes that unit's **shared `UnitResolve` meter**. The target stays with its original controller as long as its relevant **Discipline (combat)** or **Morale (non-combat)** is above the broken threshold. Only after the meter is fully broken may control of **that same individual unit** transfer to the Ascendancy.
 
-**Authoritative rules invariant:** Intimidation conversion may resolve only when `ActorFaction == IronAscendancy`, actor has Intimidation, `TargetIsEnemyCombatUnit`, `TargetIsIsolated`, and **`TargetBattlefieldMorale <= BrokenMoraleThreshold`** following an authorized morale-reducing Intimidation action. Battlefield morale must be updated and validated **before** ownership changes. **Morale damage and conversion are separate game-state events**; UI effects alone never change allegiance.
+### Formation-size and faction asymmetry
+
+For **combat units**, larger coherently supported groups stabilize **Discipline** for the Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned. **Red Directorate and Iron Ascendancy alone gain an extra Discipline stability bonus in very massive coherent armies. Atlantic Concord alone suffers no Discipline penalty for deploying individual soldiers or tiny groups**, but Concord combat units can still have their Discipline eroded by direct Intimidation. There is **no equivalent “massive army” bonus for civilian Morale**, because civilians use the same meter but different contextual rules.
+
+### Intimidation sequence and counterplay
+
+The sequence is the same for both kinds of targets:
+
+`Eligible isolated target → Ascendancy Intimidation applies shared-meter reduction → UnitResolve reaches BrokenThreshold → validated conversion to Ascendancy control`.
+
+Label the reduction **Discipline loss** for combat targets and **Morale loss** for civilian/non-combat targets. Valid counterplay includes regrouping and reinforcement (to end isolation), interrupting the intimidator, withdrawal and meter recovery. Eligibility, range, timing and the precise threshold remain balance decisions.
+
+**Authoritative invariant:** conversion requires `ActorFaction == IronAscendancy && TargetEligible && TargetIsolated && UnitResolve <= BrokenThreshold && IntimidationResolutionAuthorized`. The same predicate applies to combat and non-combat units; the **UI label comes from target classification**, not a second resource. Mere isolation, partial depletion, damage, a visual effect or population-wide propaganda does not convert a unit. Ownership transfer is a separate validated event.
 
 ## 4. Story and AI integration
 
@@ -68,29 +77,32 @@ The Concord and Directorate can pursue their own different spy-focused objective
 
 The primary Tito-assassination cover-up remains the core 1984–1989 storyline. Espionage asymmetry and intimidation are gameplay and mission-design systems; they do not change the canonical 1989 revelation.
 
-### Population morale and propaganda are distinct
+### Population morale, unit resolve and propaganda
 
-All factions have **population morale**, improving **production output and baseline army discipline** when high. Separately, each battlefield entity/formation has **local morale**, affected by real supporting formation size (except Concord's immunity to the *small-group penalty*) and active effects such as Intimidation. The Concord, Directorate, Ascendancy and NPC Unaligned have distinct advanced propaganda methods through **radio, newspapers and television**; Meridian has no advanced propaganda. Population propaganda never grants spy tiers, instantly completes infiltration, or converts a unit. **Only Iron Ascendancy Intimidation** can compel an eligible isolated enemy to change allegiance, and **only after that unit's battlefield morale has been completely broken**. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+All factions show **population morale** and benefit from higher production and army discipline. Population morale is the **faction-level indicator** of the same underlying morale/resolve framework. **Every unit has one resolve meter**: it appears as **Discipline** on combat units and **Morale** on civilian/non-combat units. Its depletion and recovery work identically; formation bonuses apply only to combatants, while civilian contexts can use other modifiers. The Concord, Directorate, Ascendancy and NPC Unaligned have advanced propaganda through radio, newspapers and television; Meridian does not. Propaganda does not grant extra spy tiers, bypass nuclear research or automatically convert units. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ## 5. Data contracts and acceptance tests
 
 **Suggested authoritative state** (names provisional):
 
 - `FactionSpyProgressionTier`, `FactionSpyMaxTier`, `SpyProgressionComplete` and `NuclearFacilityInfiltrationUnlocked`.
-- `ResearchFacilityOwner`, `ResearchFacilityType`, `SpyInfiltrationEvent`, and `VerifiedIntelUnlocks`.
-- `BattlefieldMorale`, `MoraleBreakThreshold`, `MoralePressure`, `NearbyFormationSupport`, `ConcordNoSmallGroupPenalty` and `MoraleRecovery`.
-- `IntimidationCapability`, `TargetCombatantStatus`, `TargetIsolated`, `TargetMoraleBroken`, `TargetFaction`, `CurrentController`, `OriginalOwner`, `IntimidationResolution`.
+- `ResearchFacilityOwner`, `ResearchFacilityType`, `SpyInfiltrationEvent` and `VerifiedIntelUnlocks`.
+- **One shared per-unit meter:** `UnitResolve`, `BrokenThreshold`, `ResolveDelta`, `ResolveRecovery` and `TargetUnitCategory`; **do not store separate combat-discipline and civilian-morale meters for the same unit**.
+- `FactionPopulationMorale` as faction-level summary/input using that morale framework, not a second unit resistance system.
+- `NearbyFormationSupport`, `ConcordNoSmallGroupDisciplinePenalty`, `DirectorateAscendancyMassArmyDisciplineBonus`, `TargetIsolated` and `IntimidationResolution`.
+- `OriginalOwner`, `CurrentController` and unit identity provenance.
 
-**Tests:**
-1. A basic or partially developed Ascendancy spy **cannot** perform the qualifying nuclear-research infiltration.
-2. With **fully developed spying**, an eligible Ascendancy spy can attempt to infiltrate a real **Concord or Directorate nuclear research facility**, subject to defenses, and may then unlock the two intelligence flags only on success.
-3. Full spying with **no infiltration**, or infiltration into any other faction's site, does not unlock the Ascendancy bomb path.
-4. Intimidation against an **isolated but high-morale enemy unit** reduces morale but **does not convert it** until its battlefield morale reaches the fully broken threshold.
-5. Once an isolated eligible unit's morale has been **fully broken by Intimidation**, it switches allegiance; the same morale-broken unit **with allied support nearby** cannot be converted.
-6. Lone/very small Concord formations suffer **no formation-size morale penalty**, whereas equal-sized Directorate, Ascendancy, Meridian and Unaligned units do; Concord units can still be demoralized by direct Intimidation pressure. **Very massive coherent Directorate and Ascendancy armies receive a distinct extra morale/discipline stability bonus**, which equally massive Meridian or Unaligned formations do not.
-7. All other factions **lack Intimidation**, including captured or mercenary assets unless an explicitly authored exception is later introduced.
-8. Intimidation alone does not unlock nuclear refining, weapon research or instant victory.
-9. Theft of a finished bomb does not trigger the Ascendancy's own-bomb completion victory.
-10. Completing its own first atomic bomb after the **max-spy-tier + qualifying research infiltration + two intelligence unlocks + refining + full build** chain immediately wins the active game, before any deployment.
+**Acceptance tests:**
 
-**Open balancing:** distinct Concord/Directorate special espionage abilities, spy upgrade costs and timing, defenses/detection rules, exact formation-support radius, massive-army threshold and exclusive Directorate/Ascendancy stability bonus, ordinary morale/stability curves, fully broken threshold, morale erosion and recovery, valid intimidator and target archetypes, intimidation reliability/counterplay, and multiplayer arbitration.
+1. A partially developed Ascendancy spy cannot infiltrate a nuclear research facility; maxed spying permits a qualifying attempt at a Concord/Directorate site, but no intelligence unlock without success.
+2. An **eligible isolated combat unit** with remaining **Discipline** can lose meter value under Intimidation but cannot be converted until its shared meter reaches the broken threshold.
+3. An **eligible isolated civilian/non-combat unit** with remaining **Morale** behaves identically: no conversion until the **same shared-meter break condition** is met.
+4. A morale-broken non-combat unit and discipline-broken combat unit each convert **only while still isolated and otherwise eligible**; reinforcement blocks either conversion.
+5. Concord combat units suffer no small-group **Discipline** penalty, but can be affected by Intimidation; other factions incur the ordinary discipline penalty when unsupported.
+6. Very massive, coherently supported Directorate and Ascendancy combat armies receive an extra **Discipline** stability bonus. Meridian and Unaligned do not; civilian units never inherit the army bonus.
+7. Breaking a **single civilian's Morale** does **not zero the faction-wide Population Morale** and does not convert the entire population.
+8. The UI shows **Discipline** on combat targets and **Morale** on non-combat targets, but the data model stores one `UnitResolve` mechanism.
+9. All other factions lack Intimidation; coercive conversion does not bypass the Ascendancy's espionage and nuclear-research prerequisites.
+10. Completing the Ascendancy's first self-produced bomb after full spying, valid research infiltration, dual intelligence unlock, refining and construction ends the active game before deployment; theft does not.
+
+**Open balancing:** distinct Concord/Directorate special espionage abilities, spy upgrade costs and timing, defenses/detection rules, exact formation-support radius, massive-army threshold and exclusive Directorate/Ascendancy stability bonus, shared resolve/discipline/morale curves, a common broken threshold, depletion and recovery, valid intimidator and target archetypes, intimidation reliability/counterplay, and multiplayer arbitration.
