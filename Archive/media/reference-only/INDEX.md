@@ -1,6 +1,6 @@
 # POLITIKA — Reference-only historical and political archive index
 
-This index links all **99** researched catalogue records (including **68** individually described political developments), checked 2026-10-27. It is **metadata and references**, not a repository of third-party newspapers, photographs or broadcast footage. See [Master Catalogue](../../CATALOG.csv), [Political History](../../POLITICAL_HISTORY_1980_1989.md), [Political Event CSV](../../POLITICAL_EVENTS.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md), [Rights](../../RIGHTS_AND_PROVENANCE.md).
+This index links all **100** researched catalogue records (including **69** individually described political developments), checked 2026-10-27. It is **metadata and references**, not a repository of third-party newspapers, photographs or broadcast footage. See [Master Catalogue](../../CATALOG.csv), [Political History](../../POLITICAL_HISTORY_1980_1989.md), [Political Event CSV](../../POLITICAL_EVENTS.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md), [Rights](../../RIGHTS_AND_PROVENANCE.md).
 
 | Ref | Event/subject date | Place | Priority | Source | Game research uses |
 | --- | --- | --- | --- | --- | --- |
@@ -85,6 +85,7 @@ This index links all **99** researched catalogue records (including **68** indiv
 | `POL-1989-POL-BIH-AMENDMENTS` | 1989-04-01 | Sarajevo | P0 | [Bosnia and Herzegovina constitutional amendments](https://www.parlament.ba/Content/Read/182?lang=en&title=ParlamentarizamuBosniiHercegoviniuperiodu1945.%E2%80%931990.) | republic_government; constitutional_records; political_pluralism |
 | `POL-1989-POL-BULGARIA-TURKS` | 1989-05–1989-08 | Bulgaria–Turkey border | P1 | [Turkish minority protests and large-scale forced departures](https://www.hrw.org/reports/1989/WR89/Bulgaria.htm) | migration; humanitarian; border_news; diplomacy |
 | `POL-1989-POL-MAY-DECLARATION` | 1989-05-08 | Kongresni trg / Ljubljana | P0 | [Slovenian May Declaration read publicly](https://www.gov.si/en/news/2020-05-08-the-may-declaration-is-a-symbol-of-the-slovenian-peoples-desire-for-sovereignty/) | public_squares; posters; speeches; radio; protest |
+| `POL-1989-POL-DRNOVSEK-PRESIDENCY` | 1989-05-15 | Belgrade / Ljubljana | P0 | [Janez Drnovšek takes chair of Yugoslav collective presidency](https://www.slovenska-biografija.si/oseba/sbi1024150/) | presidency; federal_orders; diplomatics; constitutional_continuity; state_broadcasts |
 | `POL-1989-POL-SERB-PRESIDENCY` | 1989-05-08 | Belgrade | P0 | [Slobodan Milošević becomes President of Serbian Presidency](https://www.clintonlibrary.gov/conflicts-former-yugoslavia-timeline) | state_governance; diplomatic_cables; factions_as_fiction |
 | `POL-1989-POL-HSLS` | 1989-05-20 | Zagreb | P0 | [Croatian Social Liberal Alliance founded](https://www.enciklopedija.hr/clanak/hrvatska-drzava) | political_press; party_meetings; civilian_society |
 | `POL-1989-POL-POLAND-ELECTION` | 1989-06-04 | Poland | P1 | [Poland's partially free elections](https://history.state.gov/milestones/1989-1992/fall-of-communism) | foreign_radio; political_expectations; headlines |
