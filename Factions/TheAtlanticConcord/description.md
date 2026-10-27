@@ -84,11 +84,11 @@ Within POLITIKA, the Atlantic Concord seeks to prevent hostile domination of Yug
 
 Yugoslavia's independent socialist and nonaligned position complicates these ambitions. Resistance to Soviet influence does not automatically imply acceptance of Western military authority. The Unaligned, representing Yugoslav institutions and armed forces, remains a sovereign NPC-controlled faction that may negotiate cooperation or oppose violations of its jurisdiction. Similarly, relations with the Red Directorate, Iron Ascendancy and Meridian Pact may involve competition, temporary agreements and unintended escalation.
 
-## Nuclear Deterrence and the Secondary Storyline
+## Nuclear Refining, Power and Weapons
 
-Within POLITIKA's fictional Cold War, the **Atlantic Concord is a nuclear-armed power**, one of three alongside the Red Directorate and the Iron Ascendancy. Nuclear deterrence is an element of its geopolitical position, not a justification for treating nuclear strikes as ordinary RTS attacks. The Concord regards the Ascendancy's effort to acquire a **particular additional nuclear weapon** as a separate, urgent threat to the strategic balance in Yugoslavia.
+The **Atlantic Concord is one of only two established nuclear powers**, alongside the Red Directorate. It can operate **nuclear-material refineries** that convert crude nuclear resources to processed game resources, then build **nuclear power plants** to supply electricity or costly, long-produced tactical nuclear weapons. Completed bombs are deployed using a **nuclear bomber**.
 
-In the **secondary campaign storyline**, Concord intelligence teams, conventional forces, and diplomatic channels attempt to prevent that acquisition. Missions may involve verifying reports, protecting witnesses, securing a facility, monitoring a transfer, or denying Ascendancy access to contested cargo. Coordination with the Red Directorate may be limited and tense because both powers seek to avert the same transfer without surrendering their separate security interests. The nuclear subplot runs alongside, but does not replace, the main story about Tito's 1984 assassination and concealment. The coveted weapon's final custody remains to be authored; nuclear weapons are not standard production units or Meridian Pact Black Market listings.
+The **Iron Ascendancy begins non-nuclear**. Concord nuclear research facilities are potential targets for Ascendancy spies seeking **both nuclear-refinement technology and weapons-production intelligence**. If the Ascendancy obtains the knowledge and finishes constructing its own first bomb, **the game immediately ends in its victory without deployment**. Protecting research, refining facilities and rare nuclear-material stock is consequently important. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## Strategic Identity
 
