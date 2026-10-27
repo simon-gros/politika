@@ -78,6 +78,10 @@ Only after qualifying espionage may the Ascendancy operate nuclear-material refi
 
 **The instant the Ascendancy finishes its first independently produced bomb, it wins the game without deploying it.** It may also sabotage, steal or deploy a *completed enemy bomb*, but theft never counts toward the unique production victory. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
+## Advanced Propaganda and Population Morale
+
+The Iron Ascendancy has **distinct advanced propaganda methods** based on **radio, newspapers and television**, supporting its authoritarian political identity and in-game objectives. Its message control and coercive media themes are different from its **exclusive Intimidation ability**, which can convert isolated enemy units; propaganda does not instantly convert those units. Its **population morale meter** increases **production output and army discipline** when high. Repression and credibility can impose consequences to balance propaganda strength. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Strategic Identity
 
 The Iron Ascendancy is ultimately conceived as a technologically ambitious, heavily militarized and politically repressive superpower whose apparent strengths arise from concentrated industrial investment, specialized military formations, advanced engineering and the ruthless mobilization of state resources. At the same time, its development will illustrate the destructive contradictions of fascist political organization, including institutional rivalry, economic overextension, ideological fanaticism, systematic persecution and the consequences of permanent militarization. Within POLITIKA, these characteristics will establish a distinctive playable faction whose strategic identity is defined by elite mechanized forces, offensive operational doctrine, experimental military technology and the increasingly severe political, economic and logistical consequences of pursuing domination through military conquest.
