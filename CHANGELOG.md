@@ -4,6 +4,8 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Replaced the initial Python-based version utility and tests with a Rust/Cargo implementation, removing Python requirements from version validation and CI.
+
 No playable release is currently available. Documentation and historical archive entries are not shipped game features.
 
 ## 0.1.0-dev.0 — 27 October 2026 (initial development identity, not a release)
@@ -12,6 +14,6 @@ No playable release is currently available. Documentation and historical archive
 
 - Established POLITIKA's alternate-history RTS direction, core factions, story, design concepts, engine architecture and multi-platform targets.
 - Added canonical game version and separately reserved network, save, persistence and world schema counters.
-- Added validation, build identity generation, regression tests and versioning CI workflow.
+- Added Rust/Cargo validation, build identity generation, Rust regression tests and versioning CI workflow.
 
 **Status:** project foundation only; not tagged, packaged, playtested or publicly released.
