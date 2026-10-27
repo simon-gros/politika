@@ -112,6 +112,14 @@ flowchart TD
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
+### Shared resolve, combat Discipline and civilian Morale
+
+**Simulation truth:** one `UnitResolve` per eligible unit, with shared limits, break threshold, loss and recovery. **Presentation label:** `Discipline` for combat units and `Morale` for civilian/non-combat units. These must **not** become different meters or independent health/status systems. **Faction Population Morale** is a rolled-up civilian/public indicator within the same morale/resolve model, impacting production output and the baseline Discipline of soldiers.
+
+**Combat-unit modifiers only:** larger coordinated groups stabilize Discipline for Directorate, Ascendancy, Meridian and Unaligned; Directorate and Ascendancy alone get an extra **very-massive-army Discipline bonus**. Concord alone ignores the solo/small-group Discipline penalty. No such army-size modifier belongs to civilian Morale.
+
+**Intimidation ownership:** Ascendancy may intimidate eligible isolated combatants **or** non-combat units. The authoritative transition is `isolated/eligible → UnitResolve reduced to BrokenThreshold → validated ownership change`. Target category changes **the label, not the conversion algorithm**. Save/replay should preserve resolve and unit ownership while remaining deterministic. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ### Propaganda and morale layer responsibilities
 
 **Simulation:** track a distinct population morale meter for **each of the five factions**; high morale improves authorized production output and army discipline. Propaganda modifiers, decay and media reach must be authoritative. **Match/faction rules:** allow advanced propaganda actions for **Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**, but **not Meridian Pact**. **World/content:** define radio, newspaper production/distribution and television infrastructure and its ownership, power and access. **Presentation:** display every faction's relevant morale and explain production/discipline effects, showing propaganda controls only where eligible.
