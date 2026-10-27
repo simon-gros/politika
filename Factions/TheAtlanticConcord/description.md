@@ -60,6 +60,12 @@ In addition to targeting individual enemy combatants and non-combatants, Atlanti
 
 This building mechanic uses facility state and accountable resource debits rather than the combat Discipline/civilian Morale meter; those labels remain reserved for individual units. Target access, costs, chance of detection, counterplay and limits remain open. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Early aerial reconnaissance and later spy sabotage
+
+At the start of a match, Atlantic Concord can cheaply field light, unarmed airplanes dedicated to reconnaissance. They reveal terrain and enemy movements through ordinary aerial scouting and fog-of-war rules but have no attack capability. The planes are distinct from nuclear bombers, Psy-Ops units and the faction's more expensive combat aircraft. They do not confer espionage intelligence just by flying over a facility.
+
+Concord can also use conventional explosive sabotage against eligible enemy vehicles or buildings by attaching a fictional charge through an authorized spy interaction. Unlike Meridian Pact sabotage, this option becomes available later, costs more and can be performed only by spy units, never by its light reconnaissance planes or ordinary soldiers. This action is distinct from the Concord's Psy-Ops building self-destruction and concealed resource waste. See [Reconnaissance and Scouting](../../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../../Docs/SABOTAGE_SYSTEM.md).
+
 ## Intelligence and Diplomacy
 
 The Concord's intelligence organizations combine diplomatic reporting, signals interception, aerial reconnaissance, commercial information and specialist analysis. Multinational coordination facilitates intelligence sharing, although agencies may disagree over assessments or protect national interests. Reliable information can guide negotiations, uncover opposing operations and identify infrastructure vulnerabilities. Incorrect analysis can instead produce costly deployments or political crises.
