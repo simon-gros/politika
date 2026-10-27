@@ -204,6 +204,7 @@ struct EnginePin {
     version: String,
     tag: String,
     project: String,
+    commit: String,
 }
 
 fn parse_engine_pin(text: &str) -> Result<EnginePin, String> {
@@ -214,7 +215,7 @@ fn parse_engine_pin(text: &str) -> Result<EnginePin, String> {
         }
         let (key, value) = line.split_once('=')
             .ok_or_else(|| format!("invalid toolchain setting: {line}"))?;
-        if !matches!(key, "UNREAL_VERSION" | "UNREAL_TAG" | "UNREAL_PROJECT") {
+        if !matches!(key, "UNREAL_VERSION" | "UNREAL_TAG" | "UNREAL_COMMIT" | "UNREAL_PROJECT") {
             return Err(format!("unknown toolchain setting: {key}"));
         }
         if map.insert(key.to_owned(), value.trim().to_owned()).is_some() {
@@ -227,12 +228,16 @@ fn parse_engine_pin(text: &str) -> Result<EnginePin, String> {
         version: get("UNREAL_VERSION")?,
         tag: get("UNREAL_TAG")?,
         project: get("UNREAL_PROJECT")?,
+        commit: get("UNREAL_COMMIT")?,
     };
     if pin.version != "5.8.3" {
         return Err(format!("expected pinned UE 5.8.3, received {}", pin.version));
     }
     if pin.tag != "5.8.3-release" {
         return Err("engine version tag does not match 5.8.3-release".to_owned());
+    }
+    if pin.commit.len() != 40 || !pin.commit.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("UNREAL_COMMIT must be a verified 40-character Git SHA".to_owned());
     }
     if !safe_relative_path(&pin.project) || !pin.project.ends_with(".uproject") {
         return Err("UNREAL_PROJECT must be a safe relative .uproject path".to_owned());
@@ -342,27 +347,19 @@ fn preflight(root: &Path) -> Vec<Check> {
         Check::new("engine.install", Verdict::Fail,
             format!("expected Unreal {}, found {actual}", pin.version))
     });
-    let revision = env::var("POLITIKA_UNREAL_COMMIT").unwrap_or_default();
-    if revision.len() != 40 || !revision.bytes().all(|c| c.is_ascii_hexdigit()) {
-        checks.push(Check::new(
+    checks.push(match git_rev(&engine) {
+        Some(actual) if actual.eq_ignore_ascii_case(&pin.commit) => Check::new(
+            "engine.revision", Verdict::Pass, "installed engine matches the pinned source SHA",
+        ),
+        Some(actual) => Check::new(
+            "engine.revision", Verdict::Fail,
+            format!("Unreal source revision mismatch: expected {}, found {actual}", pin.commit),
+        ),
+        None => Check::new(
             "engine.revision", Verdict::Blocked,
-            "set POLITIKA_UNREAL_COMMIT to the verified 40-character Unreal source SHA",
-        ));
-    } else {
-        checks.push(match git_rev(&engine) {
-            Some(actual) if actual.eq_ignore_ascii_case(&revision) => Check::new(
-                "engine.revision", Verdict::Pass, "installed engine matches the pinned source SHA",
-            ),
-            Some(actual) => Check::new(
-                "engine.revision", Verdict::Fail,
-                format!("Unreal source revision mismatch: expected {revision}, found {actual}"),
-            ),
-            None => Check::new(
-                "engine.revision", Verdict::Blocked,
-                "cannot verify source SHA: engine is not an accessible Git checkout",
-            ),
-        });
-    }
+            "cannot verify source SHA: engine is not an accessible Git checkout",
+        ),
+    });
     checks
 }
 
@@ -423,7 +420,7 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
-    const VALID_PIN: &str = "UNREAL_VERSION=5.8.3\nUNREAL_TAG=5.8.3-release\nUNREAL_PROJECT=UnrealPolitika/Politika.uproject\n";
+    const VALID_PIN: &str = "UNREAL_VERSION=5.8.3\nUNREAL_TAG=5.8.3-release\nUNREAL_COMMIT=396c9f059903aed5fec78ecd3d437a40c6415368\nUNREAL_PROJECT=UnrealPolitika/Politika.uproject\n";
 
     fn registry_fixture() -> Registry {
         let source = fs::read_to_string(repo_root().join("Data/content_manifest.json")).unwrap();
