@@ -94,7 +94,7 @@ The **Unaligned has its own distinct advanced propaganda apparatus**, operated e
 
 ## NPC Formation Support and Morale
 
-Unaligned military personnel gain more stable battlefield morale and discipline in **larger, mutually supporting formations**; individual troops and tiny detachments suffer the usual morale vulnerability. **The Atlantic Concord alone** avoids the small-group penalty. The Unaligned also retains an NPC-governed population morale meter. Iron Ascendancy Intimidation may convert only **eligible isolated hostile combat units** after their **battlefield morale is fully broken**; neutral civilians and non-hostile Unaligned units remain ineligible. These checks belong to the neutral world AI and authoritative simulation. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+Unaligned military personnel gain ordinary battlefield morale/discipline stability in **larger, mutually supporting formations**; individual troops and tiny detachments suffer the usual morale vulnerability. Unlike the **Red Directorate and Iron Ascendancy**, the Unaligned does **not** gain a separate bonus merely for operating a very massive coherent army. **The Atlantic Concord alone** avoids the small-group penalty. The Unaligned also retains an NPC-governed population morale meter. Iron Ascendancy Intimidation may convert only **eligible isolated hostile combat units** after their **battlefield morale is fully broken**; neutral civilians and non-hostile Unaligned units remain ineligible. These checks belong to the neutral world AI and authoritative simulation. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Strategic Identity
 
