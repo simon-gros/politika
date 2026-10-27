@@ -29,7 +29,7 @@ Keep authoritative game rules independent of presentation: UI, animations, sound
 
 1. **Command and selection:** single/multi-select, group control, contextual orders, attack-move/guard/stop, rally points, command queue, hotkeys, feedback and cancellation.
 2. **World movement:** order resolution, path requests, formation spacing, collision/avoidance, terrain constraints, bridges/roads and blocked routes. Use UE navigation where it fits; add an RTS cost/grid layer for tactical movement and deterministic query needs.
-3. **Combat:** weapon/ability execution, range and line-of-sight rules, damage/armor, suppression or morale if desired, cooldowns, target priorities, death/destruction and readable combat feedback.
+3. **Combat:** weapon/ability execution, range and line-of-sight rules, damage/armor, suppression and shared unit resolve (called Discipline on combat units), cooldowns, target priorities, death/destruction and readable combat feedback.
 4. **Squads and entities:** shared unit identity/selection with individual members where animation and casualties matter; vehicles and structures as separate archetypes. Do not force every entity into the same movement/health model.
 5. **Strategic loop:** resources, production/deployment, upgrades/loadouts, capture/control points, reinforcements and respawn/redeployment rules. Make the chosen POLITIKA loop a ruleset rather than an assumption inside generic unit code.
 6. **Information:** player ownership/alliances, vision, fog/shroud, detection, radar/intel and observer/spectator visibility.
@@ -53,9 +53,19 @@ See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System
 
 **Distinct espionage abilities:** the Atlantic Concord and Red Directorate have separate specialist spying features (exact abilities still to be authored). The Iron Ascendancy has **more limited espionage**, with an explicit faction-specific upgrade tree whose **full completion** is an authoritative gate to infiltrating **Concord/Directorate nuclear research facilities**. The already-required stolen refining and weapon technology flags are earned only after that gated infiltration succeeds.
 
-**Intimidation:** an **Iron Ascendancy-exclusive command/ability** can convert **eligible isolated enemy units** to Ascendancy allegiance. The simulation must verify faction identity, ability ownership, target hostility, isolation and resolution before transferring control. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
+**Intimidation:** an Iron Ascendancy-exclusive command/ability may convert **eligible isolated combat and non-combat units**, but **only after fully breaking the shared unit resolve meter** (labeled Discipline for combat targets and Morale for civilian targets). Validate category, meter, eligibility and isolation before control transfer. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
 
 Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as **authoritative state**, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Shared unit resolve: combat Discipline and civilian Morale
+
+**One unit meter, two UI names.** Each combat or civilian/non-combat unit owns one authoritative `UnitResolve` value, with the **same depletion, recovery and broken threshold mechanics**. **Combatants display “Discipline”; civilians/non-combat units display “Morale.”** Do not instantiate separate discipline and morale component classes for individual units. Every faction additionally exposes **Population Morale**, a faction-level summary of the shared morale framework informing production and soldiers' baseline Discipline.
+
+**Formation benefits apply to combat Discipline only.** Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned units receive standard coherence/size bonuses; the **Red Directorate and Iron Ascendancy** additionally gain an extra bonus for **very massive coherent armies**. **Atlantic Concord** soldiers incur no solo/very-small-group Discipline penalty. Civilians' Morale does not receive mass-army Discipline modifiers.
+
+**Intimidation targets both kinds of eligible isolated unit:** the Iron Ascendancy must first **fully break Discipline for a combat target or Morale for a civilian/non-combat target** before converting it. Both use the **same `UnitResolve <= BrokenThreshold` check**; eligibility, isolation, meter loss and ownership transfer must be validated in order. The conversion of one civilian does not zero faction Population Morale or create another player faction.
+
+**Tests:** identical numeric threshold/recovery for both categories; proper labels; no conversion before the meter is broken; no conversion without isolation; no mass-army perk for civilians, Meridian or Unaligned; solo Concord combat immunity to formation-size penalty but not direct coercion. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Advanced propaganda and faction morale
 
