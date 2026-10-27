@@ -1,6 +1,6 @@
-# POLITIKA — Espionage, Psy-Ops, Counterintelligence and Intimidation
+# POLITIKA — Espionage, Psy-Ops, Resource Theft and Facility Sabotage
 
-Status: Core faction asymmetry and the Iron Ascendancy nuclear-infiltration gate are canon; detailed abilities, progression costs and balancing values remain in design.  
+Status: Unit-level and building-level faction espionage identities, Intimidation and the Iron Ascendancy nuclear-infiltration gate are established; exact numerical costs, targeting limits and countermeasures remain to be balanced.  
 Related: [Concepts Outline](CONCEPTS_OUTLINE.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Faction Descriptions](../Factions/)
 
 ## 1. Faction intelligence identities
@@ -9,13 +9,13 @@ Espionage is asymmetric, not a universal identical spy-unit tree. The three prin
 
 | Faction | Established espionage identity | Exclusive or special rules |
 |---|---|---|
-| Atlantic Concord | Dedicated spying subdivision: Psy-Ops | Cause a target's Discipline (combat) or Morale (civilian/non-combat) to break, leading to self-destruction, or temporarily force friendly-fire attacks in a short rampage; no ownership transfer |
-| Red Directorate | Slightly better ordinary infiltration for intelligence acquisition | Steals rival-faction intelligence for modestly lower operation costs and shorter completion time than competing factions |
-| Iron Ascendancy | More limited espionage capabilities than the Concord and Directorate; high-value infiltration requires major investment and full development of its own spying progression | Only faction with Intimidation, which can force isolated eligible enemy units to join its forces; access to nuclear-research infiltration is locked until the Ascendancy's spy capabilities are fully developed |
+| Atlantic Concord | Psy-Ops against units and enemy buildings | Break a unit's Discipline/Morale for self-destruction, induce a temporary friendly-fire rampage, or cause an eligible enemy building to self-destruct or waste resources (potentially without detection) |
+| Red Directorate | Faster/cheaper intelligence theft and covert resource diversion | Basic spy infiltration steals rival intelligence slightly faster/cheaper; infiltrated eligible enemy buildings can divert rival resources directly into the Directorate's own budget, potentially unnoticed |
+| Iron Ascendancy | Limited spies, exclusive Intimidation and facility contamination sabotage | Can weaken eligible enemy facilities through abstract poison/disease incidents, killing their workers/researchers, causing production delays/stoppages and bounded propagation to nearby facilities; first-bomb nuclear infiltration still requires fully upgraded spying |
 | Meridian Pact | Commercial, mercenary and informant networks remain distinct from the main factions' specialist espionage programs | No Intimidation and no nuclear-refinement or nuclear-bomb production unlock |
 | The Unaligned | Neutral NPC security, policing and counterintelligence; most personnel do not know Tito's assassination secret | Not playable and cannot use the Ascendancy's exclusive Intimidation power |
 
-Atlantic Concord Psy-Ops and Red Directorate's more efficient basic intelligence theft are now established specializations, not merely example ideas. Detailed action names, eligibility, numerical cost/time modifiers, defenses and upgrade tiers remain design tasks. The Iron Ascendancy retains limited spying and exclusive Intimidation.
+Atlantic Concord Psy-Ops, Red Directorate efficient intelligence theft/resource diversion, and Iron Ascendancy Intimidation/facility contamination are separate established specializations. Their building actions affect infrastructure and accounting, not the unit Resolve meter. Exact costs, timers, eligible buildings, detection probabilities and counterplay remain open.
 
 ### 1.1 Atlantic Concord: Psy-Ops
 
@@ -33,6 +33,42 @@ Psy-Ops does not replace Concord radio/newspaper/television propaganda; the form
 The Red Directorate's basic spy infiltration is slightly more advanced specifically for obtaining rival intelligence. In comparable, authorized intelligence-theft operations, Directorate agents require slightly less gameplay time and slightly fewer game resources/costs than other factions' agents. No exact percentage or currency price is canonical yet.
 
 The advantage applies to stealing rival-faction intelligence, not to Intimidation, Psy-Ops, combat damage, mandatory facility permissions or guaranteed mission success. Target defenses, access, reconnaissance, detection and legitimate intelligence provenance still apply. The Directorate does not acquire a Concord Psy-Ops action tree, and does not bypass the Iron Ascendancy's separate maximum-spy-upgrade gate for infiltrating a Concord/Directorate nuclear research facility.
+
+### 1.3 Facility espionage — three distinct outcomes
+
+Buildings are authorized espionage targets in addition to individual units. Facility effects use the building's operational state, inventories and assigned workforce—not the individual-unit `UnitResolve` meter.
+
+| Faction | Building espionage | Economic / operational result |
+|---|---|---|
+| Atlantic Concord | Psy-Ops against an eligible enemy building | **Either building self-destruction** after a successful authorized sabotage action **or concealed waste of enemy resources** through abstract operational disruption; the wasted resources are removed, not credited to Concord |
+| Red Directorate | Covert diversion of resources from an eligible rival building or associated budget | **Subtract resources from the enemy and credit the same transferable amount to the Red Directorate budget**, potentially without immediate enemy awareness |
+| Iron Ascendancy | Abstract poison/disease sabotage targeting an eligible staffed enemy facility | **Personnel losses and reduced workforce/research staff**, lowering or stopping production, with a **bounded chance of spreading to other nearby eligible facilities** and further resource losses |
+
+#### Atlantic Concord: building Psy-Ops
+
+Once an eligible spy action against an enemy building succeeds, the Concord player may choose a building self-destruction outcome or an ongoing/finite **resource-waste state**. Building self-destruction is an authored game event removing/damaging the structure under match rules; it is independent of combat Discipline, civilian Morale or individual unit self-destruction. Resource waste consumes a capped, accountable portion of the targeted faction's permitted resources or adds fictional ineffective expenditures/production waste. **It does not transfer credits or supplies to the Concord.**
+
+Resource waste can remain **undetected by the target player** until reconnaissance, auditing, maintenance diagnostics, counterintelligence or other defined discovery actions reveal it. Do not display a guaranteed enemy alert for an undetected action. Nevertheless, authoritative resource totals must remain accurate; secrecy concerns the attributed cause, not fabricated inventory. Building destruction should be a major observable event once it actually occurs.
+
+#### Red Directorate: resource diversion and theft
+
+An eligible Directorate infiltrator can initiate a **covert resource transfer** from a targeted enemy facility, account or accessible resource budget. On each authorized transfer, the game **debits the source faction and credits the Directorate's budget** by the same quantity of a valid, transferable game resource (subject to explicit storage/currency conversion rules); any losses or fees must be separately recorded. This is **resource theft**, not resource destruction or a fictitious free income multiplier.
+
+As with concealed Concord waste, the enemy may see reduced availability but **not necessarily know why** until an audit, counterspy action or other discovery event. Distinguish the Directorate's separate existing benefit of **slightly faster and cheaper intelligence theft** from its new **resource-redirect** operation: the latter is not automatically given the former's discount unless balance rules specify it.
+
+#### Iron Ascendancy: facility poisoning/disease disruption
+
+The Iron Ascendancy has a separate covert **facility contamination** specialty. An authorized sabotage action places an **abstract poisoned/diseased facility status** on an eligible enemy building that employs workers, researchers or other staff. The incident causes **simulated personnel deaths** and depletion of the building's assigned workforce; as qualified staff fall below required levels, the facility suffers **lower production/research throughput**, increased replacement costs or a **complete production stoppage**.
+
+The effect can **spread in a chain to nearby eligible facilities**, but only through **fictional, bounded game adjacency/proximity rules**: a limited local range, a maximum chain depth or simultaneous affected-facility cap, discrete simulation updates and finite persistence. No real pathogen, poison composition, transmission mechanism, dosing or operational procedure is modeled. Losses, downtime and replacement costs are visible in authoritative economic state even before sabotage attribution is discovered. Spread must be stoppable via game-defined **containment/recovery, facility shutdown, repair/security measures and worker replacement**.
+
+The effect targets **facility staffing and production**, not automatic building ownership or instant nuclear-weapon completion. It does not grant nuclear intelligence or allow the Ascendancy to construct nuclear power plants. Its broader political and civilian consequences remain governed by match rules and the Unaligned's NPC sovereignty AI.
+
+#### Visibility, detection and balance
+
+Each effect has an **operation success state** separate from **discovery/attribution state**. Covert resource waste and diversion can be initially unrecognized; an exposed building loss, worker-death event or chain incident can reveal severe damage without immediately identifying the responsible spy. Counterintelligence, inspection, guards, budgets/production audits, emergency response and neighboring facility security provide counterplay. Map authoring should keep chain reactions finite and ensure that players can recover rather than become trapped in unbounded compounding economic loss.
+
+No espionage effect creates a new player slot or bypasses the 2–4 playable factions plus Unaligned match structure. All three specializations are RTS game effects and are not instructions for real-world harmful activities.
 
 ## 2. Iron Ascendancy's limited espionage and full-development gate
 
@@ -90,7 +126,7 @@ Authoritative invariant: conversion requires `ActorFaction == IronAscendancy && 
 
 The Iron Ascendancy's limited espionage creates a distinctive difficulty curve: it is comparatively less capable of early information operations than the two intelligence-specialist nuclear powers, but it has Intimidation as a coercive tactical alternative. Its first-bomb instant victory becomes a late-game strategic goal precisely because it must fully develop spying, infiltrate protected Concord/Directorate research, steal both intelligence types, refine the rarest materials, and finish lengthy production.
 
-The Concord can conduct Psy-Ops against eligible enemy combat/civilian units, while the Directorate retrieves rival intelligence at modestly lower time and resource costs. Both retain ordinary defensive counterintelligence around nuclear research sites, power infrastructure and valuable archives. The Unaligned reacts to coercion, attacks and restricted-site violations through its neutral sovereignty and security rules.
+Concord Psy-Ops can target both eligible units and buildings, causing distinct unit effects, building destruction or concealed resource waste. Directorate espionage retrieves rival intelligence faster/cheaper and can covertly divert enemy resource budgets. Ascendancy facility contamination can reduce and kill workers/researchers and spread locally to nearby facilities, slowing or stopping enemy production. All factions retain ordinary defensive counterintelligence around nuclear research sites, power infrastructure and valuable archives. The Unaligned reacts to coercion, attacks and restricted-site violations through its neutral sovereignty and security rules.
 
 The primary Tito-assassination cover-up remains the core 1984–1989 storyline. Espionage asymmetry and intimidation are gameplay and mission-design systems; they do not change the canonical 1989 revelation.
 
@@ -105,6 +141,10 @@ Suggested authoritative state (names provisional):
 - `FactionSpyProgressionTier`, `FactionSpyMaxTier`, `SpyProgressionComplete` and `NuclearFacilityInfiltrationUnlocked`.
 - `ResearchFacilityOwner`, `ResearchFacilityType`, `SpyInfiltrationEvent` and `VerifiedIntelUnlocks`.
 - `EspionageActionType`, `IntelTheftBaseCost`, `IntelTheftBaseDuration`, `DirectorateIntelCostModifier`, `DirectorateIntelDurationModifier`; modest discounts apply only for eligible Directorate rival-intelligence theft.
+- `BuildingSpyEligibility`, `SabotageResolution`, `OperationDiscovered`, `AttributionKnown`, `ResourceAuditFinding`, `OperationExpiry`; operation success and detection are independent.
+- `ConcordBuildingPsyOpsOutcome` (`BuildingSelfDestruct` or `WasteResources`), `WasteRate`, `WasteBudgetCap`; waste is a resource sink, never a transfer to Concord.
+- `DirectorateResourceDiversion`, `SourceBudget`, `DestinationBudget`, `ResourceType`, `AmountDebited`, `AmountCredited`; conserve transferable resource amounts and preserve transaction provenance.
+- `FacilityContaminationStatus`, `AffectedStaffCount`, `StaffCasualties`, `FacilityStaffRequired`, `ProductionEfficiency`, `SpreadEligible`, `NearbyEligibleFacilityIds`, `PropagationDepth`, `SpreadCap`, `ContainmentStatus`, `RecoveryState`; simulate fictional bounded adjacency, not real-world exposure/transmission.
 - `PsyOpsOutcome` (`SelfDestruct` or `BriefRampage`), `PsyOpsTargetEligible`, `PsyOpsBreakConfirmed`, `RampageEndTime`, `RampageTargetFilter`, `OriginalFaction` and `OriginalController`; never confuse a temporary target override with ownership transfer.
 - One shared per-unit meter: `UnitResolve`, `BrokenThreshold`, `ResolveDelta`, `ResolveRecovery` and `TargetUnitCategory`; do not store separate combat-discipline and civilian-morale meters for the same unit.
 - `FactionPopulationMorale` as faction-level summary/input using that morale framework, not a second unit resistance system.
@@ -127,4 +167,10 @@ Acceptance tests:
 11. Concord alone can use Psy-Ops. In the self-destruction mode, the target must have its own Discipline (combat) or Morale (non-combat) fully broken before an in-game elimination event. A rampage lasts only a short bounded duration, makes a target attack valid own-faction units, and never permanently transfers ownership; combat and eligible civilian/non-combat target categories are supported.
 12. For an otherwise identical permitted rival-intelligence infiltration, Directorate time and cost are each modestly below the baseline for other factions. Its bonus does not grant automatic success or enable Concord Psy-Ops or Ascendancy Intimidation.
 
-Open balancing: Concord Psy-Ops eligibility, outcome selection, rampage duration, valid non-combat attacks and defense; Directorate intelligence-theft cost/time reductions; Ascendancy spy upgrade costs and timing, defenses/detection rules, exact formation-support radius, massive-army threshold and exclusive Directorate/Ascendancy stability bonus, shared resolve/discipline/morale curves, a common broken threshold, depletion and recovery, valid intimidator and target archetypes, intimidation reliability/counterplay, and multiplayer arbitration.
+13. Concord building Psy-Ops produces either an authorized self-destruction event or a finite, accountable resource-waste debit—not a covert transfer to Concord. A successful concealed waste action does not generate an unexplained guaranteed enemy alert.
+14. Directorate resource diversion reduces the enemy budget and increases the Directorate's transferable resource budget by the matching credited quantity. No negative inventories, duplicate payouts, currency mismatch or double spending.
+15. An undiscovered Directorate diversion or Concord waste event still updates true authoritative inventories; budget audits/counterintelligence can reveal the activity and its source without obligately exposing every operation at once.
+16. Ascendancy fictional facility contamination reduces surviving staff, can stop production when staffed capacity is insufficient, and may propagate only within nearby eligible facilities up to configured spread-depth/cap/time limits; containment/recovery halts the chain and staffing losses are not instantly refilled without cost.
+17. Sabotaging a facility does not award its owner technology, unlock nuclear refining, build a nuclear bomb, steal an unrelated weapon or transfer a player faction. The Ascendancy's mandatory max-spy research infiltration and first-own-bomb instant-win gates remain intact.
+
+Open balancing: eligible building classes; Concord building destruction/waste costs, rate, budget cap and secrecy; Directorate resource diversion type, transaction limits, discovery and counterplay; Ascendancy contamination staff losses, propagation distance/depth/expiry, recovery/containment and production output; unit Psy-Ops eligibility, rampage duration and defenses; Directorate intelligence-theft cost/time reductions; Ascendancy spy upgrade costs and timing, defenses/detection rules, exact formation-support radius, massive-army threshold and exclusive Directorate/Ascendancy stability bonus, shared resolve/discipline/morale curves, a common broken threshold, depletion and recovery, valid intimidator and target archetypes, intimidation reliability/counterplay, and multiplayer arbitration.
