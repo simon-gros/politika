@@ -96,6 +96,10 @@ The **Atlantic Concord is one of only two established nuclear powers**, alongsid
 
 The **Iron Ascendancy begins non-nuclear**. Concord nuclear research facilities are potential targets for Ascendancy spies seeking **both nuclear-refinement technology and weapons-production intelligence**. If the Ascendancy obtains the knowledge and finishes constructing its own first bomb, **the game immediately ends in its victory without deployment**. Protecting research, refining facilities and rare nuclear-material stock is consequently important. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
+## Solitary Deployment and Morale Stability
+
+**The Atlantic Concord alone suffers no loss of battlefield morale or discipline merely because its soldiers operate individually or in very small detachments.** Where other factions gain cohesion and morale stability in larger mutually supporting formations, Concord soldiers maintain their normal discipline even when deployed alone. This is not immunity to combat casualties, supply problems or deliberate morale damage: an isolated Concord unit can still be demoralized through Iron Ascendancy Intimidation, but **only after its battlefield morale is fully broken may it be converted**. Population morale still improves Concord production output and baseline discipline. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Advanced Propaganda and Population Morale
 
 The Atlantic Concord has its **own distinct advanced propaganda methods**, using **radio, newspapers and television** to influence public confidence and support operational goals. Its media doctrine can emphasize public information and coordinated communications, with precise abilities still to be balanced. **The Concord has a population morale meter**, and higher morale improves **production output and army discipline**. The Meridian Pact does not possess advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
