@@ -1,6 +1,6 @@
 # RTS command and feedback inventory
 
-**Status:** source-backed design inventory, 2026-10-27. Describes the current single-unit Linux Development slice and proposes presentation coverage; it does not claim that a command palette or final icon set exists.
+**Status:** source-backed inventory plus initial HUD implementation, 2026-10-27. The prototype HUD now displays five original text/glyph command rows and consumes authoritative command outcome events for correlated accepted/rejected feedback. This is not a final icon set, clickable command palette, localization pass, or packaged visual qualification.
 
 ## Current five-command inventory
 
@@ -12,7 +12,7 @@
 | **Stop** | Press **S** with a selected unit. | Current prototype accepts for any owned, alive/operational issuer; there is no extra capability check. | Current order becomes `Stop`, destination is set to the unit's current position; global feedback reads “Unit stopped.” HUD reports “Stopped”. | Missing/unavailable/unauthorized issuer can be rejected by common admission checks. No “already stopped” suppression or group behavior. | Stop/pause-like symbol plus immediate movement cessation and persistent “Stopped” state. Avoid relying on a transient text message alone. |
 | **Guard** | Press **G** with a selected unit. | Current prototype accepts for any owned, alive/operational issuer; there is no extra capability check. | Current order becomes `Guard`; global feedback reads “Guard order accepted.” HUD reports “Guarding”. | Common issuer/match rejection only. Current Guard implementation clears its target but does not define a guard radius, protected object, response policy, or an actual defensive stance. Treat behavior as prototype-only. | Shield/sector/hold cue may be explored, but the icon and tooltip must not promise protection radius or automatic response until those rules exist. |
 
-Current rejection copy is defined in `DescribeRejection` in `PolitikaPrototypeGameplay.cpp`. Feedback is a single match-wide last-message string; it can be overwritten by a later admitted/rejected command and is not tied to a command ID, unit, world marker, or presentation event. The current HUD draws keyboard/mouse help, selected unit health/order, objective status, and that one feedback string. It has no five-button command panel, per-command icons, disabled reasons, hotkey focus states, selection-wide availability model, or explicit “command pending” state.
+Current rejection copy is defined in `DescribeRejection` in `PolitikaPrototypeGameplay.cpp`. Coordinator-admitted results now reach the HUD through the match's typed native event delegate; accepted/rejected feedback includes the command correlation ID. Pre-admission cursor failures still use the legacy last-message string. The new five-row HUD panel uses original letter/punctuation placeholders, current keyboard/mouse hints, selection/capability-based enabled styling, and an active-order cue. It is display-only: the existing RMB/A/S/G bindings still issue commands, and there are no clickable rows, pending state, hotkey focus states, per-unit world markers, localization keys, or production availability model.
 
 ## Recommended presentation states
 
@@ -40,11 +40,11 @@ Use these as the design target for each shared order action; do not add presenta
 
 ## Next bounded implementation slice
 
-1. Create original placeholder icons and a five-row command panel for Move, Attack, Attack-Move, Stop, and Guard.
-2. Derive enablement from selected unit capabilities and order semantics: Move/Attack-Move require movable; Attack requires attack capability plus a valid hostile target; Stop/Guard follow their current prototype admission behavior, with Guard clearly labeled as provisional until its gameplay semantics are designed.
-3. Render action name, bound key, enabled/unavailable reason, and current active order. Keep right-click contextual behavior but give a distinct friendly-target rejection.
+1. Qualify the initial five-row display at 3840×2160 and 1920×1080 and adjust layout/readability if needed; the rows are placeholders, not clickable widgets.
+2. Derive richer availability only from authoritative capability/query data. Attack's hostile-target check remains contextual at RMB submission; Guard remains provisional until its gameplay semantics are designed.
+3. If adding pending indicators or per-unit feedback, carry issuer identity and localization data through presentation without moving admission authority out of the coordinator.
 4. Add a destination/order marker only if supported by a stable presentation state; do not signal “accepted” before coordinator admission.
-5. Review at 3840×2160 and 1920×1080, then handheld/touch layouts when those inputs are implemented.
+5. Review handheld/touch layouts when those inputs are implemented.
 
 ## Evidence and ownership
 

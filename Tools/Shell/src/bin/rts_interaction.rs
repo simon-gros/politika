@@ -3,6 +3,8 @@
 //! Unreal remains authoritative; this harness only drives input and asserts its structured events.
 use std::{
     env, fs,
+    fs::OpenOptions,
+    io::copy,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
@@ -114,7 +116,8 @@ fn stop_video_recording(mut recorder: Child, evidence: &Path) -> Result<(), Stri
     let status = recorder
         .wait()
         .map_err(|e| format!("wait for ffmpeg recorder: {e}"))?;
-    if !status.success() {
+    // FFmpeg uses exit code 255 for a deliberate SIGINT after it has flushed the MP4 trailer.
+    if !status.success() && status.code() != Some(255) {
         return Err(format!(
             "ffmpeg recorder exited {status}; see video-recorder.log"
         ));
@@ -128,7 +131,85 @@ fn stop_video_recording(mut recorder: Child, evidence: &Path) -> Result<(), Stri
             "recorded video is unexpectedly small ({size} bytes)"
         ));
     }
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,width,height",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("inspect finalized MP4 with ffprobe: {e}"))?;
+    let stream = String::from_utf8_lossy(&probe.stdout).trim().to_owned();
+    if !probe.status.success() || stream != "h264,1280,720" {
+        return Err(format!(
+            "recorded MP4 failed stream validation ({stream}); see video-recorder.log"
+        ));
+    }
     Ok(())
+}
+
+fn copy_video_to_desktop(source: &Path, epoch: u64) -> Result<PathBuf, String> {
+    let desktop = Command::new("xdg-user-dir")
+        .arg("DESKTOP")
+        .output()
+        .ok()
+        .filter(|result| result.status.success())
+        .map(|result| String::from_utf8_lossy(&result.stdout).trim().to_owned())
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join("Desktop")))
+        .ok_or("could not determine the user's Desktop directory")?;
+    if !desktop.is_dir() {
+        return Err(format!(
+            "Desktop directory does not exist: {}",
+            desktop.display()
+        ));
+    }
+
+    let base = format!("Politika-RTS-interaction-{epoch}");
+    for suffix in 1..=100 {
+        let name = if suffix == 1 {
+            format!("{base}.mp4")
+        } else {
+            format!("{base}-{suffix}.mp4")
+        };
+        let destination = desktop.join(name);
+        let mut output = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "create Desktop video copy {}: {error}",
+                    destination.display()
+                ));
+            }
+        };
+        let copied = copy(
+            &mut fs::File::open(source).map_err(|e| e.to_string())?,
+            &mut output,
+        )
+        .map_err(|e| format!("copy video to Desktop {}: {e}", destination.display()))?;
+        let source_size = fs::metadata(source).map_err(|e| e.to_string())?.len();
+        if copied != source_size {
+            return Err(format!(
+                "Desktop video copy size mismatch: source={source_size}, copy={copied}"
+            ));
+        }
+        return Ok(destination);
+    }
+    Err(format!(
+        "could not allocate a non-overwriting Desktop filename for {base}"
+    ))
 }
 
 fn require_render_difference(before: &Path, after: &Path) -> Result<(), String> {
@@ -502,12 +583,21 @@ fn main() -> Result<(), String> {
         .unwrap_or_else(|| Err("video recording did not start".into()));
     let _ = child.kill();
     let _ = child.wait();
+    let desktop_copy_result = if video_result.is_ok() {
+        Some(copy_video_to_desktop(&evidence.join("take.mp4"), epoch))
+    } else {
+        None
+    };
     result?;
     video_result?;
+    let desktop_copy = desktop_copy_result
+        .ok_or("video was not available for Desktop copy")?
+        .map_err(|e| e)?;
     fs::write(
         evidence.join("video-manifest.tsv"),
         format!(
-            "file\twidth\theight\tframes_per_second\taudio\twindow_geometry\ntake.mp4\t1280\t720\t30\tno\t{}",
+            "file\twidth\theight\tframes_per_second\taudio\tdesktop_copy\twindow_geometry\ntake.mp4\t1280\t720\t30\tno\t{}\t{}",
+            desktop_copy.display(),
             fs::read_to_string(evidence.join("window-geometry.txt"))
                 .unwrap_or_default()
                 .replace('\n', " ")
@@ -516,13 +606,15 @@ fn main() -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     let report = format!(
-        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised WASD camera pan with pixel-difference assertion, selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4 for the continuous rendered sequence\n",
-        revision
+        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised WASD camera pan with pixel-difference assertion, selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4 for the continuous rendered sequence; desktop_copy={}\n",
+        revision,
+        desktop_copy.display()
     );
     fs::write(evidence.join("results.tsv"), report).map_err(|e| e.to_string())?;
     println!(
-        "PASS PAC-10: packaged RTS interaction replay; evidence {}",
-        evidence.display()
+        "PASS PAC-10: packaged RTS interaction replay; evidence {}; Desktop video {}",
+        evidence.display(),
+        desktop_copy.display()
     );
     Ok(())
 }

@@ -1,6 +1,6 @@
 # StarCraft Remastered — POLITIKA reference analysis
 
-**Status:** research guidance, 2026-10-27. This analyzes the local, supported extraction set; it is not a behavioral audit, implementation, or approval to ship extracted game content. C&C4 remains POLITIKA's primary design/asset reference. SC:R is a secondary reference for classic 2D RTS presentation and content organization.
+**Status:** research guidance, 2026-10-27. This analyzes the supported extraction set and a bounded static Ghidra pass; it is not a behavioral audit, implementation, or approval to ship extracted game content. C&C4 remains POLITIKA's primary design/asset reference. SC:R is a secondary reference for classic 2D RTS presentation and content organization.
 
 ## Summary
 
@@ -24,8 +24,9 @@ The validated run contains 3,715 files (~3.1 GiB) across nine requested categori
 | Eight HD4 tilesets | Eight source VR4 files and PNG conversions (e.g. `jungle.dds.png` is 128×128). | How a 2D RTS groups terrain families and their tile-source data; useful when creating a small, cohesive original POLITIKA terrain test kit. | Terrain scale, material behavior, or map semantics in POLITIKA. PNG conversion alone does not expose all original encoding/shader intent. |
 | 11 game data tables | Eight DATs, two TBLs, and `iscript.bin`, covering categories including units, weapons, orders, upgrades, sprites/images, and text. | A reminder to keep authored definitions, localization, and presentation references separately inspectable and versioned; relate a unit's capabilities to its orders and presentation through stable IDs. | A complete design spec, safe/portable schema, or balance values suitable for copying. These are game-specific binaries and tables. |
 | Command cursors, menu media, effects, sounds | 18 cursor strips, 25 main-menu media files, two GRP effects, and 13 of 15 requested OGG targets. | Reference for maintaining semantic states across cursor, HUD, animation, and audio feedback. The incomplete sound set warns against treating this as a complete sound library. | Full audio coverage, mix quality, menu interaction behavior, or what was omitted from the extraction. |
+| Ghidra analysis of x86 and x64 `StarCraft.exe` | Both installed PE binaries are imported into the saved Ghidra project. x86 auto-analysis and save completed with numerous diagnostics; x64 remained incomplete after a 600-second timeout. No function-by-function semantic review was performed. | A reusable local workspace for a narrowly scoped follow-up question about a specific binary/data relationship, if corroborated against extracted content. | Gameplay architecture, runtime behavior, performance, module loading, reliable complexity counts, or portable implementation guidance. Analyzer counts and anomalous address-space bounds are not design evidence. |
 
-Source of truth for exact paths, hashes, extraction limitations, and category logs: the [run manifest](</mnt/data/CommandAndConquer/UM/StarcraftRemastered/extracted/2026-10-27/extraction-manifest.md>) and [UM reference landing page](</mnt/data/CommandAndConquer/UM/StarcraftRemastered/extraction-manifest.md>).
+Source of truth for exact paths, hashes, extraction limitations, and category logs: the [run manifest](</mnt/data/CommandAndConquer/UM/StarcraftRemastered/extracted/2026-10-27/extraction-manifest.md>) and [UM reference landing page](</mnt/data/CommandAndConquer/UM/StarcraftRemastered/extraction-manifest.md>). Ghidra import scope, diagnostics, and hashes: [surface inspection](</mnt/data/CommandAndConquer/GHIDRA/StarcraftRemastered/surface-inspection.md>).
 
 ## Applications to POLITIKA
 
@@ -55,9 +56,15 @@ The extracted eight terrain families suggest checking whether each POLITIKA thea
 
 The collection of `units`, `weapons`, `orders`, `upgrades`, `images`, and text tables is a useful prompt to check cross-references in POLITIKA's own content definitions. It supports the existing `UPrimaryDataAsset`/DataTable direction, not importing these tables or mirroring their exact schema. POLITIKA IDs, versioning, validation, authored values, and localization must be independently owned. Keep per-instance simulation state out of definitions and keep UI/animation/audio as observers of simulation events, as specified in [the engine outline](ENGINE_OUTLINE.md).
 
+### 6. Treat Ghidra as a targeted lookup tool, not a source of design conclusions
+
+The Ghidra result is a persistent analysis workspace, not a recovered StarCraft architecture. The x86 analysis completed but emitted many disassembly, RTTI, p-code, and decompiler diagnostics; x64 remained partial even after 600 seconds. The reported function/symbol counts and address ranges therefore should not be used to estimate complexity or infer subsystem boundaries. No runtime behavior, active expansion/module relationship, or function semantics have been established. See the [Ghidra surface report](</mnt/data/CommandAndConquer/GHIDRA/StarcraftRemastered/surface-inspection.md>) for exact scope and limitations.
+
+For POLITIKA, the actionable code-level reference is its own verified boundary: typed command requests are admitted by the coordinator, typed gameplay events are published through a native C++ delegate, and stable-ID content assets are validated on the POLITIKA side. The HUD is still not an event subscriber and shows a last-feedback string. The productive next step is to connect presentation to those existing typed events and build the original five-command panel described in the [command feedback inventory](RTS_COMMAND_FEEDBACK_INVENTORY.md), rather than reconstruct undocumented SC:R internals. If a future Ghidra question is worth pursuing, scope it to a named behavior or data relationship, inspect only relevant functions, and corroborate with extracted assets; do not infer module loading from the uninspected `1911.dll`.
+
 ## Recommended work order
 
-1. **Now — low cost:** make a POLITIKA five-command icon/feedback inventory against the existing typed orders; identify missing accepted/rejected/disabled states. No reference art needs to enter the project.
+1. **Now — bounded implementation:** implement the original five-command placeholder panel and wire its presentation to the existing typed event delegate; preserve admission authority in the coordinator and show correlated accepted/rejected outcomes. The inventory and current HUD gap are already documented; no reference art needs to enter the project.
 2. **Next — content review:** produce one unit-state coverage sheet and review current prototype entities against it. Prioritize only states that communicate order, combat, or morale.
 3. **Next art slice:** author a small, original terrain composition and command-icon sample; judge both at real gameplay zoom and across the project's target UI scales.
 4. **Later, gated by need:** prototype an Unreal animation/data import path only if the actual POLITIKA production content uses sprite atlases. Otherwise retain UE's native 3D asset path.
@@ -69,7 +76,7 @@ The collection of `units`, `weapons`, `orders`, `upgrades`, `images`, and text t
 - The extracted animations are primarily sprite/atlas-oriented; no SC:R-to-POLITIKA animation importer or UE asset compatibility has been demonstrated.
 - The DAT/TBL/IScript data was extracted but not semantically decoded into a full relational schema here. Do not infer mechanics or balance from filenames alone.
 - Only supported requested asset families were extracted. Missing sound targets are recorded in the manifest; this is not evidence they are absent from the installed game.
-- Universal Modder identified the game surface, while REA's earlier pass was static surface inspection only. Neither establishes runtime UX or gameplay behavior.
+- Universal Modder extraction, REA surface inspection, and this Ghidra pass do not establish runtime UX or gameplay behavior. Ghidra's x64 analysis is partial, and the completed x86 analysis has diagnostics; no semantic function review was performed.
 
 ## Source and provenance
 

@@ -59,6 +59,10 @@ public:
     FText GetUnitName() const { return UnitName; }
     APolitikaPrototypeUnit* GetOrderTarget() const { return OrderTarget.Get(); }
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
+    friend class FPolitikaCommandRepeatabilityAutomationTest;
+#endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionIndicator;
     UPROPERTY() FText UnitName;
@@ -95,6 +99,10 @@ public:
     bool IsComplete() const { return bComplete; }
     FText GetStatusText() const;
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
+    friend class FPolitikaCommandRepeatabilityAutomationTest;
+#endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Marker;
     UPROPERTY() float CaptureRadius = 0.0f;
     UPROPERTY() float CaptureDuration = 0.0f;
@@ -135,6 +143,8 @@ public:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaGameplayEventPublicationAutomationTest;
+    friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
+    friend class FPolitikaCommandRepeatabilityAutomationTest;
 #endif
     struct FPendingOrder
     {
@@ -234,7 +244,13 @@ class POLITIKA_API APolitikaPrototypeHUD final : public AHUD
 {
     GENERATED_BODY()
 public:
+    void AttachMatch(APolitikaPrototypeMatch* InMatch);
     virtual void DrawHUD() override;
+private:
+    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
+    FDelegateHandle GameplayEventHandle;
+    FString CommandFeedback;
+    void HandleGameplayEvent(const politika::rules::GameplayEvent& Event);
 };
 
 UCLASS()

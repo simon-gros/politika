@@ -1019,6 +1019,8 @@ APolitikaPrototypeMatch* APolitikaPrototypePlayerController::ResolveMatch()
 {
     if (APolitikaPrototypeMatch* Existing = Match.Get())
     {
+        if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD()))
+            PrototypeHUD->AttachMatch(Existing);
         ApplyMapCameraIfReady();
         return Existing;
     }
@@ -1026,6 +1028,8 @@ APolitikaPrototypeMatch* APolitikaPrototypePlayerController::ResolveMatch()
     TActorIterator<APolitikaPrototypeMatch> MatchIt(GetWorld());
     if (!MatchIt) return nullptr;
     Match = *MatchIt;
+    if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD()))
+        PrototypeHUD->AttachMatch(Match.Get());
     ApplyMapCameraIfReady();
     return Match.Get();
 }
@@ -1184,14 +1188,58 @@ void APolitikaPrototypePlayerController::Zoom(float Value)
     }
 }
 
+void APolitikaPrototypeHUD::AttachMatch(APolitikaPrototypeMatch* InMatch)
+{
+    if (Match.Get() == InMatch) return;
+    if (APolitikaPrototypeMatch* PreviousMatch = Match.Get(); PreviousMatch && GameplayEventHandle.IsValid())
+        PreviousMatch->OnGameplayEventPublished().Remove(GameplayEventHandle);
+    Match = InMatch;
+    GameplayEventHandle.Reset();
+    CommandFeedback.Reset();
+    if (InMatch)
+        GameplayEventHandle = InMatch->OnGameplayEventPublished().AddUObject(
+            this, &APolitikaPrototypeHUD::HandleGameplayEvent);
+}
+
+void APolitikaPrototypeHUD::HandleGameplayEvent(const politika::rules::GameplayEvent& Event)
+{
+    using namespace politika::rules;
+    const CommandOutcomeEvent* Outcome = std::get_if<CommandOutcomeEvent>(&Event);
+    if (!Outcome) return;
+
+    static const TCHAR* OrderNames[] = {
+        TEXT("Move"), TEXT("Attack"), TEXT("Attack-move"), TEXT("Stop"), TEXT("Guard")
+    };
+    const uint8 OrderIndex = static_cast<uint8>(Outcome->order);
+    const TCHAR* OrderName = OrderIndex < UE_ARRAY_COUNT(OrderNames) ? OrderNames[OrderIndex] : TEXT("Command");
+    if (Outcome->accepted)
+    {
+        CommandFeedback = FString::Printf(TEXT("%s order accepted  ·  #%llu"), OrderName, Outcome->correlation_id);
+        return;
+    }
+
+    static const TCHAR* RejectionNames[] = {
+        TEXT("No rejection"), TEXT("You cannot command that unit."), TEXT("That unit cannot move."),
+        TEXT("That unit cannot attack."), TEXT("The map bounds are invalid."),
+        TEXT("That destination is outside the map."), TEXT("That target is no longer available."),
+        TEXT("That target cannot be attacked."), TEXT("Orders cannot target friendly units."),
+        TEXT("The selected unit no longer exists."), TEXT("That unit is unavailable."),
+        TEXT("You cannot command that unit."), TEXT("The match is not accepting commands."),
+        TEXT("That command belongs to an earlier match.")
+    };
+    const uint8 RejectionIndex = static_cast<uint8>(Outcome->rejection);
+    const TCHAR* Reason = RejectionIndex < UE_ARRAY_COUNT(RejectionNames)
+        ? RejectionNames[RejectionIndex] : TEXT("Order rejected.");
+    CommandFeedback = FString::Printf(TEXT("%s rejected: %s  ·  #%llu"),
+        OrderName, Reason, Outcome->correlation_id);
+}
+
 void APolitikaPrototypeHUD::DrawHUD()
 {
     Super::DrawHUD();
     if (!Canvas || !GetWorld()) return;
-    APolitikaPrototypeMatch* Match = nullptr;
-    TActorIterator<APolitikaPrototypeMatch> MatchIt(GetWorld());
-    if (MatchIt) Match = *MatchIt;
-    if (!Match) return;
+    APolitikaPrototypeMatch* ActiveMatch = Match.Get();
+    if (!ActiveMatch) return;
 
     // UCanvas text is drawn in physical pixels, unlike the Slate shell which
     // receives the project's DPI scale from the viewport layer manager.
@@ -1201,9 +1249,8 @@ void APolitikaPrototypeHUD::DrawHUD()
     const FLinearColor Ink(0.91f, 0.93f, 0.84f);
     DrawText(TEXT("POLITIKA  /  RTS DEVELOPMENT SLICE"), Ink, Left, Y, nullptr, 1.5f * UiScale); Y += 34.0f * UiScale;
     DrawText(TEXT("LMB select  ·  RMB move / attack  ·  A attack-move  ·  G guard  ·  S stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
-    if (APolitikaPrototypePlayerController* PC = Cast<APolitikaPrototypePlayerController>(PlayerOwner))
     {
-        APolitikaPrototypeUnit* Selected = Match->GetSelectedUnitForPlayer(Match->GetLocalRuntimePlayerId());
+        APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
         if (Selected)
         {
             const TCHAR* Order = TEXT("Idle");
@@ -1225,13 +1272,51 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(TEXT("No unit selected"), Ink, Left, Y, nullptr, 1.15f * UiScale); Y += 28.0f * UiScale;
         }
     }
-    if (APolitikaPrototypeObjective* Objective = Match->GetObjective())
+    if (APolitikaPrototypeObjective* Objective = ActiveMatch->GetObjective())
     {
         DrawText(FString::Printf(TEXT("CONTROL POINT  /  %s"), *Objective->GetStatusText().ToString()),
             FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale);
         Y += 30.0f * UiScale;
     }
-    DrawText(Match->GetLastCommandFeedback(), Ink, Left, Y, nullptr, UiScale);
+    const FString& Feedback = CommandFeedback.IsEmpty()
+        ? ActiveMatch->GetLastCommandFeedback() : CommandFeedback;
+    DrawText(Feedback, Ink, Left, Y, nullptr, UiScale);
+
+    // Original text/glyph placeholders keep this prototype independent of reference-game art.
+    const float PanelLeft = Left;
+    const float RowHeight = 34.0f * UiScale;
+    const float PanelWidth = 390.0f * UiScale;
+    const float PanelTop = Canvas->ClipY - (RowHeight * 5.0f) - (36.0f * UiScale);
+    DrawText(TEXT("COMMANDS"), Ink, PanelLeft, PanelTop, nullptr, 0.9f * UiScale);
+    const TCHAR* Labels[] = { TEXT("MOVE"), TEXT("ATTACK"), TEXT("ATTACK-MOVE"), TEXT("STOP"), TEXT("GUARD") };
+    const TCHAR* Hints[] = { TEXT("RMB ground"), TEXT("RMB hostile"), TEXT("A + ground"), TEXT("S"), TEXT("G · provisional") };
+    const TCHAR* Marks[] = { TEXT("M"), TEXT("!"), TEXT("A+"), TEXT("X"), TEXT("G") };
+    const EPolitikaPrototypeOrder Orders[] = {
+        EPolitikaPrototypeOrder::Move, EPolitikaPrototypeOrder::Attack,
+        EPolitikaPrototypeOrder::AttackMove, EPolitikaPrototypeOrder::Stop,
+        EPolitikaPrototypeOrder::Guard
+    };
+    const APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Labels); ++Index)
+    {
+        const float RowY = PanelTop + (18.0f * UiScale) + (Index * RowHeight);
+        const bool bEnabled = Selected && Selected->IsAlive()
+            && ((Index == 0 || Index == 2) ? Selected->CanMove()
+                : Index == 1 ? Selected->CanAttack() : true);
+        const FLinearColor RowColor = bEnabled
+            ? FLinearColor(0.10f, 0.14f, 0.15f, 0.88f)
+            : FLinearColor(0.06f, 0.08f, 0.09f, 0.78f);
+        const FLinearColor TextColor = bEnabled ? Ink : FLinearColor(0.46f, 0.50f, 0.48f);
+        DrawRect(RowColor, PanelLeft, RowY, PanelWidth, RowHeight - (2.0f * UiScale));
+        DrawText(FString::Printf(TEXT("[%s]  %s"), Marks[Index], Labels[Index]),
+            TextColor, PanelLeft + (10.0f * UiScale), RowY + (6.0f * UiScale), nullptr, 0.9f * UiScale);
+        const bool bActive = Selected && Selected->GetCurrentOrder() == Orders[Index];
+        const FString Hint = bActive
+            ? FString::Printf(TEXT("ACTIVE  ·  %s"), Hints[Index])
+            : FString(Hints[Index]);
+        DrawText(Hint, bActive ? FLinearColor(0.94f, 0.78f, 0.31f) : TextColor,
+            PanelLeft + (230.0f * UiScale), RowY + (6.0f * UiScale), nullptr, 0.82f * UiScale);
+    }
 }
 
 APolitikaPrototypeGameMode::APolitikaPrototypeGameMode()
