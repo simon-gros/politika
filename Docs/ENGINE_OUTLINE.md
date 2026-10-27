@@ -37,6 +37,12 @@ Keep authoritative game rules independent of presentation: UI, animations, sound
 8. **AI:** strategic planner, production/deployment choices, tactical squad coordinator, navigation/engagement behavior, difficulty/personality profiles and debug visualization.
 9. **Match shell:** teams, faction/loadout choice, lobby/rules, map rotation, results, progression hooks, pause and reconnect expectations.
 
+### Campaign-specific objectives and non-production nuclear custody
+
+POLITIKA has two narrative arcs: the **primary 1984–1989 Tito assassination/cover-up conspiracy** and a **secondary effort to stop the Iron Ascendancy from obtaining a particular additional nuclear weapon**. The Atlantic Concord, Red Directorate, and Iron Ascendancy are three nuclear-armed playable powers; the non-nuclear Meridian Pact has no nuclear plot missions, and the Unaligned remains a non-nuclear NPC world authority.
+
+The objective framework should be able to represent **authored acquisition, custody, security, and interdiction conditions** as abstract, authoritative campaign state, with faction eligibility and evidence/knowledge separated from actual world state. These are **not** nuclear-combat units, production recipes, physics models, or market listings. A successful or failed subplot objective must not override the canonical 1989 reveal or the central campaign chronology. Whether a nuclear arc exists in optional scenario/editor content is a future authoring choice, not a default skirmish feature.
+
 ## 4. Content model and authoring
 
 Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
