@@ -49,11 +49,19 @@ Use authored in-game UI and audio rather than pre-rendered or real-time cinemati
 
 Briefings and dialogue should be concise, pausable/skippable, subtitle-capable, and available in text for players who mute audio or need to revisit an instruction.
 
-### Distinct narrative arcs in mission presentation
+### Parallel storylines, refining and faction ability presentation
 
-Briefings, objective trackers, field intelligence, and debriefings must distinguish the **primary Tito assassination/cover-up conspiracy** from the **secondary attempt to prevent the Iron Ascendancy acquiring a particular additional nuclear weapon**. The Atlantic Concord and Red Directorate have prevention-oriented nuclear missions; the Iron Ascendancy has acquisition-oriented missions. These are the **three nuclear-armed playable powers**. The non-nuclear Meridian Pact has **no nuclear subplot missions**; the Unaligned remains a non-nuclear NPC authority.
+Keep the **primary Tito assassination/cover-up narrative** and **secondary Ascendancy first-bomb nuclear race** independently legible in mission briefings and debriefs.
 
-Use the same existing objective and intelligence UI patterns for an authored nuclear-subplot mission: known custody status, location uncertainty, guarding or interdiction objectives, countdowns only if scripted, and clear post-mission outcomes. Do not expose omniscient weapon locations, nuclear detonation controls, nuclear build menus, or Black Market nuclear-weapon listings. The two threads may coincide in a mission, but their objectives and evidence should remain independently legible.
+**Only the Atlantic Concord and Red Directorate start with nuclear power**. Both have rare tactical nuclear ultimate weapons: Concord deploys with a **nuclear bomber** and Directorate via an **ICBM**. The **Iron Ascendancy begins non-nuclear and with limited espionage**. It must **fully upgrade its spy capabilities** before it can infiltrate a Concord or Directorate nuclear research facility, obtain **both nuclear-refinement and weapons intelligence**, refine nuclear materials for bomb production, and complete the long build. **As soon as its first own-built bomb completes, it immediately wins the current game**—there is no launch/deployment action.
+
+**Nuclear materials rank highest by value, fossil fuels second.** The UI needs distinct inventory/progress indicators for crude oil, petroleum fuel, kerosene, crude and refined nuclear game materials, electricity and other resources. Crude oil is processed in **refineries**, at **lower cost for the Concord**. Only Concord and Directorate can construct **nuclear power plants**. Meridian cannot refine nuclear material, and Ascendancy cannot construct nuclear power plants. Meridian must always spawn near an eligible oil or gas field, without automatically owning it.
+
+**Specialized espionage:** Concord and Directorate each have their own **different special spying features**, with exact abilities not yet defined. Show the Ascendancy's **spy-upgrade progress** and clearly communicate that **nuclear research infiltration requires full development**. The Ascendancy alone has **Intimidation**, a unit action that can **convert isolated eligible enemy units** to Ascendancy control. Its target cursor/tooltip must distinguish **isolated and eligible** from **supported or ineligible**, with clear success/failure and ownership-change feedback. Never display Intimidation as an available native action for any other faction.
+
+Use existing objective, production, selected-unit and intel UI patterns. Show only information the faction has legitimately discovered: do not expose hidden enemy nuclear-research locations or spy identities without detection. Nuclear weapons cannot be purchased in the Black Market, and stealing a completed bomb does not confer manufacturing knowledge or Ascendancy instant victory.
+
+See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## 5. In-match UI structure
 
