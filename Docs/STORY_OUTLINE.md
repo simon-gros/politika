@@ -4,7 +4,7 @@
 **Period:** 1984–1989, in an alternate-history Socialist Federal Republic of Yugoslavia  
 **Genre:** Political conspiracy, nuclear brinkmanship, Cold War espionage, military strategy, and national collapse  
 **Spoiler warning:** This document discloses the central mystery and the canonical ending.  
-**Related material:** [The Unaligned](../Factions/TheUnaligned/description.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Faction descriptions](../Factions) · [UI overview](POLITIKA_UI_OVERVIEW.md)
+**Related material:** [The Unaligned](../Factions/TheUnaligned/description.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Faction descriptions](../Factions) · [UI overview](POLITIKA_UI_OVERVIEW.md)
 
 ## 1. Central Premise
 
@@ -18,7 +18,7 @@ The original assassination is the most closely guarded secret of the Unaligned. 
 
 Across four playable geopolitical factions, seemingly unrelated military operations, intelligence disputes, infrastructure crises, and regional confrontations reveal fragments of the same underlying mystery. By 1989, the accumulated evidence can no longer be contained. The world learns that Tito was murdered in 1984, that the public Tito was a substitute, and that federal authorities knowingly concealed the truth.
 
-The **secondary storyline** is a Cold War race to prevent the Iron Ascendancy from acquiring its **first independent nuclear capability**. Only the **Atlantic Concord** and **Red Directorate** begin as nuclear powers. Both can produce expensive tactical atomic bombs, delivered by **nuclear bombers** and **ICBMs** respectively. The non-nuclear Ascendancy must first infiltrate a **Concord or Directorate nuclear research facility** to steal **nuclear-refining technology and bomb-production intelligence**, then process the highest-value **crude nuclear-material resource** and finish an exceptionally long production process. **Completion of the Ascendancy's first bomb ends the current game immediately in its victory, without deployment.** Both the Ascendancy and the non-nuclear **Meridian Pact** may also steal and deploy an existing, completed nuclear weapon; neither gains a construction victory by theft. The Pact has no dedicated nuclear story missions and instead benefits economically from **always starting near fossil-fuel source fields**. Fossil fuels, including oil, natural gas and refined petroleum fuels, are the game's second-highest-value resource group.
+The **secondary storyline** is a Cold War race to prevent the Iron Ascendancy from acquiring its **first independent nuclear capability**. Only the **Atlantic Concord** and **Red Directorate** begin as nuclear powers. Both can produce expensive tactical atomic bombs, delivered by **nuclear bombers** and **ICBMs** respectively. The non-nuclear Ascendancy must **fully develop its initially limited spy capabilities** and only then infiltrate a **Concord or Directorate nuclear research facility** to steal **nuclear-refining technology and bomb-production intelligence**, then process the highest-value **crude nuclear-material resource** and finish an exceptionally long production process. **Completion of the Ascendancy's first bomb ends the current game immediately in its victory, without deployment.** Both the Ascendancy and the non-nuclear **Meridian Pact** may also steal and deploy an existing, completed nuclear weapon; neither gains a construction victory by theft. The Pact has no dedicated nuclear story missions and instead benefits economically from **always starting near fossil-fuel source fields**. Fossil fuels, including oil, natural gas and refined petroleum fuels, are the game's second-highest-value resource group.
 
 The disclosure destroys the credibility of the institutions that claimed to preserve national unity. In combination with long-running economic distress, competing republican interests, nationalist mobilization, foreign intervention, and the militarization of political disputes, this crisis precipitates the disintegration of Yugoslavia into war. **The secret is revealed and the federation descends into war in the canonical ending; players determine how the crisis unfolds locally, who survives, and what their faction gains or loses—not whether the fundamental revelation occurs.**
 
@@ -87,7 +87,7 @@ The player's chosen faction determines what intelligence is available, which act
 | **Iron Ascendancy** | Destabilize Yugoslavia and capitalize on the removal of its unifying leader | Its assassination cell knows Tito was killed, but most military and political ranks lack the full evidence; its leadership discovers the cover-up is a potential means of blackmail | Hide responsibility, exploit the substitution, or accelerate the federation's destruction even at the cost of exposure |
 | **Meridian Pact** | Defend strategic autonomy, maintain economic ties, and resist domination by major blocs | Learns through independent diplomatic, commercial, and personal networks; initially treats the reports cautiously | Protect witnesses and self-determination without becoming another outside power deciding Yugoslavia's future |
 
-Only the **Atlantic Concord and Red Directorate begin as nuclear powers** and can refine nuclear materials to build **nuclear power plants or weapons**. The **Iron Ascendancy has no atomic bomb or nuclear refining/production intelligence** until its spies infiltrate a **Concord or Directorate nuclear research facility** and steal **both nuclear-refining technology and weapons intelligence**. Production requires the game's highest-value crude nuclear materials to be **processed at an eligible refinery** and a very long build; Ascendancy **cannot construct nuclear power plants**. **Completion of its first self-produced bomb immediately wins the active game without deployment.** Stealing and deploying an already-finished bomb never qualifies for that automatic victory.
+Only the **Atlantic Concord and Red Directorate begin as nuclear powers** and can refine nuclear materials to build **nuclear power plants or weapons**. The **Iron Ascendancy has no atomic bomb or nuclear refining/production intelligence**. Its spies are initially more limited than the Concord's or Directorate's specialized operatives and **must be fully developed before** they can infiltrate a **Concord or Directorate nuclear research facility** and steal **both nuclear-refining technology and weapons intelligence**. Production requires the game's highest-value crude nuclear materials to be **processed at an eligible refinery** and a very long build; Ascendancy **cannot construct nuclear power plants**. **Completion of its first self-produced bomb immediately wins the active game without deployment.** Stealing and deploying an already-finished bomb never qualifies for that automatic victory.
 
 No faction should receive an omniscient briefing at the beginning. Even the Iron Ascendancy's broader command structure may know only that an important operation succeeded, not who holds surviving proof. A small number of insiders can know the truth while their field commanders operate on incomplete or deliberately distorted instructions.
 
@@ -97,7 +97,7 @@ The following five acts establish **the shared timeline**. Individual faction ca
 
 ### Prologue — The Empty Chair (1984)
 
-**Parallel nuclear thread:** Iron Ascendancy intelligence discovers that the Concord and Directorate possess nuclear research facilities that might be infiltrated. The Ascendancy is not a nuclear power. Its spies begin planning to steal the knowledge needed for its first atomic bomb.
+**Parallel nuclear thread:** Although Iron Ascendancy spying is initially more limited than rival intelligence programs, it begins the long effort to fully upgrade its espionage capabilities. Meanwhile, Iron Ascendancy intelligence discovers that the Concord and Directorate possess nuclear research facilities that might be infiltrated. The Ascendancy is not a nuclear power. Its spies begin planning to steal the knowledge needed for its first atomic bomb.
 
 **Public story:** Tito suffers a temporary health setback and cancels engagements. The state emphasizes continuity, vigilance, and unity.
 
@@ -123,7 +123,7 @@ The following five acts establish **the shared timeline**. Individual faction ca
 
 ### Act II — The Man Behind the Curtain (1986)
 
-**Parallel nuclear thread:** An Ascendancy spy cell approaches a qualifying Concord or Directorate nuclear research facility. The two nuclear powers try to prevent a verified intelligence theft that could unlock construction of the Ascendancy's first bomb. The Meridian Pact is not a campaign participant in this nuclear plot.
+**Parallel nuclear thread:** The Ascendancy's espionage progression must be fully developed before an eligible spy cell can approach and infiltrate a qualifying Concord or Directorate nuclear research facility. The two nuclear powers try to prevent a verified intelligence theft that could unlock construction of the Ascendancy's first bomb. The Meridian Pact is not a campaign participant in this nuclear plot.
 
 **Public story:** The presidency remains stable; rumors of illness and impersonation are dismissed as hostile propaganda.
 
@@ -185,7 +185,7 @@ The following five acts establish **the shared timeline**. Individual faction ca
 
 ## 7. Secondary Storyline — The First Atomic Bomb
 
-The **Atlantic Concord** and **Red Directorate** are already nuclear powers. The **Iron Ascendancy is initially non-nuclear** and secretly seeks the **refining and weapons intelligence** and scarce nuclear materials required to build its **first atomic bomb**. The two nuclear powers strive to stop that first acquisition and construction. This nuclear race is **secondary** to the assassination conspiracy.
+The **Atlantic Concord** and **Red Directorate** are already nuclear powers. The **Iron Ascendancy is initially non-nuclear**, possesses less advanced spying than the Concord and Directorate, and secretly seeks the **refining and weapons intelligence** and scarce nuclear materials required to build its **first atomic bomb**. The two nuclear powers strive to stop that first acquisition and construction. This nuclear race is **secondary** to the assassination conspiracy.
 
 ### Faction participation
 
@@ -193,9 +193,15 @@ The **Atlantic Concord** and **Red Directorate** are already nuclear powers. The
 |---|---|---|
 | **Atlantic Concord** | Established producer; completed tactical bombs delivered by **nuclear bomber aircraft** | Protect research facilities and nuclear-material supplies; prevent Ascendancy espionage and production |
 | **Red Directorate** | Established producer; completed tactical bombs delivered by **ICBM** | Guard its nuclear research, resources and production; prevent Ascendancy first-bomb construction |
-| **Iron Ascendancy** | **Starts without nuclear weapons**; can build first bomb **only after infiltrating a Concord or Directorate nuclear research facility** and taking its intelligence | Steal refining and weapons intelligence, process the highest-value crude nuclear materials exclusively for bombs, defend an exceptionally long build; **no nuclear power plants**; **win immediately upon completion**, without delivery |
+| **Iron Ascendancy** | **Starts without nuclear weapons**; can build first bomb **only after fully developing spies and infiltrating a Concord or Directorate nuclear research facility** and taking its intelligence | Steal refining and weapons intelligence, process the highest-value crude nuclear materials exclusively for bombs, defend an exceptionally long build; **no nuclear power plants**; **win immediately upon completion**, without delivery |
 | **Meridian Pact** | Non-nuclear and unable to produce bombs | **No nuclear side-story missions**; can sabotage or steal and deploy an existing finished bomb in general gameplay, separately from its main trade/mercenary role |
 | **The Unaligned** | Non-nuclear; NPC-only | Protects Yugoslav territorial authority and responds to security threats without joining the nuclear production contest |
+
+### The espionage rivalry and Intimidation
+
+The **Atlantic Concord and Red Directorate possess their own unique specialized spying features**, the precise capabilities of which remain to be developed. The **Iron Ascendancy starts with more limited espionage**; only **full development of its spy progression** permits a qualifying mission into Concord or Directorate nuclear research. Its special alternative is **Intimidation**, exclusive to the Ascendancy: it may compel an **isolated enemy unit** to abandon its faction and join the Ascendancy, provided the game's isolation and eligibility conditions hold. The other factions lack this ability.
+
+Intimidation can create tactical opportunities during ordinary operations, but cannot replace espionage upgrades, infiltration of a qualifying nuclear research facility, or the two nuclear-intelligence unlocks. This makes the nuclear side plot a long development race rather than an easy early-game raid. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### The resource stakes
 
@@ -203,7 +209,7 @@ The **Atlantic Concord** and **Red Directorate** are already nuclear powers. The
 
 ### Gameplay and victory
 
-A produced atomic bomb requires **validated nuclear-weapons intelligence**, high-value nuclear-material game resources, eligible infrastructure and **a very long build time**. The Concord and Directorate can finish weapons for deployment with their specified delivery platforms. The Iron Ascendancy cannot begin its own first-bomb project until a spy successfully **infiltrates a nuclear research facility belonging to one of those two factions** and obtains the required intelligence.
+A produced atomic bomb requires **validated nuclear-weapons intelligence**, high-value nuclear-material game resources, eligible infrastructure and **a very long build time**. The Concord and Directorate can finish weapons for deployment with their specified delivery platforms. The Iron Ascendancy cannot begin its own first-bomb project until it **fully develops its espionage capabilities**, then a spy successfully **infiltrates a nuclear research facility belonging to one of those two factions** and obtains the required intelligence.
 
 **At the instant the Ascendancy's own first bomb is completed, it wins the active game.** It neither has to launch a missile nor fly a bomber, deploy a warhead, select a target or detonate anything. **Theft is a separate mechanic:** both Ascendancy and Meridian may sabotage, steal and potentially deploy existing completed weapons, but doing so does **not** unlock Ascendancy first-bomb production or trigger the unique instant victory. Nuclear weapons are **not Black Market merchandise**.
 
@@ -287,8 +293,9 @@ The last narrative image should be achievable without a cinematic: a command map
 - The Unaligned is **NPC-only** and suppresses knowledge of the conspiracy, though most of its institutions and personnel do not know the full truth.
 - The Atlantic Concord, Red Directorate, Iron Ascendancy, and Meridian Pact are the four playable factions.
 - The **primary storyline** revolves around the secret from 1984 to 1989.
-- The **secondary storyline** centers on preventing the initially non-nuclear Iron Ascendancy from infiltrating a Concord/Directorate nuclear research facility and completing its **first atomic bomb**, which wins the current game immediately, without deployment.
+- The **secondary storyline** centers on preventing the initially non-nuclear Iron Ascendancy from fully developing its spying and infiltrating a Concord/Directorate nuclear research facility and completing its **first atomic bomb**, which wins the current game immediately, without deployment.
 - Only the **Atlantic Concord and Red Directorate are established nuclear powers**. The **Iron Ascendancy begins non-nuclear**; it can become a producer only after qualifying research espionage. The **Meridian Pact remains non-nuclear** but can steal and deploy an existing finished bomb.
+- The Concord and Directorate each possess distinctive specialist espionage; the Iron Ascendancy has more limited spying but exclusive **Intimidation** to convert isolated enemy combat units. **Full Ascendancy spy development is required before nuclear research infiltration**.
 - The Unaligned remains NPC-only and non-nuclear. **Nuclear materials have the highest strategic value and must be refined; fossil fuels rank second and crude oil must be refined into petroleum fuel or kerosene; Concord has cheaper fuel refining; Meridian always starts near oil/gas fields and cannot refine nuclear materials; the Ascendancy steals nuclear-refining knowledge and cannot build nuclear power plants.** Nuclear weapons are never Black Market items.
 - The cover-up becomes public in **1989**; Yugoslavia disintegrates into war.
 
