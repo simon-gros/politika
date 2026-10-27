@@ -14,11 +14,12 @@
 ## Engine and development
 
 - [Engine Outline](ENGINE_OUTLINE.md) — system responsibilities and implementation direction.
-- [Next Development Milestone: First RTS Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md) — bounded prototype scope, ownership, non-goals, and ordered completion criteria; planned, not implemented.
-- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; links to the [UM file-level reference catalog](</mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md>).
+- [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
+- [First RTS Vertical Slice — Milestone Record](RTS_VERTICAL_SLICE_MILESTONE.md) — bounded prototype scope and completed Linux Development acceptance evidence; not a complete skirmish or release qualification.
+- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; it references the local UM file-level catalog at `/mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md`.
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
 - [C&C Visual/Audio Reference Study](ART_AUDIO_REFERENCE_STUDY.md) — observations from local texture, model, UI and sound references, with original POLITIKA concept and sound prototypes.
-- [Shell Skeleton](SHELL_SKELETON.md) — implemented native offline shell, build/recovery contract and locally verified Linux package evidence; not RTS gameplay.
+- [Shell Skeleton](SHELL_SKELETON.md) — implemented native offline shell, build/recovery contract and locally verified Linux package evidence.
 - [Proposed Engine Layers](PROPOSED_ENGINE_LAYERS.md) — authoritative state, simulation, UI, world and tooling boundaries.
 - [Platform Support](PLATFORM_SUPPORT.md) — Linux, Windows, SteamOS/Steam Deck and Android plans; future platforms.
 - [UI Overview](POLITIKA_UI_OVERVIEW.md) — main menu, faction HUD, commands, accessibility and input design.

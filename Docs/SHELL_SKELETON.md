@@ -111,7 +111,7 @@ The 14 checks cover first-run/restart identity, explicit-map routing, byte-prese
 
 The Linux Development shell has been built and checked with the locally installed UE 5.8.3 toolchain. See the delivery record below for actual build/artifact outcomes. Do not infer gameplay acceptance from compilation or shell checks.
 
-Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance is deferred with the Server target. This milestone has no RTS simulation or campaign/skirmish implementation.
+Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance is deferred with the Server target. Shell acceptance itself does not cover RTS simulation, campaign or skirmish; the later bounded RTS prototype is documented in the [vertical-slice milestone record](RTS_VERTICAL_SLICE_MILESTONE.md).
 
 ## Verified delivery — 27 October 2026
 

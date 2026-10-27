@@ -7,7 +7,7 @@ public class Politika : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "../PolitikaCore"));
-        PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "PolitikaBootstrap" });
+        PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "NavigationSystem", "Json", "PolitikaBootstrap" });
         PrivateDependencyModuleNames.AddRange(new[] { "InputCore", "Slate", "SlateCore", "ApplicationCore", "UMG" });
     }
 }

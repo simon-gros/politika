@@ -19,13 +19,12 @@
 #include "Misc/Parse.h"
 #include "UObject/ConstructorHelpers.h"
 #include "PolitikaGameInstance.h"
+#include "PolitikaPrototypeContent.h"
 #include "Rules.h"
 
 namespace
 {
-constexpr float MapHalfExtent = 2000.0f;
 constexpr float UnitGroundZ = 42.0f;
-constexpr uint32 LocalPlayerId = 1;
 
 UStaticMesh* LoadPrototypeMesh(const TCHAR* Path)
 {
@@ -79,17 +78,18 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
 
 void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const FText& InName,
     int32 InHealth, float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
-    UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor)
+    bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor)
 {
     StableId = InStableId;
     OwnerPlayer = InOwner;
     UnitName = InName;
-    MaxHealth = FMath::Max(1, InHealth);
+    MaxHealth = InHealth;
     Health = MaxHealth;
-    MoveSpeed = FMath::Max(0.0f, InMoveSpeed);
-    WeaponRange = FMath::Max(0.0f, InWeaponRange);
-    WeaponDamage = FMath::Max(0.0f, InDamage);
-    WeaponCooldown = FMath::Max(0.05f, InCooldown);
+    MoveSpeed = InMoveSpeed;
+    WeaponRange = InWeaponRange;
+    WeaponDamage = InDamage;
+    WeaponCooldown = InCooldown;
+    bAttackable = bInAttackable;
     Body->SetStaticMesh(InMesh);
     SetActorScale3D(InMeshScale);
     ApplyPrototypeColor(Body, InColor);
@@ -235,21 +235,21 @@ void APolitikaPrototypeUnit::CleanupDeadTarget()
 
 APolitikaPrototypeObjective::APolitikaPrototypeObjective()
 {
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
-    static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
     PrimaryActorTick.bCanEverTick = false;
     Marker = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlPointMarker"));
     SetRootComponent(Marker);
     Marker->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    if (CylinderMesh.Succeeded()) Marker->SetStaticMesh(CylinderMesh.Object);
-    if (ShapeMaterial.Succeeded()) Marker->SetMaterial(0, ShapeMaterial.Object);
 }
 
-void APolitikaPrototypeObjective::SetPrototypeVisual(UStaticMesh* Mesh)
+void APolitikaPrototypeObjective::ConfigureFromDefinition(const FPolitikaPrototypeObjectiveDefinition& Definition, uint32 InLocalPlayerId)
 {
-    Marker->SetStaticMesh(Mesh);
-    Marker->SetWorldScale3D(FVector(6.0, 6.0, 0.35));
-    ApplyPrototypeColor(Marker, FLinearColor(0.76f, 0.66f, 0.22f));
+    CaptureRadius = Definition.CaptureRadiusCm;
+    CaptureDuration = Definition.CaptureDurationSeconds;
+    LocalRuntimePlayerId = InLocalPlayerId;
+    SetActorLocation(Definition.Location);
+    Marker->SetStaticMesh(Definition.MarkerMesh);
+    Marker->SetWorldScale3D(Definition.MarkerScale);
+    ApplyPrototypeColor(Marker, Definition.MarkerTint);
 }
 
 void APolitikaPrototypeObjective::UpdateCapture(const TArray<APolitikaPrototypeUnit*>& Units, float DeltaSeconds)
@@ -260,8 +260,8 @@ void APolitikaPrototypeObjective::UpdateCapture(const TArray<APolitikaPrototypeU
     for (const APolitikaPrototypeUnit* Unit : Units)
     {
         if (!Unit || !Unit->IsAlive() || FlatDistance(Unit->GetActorLocation(), GetActorLocation()) > CaptureRadius) continue;
-        bPlayerPresent |= Unit->GetOwnerPlayer() == LocalPlayerId;
-        bEnemyPresent |= Unit->GetOwnerPlayer() != LocalPlayerId;
+        bPlayerPresent |= Unit->GetOwnerPlayer() == LocalRuntimePlayerId;
+        bEnemyPresent |= Unit->GetOwnerPlayer() != LocalRuntimePlayerId;
     }
     bContested = bPlayerPresent && bEnemyPresent;
     if (bPlayerPresent && !bEnemyPresent)
@@ -290,66 +290,92 @@ void APolitikaPrototypeMatch::BeginPlay()
     Super::BeginPlay();
     BuildScenario();
 #if !UE_BUILD_SHIPPING
-    BeginAcceptanceHarness();
+    if (bContentReady) BeginAcceptanceHarness();
 #endif
 }
 
 void APolitikaPrototypeMatch::BuildScenario()
 {
-    UStaticMesh* Cube = LoadPrototypeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-    UStaticMesh* Sphere = LoadPrototypeMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-    UStaticMesh* Cylinder = LoadPrototypeMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-    if (!Cube || !Sphere || !Cylinder)
+    FPolitikaPrototypeContentSnapshot Snapshot;
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    if (!FPolitikaPrototypeContentLoader::LoadAndValidate(GetWorld(), UPolitikaPrototypeContentValidator::PrototypeMapAssetId, Snapshot, Diagnostics))
     {
-        UE_LOG(LogTemp, Error, TEXT("Prototype RTS could not load Unreal basic-shape meshes."));
-        LastCommandFeedback = TEXT("Prototype setup failed: engine basic-shape meshes are unavailable.");
+        for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
+            UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_VALIDATION %s"), *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
+        LastCommandFeedback = TEXT("Prototype setup failed: gameplay content validation failed. See CONTENT_VALIDATION diagnostics.");
         return;
     }
+    ContentCatalog = Snapshot.Catalog;
+    MapDefinition = Snapshot.MapDefinition;
+    PlayableMin = MapDefinition->PlayableMin;
+    PlayableMax = MapDefinition->PlayableMax;
+    const FPolitikaPrototypePlayerSlot* HumanSlot = MapDefinition->PlayerSlots.FindByPredicate([](const FPolitikaPrototypePlayerSlot& Slot) { return Slot.bHumanControlled; });
+    if (!HumanSlot) return;
+    LocalRuntimePlayerId = static_cast<uint32>(HumanSlot->RuntimePlayerId);
 
-    AStaticMeshActor* Ground = GetWorld()->SpawnActor<AStaticMeshActor>(FVector(0, 0, -40), FRotator::ZeroRotator);
-    if (Ground)
+    Diagnostics.Reset();
+    if (!UPolitikaPrototypeContentValidator::ValidateMapSpatial(GetWorld(), MapDefinition, Diagnostics))
     {
-        UStaticMeshComponent* GroundMesh = Ground->GetStaticMeshComponent();
-        GroundMesh->SetMobility(EComponentMobility::Movable);
-        GroundMesh->SetStaticMesh(Cube);
-        Ground->SetActorScale3D(FVector(40.0, 40.0, 0.5));
-        Ground->SetActorLocation(FVector(0, 0, -40));
-        GroundMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        GroundMesh->SetCollisionProfileName(TEXT("BlockAll"));
-        ApplyPrototypeColor(GroundMesh, FLinearColor(0.20f, 0.25f, 0.19f));
+        for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
+            UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_VALIDATION %s"), *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
+        LastCommandFeedback = TEXT("Prototype setup failed: map traversal validation failed. See CONTENT_VALIDATION diagnostics.");
+        return;
     }
+    UE_LOG(LogPolitikaStartup, Display, TEXT("CONTENT_VALIDATION_PASSED map=%s movement=%s"),
+        *MapDefinition->StableId.ToString(), *MapDefinition->MovementProfileId.ToString());
 
-    if (ADirectionalLight* Sun = GetWorld()->SpawnActor<ADirectionalLight>(FVector(0, 0, 1600), FRotator(-52, -28, 0)))
+    for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+    {
+        if (It->ActorHasTag(MapDefinition->GroundActorTag))
+        {
+            ApplyPrototypeColor(It->GetStaticMeshComponent(), MapDefinition->Lighting.GroundTint);
+            break;
+        }
+    }
+    if (ADirectionalLight* Sun = GetWorld()->SpawnActor<ADirectionalLight>(MapDefinition->Lighting.SunLocation, MapDefinition->Lighting.SunRotation))
     {
         Sun->GetLightComponent()->SetMobility(EComponentMobility::Movable);
-        Sun->GetLightComponent()->SetIntensity(2.0f);
-        Sun->GetLightComponent()->SetLightColor(FLinearColor(1.0f, 0.91f, 0.75f));
+        Sun->GetLightComponent()->SetIntensity(MapDefinition->Lighting.SunIntensity);
+        Sun->GetLightComponent()->SetLightColor(MapDefinition->Lighting.SunColor);
     }
 
-    auto SpawnUnit = [this](const FVector& Location, uint32 Owner, const FText& Name, int32 Health,
-        float Speed, float Range, float Damage, float Cooldown, UStaticMesh* Mesh,
-        const FVector& Scale, const FLinearColor& Color)
+    auto SpawnUnit = [this](const FPolitikaPrototypeUnitPlacement& Placement)
     {
-        APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Location, FRotator::ZeroRotator);
+        const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
+        const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
+        const FPolitikaPrototypePlayerSlot* Slot = MapDefinition->PlayerSlots.FindByPredicate([&](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Placement.SlotId; });
+        if (!Definition || !Weapon || !Slot) return;
+        APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Placement.Location, Placement.Rotation);
         if (!Unit) return;
-        Unit->Configure(NextStableId++, Owner, Name, Health, Speed, Range, Damage, Cooldown, Mesh, Scale, Color);
+        Unit->Configure(NextStableId++, Slot->RuntimePlayerId, Definition->DisplayName, Definition->MaxHealth,
+            Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
+            Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint);
         Units.Add(Unit);
     };
 
-    SpawnUnit(FVector(-520, -520, UnitGroundZ), LocalPlayerId, FText::FromString(TEXT("Recon Vehicle")),
-        120, 340.0f, 650.0f, 12.0f, 0.8f, Cube, FVector(1.8, 1.0, 0.65), FLinearColor(0.19f, 0.52f, 0.78f));
-    SpawnUnit(FVector(-300, -720, UnitGroundZ), LocalPlayerId, FText::FromString(TEXT("Mechanized Fireteam")),
-        180, 210.0f, 520.0f, 18.0f, 1.1f, Sphere, FVector(0.85, 0.85, 1.35), FLinearColor(0.26f, 0.64f, 0.37f));
-    SpawnUnit(FVector(240, 300, UnitGroundZ), 2, FText::FromString(TEXT("Opposing Patrol")),
-        150, 180.0f, 500.0f, 10.0f, 1.3f, Cube, FVector(1.2, 1.2, 0.9), FLinearColor(0.69f, 0.24f, 0.18f));
+    for (const FPolitikaPrototypeUnitPlacement& Placement : MapDefinition->UnitPlacements) SpawnUnit(Placement);
 
-    Objective = GetWorld()->SpawnActor<APolitikaPrototypeObjective>(FVector(0, 150, 4), FRotator::ZeroRotator);
-    if (Objective) Objective->SetPrototypeVisual(Cylinder);
+    Objective = GetWorld()->SpawnActor<APolitikaPrototypeObjective>(MapDefinition->Objective.Location, FRotator::ZeroRotator);
+    if (Objective) Objective->ConfigureFromDefinition(MapDefinition->Objective, LocalRuntimePlayerId);
+    bContentReady = Units.Num() == MapDefinition->UnitPlacements.Num() && Objective != nullptr;
+    if (!bContentReady)
+    {
+        for (APolitikaPrototypeUnit* Unit : Units) if (Unit) Unit->Destroy();
+        Units.Reset();
+        if (Objective) Objective->Destroy();
+        Objective = nullptr;
+        LastCommandFeedback = TEXT("Prototype setup failed: validated content could not be instantiated.");
+        UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_INITIALIZATION_FAILED map=%s expected_units=%d actual_units=%d"), *MapDefinition->StableId.ToString(), MapDefinition->UnitPlacements.Num(), Units.Num());
+        return;
+    }
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_CONTENT_READY map=%s units=%d objective=%s"),
+        *MapDefinition->StableId.ToString(), Units.Num(), *MapDefinition->Objective.StableId.ToString());
 }
 
 void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    if (!bContentReady) return;
     StepAccumulator += FMath::Min(DeltaSeconds, 0.25f);
     int32 Steps = 0;
     while (StepAccumulator >= SimulationStepSeconds && Steps < 5)
@@ -547,6 +573,16 @@ APolitikaPrototypeUnit* APolitikaPrototypeMatch::GetSelectedUnitForPlayer(uint32
     return Found ? Found->Get() : nullptr;
 }
 
+FVector2D APolitikaPrototypeMatch::GetCameraPanMin() const
+{
+    return MapDefinition ? MapDefinition->CameraPanMin : PlayableMin;
+}
+
+FVector2D APolitikaPrototypeMatch::GetCameraPanMax() const
+{
+    return MapDefinition ? MapDefinition->CameraPanMax : PlayableMax;
+}
+
 void APolitikaPrototypeMatch::SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit)
 {
     if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId))
@@ -605,7 +641,7 @@ bool APolitikaPrototypeMatch::ValidateOrder(const FPendingOrder& Pending, FStrin
     IssuerRules.can_attack = true;
 
     politika::rules::Order Order = politika::rules::StopOrder{};
-    const FVector2D MapPosition(Pending.Destination.X + MapHalfExtent, Pending.Destination.Y + MapHalfExtent);
+    const FVector2D MapPosition(Pending.Destination.X - PlayableMin.X, Pending.Destination.Y - PlayableMin.Y);
     switch (Pending.Kind)
     {
         case EPolitikaPrototypeOrder::Move: Order = politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}}; break;
@@ -631,7 +667,7 @@ bool APolitikaPrototypeMatch::ValidateOrder(const FPendingOrder& Pending, FStrin
         TargetRules.attackable = Target->IsAttackable();
     }
     const auto Result = politika::rules::AdmitOrder(IssuerRules, Pending.PlayerId,
-        {MapHalfExtent * 2.0, MapHalfExtent * 2.0}, Order, Target ? &TargetRules : nullptr);
+        {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y}, Order, Target ? &TargetRules : nullptr);
     if (Result) return true;
     switch (Result.rejection)
     {
@@ -709,9 +745,6 @@ APolitikaPrototypeCameraPawn::APolitikaPrototypeCameraPawn()
     SetRootComponent(SceneRoot);
     Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
     Camera->SetupAttachment(SceneRoot);
-    Camera->SetRelativeLocation(FVector(0, -2450, 2750));
-    Camera->SetRelativeRotation(FRotator(-48, 90, 0));
-    Camera->SetFieldOfView(65.0f);
 }
 
 void APolitikaPrototypePlayerController::BeginPlay()
@@ -720,22 +753,41 @@ void APolitikaPrototypePlayerController::BeginPlay()
     ResolveMatch();
     bShowMouseCursor = true;
     SetInputMode(FInputModeGameAndUI());
-    if (APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn()))
-    {
-        FVector Focus = FVector::ZeroVector;
-        if (Match.IsValid() && Match->GetObjective()) Focus = Match->GetObjective()->GetActorLocation();
-        CameraPawn->GetCamera()->SetWorldRotation((Focus - CameraPawn->GetCamera()->GetComponentLocation()).Rotation());
-    }
+}
+
+void APolitikaPrototypePlayerController::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    if (!bMapCameraApplied) ResolveMatch();
 }
 
 APolitikaPrototypeMatch* APolitikaPrototypePlayerController::ResolveMatch()
 {
-    if (APolitikaPrototypeMatch* Existing = Match.Get()) return Existing;
+    if (APolitikaPrototypeMatch* Existing = Match.Get())
+    {
+        ApplyMapCameraIfReady();
+        return Existing;
+    }
     if (!GetWorld()) return nullptr;
     TActorIterator<APolitikaPrototypeMatch> MatchIt(GetWorld());
     if (!MatchIt) return nullptr;
     Match = *MatchIt;
+    ApplyMapCameraIfReady();
     return Match.Get();
+}
+
+void APolitikaPrototypePlayerController::ApplyMapCameraIfReady()
+{
+    if (bMapCameraApplied || !Match.IsValid() || !GetPawn()) return;
+    const UPolitikaPrototypeMapDefinition* Definition = Match->GetMapDefinition();
+    if (!Definition || !Match->GetObjective()) return;
+    APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn());
+    if (!CameraPawn || !CameraPawn->GetCamera()) return;
+    CameraPawn->GetCamera()->SetRelativeLocation(Definition->CameraOffset);
+    CameraPawn->GetCamera()->SetFieldOfView(Definition->CameraFieldOfView);
+    const FVector Focus = Match->GetObjective()->GetActorLocation();
+    CameraPawn->GetCamera()->SetWorldRotation((Focus - CameraPawn->GetCamera()->GetComponentLocation()).Rotation());
+    bMapCameraApplied = true;
 }
 
 void APolitikaPrototypePlayerController::SetupInputComponent()
@@ -764,9 +816,9 @@ void APolitikaPrototypePlayerController::SelectUnderCursor()
         {
             SelectedUnit = Unit;
             ActiveMatch->SetSelection(GetCommandPlayerId(), Unit);
-            return;
-        }
+        return;
     }
+}
     SelectedUnit.Reset();
     ActiveMatch->SetSelection(GetCommandPlayerId(), nullptr);
 }
@@ -824,8 +876,12 @@ void APolitikaPrototypePlayerController::PanForward(float Value)
     if (FMath::IsNearlyZero(Value) || !GetPawn()) return;
     GetPawn()->AddActorWorldOffset(FVector(0, Value * 1400.0f * GetWorld()->GetDeltaSeconds(), 0), true);
     FVector Location = GetPawn()->GetActorLocation();
-    Location.X = FMath::Clamp(Location.X, -MapHalfExtent, MapHalfExtent);
-    Location.Y = FMath::Clamp(Location.Y, -MapHalfExtent + 150.0f, MapHalfExtent);
+    if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch())
+    {
+        const FVector2D Min = ActiveMatch->GetCameraPanMin(); const FVector2D Max = ActiveMatch->GetCameraPanMax();
+        Location.X = FMath::Clamp(Location.X, Min.X, Max.X);
+        Location.Y = FMath::Clamp(Location.Y, Min.Y, Max.Y);
+    }
     GetPawn()->SetActorLocation(Location);
 }
 
@@ -834,8 +890,12 @@ void APolitikaPrototypePlayerController::PanRight(float Value)
     if (FMath::IsNearlyZero(Value) || !GetPawn()) return;
     GetPawn()->AddActorWorldOffset(FVector(Value * 1400.0f * GetWorld()->GetDeltaSeconds(), 0, 0), true);
     FVector Location = GetPawn()->GetActorLocation();
-    Location.X = FMath::Clamp(Location.X, -MapHalfExtent, MapHalfExtent);
-    Location.Y = FMath::Clamp(Location.Y, -MapHalfExtent + 150.0f, MapHalfExtent);
+    if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch())
+    {
+        const FVector2D Min = ActiveMatch->GetCameraPanMin(); const FVector2D Max = ActiveMatch->GetCameraPanMax();
+        Location.X = FMath::Clamp(Location.X, Min.X, Max.X);
+        Location.Y = FMath::Clamp(Location.Y, Min.Y, Max.Y);
+    }
     GetPawn()->SetActorLocation(Location);
 }
 
@@ -867,7 +927,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     DrawText(TEXT("LMB select  ·  RMB move / attack  ·  A attack-move  ·  G guard  ·  S stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     if (APolitikaPrototypePlayerController* PC = Cast<APolitikaPrototypePlayerController>(PlayerOwner))
     {
-        APolitikaPrototypeUnit* Selected = Match->GetSelectedUnitForPlayer(LocalPlayerId);
+        APolitikaPrototypeUnit* Selected = Match->GetSelectedUnitForPlayer(Match->GetLocalRuntimePlayerId());
         if (Selected)
         {
             const TCHAR* Order = TEXT("Idle");

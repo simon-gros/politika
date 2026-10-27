@@ -1,6 +1,6 @@
 # POLITIKA — Lightweight Development Foundations and Conditional Adoption
 
-**Status (27 October 2026):** Rust content/metadata checks, unit tests, exact-source Unreal preflight and diagnostic JSON reporting are implemented. A native UE 5.8.3 project now provides the application shell, two maps and isolated process-level recovery tests. See [Shell skeleton](SHELL_SKELETON.md) for actual build and runtime evidence. RTS gameplay and gameplay Automation tests are not implemented.
+**Status (27 October 2026):** Rust content/metadata checks, unit tests, exact-source Unreal preflight and diagnostic JSON reporting are implemented. The UE 5.8.3 project provides the application shell, its maps, isolated process-level recovery tests, and a bounded RTS prototype verified in PIE and a rendered Linux Development package. See [Shell skeleton](SHELL_SKELETON.md) and the [RTS milestone record](RTS_VERTICAL_SLICE_MILESTONE.md). A reusable/full RTS simulation, complete skirmish, and focused Unreal gameplay Automation suite are not implemented.
 
 **Purpose:** Adapt useful development infrastructure to a five-faction, offline-first RTS without importing an MMORPG's character, account, persistent-world or network architecture. Unreal Engine 5.8.3 and C++ own runtime simulation; Rust owns local validation and tooling. C# is optional for a specifically justified external application. Do not add scripting-language runtime dependencies, hosted GitHub workflows or unnecessary feature branches.
 
@@ -40,17 +40,17 @@ The source pin specifies UE **5.8.3** with an explicit expected Git revision. Se
 
 ### Stage A — immediately useful, no engine installation
 
-Maintain the five-faction content registry as design metadata, not a duplicate gameplay ruleset. Extend its references only when real files appear; reject dangling assets, duplicate IDs and invalid roles. Run `cargo test`, `quality audit` and `quality core` after changing faction metadata, versioning, command-admission rules, local tooling or manifest formats. The portable C++ rules header is the future Unreal simulation's shared admission kernel, rather than a competing Rust simulator. Keep historical/archive research separate from release-grade assets. Record the exact source revision and checks performed; no gameplay evidence is required for prose-only commits.
+Maintain the five-faction content registry as design metadata, not a duplicate gameplay ruleset. Extend its references only when real files appear; reject dangling assets, duplicate IDs and invalid roles. Run `cargo test`, `quality audit` and `quality core` after changing faction metadata, versioning, command-admission rules, local tooling or manifest formats. The portable C++ rules header now supplies shared order-admission checks to the prototype; it is not a complete simulation, and Rust must not become a competing rules authority. Keep historical/archive research separate from release-grade assets. Record the exact source revision and checks performed; no gameplay evidence is required for prose-only commits.
 
-### Stage B — when a playable Unreal prototype exists
+### Stage B — extend the accepted prototype into reusable gameplay
 
-Integrate the existing platform-neutral [C++ rules kernel](../Source/PolitikaCore/Rules.h) into a `Politika` Unreal C++ runtime module; add Unreal Automation tests with genuine executable assertions. Prioritize: unit order admission and ownership; multi-selection and command queue; terrain/path reachability; production/building costs; faction permissions; espionage/sabotage timing and access gates; exclusive NPC world authority; and scenario/victory edge cases. Test at both a pure C++ rules layer and an Unreal integration layer, using one authoritative gameplay implementation rather than parallel Rust/C++ simulations. Introduce deterministic fixture maps and stable unit identifiers only with implemented assets.
+The [C++ rules kernel](../Source/PolitikaCore/Rules.h) and bounded Unreal RTS prototype now exist, but are not yet one reusable simulation/content contract. Next, establish stable unit/weapon/map-definition assets and shared validation before expanding to multi-selection/queues, pathing, production, faction permissions, espionage/sabotage timing, NPC authority, and full victory rules. Add Unreal Automation tests with genuine executable assertions and test through both the portable C++ rules layer and Unreal integration, using one authoritative gameplay implementation rather than parallel Rust/C++ simulations.
 
 At this stage, connect the generated C++ build identity to startup diagnostics and use Editor/Data Validation for cooked content. Require passing build and assertions before promoting a playable claim. Linux is the first development execution lane; qualify Windows, SteamOS/Steam Deck and Android in separate platform-specific runs.
 
-### Stage C — only after real play and rendering exist
+### Stage C — after reusable match content and a complete skirmish exist
 
-Add fixed RTS camera viewpoints and controlled scenarios: player spawn, selection, long-distance order, mixed-unit formations, fog transitions, base placement, a faction-specific action, and a reproducible victory/failure. Capture game frames, UI, events, performance counters and game-state assertions into one test manifest. Video or clean exit alone is **INCONCLUSIVE**; a pass requires the actual simulation and presentation assertions.
+Add fixed RTS camera viewpoints and controlled scenarios beyond the accepted prototype: player spawn, selection, long-distance orders, mixed-unit formations, fog transitions, base placement, a faction-specific action, and a reproducible match victory/failure. Capture game frames, UI, events, performance counters and game-state assertions into one test manifest. Video or clean exit alone is **INCONCLUSIVE**; a pass requires actual simulation and presentation assertions.
 
 Profile performance by active unit count, path requests, line-of-sight/fog updates, AI decision frequency, graphics frame time and memory. Increase instrumentation only when a measured bottleneck or recurring failure justifies it; use Unreal Insights, Visual Logger, Gameplay Debugger, platform profilers or frame captures as appropriate. Keep heavy certification separate from ordinary documentation commits.
 
@@ -88,7 +88,7 @@ The following practices are **conditional production recommendations**, not clai
 
 Prioritize the first three rows immediately as **documentation discipline**. When adding new historical maps, provide an archive identifier and separate the source's actual historical claim from the game's fictional use. When adding units or buildings, select importance/readability tiers before investing in textures. When adding faction data, extend the existing Rust validator rather than adding parallel authoring stores. When changing game rules, add native C++ tests; only a real Unreal executable can verify engine integration.
 
-The first real battle/map should become a *representative vertical slice* for validating commands, fog of war, navigation, combat, buildings, neutral authority and tactical readability. Production-scale asset import, audiovisual capture, deep profiling and full release checklists should be triggered by that evidence, not by the mere existence of roadmap text.
+The accepted prototype battle/map proves the initial command, combat, objective and tactical-readability loop only. A later *representative skirmish* should extend that evidence to fog of war, navigation, buildings, neutral authority and a reproducible victory/failure. Production-scale asset import, audiovisual capture, deep profiling and full release checklists should be triggered by that broader evidence, not by the mere existence of roadmap text.
 
 ### 6.2 Things not worth transferring
 

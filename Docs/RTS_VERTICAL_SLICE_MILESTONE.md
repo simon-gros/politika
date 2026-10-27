@@ -1,4 +1,4 @@
-# Next Development Milestone — First RTS Vertical Slice
+# First RTS Vertical Slice — Milestone Record
 
 **Status:** complete for the scoped Linux Development milestone; other platforms and physical-device qualification remain out of scope
 **Target:** Unreal Engine 5.8.3, initial qualification on the locally supported Linux Development build

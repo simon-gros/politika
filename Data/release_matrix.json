@@ -5,20 +5,20 @@
     {
       "id": "engine_build",
       "status": "pass",
-      "evidence": ["Docs/SHELL_SKELETON.md#verified-delivery--27-october-2026"],
-      "note": "Linux UE 5.8.3 Development editor and application-shell game builds and package verified; not RTS gameplay or other-platform qualification"
+      "evidence": ["Docs/SHELL_SKELETON.md#verified-delivery--27-october-2026", "Docs/RTS_VERTICAL_SLICE_MILESTONE.md#delivery-and-acceptance-record-2026-10-27"],
+      "note": "Linux UE 5.8.3 Development Editor, application-shell package, and bounded RTS prototype package verified; no full-skirmish or other-platform qualification"
     },
     {
       "id": "first_skirmish",
       "status": "blocked",
       "evidence": [],
-      "note": "No playable match"
+      "note": "Bounded prototype scenario only; no complete skirmish match with full rules, AI, victory/failure and reusable production content"
     },
     {
       "id": "gameplay_regressions",
       "status": "blocked",
       "evidence": [],
-      "note": "Portable rules tests are not Unreal gameplay tests"
+      "note": "Portable rules assertions and focused packaged prototype fixtures exist; no Unreal gameplay Automation suite or representative-match regression coverage"
     },
     {
       "id": "content_and_rights",
