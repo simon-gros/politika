@@ -1,0 +1,53 @@
+# POLITIKA — Yugoslavia 1980–1989: Source Guide
+
+Research seed: **27 catalogue records** researched on 27 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). This is a first verified online discovery pass, not exhaustive coverage of the six republics and two autonomous provinces.
+
+## High-value primary artefacts and original imagery
+
+**[Visual Archive of Yugoslavia — Museum of Yugoslavia](https://vaju.muzej-jugoslavije.org/)** (additional discovery priority). Search by `1980`, `1984`, `1988`, object signature, person, city and photographer. It offers actual collection records, photographers, dates and rights fields; the photographic record for Milan Simić's early-1980 Terazije series is especially promising for transport, everyday city life and fuel rationing. Request authorization before reproduction.
+
+**[Wikimedia Commons: 1982 Sarajevo tram photographs](https://commons.wikimedia.org/wiki/Category:1982_in_tram_transport_in_Sarajevo)** — four dated photographs by Milan Suvajac are already individually catalogued as `POL-1982-SAR-TRAM-001` to `004`. Commons states CC BY-SA 4.0 on each file page; credit, licence, modifications and share-alike duties follow from the exact file licence. Crucial for overhead wires, Tatra K2 tram silhouettes, 1982 streets, tram maintenance, roadway surface and vegetation. This is the best current exact-period image cluster.
+
+**[dLib.si — Digital Library of Slovenia](https://www.dlib.si/)** — period newspapers, magazines, ephemera and issue-level metadata with persistent URNs. Catalogued: [Mladina, 5 April 1984](https://dlib.si/details/URN%3ANBN%3ASI%3ADOC-E01O55YN), [Katedra, 9 Nov 1985](https://www.dlib.si/details/URN%3ANBN%3ASI%3Adoc-35EY0YN9), [Mladina 1986, issue 25/26](https://dlib.si/details/URN%3ANBN%3ASI%3ADOC-PR77030L), [Glasbena mladina 1988/89](https://www.dlib.si/details/URN%3ANBN%3ASI%3ADOC-NSFGFEC5). Some Mladina scans require designated reading-room terminals. Metadata is not proof that page images have been inspected. Search in Slovene by `Katedra`, `Mladina`, `TAM`, `Iskra`, `samoupravljanje`, `plakati`, `stanovanjska naselja`, `obnova`, `inflacija`, `stavka` and each town name.
+
+**[Museum of Yugoslavia — Relay of Youth, 1987](https://muzej-jugoslavije.org/en/art/stafeta-mladosti/)** and **[House of European History — 1987 poster affair](https://historia.europa.eu/en/our-work/news/behind-poster-day-youth)** — object-level and explanatory sources for socialist ritual, media controversy, experimental graphic design and late-period ideological symbolism. *Important*: the notorious Novi Kolektivizem poster was selected but not actually plastered on streets; don't model a city covered in it.
+
+**[Olympic Museum item 23850](https://olympic-museum-artefacts.zetcom.net/en/collection/item/103918/)** — 1984 Vučko poster: specific object, artist, materials, colours, size and museum reproduction limits. **[Museum in Exile's Sarajevo '84 design collection](https://www.museuminexile.com/index.php/olympics84)** documents graphic standards, accreditation, signage, pictograms and ticket design. **[Olympic Committee of Bosnia and Herzegovina](https://okbih.ba/en/text/wog-84/75)** gives the event and urban construction context. **[Olympics.com venue overview](https://www.olympics.com/ioc/news/sarajevo-1984-olympic-venues-overview)** is useful for venue geography but many present-day photographs are NOT authentic 1984 condition.
+
+**[United States Olympic Committee 1984 report, LA84 Digital Library](https://digital.la84.org/digital/collection/p17103coll6/id/6531/rec/2)** — contemporary outsider perspective on security at the Sarajevo Olympic Village; subject to the report's viewpoint and reporting accuracy, and not a basis for historical claims about the game's fictional conspiracy.
+
+**[UN Digital Library — Belgrade Non-Aligned summit final documents](https://digitallibrary.un.org/record/80583)** — primary conference documents from 4–7 September 1989, transmitted in UN document A/44/551 / S/20870. The [Non-Aligned Movement's summit archive](https://www.nam.go.ug/previous-chairmanship-documents) provides the 1983 New Delhi, 1986 Harare and 1989 Belgrade continuity. Official records prove an institution's public stance; they are not neutral third-party verification of any historical political claim.
+
+## Historical research and contextual authorities
+
+**[Slavic Review — unemployment and crisis, 1965–1984 (1989)](https://www.cambridge.org/core/journals/slavic-review/article/abs/systemic-changes-and-unemployment-growth-in-yugoslavia-19651984/ED652204DE3D6B46A7F10D943DB8CD00)** and **[IMF — Yugoslav Inflation and Money (1991)](https://www.imf.org/en/publications/wp/issues/2016/12/30/yugoslav-inflation-and-money-927)**. Useful for plausible import shortages, currency instability, industrial constraints, black-market pressures and civic anxiety, *not* evidence for exact costs of fictional units. Dates in publication and historic-period analysis differ.
+
+**[Government of Slovenia historical overview](https://www.gov.si/en/topics/history-of-slovenia/)** gives an institutional account of the 1988 JBTZ trial and civil demonstrations. **[Nationalities Papers — Trepča miners 1988–1989](https://www.cambridge.org/core/journals/nationalities-papers/article/ethnopolitics-in-a-mining-enterprise-in-crisis-revisiting-the-albanian-miners-protests-in-late-socialist-kosovo/1F3B02E90DEF0490C8C2E2B11202822B)** is a peer-reviewed account of protest and enterprise life. **[Oral History Kosovo: 1989 miners' strike](https://oralhistorykosovo.org/research/miners-strike-1989/)** gives first-person testimony collected retrospectively. Keep differing political perspectives visible and attribute assertions rather than treating any one institution's narrative as neutral ground truth.
+
+**[New East Digital Archive — Yugoslav new wave (1981 and aftermath)](https://www.new-east-archive.org/features/show/12495/yugoslav-new-wave-1980s-music-40-years-on)** — cultural-history interviews and references to `Paket aranžman`, alternative music, clothing and print design. For production, create *original* period-plausible art and sound; do not import protected recordings or album art.
+
+**[Archives of Yugoslavia photographic holdings](https://www.arhivyu.rs/en/arhivska-gradja/fotografije)** and **[Yugoslav Film Archive](https://en.kinoteka.org.rs/archive/)** — *collection-level leads*, not verified 1980s items. Archives of Yugoslavia's overview explicitly names many pre-WWII collections; obtain item date, place, signature and rights before catalogue promotion.
+
+## Underrepresented regions: targeted acquisition plan
+
+The initial catalogue is intentionally uneven; it must **not** be mistaken for adequate all-Yugoslavia coverage.
+
+- **SR Croatia / Adriatic**: seek 1980–1989 Zagreb, Rijeka, Split, Dubrovnik and tourist-industrial coast *item-level* references. Begin with [National and University Library Zagreb periodicals](https://nsk.hr/fond/novine-i-casopisi/) and library catalogues; digitised `Stare hrvatske novine` largely covers *much earlier* periods, so do not assume 1980s scans are freely available. Search `Vjesnik 1985`, `Slobodna Dalmacija 1984`, `Jugoplastika`, `Rade Končar`, `Brodogradilište`, `hotel`, `Jadranska magistrala`.
+- **SR Serbia / SAP Vojvodina**: prioritize Belgrade's period traffic, Novi Sad, factories, agricultural co-operatives, Danube bridges, urban signage, buses and 1988–1989 demonstrations. Look first to the Museum of Yugoslavia's photographic records and local municipal museums.
+- **SR Bosnia and Herzegovina**: extend strong Sarajevo 1982–1984 evidence with Tuzla industry, Zenica steelworks, Mostar, hydroelectric sites and railway yards. Keep Olympic and non-Olympic Sarajevo distinct.
+- **SR Macedonia (then name)**: [State Archives' Skopje branch](https://arhiv.mk/en/arhivska-mreza/) lists over 30,000 city-area photographs *dating only through 1983*, plus enterprise records through 1990. Excellent 1980–1983 lead only, **not** proof of 1984–1989 coverage. Prioritize Skopje centre, transport, industry and housing.
+- **SR Montenegro**: Titograd (period name), Bar, Kotor, coastal tourism and ports, rail links, 1988–1989 politics. Preserve `Titograd` for 1980s display, with `Podgorica` as modern search synonym.
+- **SAP Kosovo**: Priština/Prishtina, Trepča/Trepça, rail/mining systems, labour, residential environment and 1988–1989 civic politics; represent Albanian and Serbian perspectives and use multilingual place search terms.
+- **SFRY international links**: Italy, Austria, Hungary, Romania, Bulgaria, Greece and Albania border installations, ferry ports, cross-border vehicles and trade; do not claim all neighbours were military combatants in the actual 1980s.
+
+## Search, verification and use protocol
+
+1. Search each institution *and* item, record stable URL/URN/signature, creator, historic event date, creation date and access constraints.
+2. Separate `contemporary`, `near-period-secondary`, `retrospective` and `collection-lead`. A 2025 city photograph is not a 1985 street texture reference even if the building survived.
+3. Where a page contains multiple photos, cite the **specific item**; avoid assigning the collection's headline date to all images.
+4. Mark each observation as direct visual evidence, textual factual report, interpretation or fictional extrapolation. Verify with a second independent source for high-impact claims.
+5. Add a stable catalogue ID and candidate use (`tram-units`, `UI`, `urbanism`, `mission`), rights status and confidence.
+6. Map the use to [Story Outline](../Docs/STORY_OUTLINE.md), [Concepts Outline](../Docs/CONCEPTS_OUTLINE.md) or a specific gameplay system without asserting that the game has implemented that content.
+7. Do not copy third-party source content into the Git repository without explicit compatible redistribution rights and attribution.
+
+**Source checked:** 2026-10-27. Links and permissions require rechecking at import time.
