@@ -127,7 +127,7 @@ The main military contest centers on three primary factions with meaningfully di
 
 **Established spy limitation:** the Iron Ascendancy possesses **more limited spying abilities** than the two rival nuclear powers, but can fully upgrade its espionage capabilities to unlock the exceptionally difficult nuclear-facility infiltration objective.
 
-**Exclusive ability — Intimidation:** only the Iron Ascendancy may **force an isolated eligible enemy unit to join its forces**. The enemy unit must lack nearby allied support, and an authorized resolution transfers its control to the Ascendancy. The other factions **cannot use Intimidation**. Isolation, retaliation, unit eligibility and ability cooldowns need balancing; Intimidation does not grant nuclear research or replace spy upgrades.
+**Exclusive ability — Intimidation:** only the Iron Ascendancy may attack the **battlefield morale of an isolated eligible enemy unit** and force a transfer of allegiance **only after that unit's morale has been fully broken**. Isolation alone, a partial morale reduction, or damage to health alone **must not convert** the target. The other factions cannot use Intimidation. Supported units are not eligible; timing, recovery and counters need balancing. Intimidation does not grant nuclear research or replace spy upgrades.
 
 **Candidate identity:** covert action, sabotage, disinformation, rapid clandestine strikes, hidden cells, intimidation, and exploitation of disorder. Its ideology and role as the assassination perpetrator give it **specific advantages but equally meaningful drawbacks**. It is **not** simply an objectively stronger faction or the only one capable of immoral conduct.
 
@@ -140,6 +140,12 @@ The main military contest centers on three primary factions with meaningfully di
 **Unique nuclear victory:** initially non-nuclear, the Ascendancy must **fully develop its limited spy capabilities**, then infiltrate an **Atlantic Concord or Red Directorate nuclear research facility**, steal its nuclear intelligence, and finish manufacturing its **first atomic bomb**. This event immediately ends the game in an Ascendancy victory **without deployment**. It may also sabotage and steal completed weapons, but stolen weapons do not trigger that victory; **its own completed bomb requires no delivery platform because the game ends**.
 
 The identity of its forces should be legible to the player but not automatically known to enemy AI: **gameplay faction ownership** and **in-world recognized identity** are separate variables. Concealment is a bounded ability with countermeasures and costs, not invulnerability.
+
+### 4.4 Formation size, discipline and morale
+
+**Battlefield rule:** for the Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned, a larger coherent fighting group is **more stable in morale and discipline** than a small isolated detachment. This affects reliability and resistance to morale loss under pressure. **Only the Atlantic Concord avoids the morale/discipline disadvantage for individuals and very small groups**, permitting professionally disciplined solitary deployments.
+
+**Ascendancy conversion rule:** **isolate target → break its battlefield morale completely by Intimidation → convert unit to Ascendancy control**. This is not an instant capture of any unsupported soldier; high-morale isolated units must first be demoralized. The normal Concord small-group immunity does not imply immunity to direct Intimidation. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ### 4.4 Unit diversity principle
 
@@ -292,15 +298,17 @@ The Pact **does not receive a dedicated nuclear campaign storyline** despite its
 
 ## 9.8 Advanced Propaganda and Population Morale
 
-**Every faction—including the playable Meridian Pact and NPC-only Unaligned—has a population morale meter.** A higher morale rating **increases production output and army discipline**; exact multiplier limits, affected production categories, and disciplinary effects require balancing.
+**Every faction—including the playable Meridian Pact and NPC-only Unaligned—has a population morale meter.** A higher population morale rating **increases production output and baseline army discipline**. **Local battlefield morale** is also tracked for units or coherent formations and responds to formation size and nearby allied support. Values, multipliers and thresholds require balancing.
 
 **Distinct advanced propaganda capabilities belong to exactly four factions:** Atlantic Concord, Red Directorate, Iron Ascendancy and the Unaligned. The **Meridian Pact is the only faction without advanced propaganda actions**, but still gains the production and discipline benefits of high morale and can improve morale through ordinary commercial, economic and military performance. The Unaligned's media policies are operated by AI, not by a player.
 
 The three principal media are **radio, newspapers, and television**, modeled through coverage, operations and accessible infrastructure rather than identical global boosts. The Concord's, Directorate's, Ascendancy's and Unaligned's distinct advanced styles must offer genuinely different choices; exact abilities remain unfinalized. Media stations, printing houses and relay networks can become tactical objectives, subject to Unaligned sovereignty, existing world-control rules and player knowledge of the region.
 
-Morale is **separate from Intimidation** (Ascendancy's exclusive ability to convert isolated enemy units) and does not replace nuclear-research espionage, refining, resource or instant-victory gates. The Unaligned's cover-up relies heavily on radio, television and newspapers, while the canonical revelation of Tito's assassination in 1989 remains unavoidable.
+**Formation-size morale rule:** for Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned, **larger, genuinely supported formations have more stable morale/discipline** than soldiers operating individually or in very small groups; the latter suffer a small-formation discipline disadvantage. **Atlantic Concord is the sole exception:** its soldiers do **not** lose morale or discipline merely because they operate alone or in very small groups. They are not immune to casualties, direct enemy morale pressure or other battlefield effects. Group-size support must count nearby coherent allies, not every army unit across the map, with bonuses capped.
 
-See [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) for factions, media, UI, data and validation rules.
+**Intimidation requires morale collapse:** an isolated enemy may be affected by Ascendancy Intimidation, but **cannot be converted until its battlefield morale is reduced to the fully broken threshold**. An isolated Concord soldier retains the usual Concord baseline rather than suffering a small-group penalty, although direct Intimidation can still eventually break morale. Propaganda/population morale are distinct from this local breakdown process; none of these mechanics replace nuclear-research espionage, refining, resource or instant-victory gates. The Unaligned's cover-up relies heavily on radio, television and newspapers, while the canonical revelation of Tito's assassination in 1989 remains unavoidable.
+
+See [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) for faction rules, battlefield morale, media, UI and validation.
 
 ## 10. Game Modes and Canon
 
@@ -346,7 +354,7 @@ Before implementing full rosters and economy, resolve:
 - Whether infantry is controlled as individual soldiers, squads, or both.
 - How far legal authorization, permits, customs, and disguise are simulated rather than scripted.
 - **The exact special spying features** of the Concord and the Directorate, and the Iron Ascendancy's full espionage-upgrade costs, prerequisites, and timing.
-- **Intimidation balance:** which hostile units are eligible, how to determine isolation and support, and appropriate counterplay.
+- **Formation and Intimidation balance:** support size/radius, stability and loss/recovery curves, Concord's small-group exemption, how Intimidation erodes morale to the full broken threshold before transfer, eligible combat units and counterplay.
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
 - Who supplies Black Market stock (excluding nuclear weapons), whether human Meridian players can list their own goods, and how anti-exploit settlement works.
