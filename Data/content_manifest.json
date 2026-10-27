@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "purpose": "Design-stage faction registry; gameplay and asset integration remain unimplemented.",
+  "factions": [
+    {
+      "id": "atlantic_concord",
+      "name": "The Atlantic Concord",
+      "role": "playable",
+      "description": "Factions/TheAtlanticConcord/description.md",
+      "logo": "Factions/TheAtlanticConcord/1logo.png",
+      "banner": "Factions/TheAtlanticConcord/1banner.png"
+    },
+    {
+      "id": "red_directorate",
+      "name": "The Red Directorate",
+      "role": "playable",
+      "description": "Factions/TheRedDirectorate/description.md",
+      "logo": "Factions/TheRedDirectorate/2logo.png",
+      "banner": "Factions/TheRedDirectorate/2banner.png"
+    },
+    {
+      "id": "iron_ascendancy",
+      "name": "The Iron Ascendancy",
+      "role": "playable",
+      "description": "Factions/TheIronAscendancy/description.md",
+      "logo": "Factions/TheIronAscendancy/3logo.png",
+      "banner": "Factions/TheIronAscendancy/3banner.png"
+    },
+    {
+      "id": "meridian_pact",
+      "name": "The Meridian Pact",
+      "role": "playable",
+      "description": "Factions/TheMeridianPact/description.md",
+      "logo": "Factions/TheMeridianPact/4logo.png",
+      "banner": "Factions/TheMeridianPact/4banner.png"
+    },
+    {
+      "id": "unaligned",
+      "name": "The Unaligned",
+      "role": "npc",
+      "description": "Factions/TheUnaligned/description.md",
+      "logo": "Factions/TheUnaligned/5logo.png",
+      "banner": "Factions/TheUnaligned/5banner.png"
+    }
+  ]
+}
