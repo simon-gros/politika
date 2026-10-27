@@ -57,6 +57,12 @@ See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System
 
 Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as **authoritative state**, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Advanced propaganda and faction morale
+
+Provide an **authoritative per-faction morale state for all five factions**, including the NPC Unaligned and non-propaganda Meridian Pact. **High morale boosts eligible production throughput and army discipline** by data-driven, capped modifiers. **Propaganda actions are available only to Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned**, with different faction-specific methods expressed through **radio, newspapers and television**. Meridian Pact has no advanced propaganda ability tree.
+
+Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 4. Content model and authoring
 
 Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
