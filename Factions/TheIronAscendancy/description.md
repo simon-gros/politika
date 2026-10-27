@@ -62,6 +62,10 @@ The Ascendancy's ambitions in Yugoslavia directly threaten the independence of t
 
 Yugoslavia's geography complicates expansionist operations. Mountainous terrain, river crossings, developed urban centers and transport bottlenecks can hinder the concentration of mechanized forces, while local resistance may continue beyond the capture of a major installation. Political repression and discriminatory occupation policies deepen hostility and undermine claims of lasting control. These conditions should ensure that territorial conquest is not interchangeable with legitimate governance and that the human and institutional consequences of aggression remain visible within the game's wider strategic simulation.
 
+### Rival intelligence techniques and counterplay
+
+The Atlantic Concord's Psy-Ops may break an eligible enemy combat unit's Discipline or non-combat unit's Morale, triggering its in-game self-destruction, or cause a brief friendly-fire rampage without changing ownership. The Red Directorate's basic infiltration acquires rival intelligence slightly faster and more cheaply. These are opposing intelligence advantages, not powers the Iron Ascendancy shares. The Ascendancy's unique Intimidation still requires isolating and fully breaking an eligible unit before permanently converting it; its own high-risk assaults and full nuclear-spy progression remain separate.
+
 ## Limited Espionage and Exclusive Intimidation
 
 Intimidation works on both eligible combatants and eligible civilian/non-combat units. Every unit has one shared resolve meter: labeled Discipline for combatants, Morale for civilians/non-combatants. The Ascendancy must first fully break that meter while the target remains isolated before it can convert the individual unit. These are two names for the same gameplay system, not two different abilities. Civilian targeting requires explicit eligibility; it is not a blanket right to seize neutral populations. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
