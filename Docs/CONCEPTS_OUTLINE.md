@@ -4,7 +4,7 @@
 **Setting:** Alternate-history Yugoslavia, 1984–1989  
 **Genre:** Real-time strategy, factional conflict, political conspiracy, nuclear deterrence, intelligence, logistics, and asymmetric warfare  
 **Purpose:** Define the core playable systems and relationships underpinning POLITIKA, distinct from the chronological [Story Outline](STORY_OUTLINE.md).  
-**Related material:** [Story Outline](STORY_OUTLINE.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
+**Related material:** [Story Outline](STORY_OUTLINE.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
 
 > **Design boundary:** This document distinguishes **established premises** from **suggested implementations**. It is not an assertion that these gameplay systems are already coded. The assassination and its concealment are *fictional alternate-history events*: historically, Tito died in 1980.
 
@@ -40,15 +40,17 @@ The concept should affect play **without immediately telling players the truth**
 
 **Design constraint:** the poisoning itself is a narrative event and **not** a reproducible poisoning tutorial or weapon-production mechanic.
 
-### 2.1 The secondary nuclear-weapons contest
+### 2.1 Secondary nuclear-weapons contest and ultimate weapons
 
-**Established side-story premise:** during 1984–1989, the **Iron Ascendancy attempts to acquire a particular nuclear weapon** beyond those it already controls. The **Atlantic Concord** and **Red Directorate** independently seek to prevent that acquisition. All three principal military-political factions are **nuclear-armed powers** in POLITIKA's fictional strategic landscape. The contest concerns control of a **specific additional weapon**, not the Ascendancy's first-ever nuclear capability.
+**Established side-story premise:** the Iron Ascendancy seeks to obtain nuclear-weapons intelligence and create an **own-produced nuclear weapon** or seize an already completed one. The Atlantic Concord and Red Directorate attempt to stop the acquisition. All three are nuclear-capable powers in the fictional setting; however, **Ascendancy ultimate-weapon production begins locked** until its operatives infiltrate an **enemy facility containing nuclear-weapons intelligence** and acquire that intelligence.
 
-The **Meridian Pact is the sole non-nuclear playable faction**, and deliberately **does not care about or participate in the nuclear subplot**. It has no nuclear acquisition/interdiction campaign chain, no nuclear research progression, and no nuclear-weapons listings or brokerage role in the Black Market. The **Unaligned remains a non-nuclear, NPC-only Yugoslav authority** that can defend its territory or react to incidents but is not a fourth contender for the weapon.
+**Established RTS ultimate-weapon system:** the Atlantic Concord, Red Directorate, and Iron Ascendancy can each ultimately **produce a tactical nuclear weapon**. Production requires **scarce abstract strategic resources**, **nuclear-weapons intelligence**, an eligible facility, and a **very long production period** ending in a distinct **completed weapon**. Once produced, the Concord deploys through a **nuclear bomber aircraft** and the Directorate through an **ICBM**; the Ascendancy's own delivery platform is to be defined. A weapon is a rare **deployable high-impact ultimate asset**, not merely a narrative collectible.
 
-**Plot hierarchy:** Tito's 1984 assassination, cover-up, and public exposure in 1989 are the primary storyline. The nuclear acquisition/prevention contest is a significant but secondary parallel storyline. They can share terrain, intelligence opportunities, and tactical events without either plot becoming a prerequisite for the other.
+**Iron Ascendancy instant-victory condition:** **infiltrate an eligible enemy intelligence-bearing facility → obtain nuclear-weapons intelligence → commit resources and complete production of an own nuclear weapon → immediately win the active game/match**. Capturing or firing a stolen finished weapon does **not** satisfy this special victory condition. As a nuclear-capable geopolitical power it may have an existing strategic deterrent in the lore, but that does not bypass its required **gameplay unlock** for construction and special victory.
 
-**Proposed game representation:** faction-specific intelligence states, contested access to transport and guarded facilities, custody/transfer objectives, convoy interdiction, protective deployments, and time-sensitive mission triggers. Avoid simulating nuclear physics, weapon construction, arming procedures, or deployable nuclear attacks. The exact weapon, custodial chain, and ultimate acquisition outcome remain open design choices; the canonical 1989 revelation and subsequent war do not.
+The **Meridian Pact is the only non-nuclear playable power**, unable to independently **produce** nuclear weapons or unlock nuclear manufacturing by stealing intelligence. **Both the Meridian Pact and Iron Ascendancy can sabotage, steal, and deploy an already existing completed nuclear weapon**; theft grants custody of a finite asset and requires a compatible usable deployment method. The Pact remains **outside the dedicated nuclear side-story campaign** and has no nuclear production tree, even though opportunistic sabotage and theft are valid RTS actions. Nuclear weapons may **never be purchased or auctioned on the Black Market**.
+
+The **Unaligned remains non-nuclear and NPC-only**; its world AI may protect sites, investigate theft, and respond to nuclear use. The primary assassination-cover-up plot and canonical 1989 revelation remain fixed, whereas the nuclear ultimate-weapon mechanics govern match objectives and victory conditions. See the full [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) for the state machine, delivery distinctions, capture rules, and technical boundaries.
 
 ## 3. The Unaligned: The World's Neutral Operating Authority
 
@@ -105,6 +107,8 @@ The main military contest centers on three primary factions with meaningfully di
 
 **Potential limitations:** higher procurement/maintenance costs, dependence on surveillance and interoperable networks, slower replacement of elite losses, sensitivity to diplomatic legitimacy.
 
+**Ultimate weapon:** long-produced tactical nuclear weapon delivered by a **nuclear bomber**, requiring nuclear intelligence and scarce strategic resources.
+
 ### 4.2 Red Directorate — mass and sustained operations
 
 **Candidate identity:** organized combined-arms formations, robust industrial logistics, fortified defense, attritional combat, and ideologically linked local networks. It can contest territory at scale but may be less tactically agile or precise than the Concord in some circumstances.
@@ -112,6 +116,8 @@ The main military contest centers on three primary factions with meaningfully di
 **Possible unit archetypes:** line infantry; heavy armored formations; artillery; engineer companies; field logistics; mobile air defense; propaganda or political-organizing detachments.
 
 **Potential limitations:** larger supply and movement footprint, slower redeployment, command rigidity, exposure to decentralized disruption.
+
+**Ultimate weapon:** long-produced tactical nuclear weapon delivered via **ICBM**, requiring nuclear intelligence and scarce strategic resources.
 
 ### 4.3 Iron Ascendancy — infiltration and destabilization
 
@@ -123,6 +129,8 @@ The main military contest centers on three primary factions with meaningfully di
 
 **Limitations to test:** hostile standing with detected federal forces, fewer openly legal supply routes, restricted public procurement, limited access to official checkpoints and services, greater scrutiny, diplomatic isolation, weak conventional logistics, and destabilizing consequences for its own occupied territory.
 
+**Unique nuclear victory:** obtain the nuclear intelligence by infiltrating an enemy intelligence-bearing facility, then complete construction of an own tactical nuclear weapon for **immediate match victory**. It may also sabotage and steal completed weapons, but stolen weapons do not trigger that victory. Its delivery platform remains an open design decision.
+
 The identity of its forces should be legible to the player but not automatically known to enemy AI: **gameplay faction ownership** and **in-world recognized identity** are separate variables. Concealment is a bounded ability with countermeasures and costs, not invulnerability.
 
 ### 4.4 Unit diversity principle
@@ -131,7 +139,7 @@ Each primary faction should eventually receive unique infantry, vehicles, specia
 
 ## 5. The Meridian Pact: Merchant, Mercenary, and Fourth Playable Power
 
-The Meridian Pact occupies a different strategic niche. It is **playable**, including in its own scenarios and potentially in skirmishes, but its signature world function is supplying the others as a **foreign merchant, brokerage, and mercenary organization**. It is **non-nuclear and uninvolved** in the nuclear-weapon acquisition/prevention storyline. It need not be morally or politically neutral in every deal: commercial flexibility is its defining behavior.
+The Meridian Pact occupies a different strategic niche. It is **playable**, including in its own scenarios and potentially in skirmishes, but its signature world function is supplying the others as a **foreign merchant, brokerage, and mercenary organization**. It is **non-nuclear and without a dedicated nuclear story arc**, but its units **can sabotage, steal, and deploy existing completed nuclear weapons**. It cannot produce any. It need not be morally or politically neutral in every deal: commercial flexibility is its defining behavior.
 
 ### 5.1 Two distinct roles
 
@@ -154,7 +162,7 @@ The Pact can prosper from scarcity, conflict, rare imports, border access, trans
 
 ## 6. The Black Market: Cross-Faction Auction House
 
-**Core concept:** the Meridian Pact administers the **Black Market**, a special exchange where factions can buy **conventional weapons, vehicles, equipment, intelligence, rare components, specialist services, and other assets they cannot manufacture within their own production trees**. **Nuclear weapons are categorically excluded:** the Pact does not auction, broker, acquire, deliver, or contract for nuclear weapons, and the secondary nuclear storyline cannot be bypassed through an auction.
+**Core concept:** the Meridian Pact administers the **Black Market**, a special exchange where factions can buy **conventional weapons, vehicles, equipment, intelligence, rare components, specialist services, and other assets they cannot manufacture within their own production trees**. **Nuclear weapons are categorically excluded as Black Market listings:** the Pact cannot sell, auction, broker, or manufacture nuclear weapons through market services. Separately, **Meridian Pact military units can sabotage, seize, and deploy completed nuclear weapons obtained by in-world theft**, which is not a market transaction.
 
 The Black Market is both a strategic economic system and a potential physical location or network of locations in the world. It should have a visible game-facing interface while remaining governed by availability, risk, money, delivery, and the wider simulation.
 
@@ -244,21 +252,25 @@ Consider differentiated control: military occupation, lawful ownership, clandest
 
 Civilians and noncombatant infrastructure make the neutral federation credible. Attacks on civilians must not become a trivial resource-generation shortcut. Civilian losses, service outages, displacement, and institutional stress should feed campaign and strategic consequences.
 
-### 9.7 Nuclear-weapon prevention as authored strategic objectives
+### 9.7 Nuclear ultimate-weapon production, theft, and victory
 
-A nuclear-related mission is primarily an **information, custody, security, and interdiction scenario**, not a nuclear-combat mode. The Concord and Directorate may have different evidence quality, permitted routes, forces, and diplomatic constraints when trying to stop the Ascendancy. An Ascendancy mission can invert the objective by attempting to acquire access while avoiding interception. Represent possession of the sought item as authoritative mission state and explicit success/failure conditions, without nuclear weapon crafting or detonation controls.
+**Three production-capable factions:** Concord, Directorate, and Ascendancy require a specific intelligence unlock, **scarce abstract resources**, expensive facilities, and **very long game-time production** before receiving a completed tactical nuclear weapon. Ownership of intelligence and ownership of a ready weapon are separate states. Production can be interrupted by ordinary RTS combat or sabotage.
 
-The secondary arc must be gated to these **three nuclear-armed factions**; the Pact's faction campaign and mercenary/trade gameplay remain focused elsewhere. The Unaligned's AI can intervene defensively when incidents violate sovereignty without giving it a playable nuclear campaign.
+**Faction delivery:** the **Red Directorate uses an ICBM**; the **Atlantic Concord uses a nuclear bomber aircraft**. The Ascendancy's delivery platform is not yet specified. The Meridian Pact cannot produce its own weapon but, like the Ascendancy, can **sabotage, steal and deploy** a completed enemy weapon once a compatible delivery capability is controlled.
+
+**Ascendancy alternate victory:** a successful infiltration of an **enemy facility with nuclear-weapons intelligence** unlocks its nuclear production. **Completion of its own weapon immediately wins the match**; stealing a completed device, starting production, or merely acquiring intelligence does not trigger victory. These conditions must be authoritative, inspectable, and balanced against a long, resource-intensive construction period.
+
+The Pact **does not receive a dedicated nuclear campaign storyline** despite its optional theft and use of captured weapons. Nuclear weapons and production intelligence are **not ordinary Black Market purchases**. The Unaligned's neutral AI may respond to sabotage, stolen cargo, and deployment. This system should use abstract game states, not real-world construction specifications. See [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## 10. Game Modes and Canon
 
-**Campaign:** linked 1984–1989 missions, faction-specific perspectives, continuity of evidence, and a fixed core secret and final revelation. A **separate nuclear-weapon acquisition/interdiction chain** is reserved for the Atlantic Concord, Red Directorate, and Iron Ascendancy; the Meridian Pact receives no dedicated nuclear missions. The Iron Ascendancy may have privileged early knowledge within its assassination cell, but its ordinary commanders should still operate under partial information.
+**Campaign:** linked 1984–1989 missions, faction-specific perspectives, continuity of evidence, and a fixed core secret and final revelation. A **separate nuclear-weapon intelligence, production, acquisition/interdiction chain** is reserved for the Atlantic Concord, Red Directorate, and Iron Ascendancy. The Ascendancy's qualifying production completion wins the active game; the Meridian Pact receives no dedicated nuclear missions despite its general ability to steal a ready weapon. The Iron Ascendancy may have privileged early knowledge within its assassination cell, but its ordinary commanders should still operate under partial information.
 
-**Skirmish:** a self-contained match in which the three principal factions and optionally the Meridian Pact compete; the Unaligned populates and governs the map. Nuclear-weapons acquisition is not a default skirmish resource or market purchase. The storyline's canonical 1989 outcome does not need to occur in every match.
+**Skirmish:** a self-contained match in which the three principal factions and optionally the Meridian Pact compete; the Unaligned populates and governs the map. Nuclear weapons are **late-game, resource-intensive ultimate weapons** when the selected ruleset enables them; they are never market purchases. The Ascendancy's infiltration-then-own-production completion triggers an immediate win. The storyline's canonical 1989 outcome does not need to occur in every match.
 
 **Multiplayer (proposed scope):** mirror the skirmish rules with authoritative simulation, synchronized economy and auctions, clear faction identity and mercenary ownership. Decide whether Meridian must be present as a player, a service AI, or either; the Black Market should not disappear merely because no human selects Meridian.
 
-**Scenario/editor play (proposed):** allow missions to configure Unaligned alert levels, institutional jurisdictions, available market stock, faction permissions, forbidden goods, evidence objectives, and victory rules. For scripted nuclear-arc missions only, expose abstract weapon-custody state and interdiction/acquisition objectives independently of general inventory and production.
+**Scenario/editor play (proposed):** allow missions to configure Unaligned alert levels, institutional jurisdictions, available market stock, faction permissions, forbidden goods, evidence objectives, and victory rules. Expose data-driven nuclear intel access, costly/long production, completed-weapon custody, capture/sabotage, deployable delivery platforms, and the Ascendancy instant-win condition under enabled rules. Use abstract fiction-only resources and no real-world engineering model.
 
 ## 11. Asymmetry and Fairness
 
@@ -266,9 +278,9 @@ The factions need not be equivalent in every situation, but each playable factio
 
 - Neutral Unaligned military strength is a world constraint, **not** a free army for the other playable sides.
 - The Ascendancy's systemic hostility must be balanced by covert and asymmetric capability; it should not face constant automatic destruction from omniscient AI.
-- The Meridian Pact's wealth and special procurement access must be balanced by the cost, time, vulnerability, and finite supply of imported assets.
-- Concord precision and Directorate mass should each have counters and logistical tradeoffs.
-- Concealment, market purchases, and mercenary hiring must expose meaningful signals or counterplay to opponents.
+- The Meridian Pact's wealth and special procurement access must be balanced by the cost, time, vulnerability, and finite supply of imported assets. Stealing and deploying a completed nuclear weapon must be difficult and never grant its own production capacity.
+- Concord precision and Directorate mass should each have counters and logistical tradeoffs; the Concord's nuclear-bomber approach and Directorate's ICBM delivery should remain distinct and counterable.
+- Concealment, market purchases, and mercenary hiring must expose meaningful signals or counterplay to opponents. Scarce resources, nuclear intelligence, long production, detection of theft, and the Ascendancy's instant-win race must allow meaningful warning/counterplay.
 - Diplomatic and civilian systems must affect matches without letting random neutral incidents override players' strategic agency.
 
 ## 12. Initial Vertical Slice
@@ -296,19 +308,21 @@ Before implementing full rosters and economy, resolve:
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
 - Who supplies Black Market stock (excluding nuclear weapons), whether human Meridian players can list their own goods, and how anti-exploit settlement works.
-- The identity, origin, custody, strategic value, and possible mission outcomes concerning the additional nuclear weapon sought by the Iron Ascendancy.
+- Balance values for scarce abstract nuclear production resources and timers, nuclear asset security and capture, the Ascendancy's production victory, and bomber/ICBM counterplay.
+- The Iron Ascendancy's own nuclear delivery platform and the Meridian Pact's compatible deployment method for stolen weapons.
+- Narrative placement and outcome of the Iron Ascendancy nuclear intelligence acquisition and the three-power interdiction race.
 - Whether Unaligned institutions can fracture into multiple AI-controlled authorities in late-campaign missions.
 - Whether political victory, economic victory, and intelligence victory exist outside authored missions.
 - What initial map scale, unit counts, match duration, resources, and performance targets are realistic.
 
 ## 14. Core Principles to Preserve
 
-1. **The assassination conspiracy anchors the primary plot, and the Iron Ascendancy nuclear-weapon acquisition/prevention contest is the secondary plot; neither consumes every game mechanic.**
+1. **The assassination conspiracy anchors the primary plot; a nuclear-intelligence/weapon acquisition and prevention race is the secondary plot, while nuclear ultimate weapons also function in RTS gameplay.**
 2. **The Unaligned is a non-playable, generally neutral, living governing environment—not a conventional fifth competitor.**
-3. **The Atlantic Concord, Red Directorate, and Iron Ascendancy are the three principal nuclear-armed military-political rivals.**
+3. **The Atlantic Concord, Red Directorate, and Iron Ascendancy are the three nuclear-capable powers with producible nuclear ultimate weapons; the Iron Ascendancy uniquely wins immediately upon qualifying own production completion.**
 4. **The Iron Ascendancy has distinctive covert advantages and systemic hostility/disadvantages when identified.**
-5. **The Meridian Pact is a non-nuclear playable faction, differentiated as a merchant, mercenary, and Black Market operator, with no nuclear side-story objectives or nuclear-weapons trade.**
-6. **Non-producible exotic conventional equipment is accessed through finite, consequential trade rather than universal unit factories; nuclear weapons are excluded.**
+5. **The Meridian Pact is a non-producing, non-nuclear playable merchant/mercenary power with no dedicated nuclear story or nuclear Black Market sales, but can sabotage, steal and deploy completed nuclear weapons.**
+6. **Conventional exotic equipment uses the finite Black Market; nuclear weapons instead require intelligence, scarce resources and long production, or in-world theft of an existing completed weapon.**
 7. **Identity, diplomacy, hostility, ownership, and employment contracts remain separate gameplay concepts.**
 8. **Faction asymmetry is intentional, but viable counterplay and strategic agency are mandatory.**
 9. **The 1984–1989 campaign canon and the open-ended skirmish rule set must coexist without contradiction.**
