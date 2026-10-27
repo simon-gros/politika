@@ -3,7 +3,7 @@
 **Status:** canonical policy and standalone tooling introduced; Unreal runtime integration and playable releases not yet implemented.
 **Initial baseline (27 October 2026):** 0.1.0-dev.0, foundational design/documentation stage.
 **Authoritative source:** [version.json](../version.json).
-**Reference:** the Marburgum versioning/release management model, adapted for a multi-platform Unreal RTS.
+**Scope:** POLITIKA's native versioning and release management model for a multi-platform Unreal RTS.
 
 ## 1. Semantic version policy
 
@@ -34,7 +34,7 @@ Content *format* and content *revision* are different. Future build tooling shou
 
 ## 3. Build tooling and identity
 
-The Rust [`tools/version`](../tools/version/Cargo.toml) Cargo package implements the canonical CLI. It uses `semver`, `serde` and `serde_json` for validated parsing, with tests maintained in Rust. There is no Python dependency or Python versioning script. From the repository root:
+The Rust [`tools/version`](../tools/version/Cargo.toml) Cargo package implements the canonical CLI. It uses `semver`, `serde` and `serde_json` for validated parsing, with tests maintained in Rust. All versioning automation runs through Cargo. From the repository root:
  
 - `cargo run --quiet --manifest-path tools/version/Cargo.toml -- print` — show the canonical SemVer.
 - `cargo run --quiet --manifest-path tools/version/Cargo.toml -- check` — validate SemVer, compatibility counters and any matching Git tag; print build identity.
@@ -46,7 +46,7 @@ The Rust [`tools/version`](../tools/version/Cargo.toml) Cargo package implements
 
 Generated C++ constants live under politika::version and cover GAME_VERSION, NETWORK_PROTOCOL, SAVE_SCHEMA, PERSISTENCE_SCHEMA, WORLD_SCHEMA, BUILD_NUMBER and GIT_REVISION. The version is **never** hand-copied into another Unreal config, module, data asset or HUD. Rust owns the versioning utility; the generated C++ header is a future Unreal integration artifact, not a second hand-maintained implementation.
 
-The standalone Rust crate is defined in `tools/version/Cargo.toml`; its dependency lockfile is committed for repeatable builds. Build number derives from POLITIKA_BUILD_NUMBER or GITHUB_RUN_NUMBER (otherwise local); Git revision derives from GITHUB_SHA or the local checkout, with -dirty when appropriate. Neither belongs in version.json. A release package should later carry a generated build manifest with exact Unreal source/toolchain pin, platform, target, configuration, content/cook identity and SHA-256 checksums. Do not copy Marburgum-specific Godot/GDExtension tooling or world-protocol assumptions.
+The standalone Rust crate is defined in `tools/version/Cargo.toml`; its dependency lockfile is committed for repeatable builds. Build number derives from POLITIKA_BUILD_NUMBER or GITHUB_RUN_NUMBER (otherwise local); Git revision derives from GITHUB_SHA or the local checkout, with -dirty when appropriate. Neither belongs in version.json. A release package should later carry a generated build manifest with exact Unreal source/toolchain pin, platform, target, configuration, content/cook identity and SHA-256 checksums. Keep build integrations appropriate to POLITIKA's Unreal runtime, Rust tooling, and independently versioned RTS compatibility contracts.
 
 ## 4. Coding agent/version advancement authority
 
