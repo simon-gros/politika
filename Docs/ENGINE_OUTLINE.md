@@ -63,10 +63,6 @@ Provide an **authoritative per-faction morale state for all five factions**, inc
 
 Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
-### Propaganda and morale gameplay contracts
-
-Track **population morale for all five factions** as authoritative, bounded state. **Higher morale improves eligible production output and army discipline** through validated, data-defined modifiers. **Advanced propaganda actions exist for Concord, Directorate, Ascendancy and Unaligned**, but **not Meridian Pact**. Radio stations, newspaper printing/distribution and television facilities are the three principal media. Game state owns eligibility, control, reach, durations and outcomes; the Unaligned uses NPC AI, and UMG presents status and permitted commands. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
-
 ## 4. Content model and authoring
 
 Represent each faction, unit, weapon, ability, upgrade, objective type and AI personality as versioned data assets with stable IDs. Definitions should reference reusable gameplay components/abilities, not hide behavior in arbitrary per-unit blueprints. Blueprint subclasses are appropriate for presentation and authored special cases; shared simulation rules belong in tested C++ systems.
