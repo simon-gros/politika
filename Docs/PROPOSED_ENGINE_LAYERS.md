@@ -98,6 +98,12 @@ flowchart TD
 
 **Acceptance criteria:** map/content validators detect missing spawns, broken asset references, invalid objectives and localization gaps before packaging. Designers can launch a representative map for offline testing, with reproducible diagnostics for failures.
 
+### 3.8 Campaign narrative flags and the nuclear subplot
+
+The **story canon** contains a primary assassination-conspiracy arc and a distinct secondary arc in which the Iron Ascendancy attempts to acquire a particular additional nuclear weapon. The Concord and Directorate try to prevent acquisition; the Ascendancy pursues it. All three are nuclear-armed powers in the fictional world. The **Meridian Pact is non-nuclear and does not participate**, and the **Unaligned remains a non-nuclear NPC authority** responding to territorial threats.
+
+The **match framework** should own authored mission eligibility, progression, victory/failure, and durable subplot state; the **simulation** should own any in-match custody, control, detection, and objective events; the **content layer** should define mission-specific actors, intel, routes, and target references; the **presentation layer** should expose only faction-known intelligence and permitted objectives. Nuclear weapons must **not** become generic inventory, Black Market purchases, faction production units, or ordnance activation commands. Use abstract states and standard tactical orders to test interdiction scenarios without nuclear physics or detonation mechanics.
+
 ## 4. Dependency and ownership rules
 
 - **Platform code** may start or configure a match, but simulation rules should not call into storefront/account code.
