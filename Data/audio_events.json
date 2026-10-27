@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "purpose": "Planned semantic sound cues; no commissioned, imported or licensed audio is asserted.",
+  "events": [
+    {
+      "id": "unit_selected",
+      "bus": "ui",
+      "role": "one_shot",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "order_acknowledged",
+      "bus": "voice",
+      "role": "one_shot",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "combat_warning",
+      "bus": "ui",
+      "role": "one_shot",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "production_complete",
+      "bus": "ui",
+      "role": "one_shot",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "espionage_alert",
+      "bus": "ui",
+      "role": "one_shot",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "propaganda_broadcast",
+      "bus": "broadcast",
+      "role": "stream",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "vehicle_movement",
+      "bus": "sfx",
+      "role": "loop",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "battle_ambience",
+      "bus": "ambience",
+      "role": "loop",
+      "status": "planned",
+      "asset": null
+    },
+    {
+      "id": "main_menu_music",
+      "bus": "music",
+      "role": "music",
+      "status": "planned",
+      "asset": null
+    }
+  ]
+}
