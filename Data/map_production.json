@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "purpose": "Initial map-source candidates, not imported or approved game maps.",
+  "sources": [
+    {
+      "source_id": "POL-MAP-1981-CIA-POL",
+      "source_catalog": "Archive/MAP_CATALOG.csv",
+      "intended_use": "1980s federation/republic/province boundary reference",
+      "period_status": "contemporary",
+      "production_status": "research_only",
+      "historical_decision_id": null,
+      "derived_asset": null
+    },
+    {
+      "source_id": "POL-MAP-1981-CIA-RELIEF",
+      "source_catalog": "Archive/MAP_CATALOG.csv",
+      "intended_use": "mountain and river reference for strategic map blockout",
+      "period_status": "contemporary",
+      "production_status": "research_only",
+      "historical_decision_id": null,
+      "derived_asset": null
+    }
+  ]
+}
