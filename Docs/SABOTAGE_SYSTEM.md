@@ -53,6 +53,12 @@ Separate faction-specific spy effects remain intact:
 
 The other factions may discover sabotage incidents through scouting and investigation, but their spies must still satisfy the late unlock, cost and eligibility rules for performing an actual charge action.
 
+### Unaligned false-flag claims and attribution
+
+The Unaligned's superior counterintelligence can plant false intelligence or false-flag attribution alleging that an explosive sabotage incident originated with a particular playable faction. Such a claim affects only in-game intelligence, trust and investigation, not the authoritative identity of the actual saboteur, charge or conventional damage event.
+
+The Unaligned can use a fabricated attribution or alleged rival threat as a balance-preservation diversion when another playable faction has critically low resources and army strength and faces imminent elimination. Players may challenge the report through scouting, counterintelligence and incident evidence. Unaligned deception does not independently place a charge, grant an ability to an ineligible actor or stop a legitimately resolved explosion. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 5. Simulated damage, detection and counterplay
 
 Sabotage should integrate with building/vehicle health, conventional damage, repair and evidence/attribution systems. Detection of a suspicious actor or charge may occur before an explosion; after destruction, witnesses or security may still lack reliable attribution. The Unaligned system AI can react to unauthorized sabotage on Yugoslav territory under its usual sovereignty rules.
