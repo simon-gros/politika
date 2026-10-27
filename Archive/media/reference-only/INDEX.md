@@ -1,6 +1,6 @@
 # POLITIKA — Reference-only discovery index
 
-This index is generated from the initial curated `Archive/CATALOG.csv` research seed, not a repository of third-party scans. Linked archival material stays with its source institution. There are **27 records** as of 2026-10-27; item-level dates and licences are not guaranteed for collection leads. See [Catalogue](../../CATALOG.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md) and [Rights](../../RIGHTS_AND_PROVENANCE.md).
+This index is generated from the initial curated `Archive/CATALOG.csv` research seed, not a repository of third-party scans. Linked archival material stays with its source institution. There are **31 records** as of 2026-10-27; item-level dates and licences are not guaranteed for collection leads. See [Catalogue](../../CATALOG.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md) and [Rights](../../RIGHTS_AND_PROVENANCE.md).
 
 | Ref | Time | Location | Priority | Source | Design application |
 | --- | --- | --- | --- | --- | --- |
@@ -31,6 +31,11 @@ This index is generated from the initial curated `Archive/CATALOG.csv` research 
 | `POL-1980-1989-ARCHIVE-YU-001` | 1980–1989 | Belgrade / all federal territories | P1 | [Archives of Yugoslavia photography collections](https://www.arhivyu.rs/en/arhivska-gradja/fotografije) | buildings; documents; cities; units; archival_provenance |
 | `POL-1980-1989-FILM-001` | 1980–1989 | Belgrade and federation-wide | P1 | [Yugoslav Film Archive post-1945 collection](https://en.kinoteka.org.rs/archive/) | cinematic-language; camera; vehicles; crowds; sound |
 | `POL-1984-USOC-001` | 1984 | Mojmilo, Sarajevo | P1 | [Contemporary US Olympic report on Sarajevo security](https://digital.la84.org/digital/collection/p17103coll6/id/6531/rec/2) | security-checkpoints; environment; narrative; civilian_movement |
+
+| `POL-1980-BEL-TERAZIJE-001` | 1980-02-29–1980 | Terazije, Belgrade | P0 | [Terazije streets under fuel-use traffic restrictions](https://vaju.muzej-jugoslavije.org/fotografija/68df8d1acb1caac77309bf14) | urban; vehicles; roads; shops; economic_narrative; colour_reference_limit |
+| `POL-1985-ADRIATIC-TOURISM-001` | 1985-06–1985-06 | Adriatic coast / federation-wide | P0 | [Yugoslavia: tourism in a socialist federal state](https://www.sciencedirect.com/science/article/pii/0261517785900202) | coast_maps; architecture; hotel_assets; supply; narrative; trade |
+| `POL-1988-1989-ANTI-BUREAU-001` | 1988–1989 | Novi Sad; Titograd; Serbia and Montenegro | P0 | [Antibureaucratic revolution 1988–1989: research overview](https://www.cambridge.org/core/journals/nationalities-papers/article/abs/thirty-years-of-yugoslavias-antibureaucratic-revolution-a-longrun-appraisal-and-new-avenues-of-research/1A228C18012D46DB2589A84999398D29) | civic_ai; propaganda; protests; state_fracture; narrative |
+| `POL-1980-1983-SKOPJE-001` | 1980–1983 | Skopje and environs | P1 | [Skopje city-area photograph collection, through 1983](https://arhiv.mk/en/arhivska-mreza/) | architecture; transport; urbanism; maps; photo-lead |
 
 ## Caveats
 
