@@ -30,20 +30,15 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --manifest-path tools/version/Cargo.toml -- --check
       - name: Run Rust version-contract tests
-        run: cargo test --manifest-path tools/version/Cargo.toml --all-targets
-      - name: Record resolved Cargo lock for reproducible tooling
-        run: |
-          echo POLITIKA_CARGO_LOCK_BEGIN
-          cat tools/version/Cargo.lock
-          echo POLITIKA_CARGO_LOCK_END
+        run: cargo test --locked --manifest-path tools/version/Cargo.toml --all-targets
       - name: Validate canonical version and Git tag
-        run: cargo run --quiet --manifest-path tools/version/Cargo.toml -- check
+        run: cargo run --locked --quiet --manifest-path tools/version/Cargo.toml -- check
       - name: Verify deterministic generated header
         run: |
-          cargo run --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
+          cargo run --locked --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
           cp "$RUNNER_TEMP/PolitikaVersion.generated.h" "$RUNNER_TEMP/version-first.h"
-          cargo run --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
+          cargo run --locked --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
           cmp "$RUNNER_TEMP/version-first.h" "$RUNNER_TEMP/PolitikaVersion.generated.h"
       - name: Require clean matching checkout for version tags
         if: startsWith(github.ref, 'refs/tags/v')
-        run: cargo run --quiet --manifest-path tools/version/Cargo.toml -- check --release
+        run: cargo run --locked --quiet --manifest-path tools/version/Cargo.toml -- check --release
