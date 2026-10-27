@@ -141,6 +141,10 @@ The system should maintain distinct, inspectable authoritative states:
 
 Present appropriate prerequisites, resource scarcity, long production progress, facility warning, theft/sabotage feedback, completed-bomb inventory, bomber/ICBM readiness, deployment interfaces and immediate Ascendancy victory messaging. A **stolen bomb** should be visibly distinct from **own completed production**.
 
+### Population morale and propaganda are separate systems
+
+Every faction, including the non-propaganda Meridian Pact and NPC Unaligned, has **population morale**; higher morale increases eligible **production output and army discipline**. Distinct advanced propaganda is available only to the Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned, primarily via **radio, newspapers and television**. Morale must **not create nuclear intelligence, replace required refining, bypass rare-material costs, disable the Ascendancy's fully upgraded espionage gate, or substitute for completing its first own bomb**. Any production-throughput effect on nuclear construction must be explicitly balanced without bypassing the stipulated long production phase. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 10. Open balancing and authoring choices
 
 - Exact fictional scarce resource names, costs and build durations.
