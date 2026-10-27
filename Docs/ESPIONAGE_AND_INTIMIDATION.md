@@ -78,6 +78,12 @@ Atlantic Concord, Red Directorate and Iron Ascendancy can conduct the same categ
 
 Do not conflate explosive sabotage with Psy-Ops building self-destruction/resource waste, Directorate resource diversion, Ascendancy poison/disease facility disruption, Intimidation, or nuclear weapons. All are distinct faction and command permissions. Target classes are eligible vehicles and buildings, subject to normal damage, detection and counterplay. No real-world explosives or attachment/activation procedures are modeled. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
 
+### 1.5 Unaligned counterintelligence, fabrication and false flags
+
+The Unaligned is the strongest counterintelligence power in the game, not merely a routine NPC security patrol. It can intercept rival intelligence, create believable false reports and plant apparently credible but fabricated claims through game-defined intelligence channels. Alleged nuclear sites, deployments and attacks may be forged. False-flag claims may attribute a threat to the wrong faction. Discovery and subsequent verification should distinguish true intercepted material, unverified rumors and proven fabrications.
+
+Its deception operations can be driven by an autonomous stability/equilibrium policy. If one of the participating playable factions has very low remaining resources and a small army, and faces imminent elimination, the NPC may try to distract stronger rivals by fostering competing threats and mutual suspicion. This does not create true world objects, remove their ability to issue orders, award resources to the weakest faction or guarantee it survives. Only real Concord/Directorate nuclear research facilities qualify for the Ascendancy's required spying and nuclear-intelligence acquisition. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 2. Iron Ascendancy's limited espionage and full-development gate
 
 The Iron Ascendancy may perform ordinary limited covert actions through its basic spy capabilities, but it cannot infiltrate a rival nuclear research facility at a low or intermediate espionage level. The espionage progression must be fully developed / at its maximum eligible tier before nuclear infiltration becomes an allowed mission interaction.
