@@ -218,6 +218,12 @@ An **exotic** or market-only asset is unavailable for normal faction production,
 
 The Pact may sell to the Iron Ascendancy clandestinely, but the Unaligned's hostility makes open delivery into federal jurisdiction dangerous. The auction house itself is **not** automatically a safe haven or exempt from security enforcement. Market access, identity concealment, secure delivery, and interception are meaningful decisions rather than guarantees.
 
+## 6.5 Propaganda media and faction-wide morale
+
+**Population morale exists for every faction**, including **Meridian Pact** and NPC-controlled **Unaligned**. Higher morale improves **production output** and **army discipline**. Radio, newspapers and television are the principal media. **Atlantic Concord, Red Directorate, Iron Ascendancy and the Unaligned have distinct advanced propaganda capabilities**; **Meridian Pact does not** have an advanced propaganda action or research tree, although its morale still responds to events.
+
+Radio facilities, newspaper printing/distribution and television stations support contested objectives and in-world information. Faction-specific propaganda should affect reachable audiences and morale in bounded, counterable ways rather than bypassing military mechanics, the main story's fixed revelation or the requirements for nuclear production. The Unaligned's broadcast system is NPC-controlled and overlaps narratively with the Tito continuity cover-up. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 7. Faction Relationships: Allegiance, Identity, and Conduct
 
 POLITIKA should model at least four distinct concepts rather than folding them into a single friend-or-foe flag:
