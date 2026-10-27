@@ -35,15 +35,19 @@ Give particular attention to RTS production uses: terrain and map design; archit
 
 ## Populated archive — first research seed
 
-**Research pass: 27 October 2026.** The archive now contains **31 documented records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
+**Research pass: 27 October 2026.** The archive now contains **99 documented historical records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
 
 Start with the [Master Catalogue](CATALOG.csv), then use the [Reference-only Index](media/reference-only/INDEX.md) for human browsing. The most concrete period-visual seed currently includes four individually dated Sarajevo tram/urban photographs from 1982 under file-specific CC BY-SA 4.0 licences; museum and periodical records of Sarajevo's 1984 Olympics, its visual identity, the 1987 Day of Youth material, and 1984–1988 press; an early-1980 Belgrade street negative; and a collection of independently sourced economic, political and diplomatic contextual studies.
+
+The October 2026 political-history expansion adds **68 source-linked political developments** across 1980–1989. It covers federal succession and executive governance, the economy and debt, party and constitutional reform, Kosovo and Vojvodina, specific developments in all six republics, the non-aligned diplomatic network, the European Communities, neighboring Albania/Bulgaria/Romania/Hungary and the wider Cold War. Year-by-year narratives explain their historical significance and suggested game-system relevance; political changes after 1984 require an explicit alternate-history review.
 
 **New documents and their roles:**
 
 | Path | Active content |
 | --- | --- |
-| [`CATALOG.csv`](CATALOG.csv) | Master index with **31** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
+| [`CATALOG.csv`](CATALOG.csv) | Master index with **99** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
+| [`POLITICAL_HISTORY_1980_1989.md`](POLITICAL_HISTORY_1980_1989.md) | 68 sourced political developments: comprehensive year-by-year register, implications, uncertainty, political context and proposed RTS applications. |
+| [`POLITICAL_EVENTS.csv`](POLITICAL_EVENTS.csv) | Structured index of the 68 political developments for searching, validation and future engine/tool ingestion. |
 | [`SOURCES.md`](SOURCES.md) | Curated source institutions, verified artefacts, search terms, geographical gaps and acquisition methods. |
 | [`HISTORICAL_CHRONOLOGY_1980_1989.md`](HISTORICAL_CHRONOLOGY_1980_1989.md) | Decade chronology and historical-vs-alternate-history divergence ledger. |
 | [`DESIGN_REFERENCE_ATLAS.md`](DESIGN_REFERENCE_ATLAS.md) | Visual grammar, cultural atmosphere, environmental assets, proposed mission hooks and traceability to the existing story and systems. |
@@ -52,7 +56,7 @@ Start with the [Master Catalogue](CATALOG.csv), then use the [Reference-only Ind
 | [`media/reference-only/INDEX.md`](media/reference-only/INDEX.md) | Browsable outbound links to sources, with no unauthorized scans or copied graphics. |
 | [`media/licensed/README.md`](media/licensed/README.md) | Reserved staging area and manifest requirements for explicitly redistribution-cleared media; no binary files committed yet. |
 
-The first pass is **not** a balanced survey of all regions. It is strongest for Sarajevo, Slovenian publications, 1980 Belgrade and late-1980s Kosovo and federal political history; specific period evidence for Croatia, Macedonia, Montenegro and Vojvodina remains a priority. A collection-level landing page does not count as a verified individual 1980s photograph.
+The initial visual/media research is **not** a balanced survey of all regions. It is strongest for Sarajevo, Slovenian publications, 1980 Belgrade and late-1980s Kosovo and federal political history; specific period evidence for Croatia, Macedonia, Montenegro and Vojvodina remains a priority. A collection-level landing page does not count as a verified individual 1980s photograph.
 
 The repository principally versions source metadata, item links and original documentation. Primary and third-party media should stay at the source until redistribution terms and provenance have been checked. A design reference is *not* an asset licence.
 
