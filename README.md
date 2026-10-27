@@ -163,7 +163,7 @@ These are architecture and product targets, not evidence that the corresponding 
 | [Proposed Engine Layers](Docs/PROPOSED_ENGINE_LAYERS.md) | Separation of platform, presentation, match rules, simulation, world, content, and authoring tools. |
 | [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Offline-first user experience, battlefield HUD, controls, campaign screens, interface scale, and accessibility goals. |
 | [Faction files](Factions/) | Detailed ideological, political, economic, and military descriptions, plus faction logos and banners. |
-| [Archive](Archive/) | Archived reference and development material. |
+| [Historical Reference Archive](Archive/README.md) | 31 sourced 1980–1989 Yugoslav history and visual references, a searchable catalogue, dated chronology, rights/provenance rules and an RTS design atlas linked to the story and concepts. |
 
 ## Development and contributions
 
