@@ -58,6 +58,10 @@ The Concord and Directorate can pursue their own different spy-focused objective
 
 The primary Tito-assassination cover-up remains the core 1984–1989 storyline. Espionage asymmetry and intimidation are gameplay and mission-design systems; they do not change the canonical 1989 revelation.
 
+### Population morale and propaganda are distinct
+
+All factions have **population morale**, which increases **production output and army discipline** when high. The Concord, Directorate, Ascendancy and NPC Unaligned have distinct advanced propaganda methods through **radio, newspapers and television**; Meridian has no advanced propaganda. Neither morale nor propaganda gives additional spy tiers, instantly completes infiltration, or converts an isolated enemy unit. **Only Iron Ascendancy Intimidation** can directly compel eligible isolated enemies to change allegiance, using its separate ability rules. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 5. Data contracts and acceptance tests
 
 **Suggested authoritative state** (names provisional):
