@@ -2,7 +2,7 @@
 
 **An alternate-history real-time strategy game set in Yugoslavia, 1984–1989.**
 
-Inspired by the original *Command & Conquer* games, **POLITIKA** combines asymmetric military strategy, Cold War espionage, political intrigue, and competing ideologies in a fictionalized 1980s Yugoslavia. Three rival geopolitical powers struggle for influence, a fourth playable faction brokers weapons and mercenaries, and the Yugoslav federation itself operates as a persistent, AI-controlled authority.
+Inspired by the original *Command & Conquer* games, **POLITIKA** combines asymmetric military strategy, Cold War espionage, political intrigue, nuclear brinkmanship, and competing ideologies in a fictionalized 1980s Yugoslavia. Three rival geopolitical powers struggle for influence, a fourth playable faction brokers weapons and mercenaries, and the Yugoslav federation itself operates as a persistent, AI-controlled authority.
 
 The country is more than a battlefield. Its cities, industries, transport networks, armed forces, civilians, borders, and institutions form a living political environment. Players must decide when to cooperate with that environment, when to operate secretly within it, and when the consequences of open conflict are worth the cost.
 
@@ -18,7 +18,7 @@ This is **fiction, not a claim about real history**. Josip Broz Tito died on **4
 
 ## Five factions, different roles
 
-POLITIKA has **four playable factions**, but they do not all serve the same strategic function. The Atlantic Concord, Red Directorate, and Iron Ascendancy are the **three principal military-political rivals**. The Meridian Pact is a **fourth, commercially oriented playable faction** that also supplies the wider world with goods and mercenaries. The Unaligned is **never player-controlled**: it is the AI-governed Yugoslav state and the neutral institutional framework within which the other factions act.
+POLITIKA has **four playable factions**, but they do not all serve the same strategic function. The Atlantic Concord, Red Directorate, and Iron Ascendancy are the **three principal nuclear-armed military-political rivals**. The Meridian Pact is a **fourth, non-nuclear and commercially oriented playable faction** that also supplies the wider world with goods and mercenaries. The Unaligned is **never player-controlled**: it is the AI-governed Yugoslav state and the neutral institutional framework within which the other factions act.
 
 | Faction | Role | Strategic character |
 |---|---|---|
@@ -27,6 +27,8 @@ POLITIKA has **four playable factions**, but they do not all serve the same stra
 | <img src="Factions/TheIronAscendancy/3logo.png" alt="Iron Ascendancy insignia" width="52"> **[The Iron Ascendancy](Factions/TheIronAscendancy/description.md)** | Principal playable rival | Fictional fascist and supremacist authoritarian power; clandestine cells, infiltration, sabotage, coercion, and rapid destabilizing attacks. Its ideology and conduct also produce diplomatic isolation, restricted access, and hostility from identified Yugoslav authorities. |
 | <img src="Factions/TheMeridianPact/4logo.png" alt="Meridian Pact insignia" width="52"> **[The Meridian Pact](Factions/TheMeridianPact/description.md)** | Specialist playable faction; merchant and mercenary network | Diverse, postcolonial and strategically independent coalition with mobile forces and international trading networks. Specializes in imports, contracts, rare equipment, logistical adaptability, and the Black Market. |
 | <img src="Factions/TheUnaligned/5logo.png" alt="Unaligned insignia" width="52"> **[The Unaligned](Factions/TheUnaligned/description.md)** | **NPC / system AI only** | The Yugoslav federation: civil administration, JNA, Territorial Defence, police, border control, infrastructure, and population. Generally neutral to other factions, but able to investigate, restrict, defend, and intervene. |
+
+**Nuclear balance:** the Atlantic Concord, Red Directorate, and Iron Ascendancy are nuclear powers in this fictional setting. The Iron Ascendancy seeks control of a particular **additional nuclear weapon**; the Concord and Directorate strive to prevent its acquisition. The non-nuclear Meridian Pact is the only playable faction uninterested in this secondary conflict. Its campaign focuses on commerce, mercenaries, and the primary political conspiracy, not nuclear missions.
 
 Faction differences are intended to extend beyond visual identity. Each playable power should have its own **units, technologies, military doctrine, production constraints, intelligence capabilities, logistical needs, and strategic weaknesses**. Asymmetry must create different viable approaches to victory, rather than one faction simply having stronger versions of another's units.
 
@@ -44,7 +46,7 @@ Crucially, the vast majority of ordinary Unaligned personnel **do not know the c
 
 The Meridian Pact remains fully playable, but its signature function differs from the three principal rival powers. It operates as a **foreign trading, procurement, and mercenary intermediary**. Pact-controlled services can also appear as AI-run world facilities even when no player chooses the faction.
 
-Its defining institution is the **Black Market**: an exchange for rare or exotic weapons, vehicles, components, intelligence, equipment, and specialist services that individual factions cannot normally produce themselves. The planned system supports finite stock, prices or auctions, access conditions, and physical delivery rather than unlimited instant purchases.
+Its defining institution is the **Black Market**: an exchange for rare or exotic **conventional** weapons, vehicles, components, intelligence, equipment, and specialist services that individual factions cannot normally produce themselves. The planned system supports finite stock, prices or auctions, access conditions, and physical delivery rather than unlimited instant purchases. **Nuclear weapons are not offered or brokered through the Black Market**; no Meridian player or service NPC participates in the nuclear acquisition plot.
 
 The Pact can also provide **mercenary contracts** for temporary squads, escorts, specialists, and other support. Contracts introduce duration, payment, ownership, loyalty, and deployment constraints. Hiring a mercenary does not turn that unit into a permanently produced asset, and purchasing rare equipment does not erase the distinct identity of each faction's native roster.
 
@@ -64,16 +66,19 @@ The foundational concepts call for:
 - **Trade and mercenary systems:** imported, non-producible equipment acquired through the Black Market; finite supply and contracts create strategic choices and interception risks.
 - **Consequential intervention:** cooperation, occupation, sabotage, civilian harm, restrictions, reputation, and political escalation can change what a faction can do next.
 - **Multiple objective types:** military engagements can coexist with intelligence recovery, witness protection, clandestine extraction, procurement, infrastructure defense, and other mission-specific goals.
+- **Secondary nuclear interdiction:** the three principal powers have faction-specific, authored operations about denying or securing a particular nuclear weapon, focused on intelligence, access, guarded facilities, and custody—not a nuclear-weapon production or Black Market system.
 
 The intended strategic rhythm is to **establish a presence, obtain information and resources, act through military or political means, manage the resulting consequences, and complete objectives**. Which parts dominate depends on the faction, mission, and game mode. The detailed construction, production, economy, and unit-cap rules have not yet been finalized.
 
 See the **[Concepts Outline](Docs/CONCEPTS_OUTLINE.md)** for the proposed faction interactions, Black Market mechanics, AI behaviors, initial playable prototype, and open design questions.
 
-## A conspiracy spanning five years
+## Two interwoven storylines spanning five years
 
-The campaign is built around a single, exceptionally sensitive political secret. What first appears to be an assortment of military incidents and Cold War intelligence disputes gradually reveals a hidden struggle over the legitimacy and survival of the Yugoslav federation.
+The **primary campaign storyline** is built around a single, exceptionally sensitive political secret. What first appears to be an assortment of military incidents and Cold War intelligence disputes gradually reveals a hidden struggle over the legitimacy and survival of the Yugoslav federation.
 
 The four playable factions encounter different portions of the truth, act on incomplete information, and face conflicting incentives. The Iron Ascendancy has particular knowledge of the original crime; the other factions follow separate diplomatic, military, economic, and intelligence leads. The Unaligned attempts to maintain public order while an inner security apparatus protects a secret whose exposure could destroy the legitimacy of the state itself.
+
+Alongside that main narrative, the **secondary storyline** pits the three nuclear powers against one another over **the Iron Ascendancy's attempt to acquire a particular additional nuclear weapon**. The Concord and Directorate try to prevent the transfer for their own security and geopolitical reasons; the Ascendancy seeks acquisition. The Meridian Pact is non-nuclear and has no stake or dedicated missions in this subplot. The exact weapon and its final disposition remain open narrative details.
 
 The planned campaigns follow a **shared 1984–1989 chronology**. Player choices shape tactical outcomes, the survival of witnesses, the custody of evidence, faction influence, and the consequences of individual operations. They do not rewrite the foundational mystery or its canonical conclusion.
 
@@ -94,7 +99,7 @@ For the complete act-by-act chronology, principal character functions, and missi
 
 ## Planned modes and presentation
 
-**Campaign** is a sequence of faction-specific missions within the common alternate-history narrative. Storytelling takes place through gameplay, operational briefings, radio communication, intelligence reports, documents, objectives, and debriefings—**not mandatory cinematics**.
+**Campaign** is a sequence of faction-specific missions within the common alternate-history narrative. The three nuclear powers also have dedicated secondary-plot missions; the Meridian Pact does not. Storytelling takes place through gameplay, operational briefings, radio communication, intelligence reports, documents, objectives, and debriefings—**not mandatory cinematics**.
 
 **Skirmish** is intended to support stand-alone battles with AI opponents and objectives independent of the campaign's fixed ending. The Unaligned continues to govern the map, while the three principal rivals—and the Meridian Pact when supported by the ruleset—pursue their own strategies.
 
@@ -112,8 +117,8 @@ These are **architecture and product targets**, not evidence that the correspond
 
 | Location | What it contains |
 |---|---|
-| **[Story Outline](Docs/STORY_OUTLINE.md)** | Canonical 1984–1989 conspiracy, historical divergence, campaign acts, narrative structure, and ending (spoilers). |
-| **[Concepts Outline](Docs/CONCEPTS_OUTLINE.md)** | Five-faction structure, neutrality, faction asymmetry, the Black Market, mercenaries, intelligence, economy, and planned RTS systems. |
+| **[Story Outline](Docs/STORY_OUTLINE.md)** | Canonical assassination conspiracy, parallel nuclear-weapons storyline, 1984–1989 campaign acts, and ending (spoilers). |
+| **[Concepts Outline](Docs/CONCEPTS_OUTLINE.md)** | Five-faction structure, neutrality, nuclear-power asymmetry, nuclear-interdiction objectives, conventional Black Market, mercenaries, intelligence, economy, and planned RTS systems. |
 | **[Engine Outline](Docs/ENGINE_OUTLINE.md)** | Proposed Unreal Engine foundation, RTS systems, technical requirements, 4K support, and implementation priorities. |
 | **[Proposed Engine Layers](Docs/PROPOSED_ENGINE_LAYERS.md)** | Separation of platform, presentation, match rules, simulation, world, content, and authoring tools. |
 | **[UI Overview](Docs/POLITIKA_UI_OVERVIEW.md)** | Offline-first user experience, battlefield HUD, controls, campaign screens, interface scale, and accessibility goals. |
