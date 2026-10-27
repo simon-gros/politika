@@ -2,7 +2,7 @@
 
 **Status:** researched first-pass chronology, not game canon. Read with [Story Outline](../Docs/STORY_OUTLINE.md), [Concepts Outline](../Docs/CONCEPTS_OUTLINE.md) and [Catalogue](CATALOG.csv). The real historical 1980–1989 layer is separate from POLITIKA's fictional 1984–1989 events. A historical event might be postponed, transformed or absent after a major divergence; do not automatically script the real timeline as canon.
 
-**Expanded research companion:** [Political History, 1980–1989](POLITICAL_HISTORY_1980_1989.md) contains **68 individually sourced political developments**, and [POLITICAL_EVENTS.csv](POLITICAL_EVENTS.csv) preserves event dates, scope, interpretive limits and proposed production uses. This high-level ten-row table remains a synthesis; it is not the full event register.
+**Expanded research companion:** [Political History, 1980–1989](POLITICAL_HISTORY_1980_1989.md) contains **69 individually sourced political developments**, and [POLITICAL_EVENTS.csv](POLITICAL_EVENTS.csv) preserves event dates, scope, interpretive limits and proposed production uses. This high-level ten-row table remains a synthesis; it is not the full event register.
 
 | Year | Attested real-world context | Source(s) | What POLITIKA can do with it | Divergence sensitivity |
 | --- | --- | --- | --- | --- |
@@ -23,7 +23,7 @@
 - **1984–1986:** Sarajevo Olympics as international political stage, Albania's leadership transition, the Bulgarian Turkish-minority campaign, Gorbachev's rise, European integration, the Serbian Communist Party's changing leadership, the contested 1986 SANU draft and NAM Harare.
 - **1987:** Nova revija's Slovenian programme essays, the Kosovo Polje rally, Serbia's Eighth Session, Agrokomerc, Litostroj, the European single-market programme and the INF Treaty.
 - **1988:** Slovenian military/civil-jurisdiction conflict and JBTZ, Novi Sad rallies, Kosovo leadership changes and miners' mobilization, federal amendments, federal government resignation and widening social activism.
-- **1989:** Trepča strike and special measures, Kosovo/Serbian constitutional amendments, political change in Montenegro, Slovenian/Croatian/Bosnian/Macedonian pluralist transitions, Belgrade Non-Aligned diplomacy, Ante Marković's stabilization effort, Hungary and Bulgaria's border/political changes, Polish elections, Berlin Wall opening and Romanian revolution. **The actual Yugoslav armed break-up comes later; POLITIKA's 1989 war is fictional.**
+- **1989:** Trepča strike and special measures, Kosovo/Serbian constitutional amendments, political change in Montenegro, Slovenian/Croatian/Bosnian/Macedonian pluralist transitions, Belgrade Non-Aligned diplomacy, Ante Marković's stabilization effort, Janez Drnovšek's chairmanship of the federal presidency, Hungary and Bulgaria's border/political changes, Polish elections, Berlin Wall opening and Romanian revolution. **The actual Yugoslav armed break-up comes later; POLITIKA's 1989 war is fictional.**
 
 ## Alternate-history transition rules
 
