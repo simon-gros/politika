@@ -86,6 +86,12 @@ Fictional design premises, not historical facts: Atlantic Concord has a Psy-Ops 
 
 The archive does not document technical procedures for building or processing nuclear weapons, nor does it treat game mechanics, assassination fiction or spy actions as historical evidence. It provides verifiable research context, visuals and terminology for original fictional worldbuilding. See [Espionage and Intimidation](../Docs/ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](../Docs/RESOURCE_ECONOMY.md), and [Story Outline](../Docs/STORY_OUTLINE.md) for canon.
 
+### Fictional early scouting and sabotage are gameplay rules
+
+POLITIKA's different early reconnaissance platforms—fast, cheap, lightly armed and armored Meridian scout-combat trucks; inexpensive unarmed Concord/Ascendancy light scout planes; and basic-rifle-equipped Directorate motorcycles—are game-unit concepts, not historical claims about actual Yugoslav or Cold War military forces.
+
+Meridian's special early, inexpensive conventional explosive sabotage of eligible vehicles/buildings through designated non-spy units is likewise a fictional RTS mechanic. Atlantic Concord, Red Directorate and Iron Ascendancy receive comparable actions later, at greater cost and restricted to spies. Archive references may inform authentic-looking period vehicles, roads, aircraft and visual design, but should not be mistaken for real explosive-handling instructions. See [Reconnaissance and Scouting](../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../Docs/SABOTAGE_SYSTEM.md).
+
 ## Historical evidence versus fictional worldbuilding
 
 POLITIKA's campaign, events and factions are fictionalized. The archive documents historical Yugoslavia and its international context, not the fictional history of the game. In particular, do not present the fictional organizations documented in [`Factions/`](../Factions/) as real historical actors. Conversely, historical institutions should not be retroactively assigned fictional activities without clearly labelling the departure from fact.
