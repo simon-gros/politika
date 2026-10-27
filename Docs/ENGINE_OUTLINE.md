@@ -17,6 +17,53 @@ The game-specific layer needs to support faction/unit content, squad/vehicle com
 
 Treat these as ownership boundaries and data flows, not necessarily separate UE modules. Start with a small number of runtime/editor modules and split only when build, ownership, or team boundaries justify it. The key contract is: **input becomes validated player commands; the match/simulation applies rules; state changes emit events; presentation observes those events.** UI, animation, audio, and VFX must not be the source of gameplay truth.
 
+### Minimal RTS gameplay contract
+
+Use the following **small set of shared gameplay concepts** to structure the engine. These are *responsibility and data-flow contracts*, not a demand for one class/module per noun or a new universal rules engine. C++ owns the authoritative interpretation, UE assets author reusable definitions, and presentation remains a consumer of permitted state.
+
+| Core concern | Minimal contract | Immediate use / growth boundary |
+|---|---|---|
+| **Match and world** | One match context owns simulation time, its selected ruleset, participants, map, objectives and authoritative lifecycle. Map geometry, starts, blockers and legal regions belong to this context. | The existing prototype coordinator/map fixture is the initial case; standard skirmish slots and campaign rules are separate profiles, not prototype assumptions. |
+| **Definitions and instances** | Versioned stable-ID *definitions* describe reusable unit/weapon/objective/movement types. A spawned *instance* has its own runtime identity and state and refers to a definition. Human-readable names, files and meshes are not gameplay IDs. | Move prototype unit/weapon values into typed assets first; preserve behavior. No generic entity database or mandatory custom base Actor hierarchy is implied. |
+| **Participants and relations** | Keep a controller/decision-maker, playable slot, faction affiliation, entity owner, command authority, and diplomatic hostility conceptually distinct. Permission to issue an order is evaluated for the current state, not inferred from art or a fixed faction label. | Use the simple friendly/hostile prototype permissions now; retain the distinction for four playable factions and the separately controlled Unaligned NPC. |
+| **State and constraints** | The simulation owns mutable position, health, current orders, capability/operational status, relationships and objective progress. A resource is a *typed, scoped* stock, flow, cost or capacity only when a mechanic actually requires it; owning a building is not the same as that building functioning. | Health, cooldowns and objective progress exist in the slice. Add economy, power, supply and contract accounting only alongside their implemented rules. |
+| **Commands, processes and events** | A *command* expresses intent; validation admits or rejects it. An admitted command may start a time-consuming *process* with interruption/failure. Rules update state and emit *events* describing what occurred. Neither a click nor an animation is the authoritative effect. | Continue using the C++ typed-order/admission kernel and 20 Hz prototype simulation; expand behaviors incrementally, without a second simulator in Rust. |
+| **Space and movement** | Legality depends on the intended movement profile, current passability/occupancy, allowed bounds, and the relevant target/interaction rule; static map connectivity is not the same as dynamic path success. | Version the prototype fixture and validate legal starts and movement-profile reachability; avoid assuming one universal walkable graph. |
+| **Information** | *World truth* is distinct from the player/AI's permitted observation. Current sightings, remembered locations, intelligence claims and belief are different information kinds; claims may be stale or false without altering the world they describe. | No complete fog, intelligence, evidence or belief engine is needed for the first data/content milestone. Keep the API/ownership boundary so later deception cannot leak authoritative truth. |
+| **Objectives** | Mission/victory logic evaluates explicit conditions over authoritative state and qualifying events, including identity and provenance where required. Player intentions, reports and visually indicated progress cannot independently satisfy an objective. | Retain the tested control-point fixture. Later distinguish producing an asset from buying, stealing, possessing or deploying it when defining specialized victory conditions. |
+
+**Authoritative data flow:**
+
+\`\`\`text
+Validated definitions + map/profile + participant setup
+    -> admitted match -> authoritative world state
+
+Human input / AI decision
+    -> typed command request -> authority + target + rule checks
+    -> accepted execution or explained rejection
+    -> state transitions + recorded gameplay events
+
+Authoritative state + access/visibility rules
+    -> participant-specific observation -> HUD / AI decisions
+
+State + qualifying events
+    -> objective evaluator -> match progress / result
+\`\`\`
+
+**Non-negotiable invariants for implemented features:**
+
+1. **Identity is typed and stable.** An authored archetype ID is not a spawned instance ID; references must resolve under an explicitly supported content version. Failed required content validation blocks match admission, not merely editor warnings.
+2. **There is one source of truth.** Only authoritative gameplay rules change health, position, resources, ownership/control or objective state. UI, animation, fog rendering and external tooling may request, display or test changes but cannot independently enact them.
+3. **Commands are conditional, actions occur over time.** Every supported order is checked against current issuing authority and target/action constraints; a rejected order has no gameplay effect. Accepted actions can become invalid or be interrupted later, with explicit effects and feedback.
+4. **Control is contextual.** Faction, player slot, unit ownership, controlling agent, mercenary rights and neutrality must not collapse into one assumed equivalence. The Unaligned is NPC-only and never an occupied playable slot in ordinary matches.
+5. **Space is typed.** Position alone never proves start, movement, placement or target legality. Reachability checks name the movement class and endpoints, and distinguish authored static checks from dynamically changing routes.
+6. **Information cannot rewrite reality.** Observation follows participant access; an unverified or fabricated report modifies recipient knowledge only. Rejection reasons and UI projections must not reveal hidden authoritative facts.
+7. **Effects and goals are distinguishable.** Transfers, damage, destruction, control changes and production completion are different state transitions. Objectives use the event/state actually required (for example, *own production* is not *possession*).
+
+**Immediate application:** the accepted [First RTS Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md) already tests basic move/attack orders, entity state, combat events and a control objective. The next bounded increment should extract existing prototype unit/weapon definitions into stable-ID UE gameplay assets, author a versioned prototype map/profile with bounds/slots/starts/objective markers, and add actionable type/reference/value/spatial checks plus a cooked pre-match rejection path. Preserve current results. Do **not** pull harvesting, full production, intelligence/belief modeling, mercenary contracts, strategic AI, broad rosters or full campaign rules into this increment.
+
+This contract consolidates the implementation-relevant distinctions from [RTS mechanics and simulation research](RTS_GAME_ONTOLOGY.md); it does not supersede the owning [Match Structure](MATCH_STRUCTURE.md), [Concepts Outline](CONCEPTS_OUTLINE.md), or the specific [map/content validation contracts](#map-authoring-contract-and-validation-pass) below. Keep the data model as small as the playable and negative-test fixtures actually require.
+
 | Layer | Owns / exposes | UE mapping and boundary |
 |---|---|---|
 | Platform & application shell | Process startup/shutdown, user/device settings, display and UI scale, input mapping, localization, save slots, platform services. Exposes initialized local-player services; owns no match rules. | `UGameInstance`/`UGameInstanceSubsystem` for process lifetime; `ULocalPlayerSubsystem` for per-player preferences/input; `UGameUserSettings`, Enhanced Input, `USaveGame`, and UE Internationalization APIs. Keep platform-specific services behind interfaces so headless/server targets do not depend on UI. See [Platform & application layer](#platform--application-layer) below. |
@@ -410,8 +457,8 @@ Keep simulation state and commands explicit and serializable. If multiplayer is 
 ## 7. Suggested implementation sequence
 
 1. Project foundation: establish UE project/module layout, build targets, input/settings/save shell, coding conventions, CI/package baseline and source-control asset policy.
-2. **Next milestone — First RTS Vertical Slice:** deliver the bounded test map, camera, single-unit selection, move/attack orders, two contrasting prototype archetypes, health/damage/death, read-only HUD, and one control-point objective defined in [RTS Vertical Slice Milestone](RTS_VERTICAL_SLICE_MILESTONE.md). Preserve the packaged shell, exercise the real rendered Linux Development client at 4K, and record ordered acceptance evidence before expanding the simulation/content schema.
-3. Simulation/content contracts: formalize faction/entity/weapon/ability data assets, ownership, orders, pathing, combat events, and map validation; land the starter content schema and map-definition profiles, field/reference/domain/spatial validators, version checks, UE editor/commandlet integration, asset provenance/import gates, cooked-reference checks, and CI failure fixtures before broad content authoring.
+2. **Completed prototype milestone — First RTS Vertical Slice:** the bounded test map, camera, single-unit selection, move/attack orders, two prototype archetypes, health/damage/death, read-only HUD, and control-point objective have scoped Linux Development acceptance evidence in [RTS Vertical Slice Milestone](RTS_VERTICAL_SLICE_MILESTONE.md). This is a prototype baseline, not a release, complete RTS, or other-platform qualification.
+3. **Next bounded increment — data-driven RTS content and map validation:** preserve the prototype's simulation behavior while moving its unit and weapon parameters to typed stable-ID UE assets; create a versioned fixture map definition (profile, bounds, factions/slots, starts, objectives); validate required values, IDs, references, legal starts and movement-class reachability with actionable diagnostics; load valid content and reject invalid gameplay content before a match. Extend editor/CI/cooked validation incrementally, without expanding into economy, full rosters, strategic AI or production art. Follow the [core gameplay contract](#minimal-rts-gameplay-contract) and [content validation contract](#content-validation-contract-and-first-implementation).
 4. Full match loop: resources/deployment according to POLITIKA's chosen strategic loop, capture/objectives, fog/intel, victory/defeat, pause and results.
 5. Mission and AI: mission scripting/objective framework, skirmish AI and debugging tools; author a representative campaign mission.
 6. Scale and delivery: benchmark target entity/map counts, add multiplayer/replay if in scope, optimize assets and validate 4K across quality tiers and supported hardware.
