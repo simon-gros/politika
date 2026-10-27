@@ -34,7 +34,7 @@ Use the following **small set of shared gameplay concepts** to structure the eng
 
 **Authoritative data flow:**
 
-\`\`\`text
+```text
 Validated definitions + map/profile + participant setup
     -> admitted match -> authoritative world state
 
@@ -48,7 +48,7 @@ Authoritative state + access/visibility rules
 
 State + qualifying events
     -> objective evaluator -> match progress / result
-\`\`\`
+```
 
 **Non-negotiable invariants for implemented features:**
 
