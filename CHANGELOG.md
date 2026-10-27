@@ -4,9 +4,11 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Defined RTS-native historical authenticity, map-change review, 3D and visual standards, audio events, proportional validation, documentation authority, measurable performance fixtures and release acceptance. Added five source-controlled metadata ledgers and Rust schema/reference tests; performance and release claims remain blocked until real Unreal evidence exists.
+
 - Added Rust/Cargo design-metadata regression tests, five-faction content validation, Unreal 5.8.3 source/build preflight, structured JSON diagnostic verdicts, and a staged RTS-native adoption guide; no playable engine build or hosted workflow was added.
 
-- Consolidated version validation, build identity generation, regression tests and CI into the Rust/Cargo toolchain.
+- Consolidated version validation, build identity generation and regression tests into the Rust/Cargo toolchain; no hosted CI workflow is currently configured.
 
 No playable release is currently available. Documentation and historical archive entries are not shipped game features.
 
