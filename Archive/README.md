@@ -33,20 +33,28 @@ Prioritize research that can answer concrete game-design questions:
 
 Give particular attention to RTS production uses: terrain and map design; architectural and industrial tilesets; faction and unit silhouettes; equipment and vehicle references; user-interface styling; environmental storytelling; dialogue; campaign chronology; mission objectives; and the depiction of civilian institutions.
 
-## Archive organization
+## Populated archive — first research seed
 
-At present, this directory contains this overview. Following Marburgum's historical-reference and media-library approach, the archive can gradually acquire the following components as research is collected:
+**Research pass: 27 October 2026.** The archive now contains **31 documented records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
 
-| Proposed path | Purpose |
+Start with the [Master Catalogue](CATALOG.csv), then use the [Reference-only Index](media/reference-only/INDEX.md) for human browsing. The most concrete period-visual seed currently includes four individually dated Sarajevo tram/urban photographs from 1982 under file-specific CC BY-SA 4.0 licences; museum and periodical records of Sarajevo's 1984 Olympics, its visual identity, the 1987 Day of Youth material, and 1984–1988 press; an early-1980 Belgrade street negative; and a collection of independently sourced economic, political and diplomatic contextual studies.
+
+**New documents and their roles:**
+
+| Path | Active content |
 | --- | --- |
-| `CATALOG.csv` | Searchable master index of individual records and collection-level research leads. |
-| `SOURCES.md` | Curated guide to archives, libraries, museums, broadcasters, publications and discovery portals. |
-| `RIGHTS_AND_PROVENANCE.md` | Detailed rules for attribution, copyright, storage, reuse and archival integrity. |
-| `media/README.md` | Instructions for locally stored reference material and any redistribution-cleared media. |
-| `media/licensed/` | Material permitted to be distributed, with explicit source and licence records. |
-| `media/reference-only/` | Link/index information for research-only or rights-uncertain sources, not unauthorized copies. |
+| [`CATALOG.csv`](CATALOG.csv) | Master index with **31** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
+| [`SOURCES.md`](SOURCES.md) | Curated source institutions, verified artefacts, search terms, geographical gaps and acquisition methods. |
+| [`HISTORICAL_CHRONOLOGY_1980_1989.md`](HISTORICAL_CHRONOLOGY_1980_1989.md) | Decade chronology and historical-vs-alternate-history divergence ledger. |
+| [`DESIGN_REFERENCE_ATLAS.md`](DESIGN_REFERENCE_ATLAS.md) | Visual grammar, cultural atmosphere, environmental assets, proposed mission hooks and traceability to the existing story and systems. |
+| [`RIGHTS_AND_PROVENANCE.md`](RIGHTS_AND_PROVENANCE.md) | Rights classes, historical confidence, ethical use and source-to-asset rules. |
+| [`media/README.md`](media/README.md) | Media storage and reference-only policy. |
+| [`media/reference-only/INDEX.md`](media/reference-only/INDEX.md) | Browsable outbound links to sources, with no unauthorized scans or copied graphics. |
+| [`media/licensed/README.md`](media/licensed/README.md) | Reserved staging area and manifest requirements for explicitly redistribution-cleared media; no binary files committed yet. |
 
-These are planned conventions, not claims that the files or subdirectories already exist. The Git repository should primarily version metadata, citations, source links and permitted material. Large files and material without clear redistribution permission should remain outside the public repository.
+The first pass is **not** a balanced survey of all regions. It is strongest for Sarajevo, Slovenian publications, 1980 Belgrade and late-1980s Kosovo and federal political history; specific period evidence for Croatia, Macedonia, Montenegro and Vojvodina remains a priority. A collection-level landing page does not count as a verified individual 1980s photograph.
+
+The repository principally versions source metadata, item links and original documentation. Primary and third-party media should stay at the source until redistribution terms and provenance have been checked. A design reference is *not* an asset licence.
 
 ## Cataloguing and evidence standards
 
