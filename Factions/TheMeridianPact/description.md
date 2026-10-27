@@ -66,6 +66,12 @@ The Meridian Pact takes **no part in the dedicated nuclear campaign storyline** 
 
 The Meridian Pact is **the sole faction without advanced propaganda methods**. It does not receive special radio, newspaper or television propaganda actions or an advanced propaganda research tree. It nevertheless possesses its **own population morale meter**, and higher morale increases **production output and army discipline**. Commerce, resource security, logistics, troop welfare and battlefield results may influence morale through ordinary simulation rules. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
+## Population Morale Without Advanced Propaganda
+
+**The Meridian Pact is the only faction without advanced propaganda capabilities**, including specialized propaganda technology trees and player-issued advanced campaigns. Its personnel may encounter, trade with or occupy media infrastructure, but **do not gain advanced propaganda actions** from doing so.
+
+**The Meridian Pact nevertheless has its own population morale meter.** Higher morale raises **production output and army discipline**, just as it does for every other faction. Pact morale can change through ordinary trade performance, infrastructure and fuel supply, contracts, protection of forces and battlefield outcomes, rather than a specialized advanced propaganda program. **Radio, newspapers and television** remain significant world media even though the Pact does not have unique advanced propaganda abilities. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Strategic Identity
 
 The Meridian Pact is ultimately conceived as a geographically extensive, politically diverse and strategically adaptable coalition whose strengths arise from its multinational cooperation, varied industrial resources, operational flexibility and capacity to combine conventional military power with decentralized forms of warfare. At the same time, its development will illustrate the contradictions of postcolonial state formation, including unequal economic development, institutional fragmentation, competing national interests and the difficulties of maintaining genuine political independence within an interconnected international economy. Within POLITIKA, these characteristics will establish a distinctive playable faction whose strategic identity is defined by adaptability, mobility, international cooperation, resource sovereignty and the continuous negotiation between collective geopolitical ambitions and the independence of its constituent nations.
