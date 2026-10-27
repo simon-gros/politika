@@ -103,6 +103,8 @@ The main military contest centers on three primary factions with meaningfully di
 
 Specialized espionage — Psy-Ops: the Concord has an intelligence subdivision able to affect eligible enemy combat units' Discipline or civilian/non-combat units' Morale. Its two outcomes are (1) full resolve breakdown causing in-game self-destruction and (2) a brief, bounded rampage in which affected units attack their own faction's eligible units before returning to normal targeting. Neither outcome transfers ownership; numeric tuning and protection remain open.
 
+Building Psy-Ops: it can also sabotage an eligible enemy building into self-destruction or cause finite, potentially undetected resource waste. Resource waste destroys/consumes rather than transfers the owner's supplies.
+
 Candidate identity: elite, expensive professional formations; high situational awareness; advanced communications, reconnaissance, air support, and precision weapons. A small, coordinated force is effective when supported by intelligence and logistics, but costly to replace and vulnerable if deprived of information or supply access.
 
 Possible unit archetypes: reconnaissance teams; professional infantry squads; electronic-warfare vehicles; fast armored transports; precision-fire platforms; surveillance aircraft; specialist signals teams.
@@ -114,6 +116,8 @@ Ultimate weapon: long-produced tactical nuclear weapon delivered by a nuclear bo
 ### 4.2 Red Directorate — mass and sustained operations
 
 Specialized espionage — efficient intelligence theft: the Directorate's basic infiltration is slightly more advanced, allowing stealing rival-faction intelligence slightly faster and at lower operational/resource cost than comparable permitted operations by other factions. It does not grant Psy-Ops, Intimidation or guaranteed infiltration success. Exact modifiers remain open.
+
+Building infiltration: Directorate spies can covertly divert eligible resources from a rival facility/budget to the Directorate's own budget. Victim losses and Directorate gains must reconcile, and attribution can remain hidden until discovered.
 
 Candidate identity: organized combined-arms formations, robust industrial logistics, fortified defense, attritional combat, and ideologically linked local networks. It can contest territory at scale but may be less tactically agile or precise than the Concord in some circumstances.
 
@@ -128,6 +132,8 @@ Ultimate weapon: long-produced tactical nuclear weapon delivered via ICBM, requi
 Established spy limitation: the Iron Ascendancy possesses more limited spying abilities than the two rival nuclear powers, but can fully upgrade its espionage capabilities to unlock the exceptionally difficult nuclear-facility infiltration objective.
 
 Exclusive ability — Intimidation: only the Iron Ascendancy may target eligible isolated combat or civilian/non-combat units, and convert them only after fully breaking their one resolve meter: Discipline for combatants, Morale for non-combatants. Partial depletion, damage to health or isolation alone is insufficient; other factions lack Intimidation. It does not grant nuclear research or bypass spy upgrades.
+
+Building contamination: Ascendancy spies can impose a fictional poisoning/disease status on eligible staffed enemy facilities, causing workforce/researcher deaths and cascading limited disruption to nearby facilities, slowing or stopping production. It is distinct from Intimidation, and its bounded effects require recovery/counterplay rather than a real disease model.
 
 Candidate identity: covert action, sabotage, disinformation, rapid clandestine strikes, hidden cells, intimidation, and exploitation of disorder. Its ideology and role as the assassination perpetrator give it specific advantages but equally meaningful drawbacks. It is not simply an objectively stronger faction or the only one capable of immoral conduct.
 
@@ -278,6 +284,16 @@ Faction asymmetry is mandatory. Atlantic Concord Psy-Ops can cause eligible comb
 
 Fog of war, line of sight, sensors, impersonation, document forgery as an abstract ability, surveillance, informants, intercepted communications, and evidence custody can generate decisions without replacing ordinary combat. Detection should be a calculable contest with counterplay, not arbitrary script-driven omniscience.
 
+### 9.3.1 Building-level espionage: disruption, theft and workforce collapse
+
+The principal factions extend espionage beyond individual units to eligible enemy facilities. The three outcomes have different economic consequences:
+
+- Atlantic Concord Psy-Ops: after authorized infiltration, cause an eligible enemy building to self-destruct, or subject it to finite resource waste that may go unnoticed until a security audit. The resources are consumed/lost rather than credited to the Concord.
+- Red Directorate resource diversion: after authorized infiltration, subtract permitted resources from an enemy building or associated budget and credit an equal transferable amount to the Directorate's own budget. This theft may initially be undetected, even though both inventories change. The Directorate's already established slightly faster and cheaper intelligence theft is a separate spy advantage.
+- Iron Ascendancy facility contamination: abstract sabotage representing poison/disease causes simulated deaths among workers and researchers, reducing effective staffing; research and production slow or cease when staffing is insufficient. The status can propagate in a bounded chain to nearby eligible buildings, imposing further workforce loss, disruption and replacement costs. Chain depth, spatial eligibility, expiry and recovery prevent runaway spread. It is a fictional building-level status system without real-world biological/chemical operational detail.
+
+All building espionage effects require explicit faction permissions, qualifying infiltration/ability interactions, victim-facility eligibility and recoverable counterplay. Detection and attribution are separate from successful application; resources and staff totals must remain authoritative even when the cause is not yet known to the victim. This does not confer nuclear-weapons research rights, alter the 2–4 player slots or silently change ownership of a faction. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) and [Resource Economy](RESOURCE_ECONOMY.md).
+
 ### 9.4 Legitimacy, fear, and reputation
 
 Suggested reputation dimensions: federal standing, regional standing, market reliability, civilian harm, visibility, and political credibility. These should have mechanical consequences such as access restrictions, public compliance, rebellion, recruitment, prices, and checkpoint attention. No single moral score should decide every faction's behavior.
@@ -361,7 +377,7 @@ Before implementing full rosters and economy, resolve:
 - Whether match economies prioritize base construction, mobile deployment, territorial income, trade, or a hybrid.
 - Whether infantry is controlled as individual soldiers, squads, or both.
 - How far legal authorization, permits, customs, and disguise are simulated rather than scripted.
-- Balance the already established Concord Psy-Ops (breakdown/self-destruction vs. brief friendly-fire rampage, target eligibility, non-combat actions, duration and counterplay) and Directorate's slightly faster/cheaper rival-intelligence theft; specify Ascendancy's full espionage-upgrade costs, prerequisites and timing.
+- Balance Concord building self-destruction and hidden resource waste, Directorate budget diversion (resource conservation, detection and caps), and Ascendancy contamination (personnel losses, finite nearby facility chains, downtime, containment, worker replacement), alongside unit-level Psy-Ops and Intimidation; specify spy costs and access prerequisites.
 - Formation and Intimidation balance: ordinary support size/radius and stability curves; separate very-massive-army threshold and bonus for Directorate and Ascendancy; Concord's solo/small-group exemption; unit resolve recovery (shown as combat Discipline or civilian Morale); Intimidation's fully broken threshold before transfer; eligible combat units and counterplay.
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
