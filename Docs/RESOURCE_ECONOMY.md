@@ -84,6 +84,10 @@ Suggested map-generation and authored-map rules:
 
 This rule makes geography a signature component of Meridian gameplay. Early fuel access supports its roles as an **energy merchant, transport/logistics specialist, mercenary contractor and Black Market operator**, creating a conventional-resource alternative to the major factions' nuclear race.
 
+### Population morale and production
+
+Every faction, including Meridian Pact and NPC Unaligned, has a **population morale meter**. **Higher morale improves eligible production output**, in addition to improving **army discipline**. Concord, Directorate, Ascendancy and Unaligned have distinct advanced propaganda methods using radio, newspapers and television, while **Meridian lacks advanced propaganda**. Morale does not bypass resource refinement, scarcity or construction prerequisites. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 5. Electricity and infrastructure
 
 Electricity is an **additional game resource / utility flow**. **Nuclear power plants** are a potential generation source built by the **Atlantic Concord and Red Directorate only**, using refined nuclear-material game resources; **the Iron Ascendancy cannot build and does not seek them**, and **the Meridian Pact cannot refine nuclear materials**. Generation facilities, grid infrastructure, storage (if later chosen), transmission routes, and consumption by industrial buildings may affect supply and production. Electricity can be modeled as a local network capacity, an abstract resource stock, or a hybrid; the specific simulation remains open.
