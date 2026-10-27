@@ -127,7 +127,7 @@ The main README introduces the project; concrete gameplay concepts and system-le
 | [Engine Outline](Docs/ENGINE_OUTLINE.md) | Proposed Unreal Engine RTS foundation and priorities. |
 | [Platform Support and Portability Plan](Docs/PLATFORM_SUPPORT.md) | Platform targets, portability, input, and validation. |
 | [Proposed Engine Layers](Docs/PROPOSED_ENGINE_LAYERS.md) | Technical separation of game systems and presentation. |
-| [Development Foundations](Docs/DEVELOPMENT_FOUNDATIONS.md) | Rust regression tests and content audit, UE 5.8.3 build preflight, diagnostic verdicts, and staged automation without hosted workflows. |
+| [Development Foundations](Docs/DEVELOPMENT_FOUNDATIONS.md) | Rust/C++20 regression tests, RTS content audit, UE 5.8.3 preflight, diagnostic verdicts, and staged automation without hosted workflows. |
 | [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Controls, interface, accessibility, and presentation. |
 | [Faction files](Factions/) | In-depth faction descriptions, logos, and banners. |
 | [Historical Reference Archive](Archive/README.md) | Period history, political events, maps, and visual references. |
