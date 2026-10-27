@@ -70,6 +70,14 @@ Each effect has an **operation success state** separate from **discovery/attribu
 
 No espionage effect creates a new player slot or bypasses the 2–4 playable factions plus Unaligned match structure. All three specializations are RTS game effects and are not instructions for real-world harmful activities.
 
+### 1.4 Conventional explosive sabotage access
+
+Meridian Pact has the best conventional sabotage ability in the game. An eligible Meridian non-spy unit can conduct cheap, early sabotage against an enemy vehicle or building by attaching a purely fictional explosive-charge game object. The attack later resolves as a conventional in-game explosion. The Pact's strong sabotage identity complements its inexpensive, very fast, lightly armed/armored scout-combat trucks and the strongest overall early-game reconnaissance role, though a scout truck needs explicit sabotage permission before it can perform this action.
+
+Atlantic Concord, Red Directorate and Iron Ascendancy can conduct the same category of conventional explosive sabotage only after a later-game unlock, at higher cost than the Meridian Pact, and only through authorized spy units. Unarmed Concord/Ascendancy scouting airplanes, Directorate rifle-armed reconnaissance motorcycles, regular infantry and other non-spy units of those factions cannot use this attached-charge action.
+
+Do not conflate explosive sabotage with Psy-Ops building self-destruction/resource waste, Directorate resource diversion, Ascendancy poison/disease facility disruption, Intimidation, or nuclear weapons. All are distinct faction and command permissions. Target classes are eligible vehicles and buildings, subject to normal damage, detection and counterplay. No real-world explosives or attachment/activation procedures are modeled. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
+
 ## 2. Iron Ascendancy's limited espionage and full-development gate
 
 The Iron Ascendancy may perform ordinary limited covert actions through its basic spy capabilities, but it cannot infiltrate a rival nuclear research facility at a low or intermediate espionage level. The espionage progression must be fully developed / at its maximum eligible tier before nuclear infiltration becomes an allowed mission interaction.
