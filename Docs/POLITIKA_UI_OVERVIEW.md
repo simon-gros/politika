@@ -63,6 +63,12 @@ Use existing objective, production, selected-unit and intel UI patterns. Show on
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
+### Population morale and propaganda controls
+
+Display the **population morale meter for every faction**, including Meridian Pact and NPC Unaligned where the game's information/fog rules permit it. Make the two principal positive consequences—**production output** and **army discipline**—understandable through tooltips, modifiers, unit inspection or production panels.
+
+Propaganda-capable factions (**Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**) use distinct methods expressed through **radio, newspapers and television**. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. **Do not display an advanced propaganda action tree for the Meridian Pact**, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 5. In-match UI structure
 
 Exact placement can be tuned with prototypes, but the initial layout should provide these functional regions:
