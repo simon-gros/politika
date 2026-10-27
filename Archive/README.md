@@ -74,6 +74,10 @@ For significant historical claims, distinguish **direct evidence**, **well-suppo
 
 Do not upload protected scans, press photographs, music, broadcasts, film clips or third-party graphics simply because they are publicly viewable. Historical reference **does not equal permission to reproduce**. Prefer links and properly attributed metadata; check licences and permissions separately for redistribution, adaptation, promotional use and inclusion in a released game.
 
+### Period media and public-morale references
+
+Radio broadcasting, daily and regional newspapers, television programming, print distribution, broadcasting infrastructure and official public announcements are useful historical references for POLITIKA's **fictional propaganda and morale systems**. In game design, **all five factions have population morale**, affecting production output and army discipline, while **only Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned possess distinct advanced propaganda abilities**. The Meridian Pact has none. These are **fictional gameplay mechanics**, not historical claims about real organizations. The main Tito assassination and media-double conspiracy likewise remains alternate history. See [Propaganda and Morale](../Docs/PROPAGANDA_AND_MORALE.md).
+
 ### Cold War research, nuclear deterrence and espionage references
 
 The archive can support POLITIKA's fictional **two nuclear powers (Atlantic Concord and Red Directorate)**, the initially non-nuclear **Iron Ascendancy's first-bomb espionage race**, and the primary Tito conspiracy with **historical background**: Cold War deterrence, security organizations, intelligence, counterintelligence, nuclear-power infrastructure, electricity, period industrial capacity, oil/gas extraction, refining facilities and regional energy supply.
