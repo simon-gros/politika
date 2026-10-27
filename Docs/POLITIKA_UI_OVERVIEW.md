@@ -69,10 +69,6 @@ Display the **population morale meter for every faction**, including Meridian Pa
 
 Propaganda-capable factions (**Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**) use distinct methods expressed through **radio, newspapers and television**. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. **Do not display an advanced propaganda action tree for the Meridian Pact**, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
-### Propaganda and morale information
-
-Present the **population morale meter for every faction**, subject to the player's permitted intelligence view, and show its benefits to **production output and army discipline**. Only the **Atlantic Concord, Red Directorate and Iron Ascendancy** receive player-facing advanced propaganda actions using **radio, newspapers and television**. **Unaligned** propaganda is AI-controlled and can appear through news, map activity and events. **Meridian Pact has morale but no advanced propaganda menu or abilities**. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
-
 ## 5. In-match UI structure
 
 Exact placement can be tuned with prototypes, but the initial layout should provide these functional regions:
