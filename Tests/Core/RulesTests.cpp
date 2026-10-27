@@ -1,6 +1,7 @@
 #include "Rules.h"
 
 #include <cassert>
+#include <iterator>
 #include <limits>
 
 using namespace politika::rules;
@@ -29,6 +30,32 @@ int main() {
     assert(AdmitMove(own, 2, {100, 100}, 101, 10) == MoveRejection::InvalidTarget);
     assert(AdmitMove(own, 2, {100, 100}, std::numeric_limits<double>::quiet_NaN(), 0)
         == MoveRejection::InvalidTarget);
+
+    // The shared typed-order boundary rejects invalid input before runtime state mutates.
+    const Order move_order = MoveOrder{{40, 70}};
+    const Order attack_move_order = AttackMoveOrder{{100, 100}};
+    const Entity hostile{9, 3, true, true};
+    const Entity unattackable{10, 3, true, true, true, false};
+    assert(KindOf(move_order) == OrderKind::Move);
+    assert(KindOf(attack_move_order) == OrderKind::AttackMove);
+    assert(AdmitOrder(own, 2, {100, 100}, move_order));
+    assert(AdmitOrder(own, 3, {100, 100}, move_order).rejection == OrderRejection::NotOwned);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{MoveOrder{{101, 0}}}).rejection == OrderRejection::InvalidTarget);
+    assert(AdmitOrder(own, 2, {100, 100}, attack_move_order));
+    assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{9}}, &hostile));
+    assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{9}}).rejection == OrderRejection::MissingTarget);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{1}}, &own).rejection == OrderRejection::FriendlyTarget);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{10}}, &unattackable).rejection == OrderRejection::TargetNotAttackable);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{StopOrder{}}));
+    assert(AdmitOrder(own, 2, {100, 100}, Order{GuardOrder{}}));
+    constexpr SimulationPhase ExpectedPhases[] = {
+        SimulationPhase::AdmitOrders, SimulationPhase::UpdateMovement,
+        SimulationPhase::ResolveCombat, SimulationPhase::ApplyDamage,
+        SimulationPhase::CleanupDeadEntities, SimulationPhase::UpdateObjectives,
+        SimulationPhase::PublishEvents
+    };
+    for (std::size_t Index = 0; Index < std::size(kSimulationPhases); ++Index)
+        assert(kSimulationPhases[Index] == ExpectedPhases[Index]);
 
     // Spending is atomic, never accepts negative costs, and never overdrafts.
     ResourcePool balance{10, 5, 1};

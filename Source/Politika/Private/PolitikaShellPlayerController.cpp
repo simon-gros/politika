@@ -111,6 +111,18 @@ TSharedRef<SWidget> APolitikaShellPlayerController::BuildShell()
 
     Content->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
     [
+        SNew(SButton).ContentPadding(10)
+        .Visibility(bSandbox ? EVisibility::Collapsed : EVisibility::Visible)
+        .OnClicked_Lambda([this, Game]
+        {
+            if (Game.IsValid()) { Game->OpenPrototypeSlice(this); }
+            return FReply::Handled();
+        })
+        [ SNew(STextBlock).Text(LOCTEXT("PrototypeSlice", "Launch RTS prototype (development)")) ]
+    ];
+
+    Content->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
+    [
         SNew(SBorder).Padding(16).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
         .BorderBackgroundColor(FLinearColor(0.10f, 0.08f, 0.04f))
         .Visibility_Lambda([Game] { return Game.IsValid() && !Game->Issues().IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })

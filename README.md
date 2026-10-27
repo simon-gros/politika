@@ -8,7 +8,7 @@ POLITIKA combines asymmetric military strategy, Cold War espionage, political in
 
 The country is more than a battlefield. Its cities, industries, transport networks, armed forces, civilians, borders, and institutions form a living political environment. Players must decide when to cooperate with that environment, when to operate secretly within it, and when the consequences of open conflict are worth the cost.
 
-> Project status: POLITIKA has an initial native Unreal application shell: offline profile, menu, recovery controls and a sandbox travel destination. See the [shell build and verification guide](Docs/SHELL_SKELETON.md). RTS simulation, unit rosters, balance and economic rules remain design work. This README describes the intended game, not a currently playable RTS release.
+> Project status: POLITIKA has an initial native Unreal application shell: offline profile, menu, recovery controls and a sandbox travel destination. See the [shell build and verification guide](Docs/SHELL_SKELETON.md). The **next planned development milestone** is the [First RTS Vertical Slice](Docs/RTS_VERTICAL_SLICE_MILESTONE.md): a small playable test scenario for camera, selection, movement, combat, and one objective. That milestone has not yet been implemented; full RTS simulation, rosters, balance and economic rules remain design work. This README describes the intended game, not a currently playable RTS release.
 
 ## Versioning and release management
 

@@ -1,10 +1,11 @@
 #pragma once
 
-// Engine-independent POLITIKA command-admission and faction permissions.
-// This is a small authoritative C++ rules kernel for later Unreal integration,
-// NOT a complete movement, economy, AI, fog or combat simulation.
+// Engine-independent POLITIKA command admission and faction permissions.
+// The first Unreal vertical slice consumes the typed orders; this is not a
+// production content schema or a complete economy/AI/fog/combat rules model.
 #include <cmath>
 #include <cstdint>
+#include <variant>
 
 namespace politika::rules {
 
@@ -25,7 +26,29 @@ struct Entity {
     std::uint32_t owner_player = 0; // zero = neutral/NPC world ownership
     bool selectable = true;
     bool movable = true;
+    bool can_attack = true;
+    bool attackable = true;
 };
+
+// Stable, presentation-independent player/AI intent. Coordinates are prototype
+// map-space values; Unreal adapters translate world hits into this domain type.
+struct Position {
+    double x = 0.0;
+    double y = 0.0;
+};
+
+struct MoveOrder { Position destination; };
+struct AttackOrder { std::uint64_t target_id = 0; };
+struct AttackMoveOrder { Position destination; };
+struct StopOrder {};
+struct GuardOrder {};
+using Order = std::variant<MoveOrder, AttackOrder, AttackMoveOrder, StopOrder, GuardOrder>;
+
+enum class OrderKind : std::uint8_t { Move, Attack, AttackMove, Stop, Guard };
+
+[[nodiscard]] constexpr OrderKind KindOf(const Order& order) noexcept {
+    return static_cast<OrderKind>(order.index());
+}
 
 [[nodiscard]] constexpr bool CanSelect(const Entity& entity, std::uint32_t player) noexcept {
     return player != 0 && entity.id != 0 && entity.owner_player == player && entity.selectable;
@@ -39,9 +62,90 @@ enum class MoveRejection : std::uint8_t {
     InvalidTarget,
 };
 
+enum class OrderRejection : std::uint8_t {
+    None,
+    NotOwned,
+    CannotMove,
+    CannotAttack,
+    InvalidBounds,
+    InvalidTarget,
+    MissingTarget,
+    TargetNotAttackable,
+    FriendlyTarget,
+};
+
+struct OrderResult {
+    OrderRejection rejection = OrderRejection::None;
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return rejection == OrderRejection::None;
+    }
+};
+
 struct MapBounds {
     double width = 0.0;
     double height = 0.0;
+};
+
+[[nodiscard]] inline bool IsValidPosition(MapBounds bounds, Position position) noexcept {
+    return std::isfinite(bounds.width) && std::isfinite(bounds.height)
+        && bounds.width > 0 && bounds.height > 0
+        && std::isfinite(position.x) && std::isfinite(position.y)
+        && position.x >= 0 && position.y >= 0
+        && position.x <= bounds.width && position.y <= bounds.height;
+}
+
+// `target` is supplied by the authoritative entity lookup. A null target is
+// rejected; callers must not trust a client-provided owner or capability bit.
+[[nodiscard]] inline OrderResult AdmitOrder(
+    const Entity& issuer,
+    std::uint32_t requesting_player,
+    MapBounds bounds,
+    const Order& order,
+    const Entity* target = nullptr
+) noexcept {
+    if (requesting_player == 0 || issuer.id == 0 || issuer.owner_player != requesting_player) {
+        return {OrderRejection::NotOwned};
+    }
+    if (const auto* move = std::get_if<MoveOrder>(&order)) {
+        if (!issuer.movable) return {OrderRejection::CannotMove};
+        if (!std::isfinite(bounds.width) || !std::isfinite(bounds.height)
+            || bounds.width <= 0 || bounds.height <= 0) return {OrderRejection::InvalidBounds};
+        if (!IsValidPosition(bounds, move->destination)) return {OrderRejection::InvalidTarget};
+    } else if (const auto* attack_move = std::get_if<AttackMoveOrder>(&order)) {
+        if (!issuer.movable) return {OrderRejection::CannotMove};
+        if (!std::isfinite(bounds.width) || !std::isfinite(bounds.height)
+            || bounds.width <= 0 || bounds.height <= 0) return {OrderRejection::InvalidBounds};
+        if (!IsValidPosition(bounds, attack_move->destination)) return {OrderRejection::InvalidTarget};
+    } else if (const auto* attack = std::get_if<AttackOrder>(&order)) {
+        if (!issuer.can_attack) return {OrderRejection::CannotAttack};
+        if (attack->target_id == 0 || target == nullptr || target->id != attack->target_id)
+            return {OrderRejection::MissingTarget};
+        if (!target->attackable) return {OrderRejection::TargetNotAttackable};
+        if (target->owner_player == requesting_player) return {OrderRejection::FriendlyTarget};
+    }
+    return {};
+}
+
+// One authoritative update has a deliberately visible order. The first UE
+// prototype coordinator mirrors it; presentation consumes resulting state only.
+enum class SimulationPhase : std::uint8_t {
+    AdmitOrders,
+    UpdateMovement,
+    ResolveCombat,
+    ApplyDamage,
+    CleanupDeadEntities,
+    UpdateObjectives,
+    PublishEvents,
+};
+
+inline constexpr SimulationPhase kSimulationPhases[] = {
+    SimulationPhase::AdmitOrders,
+    SimulationPhase::UpdateMovement,
+    SimulationPhase::ResolveCombat,
+    SimulationPhase::ApplyDamage,
+    SimulationPhase::CleanupDeadEntities,
+    SimulationPhase::UpdateObjectives,
+    SimulationPhase::PublishEvents,
 };
 
 [[nodiscard]] inline MoveRejection AdmitMove(

@@ -28,6 +28,7 @@ public:
     void EnableSessionSafeMode();
     void ResetSettings();
     void OpenOfflineSandbox(APlayerController* Player);
+    void OpenPrototypeSlice(APlayerController* Player);
     void ReturnToMenu(APlayerController* Player);
     const TArray<FPolitikaStartupIssue>& Issues() const { return RecoveryIssues; }
     bool HasPersistentProfile() const { return bPersistentProfile; }

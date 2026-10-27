@@ -20,8 +20,6 @@ enum Verdict {
     Blocked,
     InfraError,
     Inconclusive,
-    Skipped,
-    NotRun,
 }
 
 impl Verdict {
@@ -32,8 +30,6 @@ impl Verdict {
             Self::Blocked => "BLOCKED",
             Self::InfraError => "INFRA_ERROR",
             Self::Inconclusive => "INCONCLUSIVE",
-            Self::Skipped => "SKIPPED",
-            Self::NotRun => "NOT_RUN",
         }
     }
 }
@@ -98,7 +94,7 @@ impl Report {
         } else if self
             .checks
             .iter()
-            .any(|c| matches!(c.verdict, Verdict::Inconclusive | Verdict::NotRun))
+            .any(|c| c.verdict == Verdict::Inconclusive)
         {
             4
         } else {
@@ -490,7 +486,7 @@ fn core_tests(root: &Path) -> Vec<Check> {
         Ok(execution) if execution.status.success() => {
             checks.push(Check::new(
                 "core.command_rules", Verdict::Pass,
-                "ownership, selection, move admission, atomic resources and faction-gating assertions passed",
+                "ownership, selection, typed-order admission and phase ordering, atomic resources, and faction-gating assertions passed",
             ));
         }
         Ok(execution) => {

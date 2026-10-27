@@ -202,6 +202,24 @@ void UPolitikaGameInstance::OpenOfflineSandbox(APlayerController* Player)
     Travel(Player, TEXT("/Game/Maps/OfflineSandbox"), TEXT("offline_sandbox"));
 }
 
+void UPolitikaGameInstance::OpenPrototypeSlice(APlayerController* Player)
+{
+    ContinueOffline();
+    if (!Player || !Player->IsLocalController() || IsDedicatedServerInstance())
+    {
+        return;
+    }
+    constexpr TCHAR PrototypeMap[] = TEXT("/Game/Maps/RTSVerticalSlice");
+    if (!FPackageName::DoesPackageExist(PrototypeMap))
+    {
+        AddIssue(TEXT("MissingPrototypeMap"), LOCTEXT("MissingPrototypeMap",
+            "The prototype RTS map is missing. Rebuild the development package."));
+        return;
+    }
+    FPolitikaBootstrap::Get().LogEvent(TEXT("travel_requested"), *PhaseName(), TEXT("ok"), TEXT("None"), TEXT("rts_vertical_slice"));
+    UGameplayStatics::OpenLevel(Player, FName(PrototypeMap), true);
+}
+
 void UPolitikaGameInstance::ReturnToMenu(APlayerController* Player)
 {
     Travel(Player, TEXT("/Game/Maps/MainMenu"), TEXT("main_menu"));
