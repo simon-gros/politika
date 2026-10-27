@@ -33,38 +33,40 @@ The effectiveness of a propaganda action should depend on the **medium, faction 
 
 Media can also convey **actual intelligence and narrative events**: an official broadcast about Tito, an alternative news report or a recovered recording may affect trust, morale and the main conspiracy without disclosing information to factions that have not found it.
 
-## 4. Population morale and gameplay effects
+## 4. One resolve meter, two names
 
-**Every faction has a separately tracked population morale value**. The Unaligned's morale is simulated and AI-managed rather than player-controlled; the Meridian Pact's morale is affected by events and conditions despite its lack of advanced propaganda actions.
+**Locked naming and implementation rule:** every individual unit uses **one and the same underlying resolve meter**. Display it as **Discipline** when the unit is a **combatant** and **Morale** when the unit is **civilian or non-combat**. It is **not** two separately designed meters, two currencies or two independent resistance systems. Both labels share the same numeric representation, depletion/recovery events, broken threshold and Intimidation mechanism.
 
-Two positive effects are **core requirements**:
+| Scope / unit | Name shown | Gameplay |
+|---|---|---|
+| **Combat unit** | **Discipline** | Performance and stability in battle, affected by formation size, casualties, Intimidation and faction modifiers |
+| **Civilian / non-combat unit** | **Morale** | The same meter, affected by relevant civilian circumstances and Intimidation; does not receive combat formation perks |
+| **Whole faction's population** | **Population Morale** | A faction-level morale summary/aggregate within the shared system, influencing production output and combat Discipline baseline; **not a second per-unit meter** |
 
-1. **Production output:** higher morale improves eligible industrial/factory output, recruitment throughput or other data-defined production rates. Do not assume that the bonus reduces the amount of nuclear material required, bypasses refinery inputs, grants technology, or accelerates the Iron Ascendancy's instant-win path without explicit balancing.
-2. **Army discipline:** higher population morale improves the starting conditions and recovery of battlefield unit morale. **Effective unit morale/discipline is also affected by formation size and allied support** for every faction except the Atlantic Concord. Higher effective discipline improves reliability in executing orders, maintaining formations and resisting panic or disorder. Exact attributes, thresholds and caps remain to be balanced.
+Population Morale exists for each of the five factions, including the NPC Unaligned and playable Meridian Pact. **High Population Morale improves eligible production output and the baseline Discipline of soldiers**, as established. It may be aggregated from civilian morale and other public conditions under a defined faction-level policy; precise aggregation weights and propagation rules remain to be designed. **Breaking one civilian unit's Morale does not zero the entire faction's Population Morale**.
 
-Morale can respond to **military performance, casualties, supply, power and fuel availability, economic conditions, public services, occupation, propaganda, credible information and revelations**. The response should be legible and bounded; no faction should be locked into an irreversible death spiral solely because of a single information event.
+Morale and Discipline respond to the same underlying meter events and broken threshold, although **which modifiers apply depends on unit category**. Contextual influences may include combat losses and nearby support for soldiers; fuel, power, supply, employment and propaganda for civilians. Exact curves and production/Discipline multipliers remain open.
 
-Faction-specific modifiers can determine whether morale is more sensitive to resource shortages, battlefield losses, repression, public confidence, or communications continuity. These are candidate design parameters, **not universal historical claims**.
+### Formation size: combat Discipline only
 
-### Formation-size morale and battlefield discipline
+**Normal support rule:** for combat units belonging to the **Red Directorate, Iron Ascendancy, Meridian Pact or Unaligned**, larger coherent formations stabilize **Discipline** more effectively than solo or very small fighting groups; small groups have the normal Discipline stability penalty. Support means nearby cohesive forces, not a faction's total army count or the number of icons a player selects.
 
-**Locked baseline rule:** for **Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned**, larger coherent army formations possess **more stable battlefield morale and discipline** than individual soldiers or very small detachments. Their effective morale resists deterioration more effectively when fighting in mutually supporting groups. Conversely, lone soldiers and very small groups suffer the normal **formation-size morale/discipline disadvantage**.
+**Extra massive-army rule:** **only the Red Directorate and Iron Ascendancy** receive a **further Discipline stability bonus** in very massive, cohesive, mutually supporting combat armies, over and above the normal group effect. Meridian and Unaligned receive the ordinary group-size benefit but **not** the special high-mass bonus. Numerical thresholds and caps remain open.
 
-**Additional massive-army advantage (Red Directorate and Iron Ascendancy only):** when either of these factions organizes a **very massive, coherent and mutually supporting army**, it receives a **further substantial morale/discipline stability bonus above the ordinary large-formation benefit**. This is a distinct positive faction trait, not merely the absence of the small-unit penalty. The Directorate's inexpensive infantry reinforces its mass-army strategy; the Ascendancy can sustain unusually aggressive mass attacks while remaining vulnerable to losses and disruption. **Meridian Pact and Unaligned receive only the ordinary formation-size benefit, not the special massive-army bonus.**
+**Atlantic Concord exception:** its soldiers suffer **no Discipline penalty just for operating individually or in very small groups**. Their Discipline may still be broken by direct battlefield effects, casualties or Intimidation; solo operation is not general immunity.
 
-**The Atlantic Concord is the sole exception**: its units **do not lose morale or discipline simply because they are deployed individually or in very small groups**. They retain their normal disciplined baseline without allied formation-size support; they can still suffer morale loss from casualties, supply deprivation, enemy effects or other eligible causes. The Concord's exemption is **not blanket immunity** to morale damage or the Iron Ascendancy's Intimidation.
+These **military Discipline modifiers do not apply to civilian/non-combat Morale**. Non-combat units retain the same underlying resolve meter but receive context-appropriate modifiers. Breaking formation, reinforcement and losses should update eligible military support bonuses deterministically.
 
-**Keep two related but separate values:** (a) **population morale**, tracked per faction and relevant to production and army-wide baseline discipline; and (b) **battlefield unit/formation morale**, tracked at a combat-entity or coherent formation level and affected by support, group size and local combat. A larger army's discipline bonus is not an automatic increase to civilian/population morale; likewise, high population morale does not by itself eliminate the consequences of battlefield isolation.
+### Iron Ascendancy Intimidation against both categories
 
-**Size means genuinely supported formation strength**, not the total number of units a faction owns or the number of separate, distant squads selected in the UI. Eligible nearby allied personnel, cohesion, command radius and capped support calculations should determine the baseline group-size effect. A **separate, very-massive-army threshold and additional stability modifier apply only to Red Directorate and Iron Ascendancy**. Exact thresholds and bonus magnitudes are open for balancing. Splitting or heavily depleting a massive army removes its extra bonus when it no longer qualifies; regrouping may restore it. Avoid unlimited buffs from stacking units in one location.
+**Intimidation is exclusive to the Iron Ascendancy** and can target **eligible isolated combat or non-combat units**. Isolation is necessary, not sufficient. The Ascendancy must reduce the targeted unit's **single shared meter to its fully broken threshold** before converting that unit:
 
-### Interaction with Iron Ascendancy Intimidation
+- **Combat:** break the target's **Discipline**, then convert if still isolated and eligible.
+- **Civilian/non-combat:** break the target's **Morale**, then convert if still isolated and eligible.
 
-The **Iron Ascendancy alone** can intimidate an **eligible isolated enemy unit**. **Isolation is necessary but not sufficient for conversion:** Intimidation must first **reduce the target's battlefield morale to its defined broken/zero threshold**. **Only after morale is fully broken can the unit change allegiance to the Iron Ascendancy.** A target whose morale is still above that threshold stays with its current faction, even if isolated and under active intimidation.
+**No instant conversion** occurs simply because a target has no nearby friendly support. A worker with remaining Morale and a soldier with remaining Discipline are equally resistant to immediate allegiance transfer under the shared-meter rule. Support and eligibility restrictions remain relevant. Ordinary civilians and neutral Unaligned personnel are not automatically eligible without explicit design rules.
 
-Normal formation-size fragility may make lone non-Concord troops easier to demoralize. **Atlantic Concord troops do not receive that automatic small-group morale penalty**, so they retain discipline while isolated; however, direct intimidation pressure and other applicable battlefield morale effects can still break their morale. Nearby allies can prevent isolation and thus stop conversion regardless of morale. Reinforcement, withdrawal, countermeasures and morale recovery give defenders opportunities to interrupt the process.
-
-Intimidation's morale damage and the conversion outcome are **two separate authoritative transitions**. Damaging health, suppressing a unit or applying an intimidation visual effect must not instantly switch its owner. The threshold scale, action duration, recovery rules and eligible targets remain balance decisions; see [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Intimidation's meter-reduction event and ownership transfer are **separate authoritative transitions**. Population Morale cannot be confused with an individual's meter; Intimidation against one civilian does not convert an entire population. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ## 5. Narrative and AI integration
 
@@ -76,22 +78,21 @@ Concord, Directorate and Ascendancy campaigns may use distinct propaganda missio
 
 ## 6. Suggested technical contracts
 
-Track morale and media influence with authoritative, data-driven state:
+Use one **`UnitResolve`** component/property for **every combat and non-combat unit**, with `UnitCategory` selecting the HUD label `Discipline` or `Morale`. The meter uses unified value, limits, loss, recovery and break rules. **Do not store separate `BattlefieldMorale`, `UnitDiscipline` and `NonCombatUnitMorale` components** for the same mechanic.
 
-- `FactionMorale`: faction ID, bounded value, current modifiers, expiry/decay and history.
-- `PropagandaCapability`: enabled for Concord, Directorate, Ascendancy and Unaligned; **disabled for Meridian**.
-- `MediaFacility`: medium type (radio/newspaper/television), jurisdiction, owner/controller, operational status, power/supply needs and reachable audience.
-- `PropagandaAction`: faction eligibility, selected medium, valid facility, game cost, reach, duration, competing influence and observable completion.
-- `ProductionMoraleModifier` and `DisciplineMoraleModifier`: formulas and allowed targets defined by match rules, evaluated from authoritative morale rather than UI estimates.
-- `BattlefieldMorale`: entity or coherent formation identifier, current morale, morale-loss/recovery events, broken threshold and effective discipline state.
-- `FormationSupport`: qualified nearby friendly units, coherent group size/support calculation, capped baseline stability modifier and faction exception flag (`ConcordNoSmallGroupPenalty`).
-- `MassArmyDiscipline`: a separate massive-formation eligibility threshold and capped morale/discipline modifier **restricted to `RedDirectorate` and `IronAscendancy`**, which is lost when the formation no longer qualifies.
-- `IntimidationMoraleBreak`: eligible isolated target, active pressure, authoritative morale reaching its broken threshold, then a separately validated allegiance-transfer event.
+- `UnitResolve`: unit identifier, value, shared maximum, broken threshold, changes and recovery.
+- `UnitCategory`: combat or non-combat; maps combat to the **Discipline** label and non-combat to the **Morale** label.
+- `FactionPopulationMorale`: a faction-wide rollup/summary in the same framework, used for production and military baseline Discipline; its aggregation is not a duplicate per-unit meter.
+- `FormationDisciplineSupport`: qualified nearby allied **combat** units and capped standard discipline stability.
+- `MassArmyDisciplineBonus`: extra threshold and bonus restricted to **Directorate/Ascendancy combat formations**.
+- `ConcordNoSoloDisciplinePenalty`: removes the normal small-combat-formation penalty for Concord soldiers only.
+- `IntimidationResolveBreak`: target eligibility, isolation, the shared meter reaching the break threshold and later authorized ownership transfer.
+- `PropagandaCapability`: on for Concord, Directorate, Ascendancy, NPC Unaligned; off for Meridian. `MediaFacility` and `PropagandaAction` describe radio, newspapers and TV with explicit costs and reach.
 
-**Core acceptance checks:** all five factions have population morale; only four can issue advanced propaganda actions; higher population morale improves production and army-wide baseline discipline; larger supported formations retain baseline battlefield discipline better for Directorate, Ascendancy, Meridian and Unaligned; **only Directorate and Ascendancy earn the extra very-massive-army morale/discipline bonus**; Concord solo/small-group units suffer **no size-based morale penalty**; Concord can still be demoralized by other causes; an isolated enemy with non-broken morale **cannot** be converted by Intimidation; an isolated eligible unit becomes convertible only **after its battlefield morale is broken**; propaganda cannot bypass nuclear prerequisites; and Unaligned stays NPC-only.
+**Acceptance checks:** all combat units display Discipline and all civilian/non-combat units display Morale; the backing meter behaves identically; every faction has Population Morale; higher Population Morale improves production and baseline Discipline; support and massive-army modifiers apply only to soldiers; Concord is exempt from the small-squad penalty; Intimidation cannot convert either kind of isolated unit until **its own shared meter is broken**; a single civilian's broken Morale does not erase faction-wide Population Morale; no propaganda can bypass nuclear prerequisites.
 
 ## 7. Balancing questions
 
-Set the population and battlefield morale scales, baseline and update cadence; propaganda cost, audience, reach and credibility; duration and stacking; production modifiers; formation-support radius/size and capped ordinary morale stability; **Directorate/Ascendancy massive-army eligibility, threshold, cap and bonus magnitude**; battlefield morale loss/recovery and break threshold; Intimidation pressure timing and counterplay; and whether regional sub-morale feeds each faction's aggregate meter. **No precise percentages or unit values are canonical yet.**
+Set shared `UnitResolve` ranges, recovery and break thresholds; population-morale aggregation and its feedback into production/Discipline; formation-support radii and caps; exceptional massive-army thresholds for Directorate/Ascendancy; Concord solo exemption; civilian-specific modifier rules; Intimidation timing, eligibility and counterplay; and faction propaganda reach and cost. Numerical values and map-specific eligibility remain open.
 
-**Locked summary:** all five factions have population morale; high morale raises production and baseline army discipline; **larger supported formations normally stabilize battlefield morale; Red Directorate and Iron Ascendancy get an additional bonus specifically for very massive armies, while Atlantic Concord soldiers avoid all solo/small-group morale penalties**; **the Iron Ascendancy must first break an isolated target's battlefield morale before Intimidation can convert it**; all except Meridian have advanced propaganda through radio, newspapers and television.
+**Locked summary:** **one meter per unit**—called **Discipline** for combat units and **Morale** for civilian/non-combat units. **Population Morale** is the faction-level view of the same system. Larger combat formations stabilize Discipline for all except Concord's solo penalty exemption; Directorate and Ascendancy gain an additional massive-army bonus. Intimidation must break **Discipline** on soldiers or **Morale** on civilians before converting an eligible isolated unit.
