@@ -29,6 +29,10 @@ The political legacy of Josip Broz Tito occupies a central position in the facti
 
 In real history, Tito died on 4 May 1980. POLITIKA diverges from that chronology: in its fictional timeline, he survives the illness that killed him historically and continues to appear as Yugoslavia's leader during the 1980s. The nature of the federal leadership's subsequent continuity, the authority exercised in Tito's name, and the hidden events of 1984–1989 form the central mystery of the campaign. For the complete spoiler-filled explanation, see [the story outline](../../Docs/STORY_OUTLINE.md).
 
+### Resource Jurisdiction and Meridian Starting Locations
+
+The game's **highest-valued resource group is nuclear materials**, followed by **fossil fuels**. Unaligned authorities administer territory, infrastructure, electricity networks, and sites that may include crude-oil and natural-gas deposits. Meridian Pact players **always start near a fossil-fuel source field**, but this does not transfer control of the field from the Unaligned or other legitimate owners. Access, policing, commerce, and military security still follow the world's neutral-AI rules.
+
 ## Economy
 
 The Unaligned administers a distinctive system of socialist self-management, combining socially owned enterprises, workers' councils, decentralized industrial decision-making, regulated market mechanisms and federal economic coordination. Its industrial and commercial infrastructure includes manufacturing enterprises, agricultural cooperatives, transportation companies, energy facilities, mining operations, financial institutions and regional trading organizations.
