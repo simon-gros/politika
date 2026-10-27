@@ -52,6 +52,12 @@ Staff losses apply to staffed facilities according to gameplay workforce require
 
 A targeted nuclear refinery, research building or other late-game installation follows these same rules only if explicitly eligible, but such sabotage **does not transfer research knowledge or count as the Ascendancy's required nuclear-facility spy-intelligence acquisition**. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Sabotage economy and scout production
+
+The Meridian Pact's cheap early-game production of very fast, lightly armored and lightly armed reconnaissance/combat trucks gives it the strongest overall scouting advantage. Its other asymmetry is the game's best conventional explosive sabotage: eligible non-spy Pact units may place fictional charges on enemy vehicles/buildings early and cheaply. Atlantic Concord, Red Directorate and Iron Ascendancy may conduct similar attached-charge sabotage only later and at greater cost, using spies alone.
+
+Model charges and other expenses as abstract unit ability costs, separate from nuclear-resource production or refinery recipes. Explosive damage can destroy structures or vehicles, create conventional repairs/replacement costs and interrupt production; it must not debit/credit a player's resources as if it were Directorate financial diversion, Concord hidden waste or Ascendancy workforce contamination unless an explicit separate effect applies. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
+
 ## 2. Nuclear materials: rare strategic resource
 
 Nuclear-weapons materials are the most highly valued resource in the entire game. They should be scarce, geographically contested, strategically defensible and important to late-game victory. Access may require exploration, control, contracts or specialized map objectives.
