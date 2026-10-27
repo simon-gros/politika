@@ -1,6 +1,6 @@
 # POLITIKA UI — product overview
 
-Status: first-pass product/UI direction, 2026-10-27
+Status: expanded RTS interaction, information-integrity and multi-platform UI design contract (2026-10-27); implementation is narrower and separately evidenced
 Engine target: Unreal Engine 5.8.3
 Design emphasis: readable RTS commands, map awareness and fast tactical interaction
 Product constraints: no cinematics; no mandatory internet connection or online-account login
@@ -158,27 +158,22 @@ Treat UI as a presentation layer over the game state:
 
 - C++ match/simulation systems own units, orders, objectives, visibility, resources and match results.
 - PlayerController/input actions translate keyboard/mouse, handheld controller/Steam Input and Android touch actions into the same player command intents; gameplay remains independent of the originating device.
-- UMG/CommonUI presents selection, objectives, resources, menus, map and notifications.
+- UMG/Slate presents selection, objectives, resources, menus, map and notifications. CommonUI is a conditional choice for layered modal menus and cross-platform focus, not a mandatory framework for the tactical HUD.
 - UI reacts to state events and view models; it must not become the authority for gameplay rules or poll every unit every frame.
 - Local save/settings services handle progress and configuration without requiring a remote identity.
 - A shared command/action definition should drive both button availability and hotkey execution to prevent inconsistent behavior.
 
 This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md) and [PROPOSED_ENGINE_LAYERS.md](PROPOSED_ENGINE_LAYERS.md) for related architectural decisions.
 
-## 9. First playable UI slice
+## 9. UI implementation baseline and staged slices
 
-Start with a single offline mission/test map containing:
+**Verified baseline (27 October 2026):** the [First RTS Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md) has scoped Linux Development package acceptance for a camera, single-unit selection, move/attack (and related guard/stop) orders, two visible archetypes, health/death, command feedback, a read-only objective/selection HUD, and a default main-menu route. Its rendered checks include 3840×2160 keyboard/mouse interaction and selected negative-command/objective cases. This evidence **does not** establish a complete minimap, multi-selection, control groups, production HUD, fog-of-war, native UMG/CommonUI implementation, working campaign save/load, controller/touch gameplay, or Windows/SteamOS/Android qualification. The existing shell/early tactical UI may remain Slate/C++ until a measured migration is justified.
 
-- camera, selection, and clear selected/hovered/owned state;
-- move, attack, stop, and one targeted ability, accessible by both button and hotkey;
-- compact selection panel with type/name, health/readiness, and status;
-- one objective display with update/completion/failure feedback;
-- strategic map with camera jump and visibility-correct markers;
-- the minimum production/reinforcement/resource panel needed by the prototype's rules;
-- pause, local save/load if in scope, and basic display/UI scale options;
-- a short text/radio briefing and debrief instead of cinematic sequences.
+**Next implementation stage:** the [Engine Roadmap, Stage 3](ENGINE_OUTLINE.md#74-stage-3--next-bounded-increment-data-driven-rts-content-and-map-validation) extracts prototype unit/weapon parameters and a fixture-map definition into validated UE assets. UI work during this increment must be limited to preserving and correctly formatting the existing selected-unit, command-rejection and objective readouts as values move into assets. It must continue to handle invalid map/content admission with a recoverable shell error; **do not** grow Stage 3 into a full HUD replacement, fog-of-war, economy, multi-select, intelligence dossier or CommonUI migration.
 
-Acceptance for the slice: no online login is needed to launch or play; keyboard and mouse commands agree; invalid orders are understandable; selection changes cannot leave stale panel data; subtitles/readable text work at 1080p and 4K; and the tactical screen remains uncluttered during combat.
+**Progression after Stage 3:** (a) a match-loop UI slice introduces groups, command-card consistency, strategic map, production/resource information, fog-aware observations, pause and results only alongside the rules that make them real; (b) a mission/intelligence UI slice adds dossiers, event history, Unaligned claims/verification, faction-specific abilities and AI-facing information integrity alongside implemented simulations; (c) cross-platform adaptation qualifies focus navigation, controller tactical orders and Android touch on actual devices. Every added component requires interaction assertions, source-specific visibility tests, legibility at tested viewport sizes and package-level evidence.
+
+**Acceptance principle:** first ensure the existing selection/order/HUD loop is correct and stable; then grow the interface only as the authority, observation and content contracts gain tested capabilities. Proposed screen designs below are requirements for future implementation, not descriptions of functionality already present.
 
 ## 10. Decisions still open
 
