@@ -7,7 +7,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/tools/unreal-version.env"
 
 usage() {
-  echo "Usage: bash tools/unreal.sh {audit|core-test|doctor|build|test} [extra Unreal arguments...]" >&2
+  echo "Usage: bash tools/unreal.sh {audit|core-test|performance|release-check|doctor|build|test} [extra Unreal arguments...]" >&2
 }
 
 quality() {
@@ -30,6 +30,12 @@ case "$action" in
     ;;
   core-test)
     quality core "$@"
+    ;;
+  performance)
+    quality performance "$@"
+    ;;
+  release-check)
+    quality release "$@"
     ;;
   doctor)
     quality preflight "$@"
