@@ -15,7 +15,7 @@
 ## Engine and development
 
 - [Engine Outline](ENGINE_OUTLINE.md) — system responsibilities and implementation direction.
-- [Next Development Milestone: First RTS Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md) — bounded prototype scope, ownership, non-goals, and ordered completion criteria; planned, not implemented.
+- [First RTS Vertical Slice Milestone](RTS_VERTICAL_SLICE_MILESTONE.md) — accepted scoped Linux Development prototype, validation evidence, remaining platform gaps and follow-on content/model work; not a finished RTS or release.
 - [RTS Game Ontology](RTS_GAME_ONTOLOGY.md) — foundational RTS categories, C&C and StarCraft comparison, and POLITIKA-specific distinctions between entities, agents, ownership, actions, resources, information, and objectives; conceptual reference, not an implementation claim.
 - [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; links to the [UM file-level reference catalog](</mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md>).
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
