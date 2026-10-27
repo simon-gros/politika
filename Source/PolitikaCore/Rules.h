@@ -28,6 +28,8 @@ struct Entity {
     bool movable = true;
     bool can_attack = true;
     bool attackable = true;
+    bool alive = true;
+    bool operational = true;
 };
 
 // Stable, presentation-independent player/AI intent. Coordinates are prototype
@@ -44,7 +46,19 @@ struct StopOrder {};
 struct GuardOrder {};
 using Order = std::variant<MoveOrder, AttackOrder, AttackMoveOrder, StopOrder, GuardOrder>;
 
+// Runtime identities are match-local. Definition IDs, participant IDs and
+// correlation IDs occupy separate fields and must not be substituted for one another.
+struct CommandRequest {
+    std::uint64_t match_generation = 0;
+    std::uint64_t sequence = 0;
+    std::uint32_t participant_id = 0;
+    std::uint64_t issuer_entity_id = 0;
+    std::uint64_t correlation_id = 0;
+    Order intent = StopOrder{};
+};
+
 enum class OrderKind : std::uint8_t { Move, Attack, AttackMove, Stop, Guard };
+enum class ExecutionOrder : std::uint8_t { Idle, Move, Attack, AttackMove, Stop, Guard };
 
 [[nodiscard]] constexpr OrderKind KindOf(const Order& order) noexcept {
     return static_cast<OrderKind>(order.index());
@@ -72,6 +86,11 @@ enum class OrderRejection : std::uint8_t {
     MissingTarget,
     TargetNotAttackable,
     FriendlyTarget,
+    MissingIssuer,
+    IssuerUnavailable,
+    Unauthorized,
+    MatchInactive,
+    StaleMatch,
 };
 
 struct OrderResult {
@@ -80,6 +99,29 @@ struct OrderResult {
         return rejection == OrderRejection::None;
     }
 };
+
+enum class OrderEndReason : std::uint8_t { None, Replaced, Stopped, TargetLost, UnitDestroyed, Arrived, Obstructed };
+struct CommandOutcomeEvent {
+    std::uint64_t step = 0, sequence = 0, correlation_id = 0, issuer_id = 0;
+    OrderKind order = OrderKind::Stop;
+    bool accepted = false;
+    OrderRejection rejection = OrderRejection::None;
+};
+struct OrderChangedEvent {
+    std::uint64_t step = 0, entity_id = 0;
+    ExecutionOrder previous = ExecutionOrder::Idle, current = ExecutionOrder::Idle;
+    OrderEndReason previous_end = OrderEndReason::Replaced;
+};
+struct UnitDamagedEvent { std::uint64_t step = 0, entity_id = 0; std::int32_t applied = 0; };
+struct UnitDestroyedEvent { std::uint64_t step = 0, entity_id = 0; };
+struct TargetLostEvent { std::uint64_t step = 0, entity_id = 0, target_id = 0; };
+struct ObjectiveChangedEvent {
+    std::uint64_t step = 0;
+    bool contested = false, complete = false;
+    std::uint16_t progress_milli = 0;
+};
+using GameplayEvent = std::variant<CommandOutcomeEvent, OrderChangedEvent, UnitDamagedEvent,
+    UnitDestroyedEvent, TargetLostEvent, ObjectiveChangedEvent>;
 
 struct MapBounds {
     double width = 0.0;
@@ -118,7 +160,7 @@ struct MapBounds {
         if (!IsValidPosition(bounds, attack_move->destination)) return {OrderRejection::InvalidTarget};
     } else if (const auto* attack = std::get_if<AttackOrder>(&order)) {
         if (!issuer.can_attack) return {OrderRejection::CannotAttack};
-        if (attack->target_id == 0 || target == nullptr || target->id != attack->target_id)
+        if (attack->target_id == 0 || target == nullptr || target->id != attack->target_id || !target->alive)
             return {OrderRejection::MissingTarget};
         if (!target->attackable) return {OrderRejection::TargetNotAttackable};
         if (target->owner_player == requesting_player) return {OrderRejection::FriendlyTarget};
@@ -126,8 +168,26 @@ struct MapBounds {
     return {};
 }
 
-// One authoritative update has a deliberately visible order. The first UE
-// prototype coordinator mirrors it; presentation consumes resulting state only.
+[[nodiscard]] inline OrderResult AdmitCommand(
+    const CommandRequest& request,
+    std::uint64_t active_match_generation,
+    bool match_accepting,
+    const Entity* issuer,
+    MapBounds bounds,
+    const Entity* target = nullptr
+) noexcept {
+    if (!match_accepting) return {OrderRejection::MatchInactive};
+    if (request.match_generation != active_match_generation) return {OrderRejection::StaleMatch};
+    if (!issuer || issuer->id == 0 || issuer->id != request.issuer_entity_id)
+        return {OrderRejection::MissingIssuer};
+    if (!issuer->alive || !issuer->operational) return {OrderRejection::IssuerUnavailable};
+    if (request.participant_id == 0 || issuer->owner_player != request.participant_id)
+        return {OrderRejection::Unauthorized};
+    return AdmitOrder(*issuer, request.participant_id, bounds, request.intent, target);
+}
+
+// One authoritative update has a deliberately visible order; the UE
+// coordinator executes this sequence and publishes the resulting typed events last.
 enum class SimulationPhase : std::uint8_t {
     AdmitOrders,
     UpdateMovement,

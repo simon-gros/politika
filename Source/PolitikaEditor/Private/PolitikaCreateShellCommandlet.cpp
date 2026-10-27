@@ -61,6 +61,35 @@ bool SaveDefinitionAsset(UObject* Asset)
     return UPackage::SavePackage(Package, Asset, *Filename, Args);
 }
 
+bool CreateInvalidMapSchemaFixture()
+{
+    const UPolitikaPrototypeMapDefinition* ValidMap = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    if (!ValidMap) return false;
+    UPolitikaPrototypeMapDefinition* Fixture = CreateDefinitionAsset<UPolitikaPrototypeMapDefinition>(
+        TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema"), TEXT("DA_InvalidMapSchema"));
+    if (!Fixture) return false;
+    Fixture->StableId = TEXT("map.test.invalid_schema");
+    Fixture->SchemaVersion = UPolitikaPrototypeMapDefinition::CurrentSchemaVersion + 1;
+    Fixture->Profile = ValidMap->Profile;
+    Fixture->LevelAsset = ValidMap->LevelAsset;
+    Fixture->CoordinateSpace = ValidMap->CoordinateSpace;
+    Fixture->PlayableMin = ValidMap->PlayableMin;
+    Fixture->PlayableMax = ValidMap->PlayableMax;
+    Fixture->MovementProfileId = ValidMap->MovementProfileId;
+    Fixture->GroundActorTag = ValidMap->GroundActorTag;
+    Fixture->PlayerSlots = ValidMap->PlayerSlots;
+    Fixture->UnitPlacements = ValidMap->UnitPlacements;
+    Fixture->Objective = ValidMap->Objective;
+    Fixture->CameraOffset = ValidMap->CameraOffset;
+    Fixture->CameraFieldOfView = ValidMap->CameraFieldOfView;
+    Fixture->CameraPanMin = ValidMap->CameraPanMin;
+    Fixture->CameraPanMax = ValidMap->CameraPanMax;
+    Fixture->Lighting = ValidMap->Lighting;
+    Fixture->MarkPackageDirty();
+    return SaveDefinitionAsset(Fixture);
+}
+
 bool CreatePrototypeDefinitions()
 {
     UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -291,6 +320,11 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
     {
         UE_LOG(LogPolitikaStartup, Error, TEXT("Could not create or load prototype gameplay definition assets."));
         return 5;
+    }
+    if (!CreateInvalidMapSchemaFixture())
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("Could not create Development invalid-map-schema fixture."));
+        return 11;
     }
     struct FShellMap { const TCHAR* Package; UClass* GameMode; bool bNeedsPlayerStart; };
     const FShellMap Maps[] = {

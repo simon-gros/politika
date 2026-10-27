@@ -48,6 +48,38 @@ int main() {
     assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{10}}, &unattackable).rejection == OrderRejection::TargetNotAttackable);
     assert(AdmitOrder(own, 2, {100, 100}, Order{StopOrder{}}));
     assert(AdmitOrder(own, 2, {100, 100}, Order{GuardOrder{}}));
+    // Shared request metadata separates participant, match, runtime entity and
+    // correlation identities; failed admission is a result, not a mutation.
+    const CommandRequest request{7, 3, 2, 1, 99, MoveOrder{{40, 70}}};
+    const Entity operationalOwn{1, 2, true, true, true, true, true, true};
+    assert(AdmitCommand(request, 7, true, &operationalOwn, {100, 100}));
+    assert(AdmitCommand(request, 7, false, &operationalOwn, {100, 100}).rejection == OrderRejection::MatchInactive);
+    assert(AdmitCommand(request, 8, true, &operationalOwn, {100, 100}).rejection == OrderRejection::StaleMatch);
+    assert(AdmitCommand(request, 7, true, nullptr, {100, 100}).rejection == OrderRejection::MissingIssuer);
+    const Entity wrongIssuer{2, 2};
+    assert(AdmitCommand(request, 7, true, &wrongIssuer, {100, 100}).rejection == OrderRejection::MissingIssuer);
+    const Entity unauthorized{1, 4};
+    assert(AdmitCommand(request, 7, true, &unauthorized, {100, 100}).rejection == OrderRejection::Unauthorized);
+    const Entity deadIssuer{1, 2, true, true, true, true, false, false};
+    assert(AdmitCommand(request, 7, true, &deadIssuer, {100, 100}).rejection == OrderRejection::IssuerUnavailable);
+    const Entity immobile{1, 2, true, false};
+    assert(AdmitCommand(request, 7, true, &immobile, {100, 100}).rejection == OrderRejection::CannotMove);
+    const CommandRequest attackRequest{7, 4, 2, 1, 100, AttackOrder{9}};
+    const Entity nonAttacker{1, 2, true, true, false};
+    assert(AdmitCommand(attackRequest, 7, true, &nonAttacker, {100, 100}, &hostile).rejection == OrderRejection::CannotAttack);
+    const Entity deadTarget{9, 3, true, true, true, true, false, false};
+    assert(AdmitCommand(attackRequest, 7, true, &operationalOwn, {100, 100}, &deadTarget).rejection == OrderRejection::MissingTarget);
+    assert(request.sequence < attackRequest.sequence && request.correlation_id != request.issuer_entity_id);
+    const GameplayEvent acceptedEvent = CommandOutcomeEvent{5, request.sequence, request.correlation_id,
+        request.issuer_entity_id, KindOf(request.intent), true, OrderRejection::None};
+    const auto* acceptedOutcome = std::get_if<CommandOutcomeEvent>(&acceptedEvent);
+    assert(acceptedOutcome && acceptedOutcome->step == 5 && acceptedOutcome->accepted
+        && acceptedOutcome->order == OrderKind::Move && acceptedOutcome->rejection == OrderRejection::None);
+    const GameplayEvent arrivalEvent = OrderChangedEvent{6, 1, ExecutionOrder::Move,
+        ExecutionOrder::Idle, OrderEndReason::Arrived};
+    const auto* transition = std::get_if<OrderChangedEvent>(&arrivalEvent);
+    assert(transition && transition->previous == ExecutionOrder::Move
+        && transition->current == ExecutionOrder::Idle && transition->previous_end == OrderEndReason::Arrived);
     constexpr SimulationPhase ExpectedPhases[] = {
         SimulationPhase::AdmitOrders, SimulationPhase::UpdateMovement,
         SimulationPhase::ResolveCombat, SimulationPhase::ApplyDamage,

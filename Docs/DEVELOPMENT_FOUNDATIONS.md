@@ -54,6 +54,12 @@ Add fixed RTS camera viewpoints and controlled scenarios beyond the accepted pro
 
 Profile performance by active unit count, path requests, line-of-sight/fog updates, AI decision frequency, graphics frame time and memory. Increase instrumentation only when a measured bottleneck or recurring failure justifies it; use Unreal Insights, Visual Logger, Gameplay Debugger, platform profilers or frame captures as appropriate. Keep heavy certification separate from ordinary documentation commits.
 
+### Automated rendered-video evidence
+
+The Linux Development package interaction runner (`Tools/Shell/src/bin/rts_interaction.rs`) records its rendered game window continuously to `take.mp4` while it drives the same scripted RTS interaction sequence and checks authoritative gameplay events. This adopts Marburgum's useful scripted-recording pattern without importing its MMO scenario runner, account/server setup, C++ hooks, or Python tooling. It uses FFmpeg's `x11grab` input and H.264 encoding; the caller must provide a visible X11 display (for headless automation, `xvfb-run`) and an FFmpeg build with `x11grab` and `libx264` enabled.
+
+The capture is a **reviewable visual trace**, not a test oracle: the runner still requires the structured Unreal events, input outcomes, rendered-window geometry and camera pixel-difference assertion. `video-manifest.tsv`, `video-recorder.log`, `window-geometry.txt`, `results.tsv`, runtime log and named PNG checkpoints are emitted together in the package's ignored interaction-evidence directory. The MP4 is the primary human-review artifact; PNGs remain useful for pinpointing assertion states and the explicit camera-change comparison. The recording currently has no audio track and is limited to the Linux X11 package lane; other platforms and audio capture are not implied.
+
 ## 4. Explicitly out of scope
 
 Do **not** transfer persistent MMO accounts, login gates, character stores, skill/progression inventories, persistent city-scale server state, custom account-server protocols, per-character pathing/control systems, citywide World Partition assumptions, or a multiplayer-first architecture. POLITIKA begins as an offline-first RTS and adds online transport, replays, multiplayer synchronization or dedicated servers only if its own game design and validated prototypes require them.

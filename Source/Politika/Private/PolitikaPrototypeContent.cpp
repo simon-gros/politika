@@ -585,7 +585,23 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
     UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, OutDiagnostics);
     if (!Catalog) return false;
 
-    UPolitikaPrototypeMapDefinition* Map = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(MapId));
+    UPolitikaPrototypeMapDefinition* Map = nullptr;
+#if !UE_BUILD_SHIPPING
+    if (MapId == TEXT("map.test.invalid_schema"))
+    {
+        Map = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+            TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema.DA_InvalidMapSchema"));
+        if (!Map)
+        {
+            AddDiagnostic(OutDiagnostics, TEXT("TEST_FIXTURE.ASSET.MISSING"), MapId, TEXT("FixtureAsset"),
+                TEXT("The explicitly requested cooked negative-test map asset could not be resolved."),
+                TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema"), TEXT("missing"),
+                TEXT("Build the isolated Development negative-test package with the fixture cook directory."));
+            return false;
+        }
+    }
+#endif
+    if (!Map) Map = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(MapId));
     if (!Map)
     {
         AddDiagnostic(OutDiagnostics, TEXT("MAP.REFERENCE.UNRESOLVED"), MapId, TEXT("Catalog.Maps"),

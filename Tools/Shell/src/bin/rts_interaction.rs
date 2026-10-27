@@ -1,0 +1,523 @@
+//! Rendered Linux Development package interaction replay.
+//! Run under Xvfb: cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_interaction -- PACKAGE/POLITIKA/Binaries/Linux/Politika
+//! Unreal remains authoritative; this harness only drives input and asserts its structured events.
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+fn output(command: &mut Command) -> Result<String, String> {
+    let result = command
+        .output()
+        .map_err(|e| format!("{}: {e}", command.get_program().to_string_lossy()))?;
+    if !result.status.success() {
+        return Err(format!(
+            "{} exited {}: {}",
+            command.get_program().to_string_lossy(),
+            result.status,
+            String::from_utf8_lossy(&result.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&result.stdout).trim().to_owned())
+}
+
+fn input(window: &str, args: &[&str]) -> Result<(), String> {
+    let mut command = Command::new("xdotool");
+    if args.first() == Some(&"mousemove") {
+        command.args(["mousemove", "--sync", "--window", window]);
+        command.args(&args[2..]);
+    } else {
+        command.args(args);
+    }
+    output(&mut command).map(|_| ())
+}
+
+fn capture(window: &str, evidence: &Path, name: &str) -> Result<(), String> {
+    let path = evidence.join(format!("{name}.png"));
+    let mut command = Command::new("import");
+    command.args(["-window", window]).arg(&path);
+    output(&mut command).map_err(|e| format!("screenshot {name}: {e}"))?;
+    let size = fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size < 1024 {
+        return Err(format!(
+            "screenshot {name} is unexpectedly small ({size} bytes)"
+        ));
+    }
+    Ok(())
+}
+
+fn start_video_recording(display: &str, geometry: &str, evidence: &Path) -> Result<Child, String> {
+    let field = |name: &str| -> Result<i32, String> {
+        geometry
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .ok_or_else(|| format!("window geometry is missing {name}"))?
+            .parse::<i32>()
+            .map_err(|e| format!("invalid {name} in window geometry: {e}"))
+    };
+    let x = field("X")?;
+    let y = field("Y")?;
+    let video = evidence.join("take.mp4");
+    let log = fs::File::create(evidence.join("video-recorder.log")).map_err(|e| e.to_string())?;
+    let mut command = Command::new("ffmpeg");
+    command.args([
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-y",
+        "-f",
+        "x11grab",
+        "-framerate",
+        "30",
+        "-video_size",
+        "1280x720",
+        "-i",
+    ]);
+    command
+        .arg(format!("{display}+{x},{y}"))
+        .args([
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "22",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+        ])
+        .arg(video)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(log));
+    command
+        .spawn()
+        .map_err(|e| format!("start ffmpeg X11 video recording (install ffmpeg with x11grab/libx264): {e}"))
+}
+
+fn stop_video_recording(mut recorder: Child, evidence: &Path) -> Result<(), String> {
+    // SIGINT lets FFmpeg write the MP4 index and close the file cleanly.
+    let signal = Command::new("kill")
+        .args(["-INT", &recorder.id().to_string()])
+        .status()
+        .map_err(|e| format!("signal ffmpeg recorder: {e}"))?;
+    if !signal.success() {
+        let _ = recorder.kill();
+        let _ = recorder.wait();
+        return Err("could not stop ffmpeg recorder cleanly".into());
+    }
+    let status = recorder
+        .wait()
+        .map_err(|e| format!("wait for ffmpeg recorder: {e}"))?;
+    if !status.success() {
+        return Err(format!("ffmpeg recorder exited {status}; see video-recorder.log"));
+    }
+    let path = evidence.join("take.mp4");
+    let size = fs::metadata(&path)
+        .map_err(|e| format!("video was not finalized: {e}"))?
+        .len();
+    if size < 1024 {
+        return Err(format!("recorded video is unexpectedly small ({size} bytes)"));
+    }
+    Ok(())
+}
+
+fn require_render_difference(before: &Path, after: &Path) -> Result<(), String> {
+    let mut compare = Command::new("compare");
+    compare
+        .args(["-metric", "AE"])
+        .arg(before)
+        .arg(after)
+        .arg("null:");
+    let result = compare
+        .output()
+        .map_err(|e| format!("ImageMagick compare: {e}"))?;
+    // ImageMagick exits 1 for a successfully computed non-identical image.
+    if !result.status.success() && result.status.code() != Some(1) {
+        return Err(format!(
+            "image comparison failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        ));
+    }
+    let pixels = String::from_utf8_lossy(&result.stderr)
+        .split_whitespace()
+        .next()
+        .ok_or("image comparison returned no pixel difference")?
+        .parse::<u64>()
+        .map_err(|e| format!("invalid ImageMagick difference: {e}"))?;
+    if pixels < 100 {
+        return Err(format!(
+            "camera controls did not produce a meaningful rendered change ({pixels} pixels)"
+        ));
+    }
+    Ok(())
+}
+
+fn wait_for(
+    child: &mut Child,
+    log: &Path,
+    marker: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            return Err(format!(
+                "packaged process exited {status} before `{marker}`; log={}",
+                log.display()
+            ));
+        }
+        if let Ok(text) = fs::read_to_string(log) {
+            if text.contains(marker) {
+                return Ok(text);
+            }
+        }
+        if start.elapsed() >= timeout {
+            return Err(format!(
+                "timeout waiting for `{marker}`; this is not a pass; log={}",
+                log.display()
+            ));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn main() -> Result<(), String> {
+    if env::var_os("DISPLAY").is_none() {
+        return Err(
+            "BLOCKED: run this rendered acceptance tool under xvfb-run (DISPLAY is unset)".into(),
+        );
+    }
+    let binary = PathBuf::from(
+        env::args_os()
+            .nth(1)
+            .ok_or("usage: rts_interaction PACKAGED_BINARY")?,
+    )
+    .canonicalize()
+    .map_err(|e| e.to_string())?;
+    let package = binary
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or("expected packaged Binaries/Linux/ executable")?;
+    let identity =
+        fs::read_to_string(package.join("BuildIdentity.json")).map_err(|e| e.to_string())?;
+    let revision = identity
+        .lines()
+        .find(|l| l.contains("\"git_revision\""))
+        .ok_or("BuildIdentity.json has no git_revision")?
+        .trim();
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let evidence = package.join(format!("content-acceptance-interaction-{epoch}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let log = evidence.join("rts-interaction.log");
+    let user_dir = evidence.join("user");
+    fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+
+    let mut child = Command::new(&binary)
+        .args([
+            "/Game/Maps/RTSVerticalSlice",
+            "-windowed",
+            "-ResX=1280",
+            "-ResY=720",
+            "-unattended",
+            "-nosplash",
+        ])
+        .arg(format!("-UserDir={}/", user_dir.display()))
+        .arg(format!("-ABSLOG={}", log.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("launch package: {e}"))?;
+    let mut video_recorder: Option<Child> = None;
+    let result = (|| -> Result<(), String> {
+        wait_for(
+            &mut child,
+            &log,
+            "MATCH_CONTENT_READY map=map.prototype.rts_vertical_slice units=3 objective=objective.central_control",
+            Duration::from_secs(60),
+        )?;
+        let mut window = None;
+        for _ in 0..100 {
+            let mut search = Command::new("xdotool");
+            search.args(["search", "--onlyvisible", "--name", "Politika"]);
+            if let Ok(found) = output(&mut search) {
+                if let Some(id) = found.lines().next() {
+                    window = Some(id.to_owned());
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let window = window.ok_or("packaged game produced no visible window")?;
+        let mut geometry = Command::new("xdotool");
+        geometry.args(["getwindowgeometry", "--shell", &window]);
+        let geometry = output(&mut geometry)?;
+        if !geometry.contains("WIDTH=1280") || !geometry.contains("HEIGHT=720") {
+            return Err(format!("unexpected rendered window geometry: {geometry}"));
+        }
+        fs::write(evidence.join("window-geometry.txt"), &geometry).map_err(|e| e.to_string())?;
+        let display = env::var("DISPLAY").map_err(|_| "DISPLAY disappeared during recording setup")?;
+        video_recorder = Some(start_video_recording(&display, &geometry, &evidence)?);
+        let mut focus = Command::new("xdotool");
+        focus.args(["windowfocus", &window]);
+        let _ = output(&mut focus); // Some headless X servers have no WM focus protocol.
+        thread::sleep(Duration::from_secs(2));
+
+        // The fixture map is fixed and its window geometry is checked above; all game-state
+        // assertions below come from Development-only events emitted at authoritative C++ edges.
+        input(
+            &window,
+            &["mousemove", "--sync", "735", "552", "click", "1"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_SELECTION player=1 unit=2",
+            Duration::from_secs(5),
+        )?;
+        capture(&window, &evidence, "01-selected")?;
+
+        // Move to the occupied control point first, proving contested state is reached.
+        input(
+            &window,
+            &["mousemove", "--sync", "640", "360", "click", "3"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_OBJECTIVE_STATE contested=1",
+            Duration::from_secs(15),
+        )?;
+        capture(&window, &evidence, "03-objective-contested")?;
+
+        // Attempt to attack the other friendly unit. It must be rejected and have no attack effect.
+        input(
+            &window,
+            &["mousemove", "--sync", "799", "500", "click", "3"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_REJECTED",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_GAMEPLAY_EVENT kind=CommandOutcome",
+            Duration::from_secs(5),
+        )?;
+        let current = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        if !current.contains("reason=Orders_cannot_target_friendly_units.") {
+            return Err("rejected order was not the expected friendly-target rule".into());
+        }
+        if current.contains("RTS_ORDER_ADMITTED order=Attack")
+            || current.contains("RTS_HEALTH_CHANGED")
+        {
+            return Err("friendly-target rejection caused an attack or health change".into());
+        }
+        if !current.contains("kind=CommandOutcome") || !current.contains("accepted=0 rejection=8") {
+            return Err(
+                "friendly-target rejection did not publish its typed command result".into(),
+            );
+        }
+
+        input(
+            &window,
+            &["mousemove", "--sync", "650", "450", "click", "3"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Move",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_GAMEPLAY_EVENT kind=CommandOutcome",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_POSITION_UPDATED order=Move",
+            Duration::from_secs(5),
+        )?;
+        input(&window, &["key", "s"])?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Stop",
+            Duration::from_secs(5),
+        )?;
+        input(&window, &["key", "g"])?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Guard",
+            Duration::from_secs(5),
+        )?;
+        capture(&window, &evidence, "04-guard")?;
+        input(&window, &["mousemove", "--sync", "650", "430", "key", "a"])?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=AttackMove",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_POSITION_UPDATED order=AttackMove",
+            Duration::from_secs(5),
+        )?;
+        input(
+            &window,
+            &["mousemove", "--sync", "577", "323", "click", "3"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Attack",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_HEALTH_CHANGED unit=3",
+            Duration::from_secs(10),
+        )?;
+        capture(&window, &evidence, "05-health-damage")?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_UNIT_DESTROYED unit=3",
+            Duration::from_secs(20),
+        )?;
+        let lifecycle_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        for kind in [
+            "UnitDamaged",
+            "UnitDestroyed",
+            "TargetLost",
+            "OrderChanged",
+            "ObjectiveChanged",
+        ] {
+            if !lifecycle_log.contains(&format!("RTS_GAMEPLAY_EVENT kind={kind}")) {
+                return Err(format!("packaged run did not publish typed {kind} event"));
+            }
+        }
+        capture(&window, &evidence, "06-enemy-destroyed")?;
+
+        // With the enemy destroyed, return to the objective and observe uncontested progress.
+        input(
+            &window,
+            &["mousemove", "--sync", "640", "360", "click", "3"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_OBJECTIVE_STATE contested=0",
+            Duration::from_secs(15),
+        )?;
+        let tail = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        let objective = tail
+            .lines()
+            .rev()
+            .find(|l| l.contains("RTS_OBJECTIVE_STATE contested=0"))
+            .ok_or("missing uncontested objective event")?;
+        if !objective.contains("progress_milli=") {
+            return Err("objective progress field missing".into());
+        }
+        capture(&window, &evidence, "07-objective-uncontested")?;
+
+        // Pan last so fixed world-coordinate clicks above remain stable throughout the replay.
+        input(&window, &["keydown", "w", "keydown", "d"])?;
+        thread::sleep(Duration::from_millis(800));
+        input(&window, &["keyup", "w", "keyup", "d"])?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_CAMERA_INPUT axis=forward value=1.0",
+            Duration::from_secs(5),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_CAMERA_INPUT axis=right value=1.0",
+            Duration::from_secs(5),
+        )?;
+        let camera_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        let camera_state = camera_log
+            .lines()
+            .rev()
+            .find(|line| line.contains("RTS_CAMERA_INPUT axis=right value=1.0"))
+            .ok_or("missing positive right-pan state")?;
+        let moved = camera_state.split_whitespace().any(|field| {
+            field
+                .strip_prefix("x=")
+                .or_else(|| field.strip_prefix("y="))
+                .and_then(|value| value.parse::<f32>().ok())
+                .is_some_and(|value| value.abs() > 1.0)
+        });
+        if !moved {
+            return Err(format!(
+                "camera input reached the controller but its clamped position did not change: {camera_state}"
+            ));
+        }
+        capture(&window, &evidence, "08-camera-pan")?;
+        require_render_difference(
+            &evidence.join("07-objective-uncontested.png"),
+            &evidence.join("08-camera-pan.png"),
+        )?;
+
+        input(&window, &["key", "Escape"])?;
+        wait_for(
+            &mut child,
+            &log,
+            "LoadMap: /Game/Maps/MainMenu",
+            Duration::from_secs(10),
+        )?;
+        capture(&window, &evidence, "09-main-menu")?;
+        Ok(())
+    })();
+
+    let _ = child.kill();
+    let _ = child.wait();
+    let video_result = video_recorder
+        .map(|recorder| stop_video_recording(recorder, &evidence))
+        .unwrap_or_else(|| Err("video recording did not start".into()));
+    result?;
+    video_result?;
+    fs::write(
+        evidence.join("video-manifest.tsv"),
+        format!(
+            "file\twidth\theight\tframes_per_second\taudio\twindow_geometry\ntake.mp4\t1280\t720\t30\tno\t{}",
+            fs::read_to_string(evidence.join("window-geometry.txt"))
+                .unwrap_or_default()
+                .replace('\n', " ")
+                .trim()
+        ),
+    )
+    .map_err(|e| e.to_string())?;
+    let report = format!(
+        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised WASD camera pan with pixel-difference assertion, selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4 for the continuous rendered sequence\n",
+        revision
+    );
+    fs::write(evidence.join("results.tsv"), report).map_err(|e| e.to_string())?;
+    println!(
+        "PASS PAC-10: packaged RTS interaction replay; evidence {}",
+        evidence.display()
+    );
+    Ok(())
+}

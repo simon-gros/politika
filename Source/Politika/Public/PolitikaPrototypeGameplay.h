@@ -6,6 +6,7 @@
 #include "GameFramework/HUD.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Rules.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
 struct FPolitikaPrototypeContentSnapshot;
@@ -14,6 +15,12 @@ class UCameraComponent;
 class UStaticMeshComponent;
 class APolitikaPrototypeUnit;
 class APolitikaPrototypeObjective;
+
+// Native observers receive immutable, authoritative simulation events after
+// the complete fixed-step update. Subscribers must copy the payload if they
+// need to retain it beyond the callback.
+DECLARE_MULTICAST_DELEGATE_OneParam(FPolitikaPrototypeGameplayEventPublished,
+    const politika::rules::GameplayEvent& /* Event */);
 
 UENUM(BlueprintType)
 enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard };
@@ -36,16 +43,18 @@ public:
 #if !UE_BUILD_SHIPPING
     void SetAcceptanceHealth(int32 InHealth) { Health = FMath::Clamp(InHealth, 1, MaxHealth); }
 #endif
-    void SimulateMovement(float DeltaSeconds);
+    politika::rules::OrderEndReason SimulateMovement(float DeltaSeconds);
     void ResolveCombat(float DeltaSeconds);
-    void ApplyPendingDamage();
-    void CleanupDeadTarget();
+    int32 ApplyPendingDamage();
+    uint64 CleanupDeadTarget();
     uint64 GetStableId() const { return StableId; }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     int32 GetHealth() const { return Health; }
     int32 GetMaxHealth() const { return MaxHealth; }
     bool IsAlive() const { return Health > 0; }
     bool IsAttackable() const { return bAttackable; }
+    bool CanMove() const { return MoveSpeed > 0.0f; }
+    bool CanAttack() const { return WeaponDamage > 0.0f && WeaponCooldown > 0.0f && WeaponRange > 0.0f; }
     EPolitikaPrototypeOrder GetCurrentOrder() const { return CurrentOrder; }
     FText GetUnitName() const { return UnitName; }
     APolitikaPrototypeUnit* GetOrderTarget() const { return OrderTarget.Get(); }
@@ -67,6 +76,9 @@ private:
     UPROPERTY() EPolitikaPrototypeOrder CurrentOrder = EPolitikaPrototypeOrder::Idle;
     UPROPERTY() FVector OrderDestination = FVector::ZeroVector;
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> OrderTarget;
+#if !UE_BUILD_SHIPPING
+    bool bAcceptanceMovementLogged = false;
+#endif
     void AutoAcquireForAttackMove();
 };
 
@@ -108,8 +120,12 @@ public:
     void SubmitAttack(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target);
     void SubmitStop(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
     void SubmitGuard(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
+    void SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
+        const politika::rules::Order& Intent);
     void ReportRejectedCommand(const FString& Reason) { LastCommandFeedback = Reason; }
     FString GetLastCommandFeedback() const { return LastCommandFeedback; }
+    const TArray<politika::rules::GameplayEvent>& GetPublishedEvents() const { return PublishedEvents; }
+    FPolitikaPrototypeGameplayEventPublished& OnGameplayEventPublished() { return GameplayEventPublished; }
     FVector2D GetPlayableMin() const { return PlayableMin; }
     FVector2D GetPlayableMax() const { return PlayableMax; }
     FVector2D GetCameraPanMin() const;
@@ -117,9 +133,12 @@ public:
     uint32 GetLocalRuntimePlayerId() const { return LocalRuntimePlayerId; }
     const class UPolitikaPrototypeMapDefinition* GetMapDefinition() const { return MapDefinition; }
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaGameplayEventPublicationAutomationTest;
+#endif
     struct FPendingOrder
     {
-        uint32 PlayerId = 0;
+        politika::rules::CommandRequest Request;
         TWeakObjectPtr<APolitikaPrototypeUnit> Unit;
         TWeakObjectPtr<APolitikaPrototypeUnit> Target;
         FVector Destination = FVector::ZeroVector;
@@ -137,12 +156,22 @@ private:
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeContentCatalog> ContentCatalog;
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeMapDefinition> MapDefinition;
     UPROPERTY() float StepAccumulator = 0.0f;
+    uint64 SimulationStepsExecuted = 0;
     TArray<FPendingOrder> PendingOrders;
+    TArray<politika::rules::GameplayEvent> PublishedEvents;
+    TArray<politika::rules::GameplayEvent> PendingGameplayEvents;
+    FPolitikaPrototypeGameplayEventPublished GameplayEventPublished;
     uint64 NextStableId = 1;
+    uint64 NextCommandSequence = 1;
+    uint64 MatchGeneration = 1;
     void BuildScenario();
+    void RecoverToShellAfterAdmissionFailure(FName MapId);
     void AdmitPendingOrders();
     void RunSimulationStep(float DeltaSeconds);
-    bool ValidateOrder(const FPendingOrder& Pending, FString& OutReason) const;
+    void QueueGameplayEvent(politika::rules::GameplayEvent&& Event);
+    void PublishGameplayEvent(politika::rules::GameplayEvent&& Event);
+    void PublishGameplayEvents();
+    politika::rules::OrderResult ValidateOrder(const FPendingOrder& Pending) const;
 #if !UE_BUILD_SHIPPING
     enum class EAcceptancePhase : uint8 { None, CaptureApproach, CaptureHold, CaptureExit, CapturePause, CombatSetup, CombatResolve, Done };
     EAcceptancePhase AcceptancePhase = EAcceptancePhase::None;
@@ -182,6 +211,10 @@ private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> SelectedUnit;
     bool bMapCameraApplied = false;
+#if !UE_BUILD_SHIPPING
+    bool bAcceptancePanForwardLogged = false;
+    bool bAcceptancePanRightLogged = false;
+#endif
     void SelectUnderCursor();
     void OrderUnderCursor();
     void StopSelected();

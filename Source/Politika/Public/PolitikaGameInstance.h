@@ -30,6 +30,8 @@ public:
     void OpenOfflineSandbox(APlayerController* Player);
     void OpenPrototypeSlice(APlayerController* Player);
     void ReturnToMenu(APlayerController* Player);
+    void ReportMatchAdmissionRejected(FName MapId);
+    bool ConsumeDevelopmentTestFixture(FString& OutFixtureId);
     const TArray<FPolitikaStartupIssue>& Issues() const { return RecoveryIssues; }
     bool HasPersistentProfile() const { return bPersistentProfile; }
     FString PhaseName() const;
@@ -50,6 +52,7 @@ private:
     bool bPhaseEntered = false;
     bool bBootStarted = false;
     bool bPersistentProfile = false;
+    bool bDevelopmentTestFixtureConsumed = false;
     TArray<FPolitikaStartupIssue> RecoveryIssues;
     FDelegateHandle TravelFailureHandle;
 };

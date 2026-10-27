@@ -42,6 +42,13 @@ FPolitikaLaunchOptions FPolitikaLaunchOptions::Parse(const TCHAR* CommandLine)
         {
             Result.bResetUserConfig = true;
         }
+#if !UE_BUILD_SHIPPING
+        else if (Token.StartsWith(TEXT("-PolitikaTestFixture="), ESearchCase::IgnoreCase))
+        {
+            // The gameplay module resolves and validates the value; bootstrap only recognizes
+            // this Development-only switch so it does not surface as an unrelated launch error.
+        }
+#endif
         else if (!Token.Equals(TEXT("-PolitikaOffline"), ESearchCase::IgnoreCase))
         {
             // Do not echo unknown arguments: they may contain sensitive user-supplied values.

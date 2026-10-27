@@ -7,6 +7,7 @@
 #include "Misc/EngineVersion.h"
 #include "Misc/OutputDevice.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "PolitikaLocalProfile.h"
 #include "PolitikaUserSettings.h"
@@ -223,6 +224,26 @@ void UPolitikaGameInstance::OpenPrototypeSlice(APlayerController* Player)
 void UPolitikaGameInstance::ReturnToMenu(APlayerController* Player)
 {
     Travel(Player, TEXT("/Game/Maps/MainMenu"), TEXT("main_menu"));
+}
+
+void UPolitikaGameInstance::ReportMatchAdmissionRejected(FName MapId)
+{
+    AddIssue(TEXT("MatchAdmissionRejected"), LOCTEXT("MatchAdmissionRejected",
+        "The selected prototype match failed content validation and was not started. You have been returned to the main menu; review the engine log for the specific content diagnostic."));
+    UE_LOG(LogPolitikaStartup, Warning, TEXT("MATCH_ADMISSION_RECOVERY map=%s route=main_menu"), *MapId.ToString());
+}
+
+bool UPolitikaGameInstance::ConsumeDevelopmentTestFixture(FString& OutFixtureId)
+{
+#if !UE_BUILD_SHIPPING
+    if (bDevelopmentTestFixtureConsumed || !FParse::Value(FCommandLine::Get(), TEXT("PolitikaTestFixture="), OutFixtureId))
+        return false;
+    bDevelopmentTestFixtureConsumed = true;
+    return true;
+#else
+    OutFixtureId.Reset();
+    return false;
+#endif
 }
 
 void UPolitikaGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& Error)

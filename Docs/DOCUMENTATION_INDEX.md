@@ -16,9 +16,12 @@
 - [Engine Outline](ENGINE_OUTLINE.md) — system responsibilities and implementation direction.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
 - [First RTS Vertical Slice — Milestone Record](RTS_VERTICAL_SLICE_MILESTONE.md) — bounded prototype scope and completed Linux Development acceptance evidence; not a complete skirmish or release qualification.
+- [RTS Command and Simulation Contract — Milestone Record](RTS_COMMAND_SIMULATION_CONTRACT.md) — typed command intake consolidation, admission contract, and verified Linux Development evidence with remaining acceptance gaps.
 - [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; it references the local UM file-level catalog at `/mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md`.
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
 - [C&C Visual/Audio Reference Study](ART_AUDIO_REFERENCE_STUDY.md) — observations from local texture, model, UI and sound references, with original POLITIKA concept and sound prototypes.
+- [StarCraft Remastered Reference Analysis](STARCRAFT_REMASTERED_REFERENCE_ANALYSIS.md) — extraction-backed recommendations for POLITIKA command feedback, animation coverage, icon grammar, terrain authoring and data boundaries; assets remain reference-only.
+- [RTS Command and Feedback Inventory](RTS_COMMAND_FEEDBACK_INVENTORY.md) — source-backed matrix for the five current prototype orders, their input/eligibility/feedback, and the next HUD design slice.
 - [Shell Skeleton](SHELL_SKELETON.md) — implemented native offline shell, build/recovery contract and locally verified Linux package evidence.
 - [Proposed Engine Layers](PROPOSED_ENGINE_LAYERS.md) — authoritative state, simulation, UI, world and tooling boundaries.
 - [Platform Support](PLATFORM_SUPPORT.md) — Linux, Windows, SteamOS/Steam Deck and Android plans; future platforms.
