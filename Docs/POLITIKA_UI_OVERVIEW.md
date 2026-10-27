@@ -1,10 +1,10 @@
 # POLITIKA UI — product overview
 
-**Status:** first-pass product/UI direction, 2026-10-27
-**Engine target:** Unreal Engine 5.8.3
-**Design emphasis:** readable RTS commands, map awareness and fast tactical interaction
-**Product constraints:** no cinematics; no mandatory internet connection or online-account login
-**Display target:** full 4K (3840×2160) with readable, scalable UI
+Status: first-pass product/UI direction, 2026-10-27
+Engine target: Unreal Engine 5.8.3
+Design emphasis: readable RTS commands, map awareness and fast tactical interaction
+Product constraints: no cinematics; no mandatory internet connection or online-account login
+Display target: full 4K (3840×2160) with readable, scalable UI
 
 ## 1. Product direction
 
@@ -16,25 +16,25 @@ The visual language should evoke plausible 1980s Yugoslav military and civil-adm
 
 ## 2. Design principles
 
-1. **Battlefield first:** the map remains visible and is the primary command target; HUD panels organize decisions around it.
-2. **Fast, predictable commands:** mouse actions, hotkeys, and buttons should invoke the same order and share clear cancel/invalid-target behavior.
-3. **Show what matters now:** persistent HUD space is reserved for objectives, selected-force status, essential resource/production state, and match-critical alerts.
-4. **Explain consequences:** show costs, prerequisites, target requirements, cooldowns, and unavailable states before commitment where possible.
-5. **Respect uncertainty:** map and HUD only show what the player's units/sensors are allowed to know; stale or uncertain intel must not look current.
-6. **Readable at every supported resolution:** 4K is a design baseline, not a pixel-doubled 1080p layout. Support useful scale and text settings.
-7. **Offline by default:** the game should reach its main menu and support its single-player modes without internet, account creation, or sign-in.
-8. **Story without cinematics:** narrative context is delivered in concise briefings, radio dialogue, mission events, debriefs, and documents; gameplay remains the visual focus.
+1. Battlefield first: the map remains visible and is the primary command target; HUD panels organize decisions around it.
+2. Fast, predictable commands: mouse actions, hotkeys, and buttons should invoke the same order and share clear cancel/invalid-target behavior.
+3. Show what matters now: persistent HUD space is reserved for objectives, selected-force status, essential resource/production state, and match-critical alerts.
+4. Explain consequences: show costs, prerequisites, target requirements, cooldowns, and unavailable states before commitment where possible.
+5. Respect uncertainty: map and HUD only show what the player's units/sensors are allowed to know; stale or uncertain intel must not look current.
+6. Readable at every supported resolution: 4K is a design baseline, not a pixel-doubled 1080p layout. Support useful scale and text settings.
+7. Offline by default: the game should reach its main menu and support its single-player modes without internet, account creation, or sign-in.
+8. Story without cinematics: narrative context is delivered in concise briefings, radio dialogue, mission events, debriefs, and documents; gameplay remains the visual focus.
 
 ## 3. Main navigation and local-first operation
 
 The front end should prioritize direct play:
 
-- **Continue** when a resumable local campaign save exists;
-- **Campaign** for mission selection and briefing;
-- **Skirmish** for local match setup against AI;
-- **Load / Save** for local progress where supported;
-- **Options** for display, audio, controls, accessibility and gameplay settings;
-- **Credits** and **Quit**.
+- Continue when a resumable local campaign save exists;
+- Campaign for mission selection and briefing;
+- Skirmish for local match setup against AI;
+- Load / Save for local progress where supported;
+- Options for display, audio, controls, accessibility and gameplay settings;
+- Credits and Quit.
 
 No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. If optional online or LAN features are later chosen, they must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. Whether multiplayer is in scope is still a separate product decision.
 
@@ -42,22 +42,22 @@ No menu should block on account login, entitlement checks requiring a network, o
 
 Use authored in-game UI and audio rather than pre-rendered or real-time cinematic sequences:
 
-- **Mission briefing:** map/region, situation, friendly forces, known enemy activity, primary/secondary objectives, constraints, and a concise commander's note. Present it as a field dossier or operations map, with optional voice/radio delivery and captions.
-- **Mission start:** transition from briefing to playable map with a short title/objective cue, not a cinematic intro.
-- **In-mission story:** objective updates, radio exchanges, map annotations, field reports, and authored gameplay events. Keep dialogue skippable and never pause tactical input unexpectedly in an active match.
-- **Debrief:** mission outcome, objective completion, casualties or relevant performance summary, campaign consequences, and next action. Avoid mandatory cinematic reward sequences.
+- Mission briefing: map/region, situation, friendly forces, known enemy activity, primary/secondary objectives, constraints, and a concise commander's note. Present it as a field dossier or operations map, with optional voice/radio delivery and captions.
+- Mission start: transition from briefing to playable map with a short title/objective cue, not a cinematic intro.
+- In-mission story: objective updates, radio exchanges, map annotations, field reports, and authored gameplay events. Keep dialogue skippable and never pause tactical input unexpectedly in an active match.
+- Debrief: mission outcome, objective completion, casualties or relevant performance summary, campaign consequences, and next action. Avoid mandatory cinematic reward sequences.
 
 Briefings and dialogue should be concise, pausable/skippable, subtitle-capable, and available in text for players who mute audio or need to revisit an instruction.
 
 ### Parallel storylines, refining and faction ability presentation
 
-Keep the **primary Tito assassination/cover-up narrative** and **secondary Ascendancy first-bomb nuclear race** independently legible in mission briefings and debriefs.
+Keep the primary Tito assassination/cover-up narrative and secondary Ascendancy first-bomb nuclear race independently legible in mission briefings and debriefs.
 
-**Only the Atlantic Concord and Red Directorate start with nuclear power**. Both have rare tactical nuclear ultimate weapons: Concord deploys with a **nuclear bomber** and Directorate via an **ICBM**. The **Iron Ascendancy begins non-nuclear and with limited espionage**. It must **fully upgrade its spy capabilities** before it can infiltrate a Concord or Directorate nuclear research facility, obtain **both nuclear-refinement and weapons intelligence**, refine nuclear materials for bomb production, and complete the long build. **As soon as its first own-built bomb completes, it immediately wins the current game**—there is no launch/deployment action.
+Only the Atlantic Concord and Red Directorate start with nuclear power. Both have rare tactical nuclear ultimate weapons: Concord deploys with a nuclear bomber and Directorate via an ICBM. The Iron Ascendancy begins non-nuclear and with limited espionage. It must fully upgrade its spy capabilities before it can infiltrate a Concord or Directorate nuclear research facility, obtain both nuclear-refinement and weapons intelligence, refine nuclear materials for bomb production, and complete the long build. As soon as its first own-built bomb completes, it immediately wins the current game—there is no launch/deployment action.
 
-**Nuclear materials rank highest by value, fossil fuels second.** The UI needs distinct inventory/progress indicators for crude oil, petroleum fuel, kerosene, crude and refined nuclear game materials, electricity and other resources. Crude oil is processed in **refineries**, at **lower cost for the Concord**. Only Concord and Directorate can construct **nuclear power plants**. Meridian cannot refine nuclear material, and Ascendancy cannot construct nuclear power plants. Meridian must always spawn near an eligible oil or gas field, without automatically owning it.
+Nuclear materials rank highest by value, fossil fuels second. The UI needs distinct inventory/progress indicators for crude oil, petroleum fuel, kerosene, crude and refined nuclear game materials, electricity and other resources. Crude oil is processed in refineries, at lower cost for the Concord. Only Concord and Directorate can construct nuclear power plants. Meridian cannot refine nuclear material, and Ascendancy cannot construct nuclear power plants. Meridian must always spawn near an eligible oil or gas field, without automatically owning it.
 
-**Specialized espionage:** Concord and Directorate each have their own **different special spying features**, with exact abilities not yet defined. Show the Ascendancy's **spy-upgrade progress** and clearly communicate that **nuclear research infiltration requires full development**. The Ascendancy alone has **Intimidation**, which may convert eligible isolated combat or non-combat units **only after their Discipline or Morale has been fully broken**. Its target cursor/tooltip must distinguish **isolated and eligible** from **supported or ineligible**, with clear success/failure and ownership-change feedback. Never display Intimidation as an available native action for any other faction.
+Specialized espionage: Concord and Directorate each have their own different special spying features, with exact abilities not yet defined. Show the Ascendancy's spy-upgrade progress and clearly communicate that nuclear research infiltration requires full development. The Ascendancy alone has Intimidation, which may convert eligible isolated combat or non-combat units only after their Discipline or Morale has been fully broken. Its target cursor/tooltip must distinguish isolated and eligible from supported or ineligible, with clear success/failure and ownership-change feedback. Never display Intimidation as an available native action for any other faction.
 
 Use existing objective, production, selected-unit and intel UI patterns. Show only information the faction has legitimately discovered: do not expose hidden enemy nuclear-research locations or spy identities without detection. Nuclear weapons cannot be purchased in the Black Market, and stealing a completed bomb does not confer manufacturing knowledge or Ascendancy instant victory.
 
@@ -65,21 +65,21 @@ See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Econo
 
 ### Population morale and propaganda controls
 
-Display the **population morale meter for every faction**, including Meridian Pact and NPC Unaligned where the game's information/fog rules permit it. Make the two principal positive consequences—**production output** and **army discipline**—understandable through tooltips, modifiers, unit inspection or production panels.
+Display the population morale meter for every faction, including Meridian Pact and NPC Unaligned where the game's information/fog rules permit it. Make the two principal positive consequences—production output and army discipline—understandable through tooltips, modifiers, unit inspection or production panels.
 
-Propaganda-capable factions (**Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**) use distinct methods expressed through **radio, newspapers and television**. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. **Do not display an advanced propaganda action tree for the Meridian Pact**, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+Propaganda-capable factions (Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned) use distinct methods expressed through radio, newspapers and television. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. Do not display an advanced propaganda action tree for the Meridian Pact, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ### Discipline and Morale: one meter, contextual labels
 
-**Unit inspection:** show **“Discipline”** for a **combat unit** and **“Morale”** for a **civilian/non-combat unit**, using the **same underlying unit resolve value, scale, break threshold and recovery behavior**. Do not display both gauges simultaneously for the same individual. **Population Morale** remains the faction-level public indicator and may appear on the strategic/economic HUD, with production and baseline army Discipline effects.
+Unit inspection: show “Discipline” for a combat unit and “Morale” for a civilian/non-combat unit, using the same underlying unit resolve value, scale, break threshold and recovery behavior. Do not display both gauges simultaneously for the same individual. Population Morale remains the faction-level public indicator and may appear on the strategic/economic HUD, with production and baseline army Discipline effects.
 
-**Formation tooltips:** Red Directorate, Iron Ascendancy, Meridian and Unaligned combat units gain standard Discipline stability from coherent allies. Directorate and Ascendancy gain a **separate very-massive-army Discipline bonus**; Concord solo/small-group combat units do not incur a group-size Discipline penalty. Civilian Morale does not show those military formation bonuses.
+Formation tooltips: Red Directorate, Iron Ascendancy, Meridian and Unaligned combat units gain standard Discipline stability from coherent allies. Directorate and Ascendancy gain a separate very-massive-army Discipline bonus; Concord solo/small-group combat units do not incur a group-size Discipline penalty. Civilian Morale does not show those military formation bonuses.
 
-**Intimidation target feedback:** eligible isolated targets show the relevant label: **Discipline** if combat, **Morale** if non-combat. Indicate Intimidation's meter reduction and conversion availability **only after the meter is fully broken**. Eligibility and fog rules control how much of an enemy gauge can be seen; the UI must not infer conversion simply from an isolation indicator. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Intimidation target feedback: eligible isolated targets show the relevant label: Discipline if combat, Morale if non-combat. Indicate Intimidation's meter reduction and conversion availability only after the meter is fully broken. Eligibility and fog rules control how much of an enemy gauge can be seen; the UI must not infer conversion simply from an isolation indicator. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Two-to-four-player match setup
 
-Map/match setup supports **2, 3 or 4 participant slots**, with **one distinct playable faction per slot** (Concord, Directorate, Ascendancy or Meridian). In local single-player, remaining slots may be filled by AI opponents. **The Unaligned always appears as a separate non-editable NPC/system AI presence**, not a fifth selectable faction or player slot. Explain the map population as **2+1, 3+1 or 4+1**; the +1 is always Unaligned.
+Map/match setup supports 2, 3 or 4 participant slots, with one distinct playable faction per slot (Concord, Directorate, Ascendancy or Meridian). In local single-player, remaining slots may be filled by AI opponents. The Unaligned always appears as a separate non-editable NPC/system AI presence, not a fifth selectable faction or player slot. Explain the map population as 2+1, 3+1 or 4+1; the +1 is always Unaligned.
 
 Match validation should flag too few/many participants, duplicate faction assignments, missing Unaligned initialization, missing Meridian nearby fossil-fuel source, or unavailable special nuclear infiltration objectives where no qualifying Concord/Directorate research facility is present. See [Match Structure](MATCH_STRUCTURE.md).
 
@@ -112,12 +112,12 @@ Support selection boxes, modifier-based add/remove, and numbered control groups.
 
 ## 6. Supporting screens and information
 
-- **Skirmish setup:** map, sides/factions if applicable, teams, AI difficulty, match rules, and start. No network lobby or account prompt for local play.
-- **Pause menu:** resume, save/load where allowed, controls, options, restart, abandon mission, and quit. It must clearly communicate whether simulation is paused.
-- **Options:** display/resolution and UI scale; text scale; graphics; audio and voice/subtitle settings; key remapping; camera and selection behavior; accessibility choices.
-- **Map/intel view:** legend, objective status, and known operational information. It should preserve the distinction between current vision, radar contact, and stale intelligence if those mechanics exist.
-- **Post-match/debrief:** result, objective status, concise performance information, and next steps. Do not require account-bound progression or online rewards.
-- **Tutorial/help:** explain selection, camera, orders, objectives, and any distinctive POLITIKA mechanic in-context; allow replay from a local help screen.
+- Skirmish setup: map, sides/factions if applicable, teams, AI difficulty, match rules, and start. No network lobby or account prompt for local play.
+- Pause menu: resume, save/load where allowed, controls, options, restart, abandon mission, and quit. It must clearly communicate whether simulation is paused.
+- Options: display/resolution and UI scale; text scale; graphics; audio and voice/subtitle settings; key remapping; camera and selection behavior; accessibility choices.
+- Map/intel view: legend, objective status, and known operational information. It should preserve the distinction between current vision, radar contact, and stale intelligence if those mechanics exist.
+- Post-match/debrief: result, objective status, concise performance information, and next steps. Do not require account-bound progression or online rewards.
+- Tutorial/help: explain selection, camera, orders, objectives, and any distinctive POLITIKA mechanic in-context; allow replay from a local help screen.
 
 ## 7. Presentation and accessibility
 
