@@ -62,10 +62,6 @@ The **Meridian Pact is non-nuclear** and **cannot refine crude nuclear materials
 
 The Meridian Pact takes **no part in the dedicated nuclear campaign storyline** and has **no Intimidation ability**; that power belongs exclusively to the Iron Ascendancy. The Ascendancy must **fully develop its spying** before infiltrating a Concord/Directorate nuclear research facility. However, its troops can sabotage, steal and, with compatible delivery capability, deploy **already completed enemy nuclear weapons** under ordinary RTS rules. This never grants nuclear refinery access or weapon-production technology. The Black Market never sells nuclear weapons or nuclear research. The Pact's own strategic advantage remains its guaranteed start near oil or gas deposits. See [Resource Economy](../../Docs/RESOURCE_ECONOMY.md).
 
-## No Advanced Propaganda; Full Morale Participation
-
-The Meridian Pact is **the sole faction without advanced propaganda methods**. It does not receive special radio, newspaper or television propaganda actions or an advanced propaganda research tree. It nevertheless possesses its **own population morale meter**, and higher morale increases **production output and army discipline**. Commerce, resource security, logistics, troop welfare and battlefield results may influence morale through ordinary simulation rules. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
-
 ## Population Morale Without Advanced Propaganda
 
 **The Meridian Pact is the only faction without advanced propaganda capabilities**, including specialized propaganda technology trees and player-issued advanced campaigns. Its personnel may encounter, trade with or occupy media infrastructure, but **do not gain advanced propaganda actions** from doing so.
