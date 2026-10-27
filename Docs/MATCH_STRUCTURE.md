@@ -59,6 +59,12 @@ For a match of 2–4 playable factions plus autonomous Unaligned, every particip
 
 Meridian may authorize non-spy saboteurs against eligible enemy buildings/vehicles from the early game; the other three playable factions may perform the comparable conventional explosive-charge action only after later technology, at greater cost and using their spies alone. Unaligned remains NPC-controlled and may independently defend its territory, repair damaged buildings and respond to sabotage. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
 
+### Unaligned balance intervention in a 2–4-player match
+
+The Unaligned remains a separately controlled NPC faction, with the most powerful counterintelligence and the ability to plant false reports and false-flag attributions. Its balance-preservation AI evaluates only the actually participating playable factions for low resources, small surviving armies and imminent elimination threats. It can attempt to distract a dominant aggressor with plausible but false threats about another active rival's nuclear construction, deployments or actions.
+
+The +1 Unaligned actor does not gain a player slot, add phantom player factions, forcibly save an endangered player or modify real production. Two-player maps must work without inventing a third rival; fabricated information may still refer to real rivals' purported plans or to alleged non-existent facilities as mere claims. No false report can change canonical nuclear production eligibility or the immediate victory on Ascendancy first-bomb completion. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 5. Engine/UI contracts and acceptance tests
 
 Suggested authoritative fields: `ParticipantSlots` (2–4), `ParticipantControllerType` (human or AI), `ParticipantFactionId` (one of four), `UnalignedSystemFaction` (always true, non-slot), `MatchRosterValidated`, `MapSpawnValidated`, and optional `SpectatorControllers` (separate from playing participants).
