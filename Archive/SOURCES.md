@@ -1,10 +1,12 @@
 # POLITIKA — Yugoslavia 1980–1989: Source Guide
 
-Research collection: **99 catalogue records**, including **68 political developments** researched on 27 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
+Research collection: **100 catalogue records**, including **69 political developments** researched on 27 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
 
 ## Political-history source collection (68 indexed developments)
 
 The [political-history narrative](POLITICAL_HISTORY_1980_1989.md) and [machine-readable event register](POLITICAL_EVENTS.csv) distinguish verified historical dates, contested accounts, sources' institutional perspectives and optional game-design interpretations. They add to the earlier 31 art/reference records without turning political speech, rights reports or museum materials into shippable assets.
+
+**Federal leadership:** [Slovenska biografija's item on Janez Drnovšek](https://www.slovenska-biografija.si/oseba/sbi1024150/) documents the 15 May 1989 appointment and rotating Presidency of SFRY, a constitutional event especially sensitive to POLITIKA's living-Tito counterfactual.
 
 **Federal and economic:** [IMF history of Yugoslav stabilization](https://www.elibrary.imf.org/display/book/9781557759719/ch013.xml), [contemporary IMF review of the 1981–83 arrangement](https://www.elibrary.imf.org/display/book/9780939934492/back-1.xml), [Yugoslav inflation 1989](https://www.elibrary.imf.org/view/journals/001/1991/050/article-A001-en.xml), and [UPI's 16 May 1982 contemporary report on Milka Planinc's election](https://www.upi.com/Archives/1982/05/16/First-woman-prime-minister-elected-in-Yugoslavia/5387390369600/). These establish high-level governance and economic events, not exact factory shapes or invented black-market prices.
 
