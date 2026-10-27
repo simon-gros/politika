@@ -362,7 +362,7 @@ Before implementing full rosters and economy, resolve:
 - Whether infantry is controlled as individual soldiers, squads, or both.
 - How far legal authorization, permits, customs, and disguise are simulated rather than scripted.
 - **The exact special spying features** of the Concord and the Directorate, and the Iron Ascendancy's full espionage-upgrade costs, prerequisites, and timing.
-- **Formation and Intimidation balance:** ordinary support size/radius and stability curves; separate **very-massive-army threshold and bonus for Directorate and Ascendancy**; Concord's solo/small-group exemption; unit-morale recovery; Intimidation's fully broken threshold before transfer; eligible combat units and counterplay.
+- **Formation and Intimidation balance:** ordinary support size/radius and stability curves; separate **very-massive-army threshold and bonus for Directorate and Ascendancy**; Concord's solo/small-group exemption; unit resolve recovery (shown as combat Discipline or civilian Morale); Intimidation's fully broken threshold before transfer; eligible combat units and counterplay.
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
 - Who supplies Black Market stock (excluding nuclear weapons), whether human Meridian players can list their own goods, and how anti-exploit settlement works.
