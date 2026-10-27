@@ -296,6 +296,26 @@ All four campaigns share the same fixed core facts and 1989 revelation. Only thr
 
 Defeats or optional outcomes may alter the condition of a town, the survival of supporting characters, the integrity of an archive, the reputation of a faction, or the intensity of the final battles. The world-changing disclosure and outbreak of war remain canonical.
 
+### Historical environment and the causal structure of the campaign
+
+The [Yugoslav World and Campaign Systems Model](YUGOSLAV_WORLD_MODEL.md) translates the shared RTS actor/action/information distinctions into 1980s Yugoslav geography, institutions, infrastructure and story objectives. **It is an environmental design reference, not additional fixed canon.** The story's 1984 assassination, separate doubles, inner-circle concealment, progressive corroboration, and 1989 disclosure/war remain governed by this Story Outline.
+
+The world should not treat The Unaligned as a single knowing "conspiracy army." Federal, republican, provincial, municipal, military, medical, media and enterprise institutions can exercise different powers and possess **partial, conflicting information**. An ordinary municipal patrol may legally inspect a convoy while knowing nothing of the concealed murder; a hospital archivist may possess a genuine record without knowing how the body double was selected; a protected federal facility may receive an exceptional directive without its staff knowing who authorized it. Only the small continuity inner circle knows the full conspiracy at first. Institution-level disagreement is the narrative bridge between the initial cover-up and later fracture.
+
+For mission causality, keep five kinds of state separate:
+
+1. **Material fact:** Tito is killed in 1984; the assassination and the two substitutes are fixed fictional history regardless of player knowledge.
+2. **Physical custody and access:** medical records, unedited broadcast masters, official dispatches, witnesses and private notes can be protected, moved, seized or lost.
+3. **Knowledge and claimed knowledge:** characters may observe truth, misunderstand it, repeat rumors, receive planted intelligence, or knowingly fabricate official statements.
+4. **Authority and public credibility:** a federal order may be issued but rejected locally; a statement may be broadcast without being believed; military compliance is not unanimous.
+5. **Public consequence:** corroborated disclosure in 1989 makes the official narrative untenable, and the fictional federal crisis escalates into war through several interacting political and military causes.
+
+Design candidate scenes around *credible period roles*—transport officials, Yugoslav security, factory workers, newsroom staff, local administration, hospital staff, journalists and archivists—rather than interchangeable generic military facilities. Moving across a passable checkpoint need not be legally permitted; occupying a transmitter is not the same as circulating authenticated evidence; stealing a document does not make its content credible. These distinctions should generate different tactical choices through ordinary RTS controls.
+
+Historically dated references—the 1984 Sarajevo Olympics, period print culture, 1987 ceremonial controversies, 1988 civic protests and 1989 regional/federal disputes—provide atmosphere and possible world pressures. **Their actual historical sequencing is not automatically preserved** after Tito's survival beyond 1980. The campaign's historical decision review must approve any explicitly reproduced event or real officeholder. Never ascribe fictional extremist operations to actual Yugoslav protesters, ethnic populations, civilian institutions or named historical persons.
+
+**Campaign convergence rule:** the same underlying event can appear differently in each foreign faction's briefing or intelligence feed, but the authoritative history and the fixed 1989 revelation remain shared. Faction actions may change witnesses' survival, local institutional trust, supply routes, evidence custody, strategic losses and the intensity of particular battles; they do not erase the established murder, doubles or final exposure. Refer to the [campaign environment crosswalk](YUGOSLAV_WORLD_MODEL.md#7-five-act-campaign-crosswalk) for *proposed* period-aware mission fixtures.
+
 ## 10. Reveal Pacing and Dramatic Principles
 
 1. 1984–1985: Anomaly. The audience sees an unexplained security response and unnatural control of public appearances.
