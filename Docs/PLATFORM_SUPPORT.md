@@ -8,8 +8,8 @@ POLITIKA is a **multi-platform real-time strategy game**. Linux, Windows, SteamO
 
 | Platform | Status | Intended experience | Qualification boundary |
 |---|---|---|---|
-| **Linux** | Planned primary target | Native desktop build; mouse/keyboard RTS controls, local campaign/skirmish, scalable HUD | Define distributions/graphics drivers, package format, minimum hardware and real-device test coverage |
-| **Windows** | Planned primary target | Native desktop build; mouse/keyboard RTS controls, local campaign/skirmish, high-resolution display modes | Define Windows versions, GPU/driver baseline and packaged-build testing |
+| **Linux** | Planned primary target | Native desktop build; keyboard/mouse and planned controller/gamepad RTS controls, local campaign/skirmish, scalable HUD | Define distributions/graphics drivers, package format, minimum hardware and real-device test coverage |
+| **Windows** | Planned primary target | Native desktop build; keyboard/mouse and planned controller/gamepad RTS controls, local campaign/skirmish, high-resolution display modes | Define Windows versions, GPU/driver baseline and packaged-build testing |
 | **SteamOS** (including **Steam Deck**) | Planned primary target | Handheld PC-compatible experience, with gamepad/Steam Input-oriented interaction, legible compact HUD and portable performance modes | Establish whether native Linux packaging and/or a compatibility layer is used; test actual hardware. No Steam Deck Verified claim |
 | **Android** | Planned primary target | Native mobile app target with touch-first selection, camera and command interaction; reduced graphics and memory profiles | Prototype UE Android packaging, mobile GPU/performance limits, screen/orientation support, touch UX, OS/API level and device coverage before promising release |
 | **PlayStation, Xbox, Nintendo** | Possible later expansion | Console-appropriate RTS controller/HUD adaptations | Requires access to platform SDKs, console hardware, licensing/certification and sustained support; none are confirmed targets for an initial release |
@@ -25,7 +25,7 @@ Define logical actions such as `Select`, `ExtendSelection`, `IssueMove`, `IssueA
 
 ## 3. Input and interface profiles
 
-- **Linux and Windows desktop:** conventional pointer RTS controls, keyboard shortcuts, drag-selection, precise positioning and resizable panels; maintain a readable high-resolution 4K target and test lower-resolution/ultrawide modes.
+- **Linux and Windows desktop:** conventional pointer RTS controls, keyboard shortcuts, drag-selection, precise positioning and resizable panels; also plan optional gamepad/controller navigation, unit selection, camera controls, contextual orders and configurable bindings without requiring mouse-and-keyboard input. Maintain a readable high-resolution 4K target and test lower-resolution/ultrawide modes.
 - **SteamOS / Steam Deck:** compact, gamepad-focusable menus and mission briefings; inspectable unit data; accessible tactical orders through physical controls or contextual/radial interfaces; appropriately sized typography; test trackpads, controller mapping, external input and handheld pause/resume.
 - **Android:** touch-friendly hit regions, selection and target affordances, clear feedback for invalid gestures, reliable map panning/zoom, and collapsible HUD hierarchy. Do not require hover, precise right-click, desktop shortcut keys or persistent desktop-sized panels. Prototype landscape-first play, orientation policy, mobile interruptions and optional controller support.
 
