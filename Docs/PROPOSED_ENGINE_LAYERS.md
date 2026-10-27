@@ -3,7 +3,8 @@
 Status: first-pass architecture proposal, 2026-10-27
 Target runtime: Unreal Engine 5.8.3
 Design basis: POLITIKA's gameplay and offline-first requirements
-Product constraints: offline play without mandatory account login; no cinematic sequences; 4K-capable UI and rendering
+Product constraints: offline play without mandatory account login; no cinematic sequences; desktop 4K-capable UI; adaptable handheld/mobile control and presentation
+Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple platforms under future consideration
 
 ## 1. Purpose
 
@@ -48,11 +49,11 @@ POLITIKA responsibility: provide a direct path from process launch to the main m
 
 UE direction: use GameInstance-level startup/settings coordination, GameUserSettings for display/scalability, Enhanced Input for device and mapping setup, and SaveGame/local config for progress and options. Hide platform-specific storage and distribution details behind a small adapter so game rules do not depend on Steam or another storefront.
 
-Acceptance criteria: campaign and local skirmish launch with networking disabled. Settings, resolution, language selection and local progress work without account creation or third-party services. Platform-specific concerns remain isolated from gameplay code.
+Acceptance criteria: campaign and local skirmish launch with networking disabled. Settings, resolution, language selection and local progress work without account creation or third-party services. Platform-specific concerns remain isolated from gameplay code. Validate startup, storage and inputs on Linux, Windows, SteamOS/Steam Deck and Android rather than assuming desktop behavior extends to handheld/touch devices.
 
 ### 3.2 Presentation
 
-POLITIKA responsibility: make battlefield state understandable and commands responsive. Own camera controls, selection presentation, HUD, menus, cursor/target modes, alerts, animation, VFX, sound, and in-game dialogue/subtitles. Presentation must not be authoritative for health, resources, objective completion, or order validity.
+POLITIKA responsibility: make battlefield state understandable and commands responsive across mouse/keyboard, handheld controller and touch interaction profiles. Own camera controls, selection presentation, HUD, menus, cursor/target modes, alerts, animation, VFX, sound, and in-game dialogue/subtitles. Presentation must not be authoritative for health, resources, objective completion, or order validity.
 
 UE direction: PlayerController translates input; UMG/CommonUI presents menus and HUD; camera components own view motion; animation, Niagara, and Audio respond to game events. UI view models subscribe to state changes rather than polling every entity. Use authored radio dialogue, captions, briefings, and mission events for narrative; cinematic playback is outside POLITIKA's product scope.
 
@@ -174,7 +175,7 @@ Content/map validation: confirm four-faction pool, one-to-one player/faction ass
 
 ## 5. Suggested implementation order
 
-1. Establish the UE project, startup path, local settings/save boundary, input/display options, and basic module ownership.
+1. Establish the UE project, startup path, local settings/save boundary, input/display options, and basic module ownership; define platform build targets and reusable command intents for Linux, Windows, SteamOS/Steam Deck and Android.
 2. Build a minimal presentation + simulation slice: camera, selection, orders, one unit matchup, one objective, and readable 4K HUD.
 3. Add match/mission lifecycle, local pause/restart/save behavior, and data-defined unit/weapon/ability content.
 4. Add world navigation/visibility rules and editor validation for a representative map.
@@ -188,7 +189,9 @@ The design currently assumes:
 - Unreal Engine 5.8.3 for the runtime, editor, packaging and asset pipeline.
 - An offline-first application with local campaign and skirmish access, local settings and saved progress, and no mandatory sign-in.
 - In-game briefings, radio dialogue, subtitles and mission events in place of required cinematic sequences.
-- C++ ownership of gameplay rules; Unreal-native assets and editor tooling for configurable content; readable and scalable 4K presentation.
+- C++ ownership of gameplay rules; Unreal-native assets and editor tooling for configurable content; 4K-capable desktop presentation with device-adaptive handheld and Android layouts.
 - Multiplayer, networking, replay architecture and the exact economy/deployment model remain contingent on explicit product decisions.
+
+See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md) for the planned build matrix, input contracts, device-level acceptance and possible later platform expansion.
 
 These are POLITIKA design requirements and proposals, not verified implementation results. Validate them with source-level reviews, functional prototypes, automated tests, map checks and representative performance measurements. Do not treat planned systems as implemented until their behaviour has been demonstrated.
