@@ -218,17 +218,11 @@ An **exotic** or market-only asset is unavailable for normal faction production,
 
 The Pact may sell to the Iron Ascendancy clandestinely, but the Unaligned's hostility makes open delivery into federal jurisdiction dangerous. The auction house itself is **not** automatically a safe haven or exempt from security enforcement. Market access, identity concealment, secure delivery, and interception are meaningful decisions rather than guarantees.
 
-## 6.5 Propaganda media and faction-wide morale
+### 6.5 Propaganda media and faction-wide morale
 
-**Population morale exists for every faction**, including **Meridian Pact** and NPC-controlled **Unaligned**. Higher morale improves **production output** and **army discipline**. Radio, newspapers and television are the principal media. **Atlantic Concord, Red Directorate, Iron Ascendancy and the Unaligned have distinct advanced propaganda capabilities**; **Meridian Pact does not** have an advanced propaganda action or research tree, although its morale still responds to events.
+**All five factions have a population morale meter; higher morale increases production output and army discipline.** The Atlantic Concord, Red Directorate, Iron Ascendancy and **NPC-only Unaligned** have **distinct advanced propaganda capabilities**, using **radio, newspapers and television**. The **Meridian Pact has no advanced propaganda capabilities** but retains morale benefits through ordinary gameplay.
 
-Radio facilities, newspaper printing/distribution and television stations support contested objectives and in-world information. Faction-specific propaganda should affect reachable audiences and morale in bounded, counterable ways rather than bypassing military mechanics, the main story's fixed revelation or the requirements for nuclear production. The Unaligned's broadcast system is NPC-controlled and overlaps narratively with the Tito continuity cover-up. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
-
-### 6.5 Advanced propaganda and faction morale
-
-**All five factions have a population morale meter. Higher morale improves production output and army discipline.** The **Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned** have distinct advanced propaganda systems using **radio, newspapers and television**. The **Meridian Pact has no advanced propaganda abilities** but retains its morale meter and benefits.
-
-Media buildings, broadcast reach, printing/distribution and control of public communications are potential map objectives. Unaligned propaganda is run by world AI and, in the narrative, supports the fictional Tito continuity operation. Distinct faction methods require unique data definitions; their precise abilities and bonuses remain to be balanced. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+Media towers, television facilities, printing presses and distribution networks can become territorial, political and military objectives. Unaligned propaganda supports the fictional Tito continuity deception; not every employee knows the secret. Advanced propaganda effects should remain bounded and counterable. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ## 7. Faction Relationships: Allegiance, Identity, and Conduct
 
