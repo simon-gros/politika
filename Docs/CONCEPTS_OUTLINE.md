@@ -4,7 +4,7 @@
 **Setting:** Alternate-history Yugoslavia, 1984–1989  
 **Genre:** Real-time strategy, factional conflict, political conspiracy, nuclear deterrence, intelligence, logistics, and asymmetric warfare  
 **Purpose:** Define the core playable systems and relationships underpinning POLITIKA, distinct from the chronological [Story Outline](STORY_OUTLINE.md).  
-**Related material:** [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
+**Related material:** [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
 
 > **Design boundary:** This document distinguishes **established premises** from **suggested implementations**. It is not an assertion that these gameplay systems are already coded. The assassination and its concealment are *fictional alternate-history events*: historically, Tito died in 1980.
 
@@ -42,11 +42,11 @@ The concept should affect play **without immediately telling players the truth**
 
 ### 2.1 Secondary nuclear-weapons contest and ultimate weapons
 
-**Established side-story premise:** the Iron Ascendancy seeks to obtain nuclear-weapons intelligence and create an **own-produced nuclear weapon** or seize an already completed one. The Atlantic Concord and Red Directorate attempt to stop the acquisition. **Only the Atlantic Concord and Red Directorate are existing nuclear powers. The Iron Ascendancy begins non-nuclear** and cannot produce an atomic bomb until its spies infiltrate a **Concord or Directorate nuclear research facility** and acquire nuclear-weapons intelligence.
+**Established side-story premise:** the Iron Ascendancy seeks to obtain nuclear-weapons intelligence and create an **own-produced nuclear weapon** or seize an already completed one. The Atlantic Concord and Red Directorate attempt to stop the acquisition. **Only the Atlantic Concord and Red Directorate are existing nuclear powers. The Iron Ascendancy begins non-nuclear** and cannot produce an atomic bomb until it **fully develops its espionage abilities**, and only then uses its spies to infiltrate a **Concord or Directorate nuclear research facility** and acquire nuclear-weapons intelligence.
 
-**Established RTS ultimate-weapon system:** the two existing nuclear powers, Atlantic Concord and Red Directorate, can **produce a tactical nuclear weapon**, while the initially non-nuclear Iron Ascendancy becomes able to manufacture its **first** only after successful espionage at a Concord or Directorate nuclear research facility. Production requires **the game's highest-value crude nuclear materials to be refined**, **nuclear-refining technology intelligence**, **nuclear-weapons intelligence**, an eligible facility, and a **very long production period** ending in a distinct **completed weapon**. Once produced, the Concord deploys through a **nuclear bomber aircraft** and the Directorate through an **ICBM**. **The Ascendancy's own completed first bomb wins the game immediately and therefore has no deployment phase.** A weapon is a rare **deployable high-impact ultimate asset**, not merely a narrative collectible.
+**Established RTS ultimate-weapon system:** the two existing nuclear powers, Atlantic Concord and Red Directorate, can **produce a tactical nuclear weapon**, while the initially non-nuclear Iron Ascendancy becomes able to manufacture its **first** only after **maximizing its spy progression and successfully infiltrating** a Concord or Directorate nuclear research facility. Production requires **the game's highest-value crude nuclear materials to be refined**, **nuclear-refining technology intelligence**, **nuclear-weapons intelligence**, an eligible facility, and a **very long production period** ending in a distinct **completed weapon**. Once produced, the Concord deploys through a **nuclear bomber aircraft** and the Directorate through an **ICBM**. **The Ascendancy's own completed first bomb wins the game immediately and therefore has no deployment phase.** A weapon is a rare **deployable high-impact ultimate asset**, not merely a narrative collectible.
 
-**Iron Ascendancy instant-victory condition:** **spy infiltrates an Atlantic Concord or Red Directorate nuclear research facility → obtains nuclear-refining technology and nuclear-weapons intelligence → refines scarce nuclear materials → completes production of its first own atomic bomb → immediately win and GAME OVER**, without deployment or detonation. Capturing or firing a stolen finished weapon does **not** satisfy this special victory condition. **The Ascendancy possesses no nuclear arsenal, deterrent, or production intelligence before successful enemy-facility infiltration.**
+**Iron Ascendancy instant-victory condition:** **fully develop Ascendancy spying → spy infiltrates an Atlantic Concord or Red Directorate nuclear research facility → obtains nuclear-refining technology and nuclear-weapons intelligence → refines scarce nuclear materials → completes production of its first own atomic bomb → immediately win and GAME OVER**, without deployment or detonation. Capturing or firing a stolen finished weapon does **not** satisfy this special victory condition. **The Ascendancy possesses no nuclear arsenal, deterrent, or production intelligence before successful enemy-facility infiltration.**
 
 The **Meridian Pact and Iron Ascendancy both begin non-nuclear**. The **Meridian Pact cannot refine nuclear materials at all**, while the **Iron Ascendancy unlocks refinement only after stealing technology intelligence from an Atlantic Concord or Red Directorate nuclear research facility and may use it only for bomb production**. The Ascendancy **cannot construct and has no interest in nuclear power plants**; the Concord and Directorate can refine crude nuclear materials and construct both **nuclear power plants and nuclear weapons**. Only the Ascendancy can unlock first-bomb construction through its required spy mission; the Pact can **never manufacture nuclear weapons or unlock production by stealing intelligence**. **Both the Meridian Pact and Iron Ascendancy can sabotage, steal, and deploy an already existing completed nuclear weapon**; theft grants custody of a finite asset and requires a compatible usable deployment method. The Pact remains **outside the dedicated nuclear side-story campaign** and has no nuclear production tree, even though opportunistic sabotage and theft are valid RTS actions. Nuclear weapons may **never be purchased or auctioned on the Black Market**.
 
@@ -101,6 +101,8 @@ The main military contest centers on three primary factions with meaningfully di
 
 ### 4.1 Atlantic Concord — precision and access
 
+**Specialized espionage:** the Atlantic Concord has **its own distinctive spying features**, separate from those of the Red Directorate. Exact special abilities remain to be specified and balanced.
+
 **Candidate identity:** elite, expensive professional formations; high situational awareness; advanced communications, reconnaissance, air support, and precision weapons. A small, coordinated force is effective when supported by intelligence and logistics, but costly to replace and vulnerable if deprived of information or supply access.
 
 **Possible unit archetypes:** reconnaissance teams; professional infantry squads; electronic-warfare vehicles; fast armored transports; precision-fire platforms; surveillance aircraft; specialist signals teams.
@@ -110,6 +112,8 @@ The main military contest centers on three primary factions with meaningfully di
 **Ultimate weapon:** long-produced tactical nuclear weapon delivered by a **nuclear bomber**, requiring nuclear intelligence and scarce strategic resources.
 
 ### 4.2 Red Directorate — mass and sustained operations
+
+**Specialized espionage:** the Red Directorate has **its own distinctive spying features**, separate from those of the Atlantic Concord. Exact special abilities remain to be specified and balanced.
 
 **Candidate identity:** organized combined-arms formations, robust industrial logistics, fortified defense, attritional combat, and ideologically linked local networks. It can contest territory at scale but may be less tactically agile or precise than the Concord in some circumstances.
 
@@ -121,6 +125,10 @@ The main military contest centers on three primary factions with meaningfully di
 
 ### 4.3 Iron Ascendancy — infiltration and destabilization
 
+**Established spy limitation:** the Iron Ascendancy possesses **more limited spying abilities** than the two rival nuclear powers, but can fully upgrade its espionage capabilities to unlock the exceptionally difficult nuclear-facility infiltration objective.
+
+**Exclusive ability — Intimidation:** only the Iron Ascendancy may **force an isolated eligible enemy unit to join its forces**. The enemy unit must lack nearby allied support, and an authorized resolution transfers its control to the Ascendancy. The other factions **cannot use Intimidation**. Isolation, retaliation, unit eligibility and ability cooldowns need balancing; Intimidation does not grant nuclear research or replace spy upgrades.
+
 **Candidate identity:** covert action, sabotage, disinformation, rapid clandestine strikes, hidden cells, intimidation, and exploitation of disorder. Its ideology and role as the assassination perpetrator give it **specific advantages but equally meaningful drawbacks**. It is **not** simply an objectively stronger faction or the only one capable of immoral conduct.
 
 **Possible unit archetypes:** disguised operatives; saboteurs; clandestine couriers; infiltrators; light raiding groups; improvised or captured vehicles; counterintelligence cells; specialized shock troops.
@@ -129,7 +137,7 @@ The main military contest centers on three primary factions with meaningfully di
 
 **Limitations to test:** hostile standing with detected federal forces, fewer openly legal supply routes, restricted public procurement, limited access to official checkpoints and services, greater scrutiny, diplomatic isolation, weak conventional logistics, and destabilizing consequences for its own occupied territory.
 
-**Unique nuclear victory:** initially non-nuclear, the Ascendancy must infiltrate an **Atlantic Concord or Red Directorate nuclear research facility**, steal its nuclear intelligence, and finish manufacturing its **first atomic bomb**. This event immediately ends the game in an Ascendancy victory **without deployment**. It may also sabotage and steal completed weapons, but stolen weapons do not trigger that victory. Its delivery platform remains an open design decision.
+**Unique nuclear victory:** initially non-nuclear, the Ascendancy must **fully develop its limited spy capabilities**, then infiltrate an **Atlantic Concord or Red Directorate nuclear research facility**, steal its nuclear intelligence, and finish manufacturing its **first atomic bomb**. This event immediately ends the game in an Ascendancy victory **without deployment**. It may also sabotage and steal completed weapons, but stolen weapons do not trigger that victory; **its own completed bomb requires no delivery platform because the game ends**.
 
 The identity of its forces should be legible to the player but not automatically known to enemy AI: **gameplay faction ownership** and **in-world recognized identity** are separate variables. Concealment is a bounded ability with countermeasures and costs, not invulnerability.
 
@@ -248,7 +256,9 @@ Primary factions should manufacture or train their normal roster using faction-s
 
 Roads, rail, bridges, ports, airfields, depots, border crossings, and checkpoints should matter. Supply routes are attractive targets and may depend on neutral authorities. A purchased Black Market weapon may require escort through an Unaligned checkpoint before it can be fielded.
 
-### 9.3 Intelligence, concealment, and counterintelligence
+### 9.3 Intelligence, concealment, counterintelligence and Intimidation
+
+**Faction asymmetry is mandatory:** Concord and Directorate have **their own distinct special espionage features**; Iron Ascendancy starts with **more restricted spy capabilities**, and **must fully develop them before it can infiltrate a Concord/Directorate nuclear research facility**. The Ascendancy alone receives **Intimidation**, converting isolated eligible enemy units into its forces when the game's isolation and ability conditions are met. No other faction can perform intimidation. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 Fog of war, line of sight, sensors, impersonation, document forgery as an abstract ability, surveillance, informants, intercepted communications, and evidence custody can generate decisions without replacing ordinary combat. Detection should be a calculable contest with counterplay, not arbitrary script-driven omniscience.
 
@@ -270,7 +280,7 @@ Civilians and noncombatant infrastructure make the neutral federation credible. 
 
 **Faction delivery:** the **Red Directorate uses an ICBM**; the **Atlantic Concord uses a nuclear bomber aircraft**. **The Ascendancy needs no delivery platform for its own bomb because production immediately wins the game**. The Meridian Pact cannot produce its own weapon but, like the Ascendancy, can **sabotage, steal and deploy** a completed enemy weapon once a compatible delivery capability is controlled.
 
-**Ascendancy alternate victory:** only a successful spy infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**, acquiring both **refining and weapons intelligence**, unlocks its first nuclear production. **Completion of its own first bomb immediately wins the game; no deployment is required**; stealing a completed device, starting production, or merely acquiring intelligence does not trigger victory. These conditions must be authoritative, inspectable, and balanced against a long, resource-intensive construction period.
+**Ascendancy alternate victory:** only **fully developed Ascendancy spying followed by** successful spy infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**, acquiring both **refining and weapons intelligence**, unlocks its first nuclear production. **Completion of its own first bomb immediately wins the game; no deployment is required**; stealing a completed device, starting production, or merely acquiring intelligence does not trigger victory. These conditions must be authoritative, inspectable, and balanced against a long, resource-intensive construction period.
 
 The Pact **does not receive a dedicated nuclear campaign storyline** despite its optional theft and use of captured weapons. Nuclear weapons and production intelligence are **not ordinary Black Market purchases**. The Unaligned's neutral AI may respond to sabotage, stolen cargo, and deployment. This system should use abstract game states, not real-world construction specifications. See [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
@@ -317,6 +327,8 @@ Before implementing full rosters and economy, resolve:
 - Whether match economies prioritize base construction, mobile deployment, territorial income, trade, or a hybrid.
 - Whether infantry is controlled as individual soldiers, squads, or both.
 - How far legal authorization, permits, customs, and disguise are simulated rather than scripted.
+- **The exact special spying features** of the Concord and the Directorate, and the Iron Ascendancy's full espionage-upgrade costs, prerequisites, and timing.
+- **Intimidation balance:** which hostile units are eligible, how to determine isolation and support, and appropriate counterplay.
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
 - Who supplies Black Market stock (excluding nuclear weapons), whether human Meridian players can list their own goods, and how anti-exploit settlement works.
@@ -332,7 +344,7 @@ Before implementing full rosters and economy, resolve:
 1. **The assassination conspiracy anchors the primary plot; a nuclear-intelligence/weapon acquisition and prevention race is the secondary plot, while nuclear ultimate weapons also function in RTS gameplay.**
 2. **The Unaligned is a non-playable, generally neutral, living governing environment—not a conventional fifth competitor.**
 3. **Only Atlantic Concord and Red Directorate begin as nuclear powers. The initially non-nuclear Iron Ascendancy can build its first bomb only after the qualifying spy-intelligence unlock, and completion wins immediately, without deployment.**
-4. **The Iron Ascendancy has distinctive covert advantages and systemic hostility/disadvantages when identified.**
+4. **Concord and Directorate have unique spying specializations; Iron Ascendancy has more limited spying, full spy development is mandatory before nuclear infiltration, and Intimidation is Ascendancy-exclusive against isolated enemy units.**
 5. **The Meridian Pact is a non-producing, non-nuclear playable merchant/mercenary power with no dedicated nuclear story or nuclear Black Market sales, but can sabotage, steal and deploy completed nuclear weapons.**
 6. **Conventional exotic equipment uses the finite Black Market; crude oil and crude nuclear materials require refining. Nuclear bombs require processed nuclear material, valid technology, and long production, or theft of a completed weapon. Meridian has no nuclear refining, and Ascendancy cannot build nuclear power plants.**
 7. **Identity, diplomacy, hostility, ownership, and employment contracts remain separate gameplay concepts.**
