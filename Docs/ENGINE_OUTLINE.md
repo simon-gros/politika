@@ -1,9 +1,9 @@
 # POLITIKA Engine — foundational outline
 
-**Status:** first-pass architecture, 2026-10-27  
-**Target runtime:** Unreal Engine 5.8.3  
-**Design emphasis:** clear RTS command interactions and POLITIKA-specific mechanics  
-**Resolution requirement:** full native 4K (3840×2160), including usable/readable UI
+Status: first-pass architecture, 2026-10-27  
+Target runtime: Unreal Engine 5.8.3  
+Design emphasis: clear RTS command interactions and POLITIKA-specific mechanics  
+Resolution requirement: full native 4K (3840×2160), including usable/readable UI
 
 ## 1. Goal and boundary
 
@@ -27,57 +27,57 @@ Keep authoritative game rules independent of presentation: UI, animations, sound
 
 ## 3. Core RTS systems
 
-1. **Command and selection:** single/multi-select, group control, contextual orders, attack-move/guard/stop, rally points, command queue, hotkeys, feedback and cancellation.
-2. **World movement:** order resolution, path requests, formation spacing, collision/avoidance, terrain constraints, bridges/roads and blocked routes. Use UE navigation where it fits; add an RTS cost/grid layer for tactical movement and deterministic query needs.
-3. **Combat:** weapon/ability execution, range and line-of-sight rules, damage/armor, suppression and shared unit resolve (called Discipline on combat units), cooldowns, target priorities, death/destruction and readable combat feedback.
-4. **Squads and entities:** shared unit identity/selection with individual members where animation and casualties matter; vehicles and structures as separate archetypes. Do not force every entity into the same movement/health model.
-5. **Strategic loop:** resources, production/deployment, upgrades/loadouts, capture/control points, reinforcements and respawn/redeployment rules. Make the chosen POLITIKA loop a ruleset rather than an assumption inside generic unit code.
-6. **Information:** player ownership/alliances, vision, fog/shroud, detection, radar/intel and observer/spectator visibility.
-7. **Objectives and scripting:** campaign objectives, triggers, waves, dialogue, scripted events, checkpoints, success/failure and mission transitions.
-8. **AI:** strategic planner, production/deployment choices, tactical squad coordinator, navigation/engagement behavior, difficulty/personality profiles and debug visualization.
-9. **Match shell:** teams, faction/loadout choice, lobby/rules, map rotation, results, progression hooks, pause and reconnect expectations.
+1. Command and selection: single/multi-select, group control, contextual orders, attack-move/guard/stop, rally points, command queue, hotkeys, feedback and cancellation.
+2. World movement: order resolution, path requests, formation spacing, collision/avoidance, terrain constraints, bridges/roads and blocked routes. Use UE navigation where it fits; add an RTS cost/grid layer for tactical movement and deterministic query needs.
+3. Combat: weapon/ability execution, range and line-of-sight rules, damage/armor, suppression and shared unit resolve (called Discipline on combat units), cooldowns, target priorities, death/destruction and readable combat feedback.
+4. Squads and entities: shared unit identity/selection with individual members where animation and casualties matter; vehicles and structures as separate archetypes. Do not force every entity into the same movement/health model.
+5. Strategic loop: resources, production/deployment, upgrades/loadouts, capture/control points, reinforcements and respawn/redeployment rules. Make the chosen POLITIKA loop a ruleset rather than an assumption inside generic unit code.
+6. Information: player ownership/alliances, vision, fog/shroud, detection, radar/intel and observer/spectator visibility.
+7. Objectives and scripting: campaign objectives, triggers, waves, dialogue, scripted events, checkpoints, success/failure and mission transitions.
+8. AI: strategic planner, production/deployment choices, tactical squad coordinator, navigation/engagement behavior, difficulty/personality profiles and debug visualization.
+9. Match shell: teams, faction/loadout choice, lobby/rules, map rotation, results, progression hooks, pause and reconnect expectations.
 
 ### Resource conversion and faction-specific nuclear permissions
 
-The game has **two required resource-conversion chains**. **Crude oil** from oil fields must be refined in **refinery facilities** into **petroleum fuel or kerosene**, with the **Atlantic Concord paying a lower refining cost**. Natural gas is a separate fossil-fuel source. **Crude nuclear materials** (the highest-valued resources) must be converted into **processed nuclear-material game resources** before supporting nuclear plants or weapons. Fossil fuels are second by value; electricity and other resources matter as infrastructure constraints.
+The game has two required resource-conversion chains. Crude oil from oil fields must be refined in refinery facilities into petroleum fuel or kerosene, with the Atlantic Concord paying a lower refining cost. Natural gas is a separate fossil-fuel source. Crude nuclear materials (the highest-valued resources) must be converted into processed nuclear-material game resources before supporting nuclear plants or weapons. Fossil fuels are second by value; electricity and other resources matter as infrastructure constraints.
 
-The **Atlantic Concord and Red Directorate** are the only **starting nuclear powers** and may refine nuclear materials to construct **nuclear power plants** or their rare, very-long-build tactical weapons. Concord deploys bombs by **nuclear bomber**, Directorate by **ICBM**. **The Meridian Pact cannot refine nuclear materials at all**, has no nuclear construction tree, but can seize completed weapons. It must **always start near a valid oil or gas field**. The **Iron Ascendancy starts without nuclear capability**, and its spies must infiltrate a **Concord or Directorate nuclear research facility** to obtain **both nuclear-refining technology intelligence and weapons-production intelligence**; only then may it refine for its **own first bomb** and it **cannot construct nuclear power plants**. **Completion of its first own bomb triggers immediate active-match victory without deployment**, whereas theft does not.
+The Atlantic Concord and Red Directorate are the only starting nuclear powers and may refine nuclear materials to construct nuclear power plants or their rare, very-long-build tactical weapons. Concord deploys bombs by nuclear bomber, Directorate by ICBM. The Meridian Pact cannot refine nuclear materials at all, has no nuclear construction tree, but can seize completed weapons. It must always start near a valid oil or gas field. The Iron Ascendancy starts without nuclear capability, and its spies must infiltrate a Concord or Directorate nuclear research facility to obtain both nuclear-refining technology intelligence and weapons-production intelligence; only then may it refine for its own first bomb and it cannot construct nuclear power plants. Completion of its first own bomb triggers immediate active-match victory without deployment, whereas theft does not.
 
-Implement these as **authoritative, data-driven rules**: validated production recipes and costs; input/output inventories; permission and intelligence checks; immutable construction provenance; interruptible refinery/production queues; electricity generation/consumption; map-generation spawn constraints; and a match-level completion-to-victory event. Protect against refinery bypass, double spending, illegal construction permissions and completion through stolen inventory. Exact quantities and timing remain balance work, not real-world technical specifications.
+Implement these as authoritative, data-driven rules: validated production recipes and costs; input/output inventories; permission and intelligence checks; immutable construction provenance; interruptible refinery/production queues; electricity generation/consumption; map-generation spawn constraints; and a match-level completion-to-victory event. Protect against refinery bypass, double spending, illegal construction permissions and completion through stolen inventory. Exact quantities and timing remain balance work, not real-world technical specifications.
 
-**Other asymmetric rules:** the Atlantic Concord and Red Directorate have different specialist espionage features, and the Iron Ascendancy alone has Intimidation to convert isolated enemy units. Red Directorate infantry is **much cheaper to produce** than other factions' infantry; Iron Ascendancy has a **modest destructive-power advantage** and some **high-risk sacrificial attack behavior**; Concord refining is modestly cheaper; Meridian starts near fossil-fuel fields. Balance this alongside standard faction doctrine and the Unaligned's neutral sovereignty AI.
+Other asymmetric rules: the Atlantic Concord and Red Directorate have different specialist espionage features, and the Iron Ascendancy alone has Intimidation to convert isolated enemy units. Red Directorate infantry is much cheaper to produce than other factions' infantry; Iron Ascendancy has a modest destructive-power advantage and some high-risk sacrificial attack behavior; Concord refining is modestly cheaper; Meridian starts near fossil-fuel fields. Balance this alongside standard faction doctrine and the Unaligned's neutral sovereignty AI.
 
 See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md). The 1984–1989 Tito conspiracy remains the primary authored story, independent of individual match victory results.
 
 ### Espionage progression and Intimidation as gameplay systems
 
-**Distinct espionage abilities:** the Atlantic Concord and Red Directorate have separate specialist spying features (exact abilities still to be authored). The Iron Ascendancy has **more limited espionage**, with an explicit faction-specific upgrade tree whose **full completion** is an authoritative gate to infiltrating **Concord/Directorate nuclear research facilities**. The already-required stolen refining and weapon technology flags are earned only after that gated infiltration succeeds.
+Distinct espionage abilities: the Atlantic Concord and Red Directorate have separate specialist spying features (exact abilities still to be authored). The Iron Ascendancy has more limited espionage, with an explicit faction-specific upgrade tree whose full completion is an authoritative gate to infiltrating Concord/Directorate nuclear research facilities. The already-required stolen refining and weapon technology flags are earned only after that gated infiltration succeeds.
 
-**Intimidation:** an Iron Ascendancy-exclusive command/ability may convert **eligible isolated combat and non-combat units**, but **only after fully breaking the shared unit resolve meter** (labeled Discipline for combat targets and Morale for civilian targets). Validate category, meter, eligibility and isolation before control transfer. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
+Intimidation: an Iron Ascendancy-exclusive command/ability may convert eligible isolated combat and non-combat units, but only after fully breaking the shared unit resolve meter (labeled Discipline for combat targets and Morale for civilian targets). Validate category, meter, eligibility and isolation before control transfer. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
 
-Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as **authoritative state**, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as authoritative state, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Shared unit resolve: combat Discipline and civilian Morale
 
-**One unit meter, two UI names.** Each combat or civilian/non-combat unit owns one authoritative `UnitResolve` value, with the **same depletion, recovery and broken threshold mechanics**. **Combatants display “Discipline”; civilians/non-combat units display “Morale.”** Do not instantiate separate discipline and morale component classes for individual units. Every faction additionally exposes **Population Morale**, a faction-level summary of the shared morale framework informing production and soldiers' baseline Discipline.
+One unit meter, two UI names. Each combat or civilian/non-combat unit owns one authoritative `UnitResolve` value, with the same depletion, recovery and broken threshold mechanics. Combatants display “Discipline”; civilians/non-combat units display “Morale.” Do not instantiate separate discipline and morale component classes for individual units. Every faction additionally exposes Population Morale, a faction-level summary of the shared morale framework informing production and soldiers' baseline Discipline.
 
-**Formation benefits apply to combat Discipline only.** Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned units receive standard coherence/size bonuses; the **Red Directorate and Iron Ascendancy** additionally gain an extra bonus for **very massive coherent armies**. **Atlantic Concord** soldiers incur no solo/very-small-group Discipline penalty. Civilians' Morale does not receive mass-army Discipline modifiers.
+Formation benefits apply to combat Discipline only. Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned units receive standard coherence/size bonuses; the Red Directorate and Iron Ascendancy additionally gain an extra bonus for very massive coherent armies. Atlantic Concord soldiers incur no solo/very-small-group Discipline penalty. Civilians' Morale does not receive mass-army Discipline modifiers.
 
-**Intimidation targets both kinds of eligible isolated unit:** the Iron Ascendancy must first **fully break Discipline for a combat target or Morale for a civilian/non-combat target** before converting it. Both use the **same `UnitResolve <= BrokenThreshold` check**; eligibility, isolation, meter loss and ownership transfer must be validated in order. The conversion of one civilian does not zero faction Population Morale or create another player faction.
+Intimidation targets both kinds of eligible isolated unit: the Iron Ascendancy must first fully break Discipline for a combat target or Morale for a civilian/non-combat target before converting it. Both use the same `UnitResolve <= BrokenThreshold` check; eligibility, isolation, meter loss and ownership transfer must be validated in order. The conversion of one civilian does not zero faction Population Morale or create another player faction.
 
-**Tests:** identical numeric threshold/recovery for both categories; proper labels; no conversion before the meter is broken; no conversion without isolation; no mass-army perk for civilians, Meridian or Unaligned; solo Concord combat immunity to formation-size penalty but not direct coercion. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Tests: identical numeric threshold/recovery for both categories; proper labels; no conversion before the meter is broken; no conversion without isolation; no mass-army perk for civilians, Meridian or Unaligned; solo Concord combat immunity to formation-size penalty but not direct coercion. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Advanced propaganda and faction morale
 
-Provide an **authoritative per-faction morale state for all five factions**, including the NPC Unaligned and non-propaganda Meridian Pact. **High morale boosts eligible production throughput and army discipline** by data-driven, capped modifiers. **Propaganda actions are available only to Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned**, with different faction-specific methods expressed through **radio, newspapers and television**. Meridian Pact has no advanced propaganda ability tree.
+Provide an authoritative per-faction morale state for all five factions, including the NPC Unaligned and non-propaganda Meridian Pact. High morale boosts eligible production throughput and army discipline by data-driven, capped modifiers. Propaganda actions are available only to Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned, with different faction-specific methods expressed through radio, newspapers and television. Meridian Pact has no advanced propaganda ability tree.
 
 Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ### Match-size and player-to-faction invariant
 
-**Ordinary matches have exactly 2, 3 or 4 occupied playable faction slots**, drawn from Concord, Directorate, Ascendancy and Meridian, **plus one always-present Unaligned NPC/system-AI faction**. Each player or AI-opponent controller is assigned **exactly one distinct playable faction**; Unaligned has its own autonomous system controller and does **not** consume a player slot. The local single-player case may therefore be one human and one or more AI-controlled playable opponents.
+Ordinary matches have exactly 2, 3 or 4 occupied playable faction slots, drawn from Concord, Directorate, Ascendancy and Meridian, plus one always-present Unaligned NPC/system-AI faction. Each player or AI-opponent controller is assigned exactly one distinct playable faction; Unaligned has its own autonomous system controller and does not consume a player slot. The local single-player case may therefore be one human and one or more AI-controlled playable opponents.
 
-The match framework validates unique faction selection, player/faction mappings and capacity (2–4), and spawns Unaligned separately. World/content validation ensures correct spawn counts and Meridian's nearby fossil field. The UI must distinguish **player slots** from **faction presences** and never show the Unaligned as a selectable player. An Ascendancy nuclear-infiltration victory requires a qualifying opposing Concord or Directorate research facility when enabled; the framework must not manufacture one from the Unaligned just to satisfy the rule. See [Match Structure](MATCH_STRUCTURE.md).
+The match framework validates unique faction selection, player/faction mappings and capacity (2–4), and spawns Unaligned separately. World/content validation ensures correct spawn counts and Meridian's nearby fossil field. The UI must distinguish player slots from faction presences and never show the Unaligned as a selectable player. An Ascendancy nuclear-infiltration victory requires a qualifying opposing Concord or Directorate research facility when enabled; the framework must not manufacture one from the Unaligned just to satisfy the rule. See [Match Structure](MATCH_STRUCTURE.md).
 
 ## 4. Content model and authoring
 
@@ -91,12 +91,12 @@ Maps need authored playable bounds, terrain/navigation representation, spawn/dep
 
 Treat 3840×2160 as a supported baseline, not a later high-resolution toggle.
 
-- **Display:** windowed, borderless, and fullscreen modes; correct 16:9 aspect; runtime resolution changes; DPI-aware UI scale; safe margins; configurable text/UI scale.
-- **UI:** design in logical layout units, anchor responsively, and test HUD, menus, tactical map, tooltips, text, selection rings and cursor at 1080p, 1440p, ultrawide, and 4K. At 4K, preserve readable world scale without making the command surface tiny.
-- **Rendering:** configure UE scalability and screen-percentage/upscaling options; validate temporal upscaling, anti-aliasing, shadow quality, and post-processing at 4K. Expose quality presets instead of assuming all hardware renders native 4K at max settings.
-- **Assets:** provide appropriate source resolution/mips for UI, terrain, decals and faction insignia; use texture streaming and memory budgets so 4K does not require every asset resident at maximum mip.
-- **Camera/input:** ensure selection, placement and cursor precision work across DPI scaling and display changes; keep world-space camera behavior independent from HUD scaling.
-- **Acceptance target:** no clipped/overlapping controls, text legible at normal viewing distance, correct aspect/camera bounds, and stable input after resolution/DPI changes on a 4K display.
+- Display: windowed, borderless, and fullscreen modes; correct 16:9 aspect; runtime resolution changes; DPI-aware UI scale; safe margins; configurable text/UI scale.
+- UI: design in logical layout units, anchor responsively, and test HUD, menus, tactical map, tooltips, text, selection rings and cursor at 1080p, 1440p, ultrawide, and 4K. At 4K, preserve readable world scale without making the command surface tiny.
+- Rendering: configure UE scalability and screen-percentage/upscaling options; validate temporal upscaling, anti-aliasing, shadow quality, and post-processing at 4K. Expose quality presets instead of assuming all hardware renders native 4K at max settings.
+- Assets: provide appropriate source resolution/mips for UI, terrain, decals and faction insignia; use texture streaming and memory budgets so 4K does not require every asset resident at maximum mip.
+- Camera/input: ensure selection, placement and cursor precision work across DPI scaling and display changes; keep world-space camera behavior independent from HUD scaling.
+- Acceptance target: no clipped/overlapping controls, text legible at normal viewing distance, correct aspect/camera bounds, and stable input after resolution/DPI changes on a 4K display.
 
 4K support is not equivalent to a 4K render target alone: UI scaling, asset sharpness, memory/performance, and usability must all pass.
 
@@ -108,12 +108,12 @@ Keep simulation state and commands explicit and serializable. If multiplayer is 
 
 ## 7. Suggested implementation sequence
 
-1. **Project foundation:** establish UE project/module layout, build targets, input/settings/save shell, coding conventions, CI/package baseline and source-control asset policy.
-2. **Vertical RTS slice:** one test map, camera, selection, move/attack orders, two unit archetypes, health/damage/death, simple HUD and one objective. Validate interaction at 4K immediately.
-3. **Simulation/content contracts:** formalize faction/entity/weapon/ability data assets, ownership, orders, pathing, combat events, and map validation.
-4. **Full match loop:** resources/deployment according to POLITIKA's chosen strategic loop, capture/objectives, fog/intel, victory/defeat, pause and results.
-5. **Mission and AI:** mission scripting/objective framework, skirmish AI and debugging tools; author a representative campaign mission.
-6. **Scale and delivery:** benchmark target entity/map counts, add multiplayer/replay if in scope, optimize assets and validate 4K across quality tiers and supported hardware.
+1. Project foundation: establish UE project/module layout, build targets, input/settings/save shell, coding conventions, CI/package baseline and source-control asset policy.
+2. Vertical RTS slice: one test map, camera, selection, move/attack orders, two unit archetypes, health/damage/death, simple HUD and one objective. Validate interaction at 4K immediately.
+3. Simulation/content contracts: formalize faction/entity/weapon/ability data assets, ownership, orders, pathing, combat events, and map validation.
+4. Full match loop: resources/deployment according to POLITIKA's chosen strategic loop, capture/objectives, fog/intel, victory/defeat, pause and results.
+5. Mission and AI: mission scripting/objective framework, skirmish AI and debugging tools; author a representative campaign mission.
+6. Scale and delivery: benchmark target entity/map counts, add multiplayer/replay if in scope, optimize assets and validate 4K across quality tiers and supported hardware.
 
 ## 8. Decisions to lock before detailed implementation
 
