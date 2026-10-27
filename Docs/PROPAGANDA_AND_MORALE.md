@@ -57,6 +57,15 @@ Atlantic Concord exception: its soldiers suffer no Discipline penalty just for o
 
 These military Discipline modifiers do not apply to civilian/non-combat Morale. Non-combat units retain the same underlying resolve meter but receive context-appropriate modifiers. Breaking formation, reinforcement and losses should update eligible military support bonuses deterministically.
 
+### Atlantic Concord Psy-Ops and the shared resolve meter
+
+Atlantic Concord Psy-Ops is a separate **espionage subdivision**, not the radio/newspaper/television propaganda campaign system. It acts on an **eligible individual enemy unit**, using the exact same `UnitResolve` meter as all other morale/discipline effects. It can either:
+
+1. **Break the target's Discipline (combat) or Morale (non-combat)** to the shared `BrokenThreshold`, causing an in-game self-destruction/elimination event without recruitment or allegiance transfer.
+2. **Trigger a short temporary friendly-fire rampage**, causing the affected unit to attack eligible allied units using its valid attack actions. After the limited duration, its targeting returns to normal if it survives. No ownership change occurs. Whether the rampage must use a separate resolve trigger is left for balancing.
+
+The destruction and temporary-rampage effects are distinct from **Iron Ascendancy Intimidation**, which **converts** eligible isolated targets only after fully breaking Discipline/Morale. Psy-Ops does not add a second morale gauge, collapse an entire faction's Population Morale merely by breaking one unit, or confer Intimidation on the Concord. An unarmed civilian/non-combat unit must have a valid authored in-game attack action before it can perform a rampage. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ### Iron Ascendancy Intimidation against both categories
 
 Intimidation is exclusive to the Iron Ascendancy and can target eligible isolated combat or non-combat units. Isolation is necessary, not sufficient. The Ascendancy must reduce the targeted unit's single shared meter to its fully broken threshold before converting that unit:
@@ -87,9 +96,10 @@ Use one `UnitResolve` component/property for every combat and non-combat unit, w
 - `MassArmyDisciplineBonus`: extra threshold and bonus restricted to Directorate/Ascendancy combat formations.
 - `ConcordNoSoloDisciplinePenalty`: removes the normal small-combat-formation penalty for Concord soldiers only.
 - `IntimidationResolveBreak`: target eligibility, isolation, the shared meter reaching the break threshold and later authorized ownership transfer.
+- `PsyOpsResolveBreak`: Concord-only target-specific meter reduction through the shared `UnitResolve`, followed by self-destruction on full break; `PsyOpsTemporaryRampage`: eligible unit, valid own-faction attack targets, fixed short duration and automatic restoration of targeting with ownership unchanged.
 - `PropagandaCapability`: on for Concord, Directorate, Ascendancy, NPC Unaligned; off for Meridian. `MediaFacility` and `PropagandaAction` describe radio, newspapers and TV with explicit costs and reach.
 
-Acceptance checks: all combat units display Discipline and all civilian/non-combat units display Morale; the backing meter behaves identically; every faction has Population Morale; higher Population Morale improves production and baseline Discipline; support and massive-army modifiers apply only to soldiers; Concord is exempt from the small-squad penalty; Intimidation cannot convert either kind of isolated unit until its own shared meter is broken; a single civilian's broken Morale does not erase faction-wide Population Morale; no propaganda can bypass nuclear prerequisites.
+Acceptance checks: all combat units display Discipline and all civilian/non-combat units display Morale; the backing meter behaves identically; every faction has Population Morale; higher Population Morale improves production and baseline Discipline; support and massive-army modifiers apply only to soldiers; Concord is exempt from the small-squad penalty; Concord Psy-Ops break-to-destruction requires full Discipline/Morale collapse, and its alternative friendly-fire rampage is temporary with no conversion; Intimidation cannot convert either kind of isolated unit until its own shared meter is broken; a single civilian's broken Morale does not erase faction-wide Population Morale; no propaganda can bypass nuclear prerequisites.
 
 ## 7. Balancing questions
 
