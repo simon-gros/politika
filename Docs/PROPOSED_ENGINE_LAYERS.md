@@ -148,6 +148,14 @@ Simulation: track a distinct population morale meter for each of the five factio
 
 The Unaligned's federal media operations remain AI-governed; Meridian still receives morale from ordinary game events. No propaganda effect may create missing nuclear technology or resources or change the unique Ascendancy first-bomb victory predicate. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### NPC counterintelligence and balance-preserving deception ownership
+
+The match framework owns strategic-strength observations for the two to four real playable participants and the thresholds for imminent elimination. The Unaligned NPC director uses these observations to decide whether balance-preserving intervention is warranted. It may choose fabricated threat reports, misleading nuclear-facility information or false-flag attribution to distract stronger rivals, but cannot command other players, fabricate real facilities or cancel an earned victory.
+
+The intelligence layer owns source provenance, intercepted factual records, manufactured `IntelClaim` objects, intended recipients, confidence, verification, expiry and attribution. World/simulation remains ground truth for buildings, resource inventories, true nuclear research, troop positions, scouting and victory events. Fog-of-war and UI show reports as uncertain claims rather than confirmed structures. NPC propaganda may disseminate a claim more broadly if the operation requires it. Discovery and correction can affect legitimacy and population Morale through authorized events.
+
+Implement bounded costs, cooldowns, source coverage and counterintelligence defenses; test against a two-player match, several rival players, exhausted resources, missing target factions and the Ascendancy instant-win transition. The Unaligned's anti-Ascendancy hostility is unaffected by general balancing logic. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ### Match roster, controllers and neutral world separation
 
 Match framework: enforce 2–4 occupied player-faction slots with exactly one distinct playable faction per participant/controller, selected from Concord, Directorate, Ascendancy and Meridian. World/simulation: instantiate one autonomous Unaligned system-AI faction in addition to—not within—those slots. A standard map thus has 3, 4 or 5 active faction presences (2+1, 3+1, 4+1). Offline play permits one human plus AI opponents to occupy the 2–4 playable slots.
