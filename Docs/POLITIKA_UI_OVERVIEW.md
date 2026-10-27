@@ -77,6 +77,14 @@ The attacker should see authorized action progress/costs and its own valid outco
 
 Building-inspection panels can represent assigned/required workers or researchers and effective throughput. Iron Ascendancy sabotage can cause fictional staff casualties, a production slowdown/stoppage, and a bounded local chain of impacted facilities; show nearby warning indicators only if observed/discovered. Avoid medical or technical real-world toxin/pathogen procedures. Directorate diversion should show a valid debit in the enemy's actual inventory and credit in the Directorate's, even if the enemy has no attacker-attribution. Nuclear infiltration and victory prerequisites remain independent of these sabotage controls.
 
+### Reconnaissance commands and sabotage targeting UI
+
+Early build cards must distinguish the cheap, fast, lightly armored and lightly armed Meridian Pact truck (dual scout/light-combat role; strongest overall reconnaissance faction), cheap unarmed Concord/Ascendancy light scouting airplanes, and rifle-armed Directorate motorbike scouts. Unarmed planes may reveal fog but cannot display a usable attack command. The scouting interface should convey movement type, visibility coverage, cost and threat exposure without implying a flyover steals classified intelligence.
+
+An eligible Meridian non-spy saboteur can target an enemy vehicle or building with early low-cost fictional explosive-charge sabotage. For the other three factions, the same type of sabotage must appear locked until late-game technology and must not be actionable by anything except an eligible spy. Targeting cursors should distinguish valid enemy vehicles/buildings, forbidden/protected targets, invalid actors, missing costs and unavailable tech. An ordinary scouting truck receives a charge command only if its unit definition grants it; rival scouting planes and motorcycles never gain the spy-only ability by default.
+
+The defending interface distinguishes whether a charge or responsible infiltrator is discovered from whether an explosion has occurred. Successful sabotage uses ordinary conventional target health and damage results, separate from Psy-Ops self-destruction, budget theft, facility contamination or nuclear armaments. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
 ### Discipline and Morale: one meter, contextual labels
 
 Unit inspection: show “Discipline” for a combat unit and “Morale” for a civilian/non-combat unit, using the same underlying unit resolve value, scale, break threshold and recovery behavior. Do not display both gauges simultaneously for the same individual. Population Morale remains the faction-level public indicator and may appear on the strategic/economic HUD, with production and baseline army Discipline effects.
