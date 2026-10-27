@@ -80,6 +80,10 @@ The **Red Directorate is one of two established nuclear powers**, alongside the 
 
 The **Iron Ascendancy begins without nuclear capabilities**, so Directorate nuclear research facilities must be defended against spies seeking **nuclear-refining intelligence and nuclear-weapons research**. If successful infiltration gives the Ascendancy both prerequisites, and its first bomb is later completed, **the Ascendancy immediately wins the active game with no launch required**. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
+## Formation Size and Discipline
+
+**Red Directorate units preserve battlefield morale and discipline better when grouped in large, mutually supporting formations.** Individual soldiers and very small detachments suffer the normal formation-size morale penalty. The Red Directorate's substantially cheaper infantry makes forming larger cohesive units a natural strategic advantage, without removing vulnerability to battlefield losses. An isolated Directorate combatant can be converted through Iron Ascendancy Intimidation **only after its local morale has been completely broken**. The Atlantic Concord alone is exempt from the small-group morale penalty; all factions still have population morale. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Advanced Propaganda and Population Morale
 
 The Red Directorate has **distinct advanced propaganda capabilities** using **radio, newspapers and television**. Its faction-specific direction may emphasize centralized communications and sustained industrial and military mobilization, while exact mechanics remain open. It has its **own population morale meter**; higher morale improves **production output and army discipline**, reinforcing but not replacing its low-cost infantry advantage. The Meridian Pact has no advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
