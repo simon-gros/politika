@@ -49,6 +49,10 @@ The resource, morale, Intimidation, propaganda, Black Market and nuclear rules r
 
 The Iron Ascendancy's Intimidation affects eligible isolated combat units after Discipline is broken and eligible isolated civilian/non-combat units after Morale is broken. They are the same underlying resolve meter with category-dependent names. Conversion transfers an individual unit's controller and never allocates a new player/faction slot or allows one player to command two factions. The match remains 2–4 playable factions + Unaligned, regardless of how many units change allegiance.
 
+### Facility espionage does not modify match membership
+
+Atlantic Concord may destroy or make eligible enemy buildings waste resources; the Red Directorate may transfer stolen resources into its budget; the Iron Ascendancy may disrupt staffed facilities with a bounded fictional poisoning/disease chain. These affect structures, workers and economic state inside the existing four selectable faction identities; they cannot create new player slots or convert Unaligned AI into a playable fifth faction. The map still includes exactly 2–4 player factions plus one autonomous Unaligned NPC faction. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ## 5. Engine/UI contracts and acceptance tests
 
 Suggested authoritative fields: `ParticipantSlots` (2–4), `ParticipantControllerType` (human or AI), `ParticipantFactionId` (one of four), `UnalignedSystemFaction` (always true, non-slot), `MatchRosterValidated`, `MapSpawnValidated`, and optional `SpectatorControllers` (separate from playing participants).
