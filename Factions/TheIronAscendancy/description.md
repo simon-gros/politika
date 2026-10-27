@@ -8,9 +8,17 @@ The third of POLITIKA's five ideological factions is the Iron Ascendancy, a fict
 
 The Ascendancy's political organization revolves around an authoritarian leadership structure in which executive power is concentrated within a supreme political authority and exercised through competing party organizations, military commands, intelligence agencies and administrative institutions. Its governing ideology emphasizes aggressive nationalism, racial hierarchy, territorial revisionism, political obedience and the supposed historical destiny of the nation. State propaganda plays a central role in constructing a militarized national identity, glorifying sacrifice, promoting loyalty to political leadership and presenting military conquest as an instrument of national regeneration. Political opposition, independent journalism, trade unions and autonomous civic organizations are suppressed through censorship, surveillance, coercion and the extensive powers of internal security institutions. Racial persecution, institutional discrimination, forced population displacement and other forms of state violence constitute fundamental characteristics of its oppressive political order.
 
+## Institutional Competition
+
+Although the Ascendancy projects an image of unified political purpose, its ruling institutions frequently compete for control of personnel, budgets, intelligence and industrial capacity. Party officials, senior officers, security organizations and favored corporations may pursue overlapping mandates, with access to political leadership determining whose priorities prevail. The resulting system can mobilize resources rapidly for selected projects, but is poorly suited to transparent oversight, independent criticism or the resolution of failures through ordinary administrative procedures.
+
 ## Economy
 
 Economically, the Iron Ascendancy operates through a highly militarized system combining private industrial ownership with extensive state direction, compulsory production priorities and close cooperation between political authorities and major industrial enterprises. Heavy manufacturing, metallurgy, chemical engineering, automotive production, energy infrastructure and precision machinery constitute the foundations of its military-industrial economy. Large industrial conglomerates operate under government supervision, receiving substantial military contracts and preferential access to strategic resources in exchange for meeting the regime's production requirements. Civilian economic development is increasingly subordinated to rearmament, strategic infrastructure and the continuous expansion of military capabilities. Although this arrangement can concentrate considerable resources upon specific technological and industrial objectives, it also produces structural distortions, competition between institutions, shortages of consumer goods and an increasingly unsustainable dependence upon militarization and territorial expansion.
+
+## Industrial Mobilization and Supply
+
+The Ascendancy's industrial capacity depends upon specialized factories, energy networks, protected rail corridors, engineering workshops and access to strategic raw materials. Its concentration on advanced armored vehicles, aircraft and experimental weapons places substantial demands upon precision manufacturing and skilled labor. Production of an exceptionally powerful platform may consume resources that could otherwise equip several conventional formations, creating difficult choices between tactical performance and the ability to replace losses.
 
 ## Military Establishment
 
@@ -23,6 +31,10 @@ Technological development occupies a particularly prominent position within the 
 ## Strategic Philosophy
 
 The Iron Ascendancy's strategic philosophy places particular emphasis upon the concentration of military power and the rapid destruction of organized resistance. Its armored forces are designed to penetrate fortified defensive positions, while mechanized infantry and mobile artillery exploit breakthroughs and secure strategically important territory. Specialized reconnaissance formations identify weaknesses in opposing defenses, and elite assault units conduct operations against command facilities, communications installations and critical infrastructure. The faction's emphasis on offensive military operations creates considerable tactical advantages under favorable circumstances, particularly when supported by efficient logistics and coordinated command structures. However, its reliance upon technologically complex equipment, specialized personnel and uninterrupted supply networks also introduces significant vulnerabilities during prolonged campaigns, particularly when confronted with resource shortages, extended operational distances and sustained resistance.
+
+## Defensive Vulnerabilities
+
+The Ascendancy's preference for rapid offensives produces distinctive problems when the initiative is lost. Concentrated armored thrusts depend upon reconnaissance, engineering support, fuel, ammunition and secure lines of communication. Prolonged defense across extensive territories can expose shortages of infantry reserves, overstretched transport corridors and the limited availability of replacement equipment. Even highly capable elite formations become less effective when isolated or forced into repeated engagements without maintenance.
 
 ## Internal Contradictions
 
@@ -39,6 +51,12 @@ Beyond conventional military operations, the Iron Ascendancy will possess distin
 ## Geopolitical Objectives
 
 Within POLITIKA's fictional geopolitical environment, the Iron Ascendancy will pursue territorial expansion, military dominance and the establishment of a political order reflecting its authoritarian and supremacist ideology. Its ambitions will make the sovereignty of neighboring territories, the control of industrial regions and the acquisition of strategically important infrastructure central objectives of its military campaigns. The faction's involvement in Yugoslavia will consequently introduce the threat of external conquest, occupation and the violent dismantling of established political institutions, creating conflicts shaped not only by military considerations but also by resistance, ideological confrontation and the struggle for territorial independence.
+
+## Yugoslavia and the Unaligned
+
+The Ascendancy's ambitions in Yugoslavia directly threaten the independence of the federation and the political authority of its constituent republics and institutions. The Unaligned, representing Yugoslav federal administration, the Yugoslav People's Army and Territorial Defence organizations, is an NPC-controlled sovereign actor rather than an empty territory or a conventional playable rival. Incursions, attacks upon civilian infrastructure and attempts to dismantle federal authority may therefore provoke military resistance, emergency mobilization and wider political consequences.
+
+Yugoslavia's geography complicates expansionist operations. Mountainous terrain, river crossings, developed urban centers and transport bottlenecks can hinder the concentration of mechanized forces, while local resistance may continue beyond the capture of a major installation. Political repression and discriminatory occupation policies deepen hostility and undermine claims of lasting control. These conditions should ensure that territorial conquest is not interchangeable with legitimate governance and that the human and institutional consequences of aggression remain visible within the game's wider strategic simulation.
 
 ## Strategic Identity
 
