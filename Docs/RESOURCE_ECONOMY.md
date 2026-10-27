@@ -58,6 +58,12 @@ The Meridian Pact's cheap early-game production of very fast, lightly armored an
 
 Model charges and other expenses as abstract unit ability costs, separate from nuclear-resource production or refinery recipes. Explosive damage can destroy structures or vehicles, create conventional repairs/replacement costs and interrupt production; it must not debit/credit a player's resources as if it were Directorate financial diversion, Concord hidden waste or Ascendancy workforce contamination unless an explicit separate effect applies. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
 
+### Economic intelligence, actual scarcity and Unaligned deception
+
+The Unaligned, as the strongest counterintelligence NPC faction, may plant false reports about rivals' supposed resource discoveries, construction projects and nuclear facilities. When a playable faction has very little surviving military force and few resources, this misinformation can be used to draw stronger rivals toward other active opponents and thus preserve competition.
+
+The economic ledger remains authoritative: a fabricated report of a new fuel field, resource stockpile or nuclear installation cannot create an actual map deposit, adjust inventories or grant refining/weapon research. Intelligence claims and verified scout discoveries must remain separate. The Unaligned's strategic balancing decision may read a bounded summary of each active player's real economic and military position, but that privileged assessment does not become automatically visible to players. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 2. Nuclear materials: rare strategic resource
 
 Nuclear-weapons materials are the most highly valued resource in the entire game. They should be scarce, geographically contested, strategically defensible and important to late-game victory. Access may require exploration, control, contracts or specialized map objectives.
