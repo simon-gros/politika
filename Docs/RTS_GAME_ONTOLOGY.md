@@ -910,6 +910,7 @@ Primary, academic, and official documentation sources are listed first; communit
 
 ### Related POLITIKA documents
 
+- [Yugoslav World and Campaign Systems Model](YUGOSLAV_WORLD_MODEL.md) — setting-specific translation of the general model into historical institutions, geography, fictional evidence and campaign stages; not a duplicate engine schema.
 - [Documentation Index](DOCUMENTATION_INDEX.md)
 - [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md)
 - [Engine Outline](ENGINE_OUTLINE.md)
