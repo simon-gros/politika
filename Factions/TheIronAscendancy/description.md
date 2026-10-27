@@ -64,9 +64,12 @@ Yugoslavia's geography complicates expansionist operations. Mountainous terrain,
 
 ## Limited Espionage and Exclusive Intimidation
 
+**Intimidation works on both eligible combatants and eligible civilian/non-combat units.** Every unit has **one shared resolve meter**: labeled **Discipline** for combatants, **Morale** for civilians/non-combatants. The Ascendancy must first **fully break that meter while the target remains isolated** before it can convert the individual unit. These are two names for the same gameplay system, not two different abilities. Civilian targeting requires explicit eligibility; it is not a blanket right to seize neutral populations. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
+
 The Iron Ascendancy has **more limited spying capabilities** than either the Atlantic Concord or Red Directorate, both of which possess their own special espionage features. The Ascendancy must invest in and **fully develop its spy progression** before it is allowed to attempt infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**. Only a successful infiltration after reaching the full espionage tier can obtain the nuclear-refining and nuclear-weapons intelligence it needs for production of its first bomb.
 
-Its distinguishing alternative is **Intimidation**, a power **exclusive to the Iron Ascendancy**. Eligible **isolated enemy combat units**—those without nearby supporting allies—must first have their **battlefield morale completely broken** by Intimidation. **Only after the target's morale has collapsed to its broken threshold** can the surviving unit **change sides and join Ascendancy forces**. Isolation alone never causes instant conversion. This transfers the surviving target's battlefield allegiance, not merely its appearance. An enemy in a supported formation is not an eligible isolated target. The exact range, target classifications, cost, cooldown and counterplay remain to be balanced. Neutral civilians and ordinary non-hostile Unaligned units should not be freely converted.
+Its distinguishing power is **Intimidation**, exclusive to the Iron Ascendancy. An **eligible isolated combatant** must first have its **Discipline** fully broken before joining Ascendancy forces. An **eligible isolated civilian/non-combat unit** must instead have its **Morale** fully broken. Discipline and Morale are **the same meter with context-dependent names**, so both target types share identical break and recovery mechanics. An eligible unit never changes sides from isolation or partial reduction alone; after the break threshold, a validated action transfers ownership of **that same surviving unit**. Neutral and non-hostile Unaligned targets require separate eligibility rules.
 
 **Intimidation does not count as spying or nuclear intelligence acquisition**, and it cannot substitute for full spy development, nuclear research infiltration, material refining or bomb construction. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
@@ -80,9 +83,9 @@ Only after qualifying espionage may the Ascendancy operate nuclear-material refi
 
 ## Formation Discipline and the Intimidation Sequence
 
-Like the Red Directorate, Meridian Pact and Unaligned, Iron Ascendancy soldiers **retain morale and discipline more reliably in larger, coherently supported formations**. **But the Iron Ascendancy and Red Directorate alone receive an extra morale/discipline bonus when their fighting forces constitute very massive, cohesive armies**—beyond the ordinary larger-group benefit available to Meridian and Unaligned. Individually deployed Ascendancy troops and very small groups retain the normal size-based morale vulnerability, while **only Atlantic Concord soldiers avoid it**.
+Iron Ascendancy combat formations benefit from higher **Discipline** when mutually supported. **Red Directorate and Iron Ascendancy** receive an additional **very-massive-army Discipline bonus** beyond ordinary formation support. Individual Ascendancy soldiers have the normal small-group Discipline vulnerability; **Atlantic Concord soldiers are exempt**.
 
-**Intimidation proceeds in two stages: first destroy the morale of an eligible isolated enemy, then convert the morale-broken unit to Ascendancy ownership.** No conversion occurs if the target still has morale remaining, even when unsupported. Concord individual soldiers are unaffected by the *automatic small-group penalty*, though direct Intimidation may still break their morale. Reinforcement, recovery and interruption can prevent conversion; the exact numerical threshold and time costs remain balance decisions. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+**Intimidation:** break **Discipline** for an eligible isolated combat unit, or **Morale** for an eligible isolated civilian/non-combat unit, then convert it. The **one underlying resolve meter** is simply labeled by unit category. No partial depletion grants conversion. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
 ## Advanced Propaganda and Population Morale
 
