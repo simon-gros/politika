@@ -50,6 +50,12 @@ Each playable faction has an affordable early scout with a distinct role. The Me
 
 Meridian Pact also has the game's strongest conventional explosive sabotage, a separate advantage from its reconnaissance and commercial activities. Eligible Pact units—including qualified non-spy units—can undertake cheap, early-game sabotaging of enemy vehicles and buildings through an abstract attached-charge explosion. The other three playable factions unlock similar conventional explosive sabotage later, at greater cost, and only for spy units. This is different from the Concord's Psy-Ops, Directorate's covert resource theft and Ascendancy's fictional facility-contamination and Intimidation effects. See [Reconnaissance and Scouting](Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](Docs/SABOTAGE_SYSTEM.md).
 
+### The Unaligned: superior counterintelligence and balance-preserving deception
+
+As the permanent Yugoslav NPC authority, the Unaligned has the most powerful counterintelligence system in the game. It can intercept rival spying and deliberately plant convincing false intelligence or false-flag reports. One opponent may receive apparently credible intelligence that a rival is constructing a nuclear facility when no such site actually exists. Players must distinguish intercepted claims from corroborated observation; fabricated reports never create real buildings, verified nuclear research, weapons or victory conditions.
+
+The Unaligned also monitors the relative strengths of the two to four playable factions. If one has very few resources and little surviving military strength, and appears close to elimination, the NPC may seed misleading threats to redirect its strongest opponents toward one another and away from the endangered faction. This dynamic balance-preservation strategy reflects the Unaligned's interest in Yugoslav stability. It is neither guaranteed protection for weaker players nor direct manipulation of player commands, and does not cancel normal combat results, the Unaligned's hostility toward identified Iron Ascendancy forces, or the Ascendancy's first-bomb instant victory. See [Unaligned Counterintelligence](Docs/UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ### The Unaligned: the world is not unclaimed territory
 
 The Unaligned is neither a conventional fifth opponent nor a pool of ownerless neutral units. Its forces follow their own institutional orders, and its roads, factories, checkpoints, ports, airfields, broadcasters, and military installations exist independently of player activity.
@@ -148,6 +154,7 @@ These are architecture and product targets, not evidence that the corresponding 
 | [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) | Five-faction structure, neutrality, nuclear-weapon victory asymmetry, faction economy/combat bonuses, conventional Black Market, mercenaries, intelligence, and RTS systems. |
 | [Resource Economy](Docs/RESOURCE_ECONOMY.md) | Nuclear/fossil resource hierarchy, mandatory crude-oil and nuclear refining, Concord refinery discount, nuclear power plants, electricity, low-cost Directorate infantry, and Meridian fuel-field spawning. |
 | [Propaganda and Morale](Docs/PROPAGANDA_AND_MORALE.md) | Radio, newspaper and television propaganda for four factions; universal population morale improving production and army discipline. |
+| [Unaligned Counterintelligence](Docs/UNALIGNED_COUNTERINTELLIGENCE.md) | NPC interception, false intelligence, false-flag attribution and dynamic preservation of contested faction balance. |
 | [Reconnaissance and Scouting](Docs/RECONNAISSANCE_AND_SCOUTING.md) | Early-game faction scouts: Meridian fast scout-combat trucks, Concord/Ascendancy unarmed light planes, Directorate rifle-armed motorbikes. |
 | [Explosive Sabotage](Docs/SABOTAGE_SYSTEM.md) | Meridian early, cheap non-spy-capable vehicle/building sabotage; Concord, Directorate and Ascendancy later, expensive and spy-only. |
 | [Espionage, Psy-Ops and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) | Unit and building Psy-Ops, concealed resource waste and Directorate diversion, Ascendancy facility contamination, spy progression, Intimidation, and Discipline/Morale. |
