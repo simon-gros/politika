@@ -24,8 +24,8 @@ POLITIKA is designed as a **multi-platform RTS**, with **Linux, Windows, SteamOS
 
 | Platform | Product target | Primary interaction |
 |---|---|---|
-| **Linux** | Native desktop release target | Keyboard and mouse; scalable desktop HUD |
-| **Windows** | Native desktop release target | Keyboard and mouse; scalable desktop HUD |
+| **Linux** | Native desktop release target | Keyboard and mouse, plus planned controller/gamepad support with configurable RTS bindings; scalable desktop HUD |
+| **Windows** | Native desktop release target | Keyboard and mouse, plus planned controller/gamepad support with configurable RTS bindings; scalable desktop HUD |
 | **SteamOS / Steam Deck** | Handheld PC compatibility target, including portable performance and control layouts | Gamepad/Steam Input-style controls, with touchscreen or external peripherals where available; native Linux versus compatibility-layer delivery to be validated |
 | **Android** | Mobile release target | Touch-oriented RTS controls and adaptive menus/HUD, with controller support considered where practical |
 
