@@ -16,7 +16,7 @@ The country is more than a battlefield. Its cities, industries, transport networ
 
 Verified development milestones can advance the version through dev, alpha, beta and release-candidate stages toward stable releases. Contributors and development agents may perform justified bumps alongside validated work; ordinary documentation/archive commits do not automatically increase the version. Future builds will record their Git revision, CI build number, engine/platform and artifact integrity independently from the public version.
 
-See the [Versioning, Build Identity & Release Management Roadmap](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) and [Changelog](CHANGELOG.md). The standalone source-checking tool is [tools/version.py](tools/version.py), with Python tests and a lightweight GitHub versioning CI check.
+See the [Versioning, Build Identity & Release Management Roadmap](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) and [Changelog](CHANGELOG.md). The source-checking and build-identity utility is a [Rust Cargo package](tools/version/Cargo.toml), with Rust unit tests and a GitHub Actions Cargo validation workflow. The versioning toolchain does not require Python.
 
 ## Target platforms
 
