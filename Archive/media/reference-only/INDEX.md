@@ -1,9 +1,67 @@
-# POLITIKA — Reference-only historical and political archive index
+# POLITIKA — Reference-only historical, political and cartographic index
 
-This index links all **100** researched catalogue records (including **69** individually described political developments), checked 2026-10-27. It is **metadata and references**, not a repository of third-party newspapers, photographs or broadcast footage. See [Master Catalogue](../../CATALOG.csv), [Political History](../../POLITICAL_HISTORY_1980_1989.md), [Political Event CSV](../../POLITICAL_EVENTS.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md), [Rights](../../RIGHTS_AND_PROVENANCE.md).
+This index links **166** metadata records (previous 100 plus 66 map records), checked 2026-10-27. See [Master Catalogue](../../CATALOG.csv), [Political Events](../../POLITICAL_EVENTS.csv), [Cartographic Guide](../../MAPS_1980_1989.md), [Map Catalogue](../../MAP_CATALOG.csv), [Map-only Index](maps/INDEX.md), [Rights](../../RIGHTS_AND_PROVENANCE.md). No third-party map scans have been copied.
 
-| Ref | Event/subject date | Place | Priority | Source | Game research uses |
+| Ref | Date | Geographic scope | Priority | Source | Research applications |
 | --- | --- | --- | --- | --- | --- |
+| `POL-MAP-1983-WEB` | undated | SFRY | P2 | [Detailed Yugoslavia political map labelled 1983](https://www.mapsland.com/europe/yugoslavia/detailed-political-map-of-the-former-yugoslavia-1983) | verify provincial lines; place names |
+| `POL-MAP-HPM-COLLECTION` | undated | Yugoslavia; Croatia | P1 | [Croatian History Museum VGI map catalogue](https://kartevgi.hismus.hr/en/e-catalog/belgrade/) | road charts; physical maps; typography |
+| `POL-MAP-M6010-SERIES` | undated | Kosovo; Macedonia; south Serbia | P1 | [Series M6010 overview](https://maps.lib.utexas.edu/maps/serbia.html) | regional valleys; province-border terrain |
+| `POL-MAP-M709-BANJA-LUKA` | undated | SR Bosnia and Herzegovina | P0 | [Series M709: Banja Luka (2584 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-BAR` | undated | SR Montenegro | P0 | [Series M709: Bar (2879 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-BEOGRAD` | undated | SR Serbia | P0 | [Series M709: Beograd (3184 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-BOR` | undated | SR Serbia | P1 | [Series M709: Bor (3383 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-BRCKO` | undated | SR Bosnia and Herzegovina / SR Croatia | P1 | [Series M709: Brcko (2884 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-CETINJE` | undated | SR Montenegro | P0 | [Series M709: Cetinje (2879 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-DUBROVNIK` | undated | SR Croatia / SR Bosnia and Herzegovina | P0 | [Series M709: Dubrovnik (2780 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-INDEX` | undated | former Yugoslavia | P0 | [M709 geographical sheet-coverage index](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/index_map.jpg) | coverage grid; sheet selection |
+| `POL-MAP-M709-JESENICE` | undated | SR Slovenia | P1 | [Series M709: Jesenice (2087 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-KNIN` | undated | SR Croatia / SR Bosnia and Herzegovina | P1 | [Series M709: Knin (2483 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-KOSOVSKA-MITROVICA` | undated | SAP Kosovo / SR Serbia | P0 | [Series M709: Kosovska Mitrovica (3180)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-KOTOR` | undated | SR Montenegro | P0 | [Series M709: Kotor (2879 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-KRAGUJEVAC` | undated | SR Serbia | P1 | [Series M709: Kragujevac (3183 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-KRANJ` | undated | SR Slovenia | P1 | [Series M709: Kranj (2087 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-LAKE-SCUTARI` | undated | SR Montenegro / Albania | P1 | [Series M709: Lake Scutari (2979 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-MOSTAR` | undated | SR Bosnia and Herzegovina | P0 | [Series M709: Mostar (2681 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-MURSKA-SOBOTA` | undated | SR Slovenia | P1 | [Series M709: Murska Sobota (2388 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NEUM` | undated | SR Bosnia and Herzegovina | P1 | [Series M709: Neum (2680 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NIS-EAST` | undated | SR Serbia | P0 | [Series M709: Nis East (3381 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NIS-WEST` | undated | SR Serbia | P0 | [Series M709: Nis West (3381 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NOVA-GORICA` | undated | SR Slovenia | P1 | [Series M709: Nova Gorica (1986 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NOVI-SAD-NORTH` | undated | SAP Vojvodina / SR Serbia | P0 | [Series M709: Novi Sad North (3085 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-NOVI-SAD-SOUTH` | undated | SAP Vojvodina / SR Serbia | P0 | [Series M709: Novi Sad South (3085 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-OHRID` | undated | SR Macedonia | P1 | [Series M709: Ohrid (3177 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PEC` | undated | SAP Kosovo / SR Serbia | P1 | [Series M709: Pec (3080)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PODGORICA` | undated | SR Montenegro | P0 | [Series M709: Podgorica (2979 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PODUJEVO` | undated | SAP Kosovo / SR Serbia | P1 | [Series M709: Podujevo (3280 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-POSTOJNA` | undated | SR Slovenia | P1 | [Series M709: Postojna (2086 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PRISTINA` | undated | SAP Kosovo / SR Serbia | P0 | [Series M709: Pristina (3280)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PTUJ` | undated | SR Slovenia | P1 | [Series M709: Ptuj (2387 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-PULA` | undated | SR Croatia | P0 | [Series M709: Pula (2084 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-RIJEKA-WEST` | undated | SR Croatia / SR Slovenia | P0 | [Series M709: Rijeka West (2085 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-ROVINJ` | undated | SR Croatia | P1 | [Series M709: Rovinj (1985 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SARAJEVO` | undated | SR Bosnia and Herzegovina | P0 | [Series M709: Sarajevo (2782 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SERIES` | undated | SFRY and later successor states | P0 | [Former Yugoslavia topographic Series M709](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | hills; cities; valleys; sheet location |
+| `POL-MAP-M709-SKOPJE-NORTH` | undated | SR Macedonia | P0 | [Series M709: Skopje North (3279 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SOMBOR` | undated | SAP Vojvodina / SR Serbia | P1 | [Series M709: Sombor (2886 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SPLIT` | undated | SR Croatia | P0 | [Series M709: Split (2482 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SREBRENICA` | undated | SR Bosnia and Herzegovina | P1 | [Series M709: Srebrenica (2983 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-SUBOTICA` | undated | SAP Vojvodina / SR Serbia | P1 | [Series M709: Subotica (2987 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-TITOV-VELES` | undated | SR Macedonia | P1 | [Series M709: Titov Veles (3378 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-TUZLA` | undated | SR Bosnia and Herzegovina | P0 | [Series M709: Tuzla (2884 III)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-VUKOVAR` | undated | SR Croatia / SR Serbia | P1 | [Series M709: Vukovar (2885 I)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-ZABLJAK` | undated | SR Montenegro | P1 | [Series M709: Zabljak (2881 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-ZENICA` | undated | SR Bosnia and Herzegovina | P0 | [Series M709: Zenica (2683 II)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-M709-ZRENJANIN-EAST` | undated | SAP Vojvodina / SR Serbia | P1 | [Series M709: Zrenjanin East (3185 IV)](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) | terrain; roads; rivers; settlements |
+| `POL-MAP-TPC-SERIES` | undated | former Yugoslavia | P1 | [Tactical Pilotage Charts](https://maps.lib.utexas.edu/maps/yugoslav.html) | airfields; mountains |
+| `POL-MAP-UT-CITIES` | undated | Yugoslav cities | P1 | [UT Austin city maps](https://maps.lib.utexas.edu/maps/world_cities.html) | urban maps |
+| `POL-MAP-UT-YU-COLLECTION` | undated | former Yugoslavia | P1 | [UT Austin former Yugoslavia country maps](https://maps.lib.utexas.edu/maps/yugoslav.html) | map discovery |
+| `POL-MAP-VGI-HYDRO` | undated | SFRY | P1 | [SFRY hydrometeorological physical map](https://kartevgi.hismus.hr/en/e-catalog/belgrade/) | river basins; relief |
+| `POL-MAP-M404-SERIES` | 1942 | former Yugoslavia | P2 | [British Europe Series M404](https://maps.lib.utexas.edu/maps/yugoslav.html) | historical topography |
+| `POL-MAP-1404-SERIES` | 1958 | Yugoslavia | P2 | [British World Series 1404](https://maps.lib.utexas.edu/maps/yugoslav.html) | terrain; passes |
+| `POL-MAP-M501-SERIES` | 1959 | Yugoslavia and neighbors | P1 | [Western Europe Series M501](https://maps.lib.utexas.edu/maps/slovenia.html) | terrain context |
+| `POL-MAP-1962-VGI-ROAD` | 1962 | SFRY | P0 | [SFRY 36-sheet road atlas](https://kartevgi.hismus.hr/en/karte/road-map-of-the-socialist-federal-republic-of-yugoslavia/) | roads; bridges; vehicle logistics |
+| `POL-MAP-1974-VGI-ROAD-W` | 1974 | SR Slovenia; SR Croatia | P0 | [SFRY west road sheet and city insets](https://kartevgi.hismus.hr/en/karte/road-map-sheet-of-the-socialist-federal-republic-of-yugoslavia/) | roads; Ljubljana; Zagreb; Rijeka; Split |
 | `POL-1980-1983-SKOPJE-001` | 1980–1983 | Skopje and environs | P1 | [Skopje city-area photograph collection, through 1983](https://arhiv.mk/en/arhivska-mreza/) | architecture; transport; urbanism; maps; photo-lead |
 | `POL-1980-1989-ARCHIVE-YU-001` | 1980–1989 | Belgrade / all federal territories | P1 | [Archives of Yugoslavia photography collections](https://www.arhivyu.rs/en/arhivska-gradja/fotografije) | buildings; documents; cities; units; archival_provenance |
 | `POL-1980-1989-FILM-001` | 1980–1989 | Belgrade and federation-wide | P1 | [Yugoslav Film Archive post-1945 collection](https://en.kinoteka.org.rs/archive/) | cinematic-language; camera; vehicles; crowds; sound |
@@ -15,6 +73,10 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1980-POL-POLAND-SOLIDARITY` | 1980-08–1980-09 | Gdańsk / Poland | P1 | [Polish shipyard strikes and independent Solidarity organization](https://european-union.europa.eu/principles-countries-history/history-eu/1980-89_en) | radio_news; labour; diplomacy; foreign_press |
 | `POL-1981-KOSOVO-001` | 1981 | Kosovo | P0 | [1981 Kosovo demonstrations and constitutional demands](https://archive.globalpolicy.org/security/issues/kosovo80.htm) | narrative; crowds; political-map; world_state |
 | `POL-1981-NEW-WAVE-001` | 1981 | Belgrade; Zagreb; Ljubljana; federation-wide | P1 | [1981 Paket aranžman and Yugoslav new-wave music](https://www.new-east-archive.org/features/show/12495/yugoslav-new-wave-1980s-music-40-years-on) | youth_culture; audio-mood; posters; clothing; civilian-narrative |
+| `POL-MAP-1981-CIA-POL` | 1981 | SFRY | P0 | [Yugoslavia, CIA political map](https://www.loc.gov/item/2011587053/) | internal borders; provinces; cities |
+| `POL-MAP-1981-CIA-RELIEF` | 1981 | SFRY | P0 | [Yugoslavia, CIA shaded relief](https://www.loc.gov/item/2011587054/) | mountains; rivers; terrain |
+| `POL-MAP-1981-ONC-F2` | 1981 | Slovenia; Croatia; border region | P1 | [Operational Navigation Chart F-2](https://maps.lib.utexas.edu/maps/croatia.html) | terrain; air routes; borders |
+| `POL-MAP-1981-ZAGREB` | 1981 | SR Croatia / Zagreb | P0 | [Zagreb city map](https://maps.lib.utexas.edu/maps/world_cities.html) | streets; administration; urban map |
 | `POL-1981-POL-IMF-STANDBY` | 1981-01–1983 | Belgrade / federation-wide | P0 | [Three-year IMF stand-by arrangement](https://www.elibrary.imf.org/display/book/9780939934492/back-1.xml) | economy; treasury_docs; industrial_supply; merchants |
 | `POL-1981-POL-GREECE-EC` | 1981-01-01 | Greece / European Communities | P1 | [Greece joins European Communities](https://european-union.europa.eu/principles-countries-history/history-eu/1980-89_en) | border_maps; diplomacy; customs; trade |
 | `POL-1981-POL-KOSOVO-MARCH` | 1981-03-11–1981-04 | Priština/Prishtina and Kosovo towns | P0 | [1981 Kosovo student protests escalate](https://www.hrw.org/legacy/reports/1992/yugoslavia/) | crowds; civil_ai; civic_security; radio_news; province_maps |
@@ -37,6 +99,7 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1984-POL-SARAJEVO-OLYMPICS` | 1984-02-08–1984-02-19 | Sarajevo and mountain venues | P0 | [Sarajevo Winter Olympics as diplomatic stage](https://okbih.ba/en/text/wog-84/75) | diplomacy; security; broadcasters; civilian_events; city_maps |
 | `POL-1984-SAR-GAMES-001` | 1984-02-08–1984-02-19 | Sarajevo; Igman; Jahorina; Bjelašnica | P0 | [XIV Sarajevo Winter Olympic Games and civic infrastructure](https://okbih.ba/en/text/wog-84/75) | city-maps; missions; security; winter-terrain; crowds |
 | `POL-1984-MLADINA-001` | 1984-04-05 | Ljubljana | P1 | [Mladina issue 14, 5 April 1984](https://dlib.si/details/URN%3ANBN%3ASI%3ADOC-E01O55YN) | media; documents; UI; propaganda; street-props |
+| `POL-MAP-1985-YEARBOOK` | 1985 | SFRY | P1 | [Statistical Yearbook Yugoslavia map lead](https://publikacije.stat.gov.rs/G1985/Pdf/G19852003.pdf) | administration; demographics; economy |
 | `POL-1985-POL-GORBACHEV` | 1985-03 | Moscow / USSR | P1 | [Mikhail Gorbachev assumes Soviet leadership](https://history.state.gov//departmenthistory/short-history/gorbachev) | cold_war; intelligence; rhetoric; treaty_news |
 | `POL-1985-POL-HOXHA` | 1985-04-11 | Tirana / Albania | P1 | [Death of Enver Hoxha](https://enciklopedija.hr/clanak/hoxha-enver) | border; diplomacy; foreign_radio; political_maps |
 | `POL-1985-ADRIATIC-TOURISM-001` | 1985-06 | Adriatic coast / federation-wide | P0 | [Yugoslavia: tourism in a socialist federal state](https://www.sciencedirect.com/science/article/pii/0261517785900202) | coast_maps; architecture; hotel_assets; supply; narrative; trade |
@@ -74,7 +137,7 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1988-POL-FED-GOV-RESIGNS` | 1988-12 | Belgrade | P0 | [Mikulić federal cabinet resigns amid crisis](https://www.elibrary.imf.org/display/book/9781557759719/ch013.xml) | federal_economy; news; cabinet_diplomacy |
 | `POL-1989-INFLATION-001` | 1989 | Federation-wide | P0 | [Yugoslav hyperinflation by late 1989](https://www.imf.org/en/publications/wp/issues/2016/12/30/yugoslav-inflation-and-money-927) | economy; shop-props; UI; resource_system; narrative |
 | `POL-1989-POL-ANTE-MARKOVIC` | 1989 | Belgrade | P0 | [Ante Marković heads new federal reform government](https://www.elibrary.imf.org/view/journals/001/1991/050/article-A001-en.xml) | economic_mechanics; cabinets; finance; diplomatic_news |
-| `POL-1989-POL-MACEDONIA-TRANSITION` | 1989-11 | Skopje | P0 | [Tenth Congress of the League of Communists of Macedonia signals reform](https://doi.org/10.4000/balkanologie.281) | Skopje_offices; party_maps; civic_groups; diplomatic_news |
+| `POL-MAP-1989-YEARBOOK` | 1989 | SFRY | P1 | [Statistical Yearbook Yugoslavia map lead](https://publikacije.stat.gov.rs/G1989/Pdf/G19892003.pdf) | regions; economy; population |
 | `POL-1989-POL-MONTENEGRO-LEADERSHIP` | 1989-01 | Titograd (now Podgorica) | P0 | [Montenegrin leadership resigns amid mass demonstrations](https://www.hrw.org/legacy/reports/1992/yugoslavia/) | regional_rallies; civic_ai; government_buildings |
 | `POL-1989-POL-VIENNA-DOCUMENT` | 1989-01-19 | Vienna / Austria | P1 | [Vienna CSCE Concluding Document adopted](https://www.osce.org/mc/40881) | diplomatic_archives; neutral_state; human_rights |
 | `POL-1989-POL-KOSOVO-EMERGENCY` | 1989-02–1989-03 | Kosovo | P0 | [Federal special security measures in Kosovo](https://www.hrw.org/reports/2001/10/26/under-orders-war-crimes-kosovo) | checkpoints; civil_ai; military_jurisdiction; protest_news |
@@ -85,8 +148,8 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1989-POL-BIH-AMENDMENTS` | 1989-04-01 | Sarajevo | P0 | [Bosnia and Herzegovina constitutional amendments](https://www.parlament.ba/Content/Read/182?lang=en&title=ParlamentarizamuBosniiHercegoviniuperiodu1945.%E2%80%931990.) | republic_government; constitutional_records; political_pluralism |
 | `POL-1989-POL-BULGARIA-TURKS` | 1989-05–1989-08 | Bulgaria–Turkey border | P1 | [Turkish minority protests and large-scale forced departures](https://www.hrw.org/reports/1989/WR89/Bulgaria.htm) | migration; humanitarian; border_news; diplomacy |
 | `POL-1989-POL-MAY-DECLARATION` | 1989-05-08 | Kongresni trg / Ljubljana | P0 | [Slovenian May Declaration read publicly](https://www.gov.si/en/news/2020-05-08-the-may-declaration-is-a-symbol-of-the-slovenian-peoples-desire-for-sovereignty/) | public_squares; posters; speeches; radio; protest |
-| `POL-1989-POL-DRNOVSEK-PRESIDENCY` | 1989-05-15 | Belgrade / Ljubljana | P0 | [Janez Drnovšek takes chair of Yugoslav collective presidency](https://www.slovenska-biografija.si/oseba/sbi1024150/) | presidency; federal_orders; diplomatics; constitutional_continuity; state_broadcasts |
 | `POL-1989-POL-SERB-PRESIDENCY` | 1989-05-08 | Belgrade | P0 | [Slobodan Milošević becomes President of Serbian Presidency](https://www.clintonlibrary.gov/conflicts-former-yugoslavia-timeline) | state_governance; diplomatic_cables; factions_as_fiction |
+| `POL-1989-POL-DRNOVSEK-PRESIDENCY` | 1989-05-15 | Belgrade / Ljubljana | P0 | [Janez Drnovšek takes chair of Yugoslav collective presidency](https://www.slovenska-biografija.si/oseba/sbi1024150/) | presidency; federal_orders; diplomatics; constitutional_continuity; state_broadcasts |
 | `POL-1989-POL-HSLS` | 1989-05-20 | Zagreb | P0 | [Croatian Social Liberal Alliance founded](https://www.enciklopedija.hr/clanak/hrvatska-drzava) | political_press; party_meetings; civilian_society |
 | `POL-1989-POL-POLAND-ELECTION` | 1989-06-04 | Poland | P1 | [Poland's partially free elections](https://history.state.gov/milestones/1989-1992/fall-of-communism) | foreign_radio; political_expectations; headlines |
 | `POL-1989-POL-HDZ` | 1989-06-17 | Jarun / Zagreb | P0 | [Croatian Democratic Union founded](https://www.hdz.hr/category/82/povijest-stranke) | press; political_groups; party_archives; debates |
@@ -97,6 +160,7 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1989-POL-HUNGARY-BORDER` | 1989-09-11 | Hungarian–Austrian frontier | P1 | [Hungary opens its border for East Germans](https://www.bundesregierung.de/breg-de/schwerpunkte/deutsche-einheit/ungarn-oeffnet-seine-grenze-337804) | border_maps; diplomacy; civilian_convoys |
 | `POL-1989-POL-SLOVENIAN-AMENDMENTS` | 1989-09-27 | Ljubljana | P0 | [Slovenian republican constitutional amendments adopted](https://nastajanje-ustave.si/preface.0.html) | constitutional_docs; civil_rights; governance; factions |
 | `POL-1989-POL-IMF-HYPERINFLATION` | 1989-10–1989-12 | Federation-wide | P0 | [Yugoslav inflation accelerates into hyperinflation](https://www.elibrary.imf.org/view/journals/001/1991/050/article-A001-en.xml) | markets; signage; civilian_morale; radio; currency |
+| `POL-1989-POL-MACEDONIA-TRANSITION` | 1989-11 | Skopje | P0 | [Tenth Congress of the League of Communists of Macedonia signals reform](https://doi.org/10.4000/balkanologie.281) | Skopje_offices; party_maps; civic_groups; diplomatic_news |
 | `POL-1989-POL-BERLIN-WALL` | 1989-11-09 | Berlin | P1 | [Berlin Wall border crossings open](https://www.bundesarchiv.de/themen-entdecken/online-entdecken/storys/die-stasi-im-jahr-1989/november-1989/) | foreign_radio; broadcast; maps; Cold_War |
 | `POL-1989-POL-BULGARIA-ZHIVKOV` | 1989-11-10 | Sofia | P1 | [Todor Zhivkov removed as Bulgarian party leader](https://www.bta.bg/en/news/archives/1005141-november-10-1989-todor-zhivkov-is-ousted-as-bulgarian-communist-party-chief) | border_intelligence; radio; diplomacy |
 | `POL-1989-POL-CROATIAN-REFORM` | 1989-12 | Zagreb | P0 | [Croatian Communist leadership accepts multiparty turn](https://croatia.eu/index.php/en/home-en/history/contemporary-croatia) | party_institutions; rights; political_press |
@@ -104,6 +168,8 @@ This index links all **100** researched catalogue records (including **69** indi
 | `POL-1989-POL-MARKOVIC-STABILIZATION` | 1989-12-18 | Belgrade / federation-wide | P0 | [Federal anti-inflation stabilization package announced](https://www.elibrary.imf.org/view/journals/001/1991/050/article-A001-en.xml) | prices; rationing_context; wages; financial_UI; economy |
 | `POL-1989-POL-ROMANIA-REVOLUTION` | 1989-12-22–1989-12-25 | Bucharest and other Romanian cities | P1 | [Romanian revolution topples Ceaușescu](https://www.history.com/this-day-in-history/december-22/romanian-government-falls) | border_news; diplomacy; patrols; refugees; military_interpretation |
 | `POL-1989-POL-KOSOVO-LDK` | 1989-12-23 | Priština/Prishtina | P0 | [Democratic League of Kosovo founded](https://uckarchive.org/en/history/1981-1989) | political_groups; civil_society; print; autonomy |
+| `POL-MAP-1992-CIA-FOLIO` | 1992 | former Yugoslavia | P2 | [CIA Former Yugoslavia Map Folio](https://maps.lib.utexas.edu/maps/yugoslav.html) | later context; chronology check |
+| `POL-MAP-1996-CIA-RELIEF` | 1996 | former Yugoslavia | P2 | [CIA Former Yugoslavia shaded relief](https://www.loc.gov/item/96684084/) | physical geography |
 
 ## Evidence and interpretation cautions
 
