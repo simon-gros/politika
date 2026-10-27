@@ -64,6 +64,22 @@ State + qualifying events
 
 This contract consolidates the implementation-relevant distinctions from [RTS mechanics and simulation research](RTS_GAME_ONTOLOGY.md); it does not supersede the owning [Match Structure](MATCH_STRUCTURE.md), [Concepts Outline](CONCEPTS_OUTLINE.md), or the specific [map/content validation contracts](#map-authoring-contract-and-validation-pass) below. Keep the data model as small as the playable and negative-test fixtures actually require.
 
+### Yugoslav setting: practical world-state boundary
+
+The [Yugoslav World and Campaign Systems Model](YUGOSLAV_WORLD_MODEL.md) maps the common RTS contract to actual 1980s institutions, geography, infrastructure and POLITIKA's divergent 1984–1989 campaign. The **historical-world layer does not add another match faction or require a nationwide simulation**. Preserve these separations when corresponding content is implemented:
+
+| Concept already used by the engine | Historical-world implication | First development obligation |
+|---|---|---|
+| **Spatial map and marker** | A bridge, border, industrial site, archive or relay has geometry *and potentially* a jurisdiction, service and access role. | The current fixture needs only bounds, legal starts, movement-class reachability and objective references; later region/access metadata is scenario driven. |
+| **Entity, controller, faction** | A civilian, municipal service, JNA patrol, Territorial Defence unit and inner security cell may have different knowledge and instructions while remaining inside the NPC-only Unaligned faction. | Keep stable instance identity, authoritative ownership and order admission separate from future institution/mandate metadata. |
+| **Operational state and process** | A site can remain owned while its power, delivery route, workforce or communications service fails. | Do not use ownership as a universal proxy for operability; model only implemented health/cooldown/objective values in the immediate slice. |
+| **Observation, claim and evidence** | Newspaper, hospital record, intercepted dispatch, witness and fabricated broadcast are different evidential objects; a secret report may be false without changing real world state. | Keep observation/state authority separated. No new evidence, propaganda or belief engine in the next milestone. |
+| **Event and objective** | Seizing a broadcast station, preserving its recordings, proving a death and transmitting corroborated evidence are distinct events and goals. | Retain simple control-point completion now; later objective predicates should use the correct state/event and provenance. |
+
+**Two provenance boundaries:** the archive stores **developer-facing evidence about real history** (date, source and rights), while gameplay may eventually store **fictional in-world evidence and deception** (origin, custody, recipient, truth and verification). They must not share one overloaded provenance or truth flag. Historical appearance, real-world institutions and real protest histories require the [production review](PRODUCTION_STANDARDS.md) and [archive/source rules](../Archive/RIGHTS_AND_PROVENANCE.md); scenario specifics remain owned by [Story](STORY_OUTLINE.md) and [Concepts](CONCEPTS_OUTLINE.md).
+
+**Current milestone protection:** map names, jurisdictions, public institutions, political behavior and campaign evidence are not required fields for the prototype map schema. Do not make the data-driven unit/weapon/map validation milestone depend on federal-government AI, a chronology engine, regional populations, self-managed enterprise economics or plot-specific clue puzzles.
+
 | Layer | Owns / exposes | UE mapping and boundary |
 |---|---|---|
 | Platform & application shell | Process startup/shutdown, user/device settings, display and UI scale, input mapping, localization, save slots, platform services. Exposes initialized local-player services; owns no match rules. | `UGameInstance`/`UGameInstanceSubsystem` for process lifetime; `ULocalPlayerSubsystem` for per-player preferences/input; `UGameUserSettings`, Enhanced Input, `USaveGame`, and UE Internationalization APIs. Keep platform-specific services behind interfaces so headless/server targets do not depend on UI. See [Platform & application layer](#platform--application-layer) below. |
