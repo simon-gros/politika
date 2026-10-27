@@ -82,6 +82,14 @@ The Meridian Pact can undertake cheap early conventional explosive sabotage agai
 
 Neither planting a conventional charge nor scouting a nuclear research complex replaces the Iron Ascendancy's fully upgraded espionage, validated infiltration of a Concord/Directorate nuclear research facility and theft of nuclear-refining and bomb intelligence. An explosive sabotage attack can impair an eligible enemy facility under normal destruction/repair rules, but it does not create technology or complete the first-bomb instant-win objective. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
 
+### False nuclear intelligence from the Unaligned
+
+The Unaligned is the strongest counterintelligence power and can deliberately circulate fabricated reports that another active faction is building a nuclear research or production facility. A planted nuclear-facility claim may draw opposing forces away from an endangered faction as part of the Unaligned's NPC stability and balance-preservation strategy.
+
+A report, intercepted message, false-flag document or alleged map marker is never proof that a facility exists. It may not instantiate real nuclear materials, refining technology, nuclear-weapons intelligence, production progress, finished weapons or research structures. For the Iron Ascendancy, only verified, actual spy infiltration of an existing Atlantic Concord or Red Directorate nuclear research facility after fully developing espionage can provide the required unlocks; building its own first bomb afterward still ends the match instantly, whatever the Unaligned reports.
+
+Real reconnaissance, facility verification and independent evidence can disprove false nuclear information. This is a deception layer, not a change to authoritative nuclear gameplay. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 4. Spy infiltration and intelligence provenance
 
 The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy with fully developed faction espionage must penetrate a nuclear research facility owned by the Atlantic Concord or Red Directorate, acquire both nuclear-refining technology intelligence and nuclear-weapons production intelligence, and have those events independently recognized by match authority. One qualified facility can contain both required pieces of intelligence.
