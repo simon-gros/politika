@@ -97,6 +97,16 @@ Provide an authoritative per-faction morale state for all five factions, includi
 
 Media facilities have controllable faction/jurisdiction, functioning/power state, distribution or broadcast reach, counteraction and objective events. The match/simulation layer owns morale and outcomes; AI selects and applies Unaligned media actions; content assets define faction eligibility, audience, cost, duration and modifiers; UI displays morale and accessible actions. Avoid implementing morale as a visual-only bar. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Unaligned AI intelligence director and dynamic equilibrium
+
+Add a distinct Unaligned NPC counterintelligence and false-information director to the match/simulation architecture. The Unaligned has the strongest such capability: it can intercept actual rival intelligence according to intelligence-coverage rules, fabricate claims or false-flag attributions, and disseminate them as plausible reports to specific active players. Claims may concern a nuclear research facility that does not exist. Never mutate true facility, nuclear intelligence, unit, resource, ownership or victory state merely to make a false report convincing.
+
+Keep authoritative ground truth separate from the recipient-specific intelligence layer: `IntelClaim`, `ClaimSource`, `RecipientFaction`, `Confidence`, `VerificationState`, `FalseIntelOperation`, `AttributionState`, `ClaimExpiry` and `ReportedLocation`. An actual scout observation can contradict a forged marker. NPC interception and disinformation have eligibility, cooldown, cost and discovery limitations rather than omniscient automatic visibility.
+
+The Unaligned balance director can evaluate faction strength—surviving troops, resources, production assets and imminent elimination risk—across the actual 2–4 participants. When one faction is very weak and faces imminent destruction, it may plant misinformation designed to redirect stronger rivals' attention to one another. This is a bounded AI choice, not a scripted veto of player victory, forced retargeting or free grant of resources. The Unaligned's exceptional hostility toward identified Ascendancy forces persists. Verify that no false nuclear research report can satisfy the Ascendancy's verified real-facility spy gates or delay an earned own-first-bomb match win.
+
+See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md), [Match Structure](MATCH_STRUCTURE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ### Match-size and player-to-faction invariant
 
 Ordinary matches have exactly 2, 3 or 4 occupied playable faction slots, drawn from Concord, Directorate, Ascendancy and Meridian, plus one always-present Unaligned NPC/system-AI faction. Each player or AI-opponent controller is assigned exactly one distinct playable faction; Unaligned has its own autonomous system controller and does not consume a player slot. The local single-player case may therefore be one human and one or more AI-controlled playable opponents.
