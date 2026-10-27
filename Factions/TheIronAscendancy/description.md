@@ -62,11 +62,13 @@ The Ascendancy's ambitions in Yugoslavia directly threaten the independence of t
 
 Yugoslavia's geography complicates expansionist operations. Mountainous terrain, river crossings, developed urban centers and transport bottlenecks can hinder the concentration of mechanized forces, while local resistance may continue beyond the capture of a major installation. Political repression and discriminatory occupation policies deepen hostility and undermine claims of lasting control. These conditions should ensure that territorial conquest is not interchangeable with legitimate governance and that the human and institutional consequences of aggression remain visible within the game's wider strategic simulation.
 
-## Nuclear Power and the Secondary Acquisition Plot
+## Nuclear Espionage, Refining Restriction and Instant Victory
 
-In POLITIKA's alternate Cold War, the **Iron Ascendancy is one of the three nuclear-armed playable powers**, together with the Atlantic Concord and Red Directorate. Its **secondary storyline is not about acquiring its first-ever nuclear capability**. It seeks to seize or otherwise obtain control of **a particular additional nuclear weapon** outside its existing custody, whose distinct strategic value and provenance will be determined during campaign writing.
+**The Iron Ascendancy is initially a non-nuclear power.** It has no nuclear weapons, no nuclear-refining capability, and no indigenous nuclear-weapons production knowledge. Its spies must infiltrate an **Atlantic Concord or Red Directorate nuclear research facility** and steal **both nuclear-refining technology intelligence and nuclear-weapons research**.
 
-This pursuit creates a second major axis of conflict alongside the Ascendancy's 1984 assassination of Tito. Whereas the primary plot concerns destabilizing Yugoslavia and exploiting the secret of Tito's death, the secondary plot is a race to evade or defeat the Atlantic Concord's and Red Directorate's attempts at prevention. Ascendancy-specific operations may include intelligence penetration, deception, protection of a contested transfer, and securing guarded access, expressed through conventional RTS units and objectives rather than playable nuclear attacks. Its nuclear status does not give it the sought weapon automatically, and the Black Market cannot sell it one. The acquisition plot's resolution is not yet locked and cannot reverse the canonical 1989 exposure of the assassination.
+Only after qualifying espionage may the Ascendancy operate nuclear-material refinement, **solely to produce its first atomic bomb**. It **cannot construct nuclear power plants and has no interest in them**. The player must secure scarce crude nuclear resources, refine them in the game's abstract production system, and complete a very long bomb-construction process.
+
+**The instant the Ascendancy finishes its first independently produced bomb, it wins the game without deploying it.** It may also sabotage, steal or deploy a *completed enemy bomb*, but theft never counts toward the unique production victory. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## Strategic Identity
 
