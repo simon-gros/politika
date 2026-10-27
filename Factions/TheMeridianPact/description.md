@@ -68,9 +68,12 @@ The Meridian Pact takes **no part in the dedicated nuclear campaign storyline** 
 
 **The Meridian Pact nevertheless has its own population morale meter.** Higher morale raises **production output and army discipline**, just as it does for every other faction. Pact morale can change through ordinary trade performance, infrastructure and fuel supply, contracts, protection of forces and battlefield outcomes, rather than a specialized advanced propaganda program. **Radio, newspapers and television** remain significant world media even though the Pact does not have unique advanced propaganda abilities. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
-## Formation Size and Battlefield Morale
+## Formation Size and Combat Discipline
 
-**Meridian Pact soldiers benefit from the ordinary stabilizing morale and discipline of larger, coherently supported formations.** However, the Pact does **not** receive the extra morale/discipline bonus that the **Red Directorate and Iron Ascendancy gain specifically in very massive armies**. Individuals and very small detachments incur the normal size-based battlefield morale penalty, unlike the Atlantic Concord's exemption. The Pact retains its population morale meter and its production/discipline bonuses despite lacking advanced propaganda. An isolated Pact combatant **cannot be converted by Iron Ascendancy Intimidation unless its battlefield morale has first been completely broken**. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+**Terminology:** Meridian combat units use **Discipline** for local battlefield performance, whereas its civilian/non-combat personnel use **Morale**. Both are one underlying unit resolve meter. The larger-formation bonus applies only to combat Discipline, not non-combat Morale. Intimidation can affect an eligible isolated Pact combat or non-combat unit but requires its corresponding meter to be fully broken before conversion. Population Morale remains the faction-wide view. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
+
+**Meridian Pact soldiers benefit from the ordinary stabilizing Discipline of larger, coherently supported formations.** However, the Pact does **not** receive the extra Discipline bonus that the **Red Directorate and Iron Ascendancy gain specifically in very massive armies**. Individuals and very small detachments incur the normal size-based Discipline penalty, unlike the Atlantic Concord's exemption. The Pact retains its population morale meter and its production/discipline bonuses despite lacking advanced propaganda. An isolated Pact combatant **cannot be converted by Iron Ascendancy Intimidation unless its battlefield morale has first been completely broken**. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Strategic Identity
 
