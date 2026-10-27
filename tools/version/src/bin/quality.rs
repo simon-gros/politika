@@ -442,9 +442,9 @@ fn core_tests(root: &Path) -> Vec<Check> {
 fn execute() -> Result<u8, String> {
     let mut args = env::args().skip(1);
     let stage = args.next().ok_or(
-        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|core|preflight|release|all> [--output PATH]",
+        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|core|preflight|performance|release|all> [--output PATH]",
     )?;
-    if !matches!(stage.as_str(), "audit" | "core" | "preflight" | "release" | "all") {
+    if !matches!(stage.as_str(), "audit" | "core" | "preflight" | "performance" | "release" | "all") {
         return Err(format!("invalid quality stage: {stage}"));
     }
     let mut output = None;
@@ -464,6 +464,9 @@ fn execute() -> Result<u8, String> {
     }
     if stage == "preflight" || stage == "all" {
         checks.extend(preflight(&root));
+    }
+    if stage == "performance" || stage == "all" {
+        checks.extend(production::performance_checks(&root));
     }
     if stage == "release" || stage == "all" {
         checks.extend(production::release_gate_checks(&root));
