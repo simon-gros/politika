@@ -4,7 +4,7 @@
 **Setting:** Alternate-history Yugoslavia, 1984–1989  
 **Genre:** Real-time strategy, factional conflict, political conspiracy, nuclear deterrence, intelligence, logistics, and asymmetric warfare  
 **Purpose:** Define the core playable systems and relationships underpinning POLITIKA, distinct from the chronological [Story Outline](STORY_OUTLINE.md).  
-**Related material:** [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
+**Related material:** [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
 
 > **Design boundary:** This document distinguishes **established premises** from **suggested implementations**. It is not an assertion that these gameplay systems are already coded. The assassination and its concealment are *fictional alternate-history events*: historically, Tito died in 1980.
 
@@ -289,6 +289,18 @@ Civilians and noncombatant infrastructure make the neutral federation credible. 
 **Ascendancy alternate victory:** only **fully developed Ascendancy spying followed by** successful spy infiltration of an **Atlantic Concord or Red Directorate nuclear research facility**, acquiring both **refining and weapons intelligence**, unlocks its first nuclear production. **Completion of its own first bomb immediately wins the game; no deployment is required**; stealing a completed device, starting production, or merely acquiring intelligence does not trigger victory. These conditions must be authoritative, inspectable, and balanced against a long, resource-intensive construction period.
 
 The Pact **does not receive a dedicated nuclear campaign storyline** despite its optional theft and use of captured weapons. Nuclear weapons and production intelligence are **not ordinary Black Market purchases**. The Unaligned's neutral AI may respond to sabotage, stolen cargo, and deployment. This system should use abstract game states, not real-world construction specifications. See [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
+
+## 9.8 Advanced Propaganda and Population Morale
+
+**Every faction—including the playable Meridian Pact and NPC-only Unaligned—has a population morale meter.** A higher morale rating **increases production output and army discipline**; exact multiplier limits, affected production categories, and disciplinary effects require balancing.
+
+**Distinct advanced propaganda capabilities belong to exactly four factions:** Atlantic Concord, Red Directorate, Iron Ascendancy and the Unaligned. The **Meridian Pact is the only faction without advanced propaganda actions**, but still gains the production and discipline benefits of high morale and can improve morale through ordinary commercial, economic and military performance. The Unaligned's media policies are operated by AI, not by a player.
+
+The three principal media are **radio, newspapers, and television**, modeled through coverage, operations and accessible infrastructure rather than identical global boosts. The Concord's, Directorate's, Ascendancy's and Unaligned's distinct advanced styles must offer genuinely different choices; exact abilities remain unfinalized. Media stations, printing houses and relay networks can become tactical objectives, subject to Unaligned sovereignty, existing world-control rules and player knowledge of the region.
+
+Morale is **separate from Intimidation** (Ascendancy's exclusive ability to convert isolated enemy units) and does not replace nuclear-research espionage, refining, resource or instant-victory gates. The Unaligned's cover-up relies heavily on radio, television and newspapers, while the canonical revelation of Tito's assassination in 1989 remains unavoidable.
+
+See [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) for factions, media, UI, data and validation rules.
 
 ## 10. Game Modes and Canon
 
