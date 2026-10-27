@@ -106,6 +106,10 @@ In **1989**, corroborating evidence finally becomes public. The revelation of th
 
 For the complete act-by-act chronology, principal character functions, and mission ideas, see the **[Story Outline](Docs/STORY_OUTLINE.md)** (contains full spoilers).
 
+### Player and faction limits per map
+
+**Each player controls exactly one playable faction.** Every ordinary map supports **2–4 player-faction slots**, selected from the **Atlantic Concord, Red Directorate, Iron Ascendancy and Meridian Pact**, plus **one always-present, independently AI-controlled Unaligned faction**. In shorthand: **2+1, 3+1 or 4+1 faction presences**; the Unaligned is **never a fifth player slot**. In offline single-player, AI opponents occupy the other playable positions. Standard matches use one distinct playable faction per player. See [Match Structure](Docs/MATCH_STRUCTURE.md).
+
 ## Planned modes and presentation
 
 **Campaign** is a sequence of faction-specific missions within the common alternate-history narrative. The Concord and Directorate have prevention missions, and the initially non-nuclear Iron Ascendancy has infiltration/first-bomb production missions; the Meridian Pact has no dedicated nuclear side story. Storytelling takes place through gameplay, operational briefings, radio communication, intelligence reports, documents, objectives, and debriefings—**not mandatory cinematics**.
