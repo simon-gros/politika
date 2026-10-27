@@ -4,6 +4,7 @@ Status: Foundational game-design concepts; mechanics, balance values, and implem
 Setting: Alternate-history Yugoslavia, 1984–1989  
 Genre: Real-time strategy, factional conflict, political conspiracy, nuclear deterrence, intelligence, logistics, and asymmetric warfare  
 Purpose: Define the core playable systems and relationships underpinning POLITIKA, distinct from the chronological [Story Outline](STORY_OUTLINE.md).  
+Documentation scope: The root README is a project overview; this outline collects concrete gameplay concepts and links to their specialist system documents.  
 Related material: [Story Outline](STORY_OUTLINE.md) · [Resource Economy](RESOURCE_ECONOMY.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) · [Engine Outline](ENGINE_OUTLINE.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Faction descriptions](../Factions)
 
 > Design boundary: This document distinguishes established premises from suggested implementations. It is not an assertion that these gameplay systems are already coded. The assassination and its concealment are *fictional alternate-history events*: historically, Tito died in 1980.
@@ -276,6 +277,8 @@ The distinctive loop is not merely build base → produce army → destroy enemy
 
 The weight of each action varies by mode and faction. A battle-focused skirmish can emphasize production and conquest; a story mission can emphasize evidence and escape; a Meridian scenario can emphasize contracts, delivery, and financial control.
 
+Mission objectives need not be limited to eliminating an opposing base. Candidate scenarios include intelligence recovery, witness protection, clandestine extraction, mercenary procurement, shipment interception, border access, infrastructure defense, territorial control, and conventional engagements. Each should connect to the same unit-command and world-consequence systems rather than inventing an entirely separate game mode.
+
 ## 9. Strategic Systems Worth Prototyping
 
 ### 9.1 Production and procurement
@@ -304,9 +307,9 @@ All building espionage effects require explicit faction permissions, qualifying 
 
 ### 9.3.2 Reconnaissance versus conventional explosive sabotage
 
-The factions begin the match with different, inexpensive scouting platforms. Meridian Pact has the greatest overall reconnaissance advantage with cheap, very fast, lightly armored and lightly armed trucks combining scouting with limited combat; Atlantic Concord and Iron Ascendancy have cheap, light, unarmed scouting airplanes; and Red Directorate scouts using motorcycles armed with basic infantry rifles. None of these reconnaissance units automatically steals classified intelligence or places a sabotaging charge. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
+Each playable faction has an affordable early reconnaissance platform, with a distinct battlefield role. The Meridian Pact can mass-produce cheap, very fast, lightly armored and lightly armed scout-combat trucks; these give it the strongest overall reconnaissance capability and limited early fighting power. Atlantic Concord and Iron Ascendancy have inexpensive unarmed light scouting airplanes, while Red Directorate uses motorcycles equipped with basic infantry rifles. These are ordinary battlefield observation assets: spotting a nuclear facility does not yield classified research or infiltration privileges. No scout automatically receives sabotage permission simply by being a reconnaissance unit. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
 
-Meridian Pact is the strongest and cheapest conventional sabotage faction, with early access to an abstract explosive-charge attack against eligible enemy vehicles and buildings. Qualified non-spy Pact units can perform it. The other three factions unlock this form of sabotage later, pay more and may use spy units only. For Meridian the action is a core raiding specialty rather than part of an advanced spying tree; exact eligible units remain to be designed.
+The Meridian Pact has the game's strongest conventional explosive sabotage, separate from its reconnaissance and Black Market advantages. Eligible Pact units—including specifically authorized non-spy units—can use a cheap early-game, fictional attached-charge explosion against enemy vehicles and buildings. Ordinary Pact scouting trucks do not inherit the action unless expressly designated as eligible. The Atlantic Concord, Red Directorate, and Iron Ascendancy unlock comparable vehicle/building sabotage later, at higher cost, and solely for authorized spy units. For Meridian this is a core raiding specialty, not an advanced espionage-tree effect; precise eligible units and balance parameters remain design decisions.
 
 This conventional explosive sabotage is separate from Concord Psy-Ops, Directorate budget diversion and Ascendancy's bounded fictional facility-contamination effect; none of them bypasses nuclear-intelligence prerequisites or transfers enemy faction ownership. See [Explosive Sabotage](SABOTAGE_SYSTEM.md).
 
@@ -398,6 +401,7 @@ Before implementing full rosters and economy, resolve:
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
 - Who supplies Black Market stock (excluding nuclear weapons), whether human Meridian players can list their own goods, and how anti-exploit settlement works.
+- Identify which Meridian unit archetypes may use early non-spy explosive sabotage, whether any scout trucks qualify, and the unlock, cost and counterplay rules for rival spy-only sabotage. Tune each faction's early scouting affordability and tactical limitations.
 - Balance values for refinery operating costs, nuclear-material refinement, nuclear production resources and timers, nuclear asset security and capture, the Ascendancy's first-bomb production victory, and bomber/ICBM counterplay.
 - Delivery compatibility for stolen bombs deployed by the Iron Ascendancy or Meridian Pact; Ascendancy's own-built first bomb ends the game before deployment.
 - Narrative placement and outcome of the Iron Ascendancy nuclear intelligence acquisition and the three-power interdiction race.
