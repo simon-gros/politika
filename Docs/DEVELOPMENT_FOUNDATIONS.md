@@ -97,4 +97,6 @@ Do not borrow persistent character accounts, MMO inventories, social identity/pr
 **Tool boundary:** Rust owns local manifests, deterministic source transforms and diagnostics; C++ owns RTS rules and the authoritative simulation; Unreal Engine 5.8.3 owns assets, UI, Editor automation and packaging; C# remains optional for a justified standalone tool. No extra hosted workflows, scripting-language dependencies, branch proliferation, gameplay subsystem duplication or unverified release claims arise from these recommendations.
 
 
+The current production policies are [Production Standards](PRODUCTION_STANDARDS.md), [Validation and Governance](VALIDATION_AND_GOVERNANCE.md), and [Performance and Release Gates](PERFORMANCE_AND_RELEASE_GATES.md). The [Documentation Index](DOCUMENTATION_INDEX.md) identifies authoritative owners. The new Rust metadata registries are initial **planning and source-validity checks**, not completed Unreal deliverables.
+
 Related: [Engine Outline](ENGINE_OUTLINE.md), [Proposed Engine Layers](PROPOSED_ENGINE_LAYERS.md), [Versioning Roadmap](VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md), [Platform Support](PLATFORM_SUPPORT.md), and [Content Manifest](../Data/content_manifest.json).
