@@ -38,6 +38,12 @@ Espionage and coercion: Atlantic Concord specializes in Psy-Ops, which can make 
 
 Faction differences are intended to extend beyond visual identity. Each playable power should have its own units, technologies, military doctrine, production constraints, intelligence capabilities, logistical needs, and strategic weaknesses. Asymmetry must create different viable approaches to victory, rather than one faction simply having stronger versions of another's units.
 
+### Facility espionage and industrial disruption
+
+The three main military factions have distinct ways to target enemy buildings. Atlantic Concord Psy-Ops can force an eligible building to self-destruct or quietly waste resources; the wasted supplies disappear rather than becoming Concord income. Red Directorate spies can instead divert resources from an infiltrated rival facility or budget into the Directorate's own accounts. Either financial effect may go unattributed or unnoticed until the victim investigates.
+
+Iron Ascendancy espionage can place eligible enemy facilities under a fictional poisoning/disease disruption effect. Workers, researchers or other assigned staff may die, depleting the workforce and slowing or stopping production; a bounded chain can affect other nearby eligible facilities. Counterintelligence, containment, staffing replacement and recovery can stop the losses. This is an abstract RTS building-status system, not a representation of actual chemical or biological techniques. These abilities do not bypass the established espionage upgrade requirements for the Ascendancy's first nuclear weapon. See [Espionage and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) and [Resource Economy](Docs/RESOURCE_ECONOMY.md).
+
 ### The Unaligned: the world is not unclaimed territory
 
 The Unaligned is neither a conventional fifth opponent nor a pool of ownerless neutral units. Its forces follow their own institutional orders, and its roads, factories, checkpoints, ports, airfields, broadcasters, and military installations exist independently of player activity.
@@ -136,7 +142,7 @@ These are architecture and product targets, not evidence that the corresponding 
 | [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) | Five-faction structure, neutrality, nuclear-weapon victory asymmetry, faction economy/combat bonuses, conventional Black Market, mercenaries, intelligence, and RTS systems. |
 | [Resource Economy](Docs/RESOURCE_ECONOMY.md) | Nuclear/fossil resource hierarchy, mandatory crude-oil and nuclear refining, Concord refinery discount, nuclear power plants, electricity, low-cost Directorate infantry, and Meridian fuel-field spawning. |
 | [Propaganda and Morale](Docs/PROPAGANDA_AND_MORALE.md) | Radio, newspaper and television propaganda for four factions; universal population morale improving production and army discipline. |
-| [Espionage, Psy-Ops and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) | Concord Psy-Ops, Directorate's faster/cheaper intelligence theft, Ascendancy's spy progression and exclusive Intimidation, and the shared Discipline/Morale meter. |
+| [Espionage, Psy-Ops and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) | Unit and building Psy-Ops, concealed resource waste and Directorate diversion, Ascendancy facility contamination, spy progression, Intimidation, and Discipline/Morale. |
 | [Nuclear Ultimate Weapons System](Docs/NUCLEAR_WEAPONS_SYSTEM.md) | Stolen nuclear-refining and weapons intelligence, processed nuclear materials, long production, bomber/ICBM delivery, nuclear power plants, theft, and Ascendancy's instant first-bomb victory. |
 | [Engine Outline](Docs/ENGINE_OUTLINE.md) | Proposed Unreal Engine foundation, RTS systems, technical requirements, 4K support, and implementation priorities. |
 | [Proposed Engine Layers](Docs/PROPOSED_ENGINE_LAYERS.md) | Separation of platform, presentation, match rules, simulation, world, content, and authoring tools. |
