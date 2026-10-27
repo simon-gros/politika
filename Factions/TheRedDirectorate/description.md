@@ -56,6 +56,10 @@ Red Directorate conducts its early-game reconnaissance primarily with motorcycle
 
 The Directorate can eventually deploy conventional explosive sabotage against eligible enemy vehicles and buildings through a fictional charge action, but its availability is later and its cost higher than Meridian Pact sabotage. Only eligible spy units can do this, not the Directorate's motorbike scouts or ordinary infantry. Efficient intelligence theft and covert resource diversion are separate Directorate espionage abilities. See [Reconnaissance and Scouting](../../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../../Docs/SABOTAGE_SYSTEM.md).
 
+### Counterintelligence rivalry with the Unaligned
+
+The Red Directorate steals real rival intelligence slightly faster and at lower cost than its competitors, but the Unaligned retains the strongest overall counterintelligence and can intercept operations or introduce forged reports into seemingly legitimate sources. Directorate intelligence may falsely identify a nuclear complex, hostile force or imminent threat planted by Unaligned agents; physical reconnaissance, evidence comparison and other countermeasures can expose the falsehood. When a weaker playable faction nears elimination, the Unaligned may use such reports to redirect stronger combatants without modifying real Directorate inventories or actions. See [Unaligned Counterintelligence](../../Docs/UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## Air Defense, Intelligence and Electronic Warfare
 
 A distinctive element of Directorate doctrine is the integration of ground-based air defenses with broader operational planning. Radar stations, mobile surface-to-air missile units, interceptor aviation and layered defensive positions protect important industrial centers and troop concentrations. Rather than assuming permanent control of the air, Directorate commanders seek to deny opponents easy access to protected territory and create conditions in which large formations can continue maneuvering despite hostile aviation.
