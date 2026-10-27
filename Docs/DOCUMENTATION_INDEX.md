@@ -6,6 +6,7 @@
 
 - [Concepts Outline](CONCEPTS_OUTLINE.md) — strategic faction identity, economy, combat, espionage and mechanics.
 - [Story Outline](STORY_OUTLINE.md) — alternate-history assassination plot, nuclear storyline, campaign arc and political consequences.
+- [Yugoslav World and Campaign Systems Model](YUGOSLAV_WORLD_MODEL.md) — translates the common RTS concepts into period institutions, physical geography, civilian life, provenance and the fixed storyline, distinguishing historical evidence from candidate gameplay.
 - [Match Structure](MATCH_STRUCTURE.md) — match roster and faction participation boundaries.
 - [Resource Economy](RESOURCE_ECONOMY.md), [Nuclear Weapons](NUCLEAR_WEAPONS_SYSTEM.md), [Sabotage](SABOTAGE_SYSTEM.md), [Reconnaissance](RECONNAISSANCE_AND_SCOUTING.md), [Intelligence](ESPIONAGE_AND_INTIMIDATION.md), [Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md), [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) — specialist gameplay rules and planned mechanics.
 - [Faction descriptions](../Factions/) — faction-specific narratives and visual identity.
