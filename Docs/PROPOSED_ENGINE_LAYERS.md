@@ -116,6 +116,16 @@ See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Econo
 
 The simulation owns Psy-Ops `UnitResolve` depletion and fully-broken self-destruction resolution or temporary friendly-fire rampage, including start, expiry, interruption, valid friendly targets, and preservation of unit ownership. Content definitions gate it to Atlantic Concord only and to eligible combat/non-combat units. UI indicates a target's Discipline/Morale label and short rampage expiry. Red Directorate rival-intelligence theft receives a slight time and resource-cost discount, defined by espionage-operation category rather than blanket spying speed. The match authority validates both effects and prevents them from bypassing Ascendancy's nuclear-intelligence research gates. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Building espionage, concealed accounting and disruption chains
+
+The simulation and match framework own building-level espionage eligibility, resource transactions and personnel-loss incidents:
+
+- Concord Psy-Ops: eligible enemy-building destruction or a bounded undetected resource-waste sink; resource loss is not credited to Concord.
+- Red Directorate: covert eligible enemy resource diversion, with atomic debit at the source and credit to the Directorate's compatible account. Never create resources from nothing or debit an empty budget.
+- Iron Ascendancy: abstract poison/disease incident in a staffed building, reducing assigned workers/researchers and therefore throughput, with finite propagation to nearby eligible facilities and recovery through containment/replacement. Do not model real poison or pathogen transmission.
+
+World/spatial code owns **eligible neighboring facilities** and caps propagation; economy/production owns worker counts and throughput; intelligence/fog owns what the defending player detects and can attribute; presentation shows staff losses, production failures or unexplained budget changes only as permitted by discovery state. Content assets define faction permissions, cost, eligible target types, duration, spread caps, immunity/exclusion flags and counterplay. The Iron Ascendancy nuclear intelligence/full-spy progression remains a separate permissioned objective. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ### Shared resolve, combat Discipline and civilian Morale
 
 Simulation truth: one `UnitResolve` per eligible unit, with shared limits, break threshold, loss and recovery. Presentation label: `Discipline` for combat units and `Morale` for civilian/non-combat units. These must not become different meters or independent health/status systems. Faction Population Morale is a rolled-up civilian/public indicator within the same morale/resolve model, impacting production output and the baseline Discipline of soldiers.
