@@ -86,10 +86,6 @@ The **Unaligned is non-nuclear and NPC-only**. It has no playable Intimidation a
 
 The **Meridian Pact cannot refine nuclear materials at all** but can steal and potentially deploy an existing completed weapon. Its starting position always lies near an existing oil or natural-gas field, without automatically controlling it. Crude oil must be refined into petroleum fuels or kerosene in an eligible refinery; nuclear power plants owned by eligible factions can provide electricity to game networks. The Unaligned responds to unauthorized activity and defends territorial jurisdiction through normal neutral AI rules, without becoming a player nuclear faction.
 
-## NPC Propaganda and Population Morale
-
-The Unaligned has distinct **NPC-controlled advanced propaganda capabilities** using **radio, newspapers and television**. In the game's fictional story, federal media institutions support claims of Tito's continued public leadership after the secret 1984 assassination; ordinary staff do not necessarily know the conspiracy. As with every faction, the Unaligned has a **population morale meter**, and high morale improves **production output and army discipline** for its simulated industries and armed forces. These are AI systems, not player-controlled propaganda powers. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
-
 ## AI Propaganda, Public Continuity and Population Morale
 
 The **Unaligned has its own distinct advanced propaganda apparatus**, operated exclusively by **NPC/system AI**, not a human player. **Radio, newspapers and television** are its primary media. Federal broadcasts, official reporting and staged public appearances sustain continuity and public order in its fictional setting. A restricted security inner circle uses the apparatus to conceal Tito's assassination, relying on the separate voice and body doubles, while most media staff and institutions remain unaware of the actual conspiracy.
