@@ -38,9 +38,9 @@ Scientific research and technological development constitute another important d
 
 ## Distinctive Espionage Specialization
 
-The **Red Directorate possesses its own special espionage features**, distinct from Atlantic Concord intelligence capabilities. Its precise intelligence advantages, unlocks and tactical effects remain to be defined; they should complement its established organization and security strengths without cloning the Concord's skill tree.
+The Red Directorate possesses its own special espionage features, distinct from Atlantic Concord intelligence capabilities. Its precise intelligence advantages, unlocks and tactical effects remain to be defined; they should complement its established organization and security strengths without cloning the Concord's skill tree.
 
-The **Iron Ascendancy has more limited spying**, and cannot infiltrate a Directorate nuclear research facility until its **espionage capabilities are fully developed**. Eligible, successfully infiltrated Directorate sites can provide the Ascendancy with both nuclear-refinement technology and nuclear-weapons intelligence. The Directorate **does not have Intimidation**, which belongs exclusively to the Ascendancy. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+The Iron Ascendancy has more limited spying, and cannot infiltrate a Directorate nuclear research facility until its espionage capabilities are fully developed. Eligible, successfully infiltrated Directorate sites can provide the Ascendancy with both nuclear-refinement technology and nuclear-weapons intelligence. The Directorate does not have Intimidation, which belongs exclusively to the Ascendancy. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
 ## Air Defense, Intelligence and Electronic Warfare
 
@@ -58,7 +58,7 @@ In practical gameplay terms, the Red Directorate will specialize in large-scale 
 
 ## Low-Cost Infantry Advantage
 
-The Red Directorate can produce infantry **far more cheaply than any other playable faction**. This is a substantial unit-production price advantage, supporting numerical superiority, faster force replacement, and mass infantry tactics. It does not make infantry free, eliminate supply needs, or grant comparable discounts to every other unit category.
+The Red Directorate can produce infantry far more cheaply than any other playable faction. This is a substantial unit-production price advantage, supporting numerical superiority, faster force replacement, and mass infantry tactics. It does not make infantry free, eliminate supply needs, or grant comparable discounts to every other unit category.
 
 ## Governance and Resource Mechanics
 
@@ -76,20 +76,20 @@ Accordingly, the Directorate may attempt to gain influence through commercial ar
 
 ## Nuclear Refining, Power and Weapons
 
-The **Red Directorate is one of two established nuclear powers**, alongside the Atlantic Concord. It possesses nuclear-material refining technology and can convert crude nuclear-material resources into processed material for **nuclear power plants** and rare, expensive tactical nuclear weapons. Its completed weapons are delivered using an **ICBM**.
+The Red Directorate is one of two established nuclear powers, alongside the Atlantic Concord. It possesses nuclear-material refining technology and can convert crude nuclear-material resources into processed material for nuclear power plants and rare, expensive tactical nuclear weapons. Its completed weapons are delivered using an ICBM.
 
-The **Iron Ascendancy begins without nuclear capabilities**, so Directorate nuclear research facilities must be defended against spies seeking **nuclear-refining intelligence and nuclear-weapons research**. If successful infiltration gives the Ascendancy both prerequisites, and its first bomb is later completed, **the Ascendancy immediately wins the active game with no launch required**. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
+The Iron Ascendancy begins without nuclear capabilities, so Directorate nuclear research facilities must be defended against spies seeking nuclear-refining intelligence and nuclear-weapons research. If successful infiltration gives the Ascendancy both prerequisites, and its first bomb is later completed, the Ascendancy immediately wins the active game with no launch required. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## Formation Size and Discipline
 
-**Terminology:** Directorate mass-army formation advantages modify **combat-unit Discipline** only. Civilian/non-combat units display **Morale**, which is the **same underlying resolve meter** without military formation bonuses; faction **Population Morale** is its aggregate public indicator. The Ascendancy may intimidate an isolated Directorate combatant only after breaking Discipline, or an eligible non-combat unit only after breaking Morale. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+Terminology: Directorate mass-army formation advantages modify combat-unit Discipline only. Civilian/non-combat units display Morale, which is the same underlying resolve meter without military formation bonuses; faction Population Morale is its aggregate public indicator. The Ascendancy may intimidate an isolated Directorate combatant only after breaking Discipline, or an eligible non-combat unit only after breaking Morale. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 
-**Red Directorate combat units preserve Discipline better when grouped in large, mutually supporting formations, and gain an additional, distinctive Discipline bonus in very massive coherent armies.** This extra high-mass advantage belongs only to the Red Directorate and Iron Ascendancy; ordinary large-group stabilization applies to Meridian and Unaligned, while the Atlantic Concord alone retains normal discipline in small detachments. Individual Directorate soldiers and very small groups still suffer the normal size-based Discipline penalty. The Red Directorate's substantially cheaper infantry makes forming larger cohesive units a natural strategic advantage, without removing vulnerability to battlefield losses. An isolated Directorate combatant can be converted through Iron Ascendancy Intimidation **only after its Discipline has been completely broken**. The Atlantic Concord alone is exempt from the small-group Discipline penalty; all factions still have population morale. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+Red Directorate combat units preserve Discipline better when grouped in large, mutually supporting formations, and gain an additional, distinctive Discipline bonus in very massive coherent armies. This extra high-mass advantage belongs only to the Red Directorate and Iron Ascendancy; ordinary large-group stabilization applies to Meridian and Unaligned, while the Atlantic Concord alone retains normal discipline in small detachments. Individual Directorate soldiers and very small groups still suffer the normal size-based Discipline penalty. The Red Directorate's substantially cheaper infantry makes forming larger cohesive units a natural strategic advantage, without removing vulnerability to battlefield losses. An isolated Directorate combatant can be converted through Iron Ascendancy Intimidation only after its Discipline has been completely broken. The Atlantic Concord alone is exempt from the small-group Discipline penalty; all factions still have population morale. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Advanced Propaganda and Population Morale
 
-The Red Directorate has **distinct advanced propaganda capabilities** using **radio, newspapers and television**. Its faction-specific direction may emphasize centralized communications and sustained industrial and military mobilization, while exact mechanics remain open. It has its **own population morale meter**; higher morale improves **production output and army discipline**, reinforcing but not replacing its low-cost infantry advantage. The Meridian Pact has no advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+The Red Directorate has distinct advanced propaganda capabilities using radio, newspapers and television. Its faction-specific direction may emphasize centralized communications and sustained industrial and military mobilization, while exact mechanics remain open. It has its own population morale meter; higher morale improves production output and army discipline, reinforcing but not replacing its low-cost infantry advantage. The Meridian Pact has no advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Strategic Identity
 
