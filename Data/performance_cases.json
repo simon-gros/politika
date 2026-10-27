@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "purpose": "Future measured RTS performance fixtures, without fabricated measurements or FPS claims.",
+  "fixtures": [
+    {
+      "id": "small_skirmish",
+      "status": "planned",
+      "map_id": null,
+      "seed": null,
+      "unit_count": null,
+      "metrics": [
+        "simulation_tick_ms",
+        "frame_time_ms",
+        "command_latency_ms",
+        "memory_mib"
+      ]
+    },
+    {
+      "id": "group_pathing",
+      "status": "planned",
+      "map_id": null,
+      "seed": null,
+      "unit_count": null,
+      "metrics": [
+        "simulation_tick_ms",
+        "path_requests_per_tick",
+        "command_latency_ms"
+      ]
+    },
+    {
+      "id": "fog_and_ai",
+      "status": "planned",
+      "map_id": null,
+      "seed": null,
+      "unit_count": null,
+      "metrics": [
+        "simulation_tick_ms",
+        "fog_update_ms",
+        "ai_update_ms",
+        "frame_time_ms"
+      ]
+    },
+    {
+      "id": "render_stress",
+      "status": "planned",
+      "map_id": null,
+      "seed": null,
+      "unit_count": null,
+      "metrics": [
+        "frame_time_ms",
+        "frame_p99_ms",
+        "memory_mib"
+      ]
+    }
+  ]
+}
