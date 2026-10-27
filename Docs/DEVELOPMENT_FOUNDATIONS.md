@@ -8,12 +8,12 @@
 
 | Candidate | Implemented source | Present capability | Important limit |
 | --- | --- | --- | --- |
-| **1 — Lightweight regression tests** | [Rust quality tests](../tools/version/src/bin/quality.rs) alongside [version-contract tests](../tools/version/src/lib.rs) | Cargo regression tests exercise faction invariants, unsafe paths, duplicate IDs, toolchain parsing, and explicit diagnostic verdicts | These are source/contract tests, **not** C++ gameplay tests; no compiled Unreal project exists yet |
+| **1 — Lightweight regression tests** | [Rust quality tests](../tools/version/src/bin/quality.rs), [version tests](../tools/version/src/lib.rs), [shared C++ rules](../Source/PolitikaCore/Rules.h) and [C++ regression cases](../Tests/Core/RulesTests.cpp) | Cargo tests validate metadata and diagnostic rules; a Rust command compiles and runs portable C++20 assertions for selection, move admission, resource spending and faction permissions | The C++ kernel is a **limited command/rules contract**, not navigation, the full game simulation, or Unreal integration |
 | **2 — Data-driven content validation** | [Content manifest](../Data/content_manifest.json), quality `audit` | Verifies five faction IDs/names, exactly four playable factions plus the NPC authority, referenced descriptions/logos/banners, manifest schema and canonical version | The registry is a **design-stage asset index**; it does not implement faction combat rules, map loading, asset cooking or release readiness |
 | **3 — Reproducible engine/build preflight** | [Unreal toolchain pin](../tools/unreal-version.env), [local Unreal launcher](../tools/unreal.sh), quality `preflight` | Pins UE version/tag/source revision and expected project location; inspects installed engine's `Build.version`, Git SHA and project path; optionally invokes Linux Editor build and future Automation invocation | `doctor` returns **BLOCKED** until the Unreal project and verified local UE installation are available; no compiler/build has been certified |
 | **4 — Structured diagnostics** | Rust quality `audit`, `preflight` and `all` | Reports machine-readable check ID, status, message, game version, Git revision, dirty marker and status counts | Source checks do not imply playability or any target-device acceptance |
 
-The canonical [`version.json`](../version.json) and the independent compatibility counters remain untouched. The quality tool is a second **binary in the existing Rust package**, not a new runtime service or a new scripting stack. The Cargo package keeps the original version CLI as its default binary.
+The canonical [`version.json`](../version.json) and the independent compatibility counters remain untouched. The quality tool is a second **binary in the existing Rust package**, not a new runtime service or a new scripting stack. The separate C++20 core test runner uses the host C++ compiler (configured with `CXX`) and requires no Unreal installation. The Cargo package keeps the original version CLI as its default binary.
 
 ## 2. Local commands
 
@@ -23,11 +23,12 @@ Run from the repository root with a Rust 2024-compatible toolchain (Rust 1.85 or
 cargo fmt --manifest-path tools/version/Cargo.toml -- --check
 cargo test --locked --manifest-path tools/version/Cargo.toml --all-targets
 cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- audit
+cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- core
 cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- all
 bash tools/unreal.sh doctor
 ```
 
-The audit writes `build/diagnostics/audit.json`; preflight writes `build/diagnostics/preflight.json`; `all` writes `build/diagnostics/all.json`. Reports are generated locally under ignored `build/`, not committed. No hosted CI triggers are configured.
+The audit writes `build/diagnostics/audit.json`; C++ core tests write `build/diagnostics/core.json`; preflight writes `build/diagnostics/preflight.json`; `all` writes `build/diagnostics/all.json`. Reports are generated locally under ignored `build/`, not committed. No hosted CI triggers are configured.
 
 Quality exits: `0` = all requested checks passed; `1` = test/contract failure; `2` = tool or infrastructure error; `3` = blocked by missing prerequisites; `4` = inconclusive or no completed assertion-based result. The check vocabulary additionally supports `SKIPPED` and `NOT_RUN`. A missing Editor build, playable map or recorded game must never be reported as a passed engine test.
 
@@ -39,11 +40,11 @@ The source pin specifies UE **5.8.3** with an explicit expected Git revision. Wh
 
 ### Stage A — immediately useful, no engine installation
 
-Maintain the five-faction content registry as design metadata, not a duplicate gameplay ruleset. Extend its references only when real files appear; reject dangling assets, duplicate IDs and invalid roles. Run `cargo test` and `quality audit` when changing faction metadata, versioning, local tooling or manifest formats. Keep historical/archive research separate from release-grade assets. Record the exact source revision and checks performed; no gameplay evidence is required for prose-only commits.
+Maintain the five-faction content registry as design metadata, not a duplicate gameplay ruleset. Extend its references only when real files appear; reject dangling assets, duplicate IDs and invalid roles. Run `cargo test`, `quality audit` and `quality core` after changing faction metadata, versioning, command-admission rules, local tooling or manifest formats. The portable C++ rules header is the future Unreal simulation's shared admission kernel, rather than a competing Rust simulator. Keep historical/archive research separate from release-grade assets. Record the exact source revision and checks performed; no gameplay evidence is required for prose-only commits.
 
 ### Stage B — when a playable Unreal prototype exists
 
-Add a small `Politika` C++ runtime module and Unreal Automation tests with genuine executable assertions. Prioritize: unit order admission and ownership; multi-selection and command queue; terrain/path reachability; production/building costs; faction permissions; espionage/sabotage timing and access gates; exclusive NPC world authority; and scenario/victory edge cases. Test at both a pure C++ rules layer and an Unreal integration layer, using one authoritative gameplay implementation rather than parallel Rust/C++ simulations. Introduce deterministic fixture maps and stable unit identifiers only with implemented assets.
+Integrate the existing platform-neutral [C++ rules kernel](../Source/PolitikaCore/Rules.h) into a `Politika` Unreal C++ runtime module; add Unreal Automation tests with genuine executable assertions. Prioritize: unit order admission and ownership; multi-selection and command queue; terrain/path reachability; production/building costs; faction permissions; espionage/sabotage timing and access gates; exclusive NPC world authority; and scenario/victory edge cases. Test at both a pure C++ rules layer and an Unreal integration layer, using one authoritative gameplay implementation rather than parallel Rust/C++ simulations. Introduce deterministic fixture maps and stable unit identifiers only with implemented assets.
 
 At this stage, connect the generated C++ build identity to startup diagnostics and use Editor/Data Validation for cooked content. Require passing build and assertions before promoting a playable claim. Linux is the first development execution lane; qualify Windows, SteamOS/Steam Deck and Android in separate platform-specific runs.
 
