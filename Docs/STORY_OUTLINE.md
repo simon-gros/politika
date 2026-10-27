@@ -213,7 +213,7 @@ Provisional roles include a Concord nonproliferation coordinator, a Directorate 
 
 The subplot supports a second source of pressure even when the player has already inferred Tito's fate: some battles concern whether a weapon changes hands, while others concern whether a historical crime becomes public. Keeping these stakes distinct is essential to pacing.
 
-## 12. Principal Character Functions
+## 8. Principal Character Functions
 
 Names, biographies, and personal identities remain open for subsequent writing. These roles support a character-driven story without replacing the RTS perspective:
 
@@ -229,7 +229,7 @@ Names, biographies, and personal identities remain open for subsequent writing. 
 
 These characters should disagree for intelligible reasons. The doubles are not merely props, and the journalist, witness, or dissenter should not exist only to be rescued or killed.
 
-## 8. Narrative Delivery Through RTS Gameplay
+## 9. Narrative Delivery Through RTS Gameplay
 
 POLITIKA's established UI direction rules out mandatory cinematics. The story should therefore advance through **mission briefings, field reports, radio exchanges, objective changes, recovered documents, period-style news bulletins, and debriefings**. Tactical play remains continuous and central.
 
@@ -256,7 +256,7 @@ All four campaigns share the **same fixed core facts and 1989 revelation**. Only
 
 Defeats or optional outcomes may alter the condition of a town, the survival of supporting characters, the integrity of an archive, the reputation of a faction, or the intensity of the final battles. The world-changing disclosure and outbreak of war remain canonical.
 
-## 9. Reveal Pacing and Dramatic Principles
+## 10. Reveal Pacing and Dramatic Principles
 
 1. **1984–1985: Anomaly.** The audience sees an unexplained security response and unnatural control of public appearances.
 2. **1986: Substitution.** Evidence suggests that Tito's image and voice are fabricated; his actual condition is unclear.
@@ -268,7 +268,7 @@ Some campaigns may learn individual facts earlier than others, especially the Ir
 
 Recurring motifs include the empty chair at meetings, a television appearance without unscripted questions, a radio voice heard after the speaker's death, duplicate signatures, sealed corridors, missing archival reels, and official demands for unity that generate further distrust.
 
-## 10. Ending, Tone, and Themes
+## 11. Ending, Tone, and Themes
 
 POLITIKA is a tragic political thriller with no uncomplicated savior faction. The Iron Ascendancy's assassination creates the central wound, but the Unaligned's concealment turns it into a constitutional and moral disaster. Other powers compound the crisis when they treat Yugoslavia as an arena for strategic competition rather than a sovereign society.
 
@@ -278,7 +278,7 @@ The ending should not imply that Yugoslavia's peoples were destined for war or t
 
 The last narrative image should be achievable without a cinematic: a command map fills with conflicting orders and expanding conflict markers while the final official broadcast is replaced by an independently verified announcement. The player still commands units, but the voice that once claimed to speak for the entire federation is gone.
 
-## 11. Canon Locked / Details Open
+## 12. Canon Locked / Details Open
 
 ### Locked foundations
 
