@@ -59,12 +59,12 @@ These military Discipline modifiers do not apply to civilian/non-combat Morale. 
 
 ### Atlantic Concord Psy-Ops and the shared resolve meter
 
-Atlantic Concord Psy-Ops is a separate **espionage subdivision**, not the radio/newspaper/television propaganda campaign system. It acts on an **eligible individual enemy unit**, using the exact same `UnitResolve` meter as all other morale/discipline effects. It can either:
+Atlantic Concord Psy-Ops is a separate espionage subdivision, not the radio/newspaper/television propaganda campaign system. It acts on an eligible individual enemy unit, using the exact same `UnitResolve` meter as all other morale/discipline effects. It can either:
 
-1. **Break the target's Discipline (combat) or Morale (non-combat)** to the shared `BrokenThreshold`, causing an in-game self-destruction/elimination event without recruitment or allegiance transfer.
-2. **Trigger a short temporary friendly-fire rampage**, causing the affected unit to attack eligible allied units using its valid attack actions. After the limited duration, its targeting returns to normal if it survives. No ownership change occurs. Whether the rampage must use a separate resolve trigger is left for balancing.
+1. Break the target's Discipline (combat) or Morale (non-combat) to the shared `BrokenThreshold`, causing an in-game self-destruction/elimination event without recruitment or allegiance transfer.
+2. Trigger a short temporary friendly-fire rampage, causing the affected unit to attack eligible allied units using its valid attack actions. After the limited duration, its targeting returns to normal if it survives. No ownership change occurs. Whether the rampage must use a separate resolve trigger is left for balancing.
 
-The destruction and temporary-rampage effects are distinct from **Iron Ascendancy Intimidation**, which **converts** eligible isolated targets only after fully breaking Discipline/Morale. Psy-Ops does not add a second morale gauge, collapse an entire faction's Population Morale merely by breaking one unit, or confer Intimidation on the Concord. An unarmed civilian/non-combat unit must have a valid authored in-game attack action before it can perform a rampage. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+The destruction and temporary-rampage effects are distinct from Iron Ascendancy Intimidation, which converts eligible isolated targets only after fully breaking Discipline/Morale. Psy-Ops does not add a second morale gauge, collapse an entire faction's Population Morale merely by breaking one unit, or confer Intimidation on the Concord. An unarmed civilian/non-combat unit must have a valid authored in-game attack action before it can perform a rampage. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Iron Ascendancy Intimidation against both categories
 
