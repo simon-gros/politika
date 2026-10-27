@@ -36,6 +36,12 @@ Militarily, the Red Directorate is distinguished by its enormous conventional fo
 
 Scientific research and technological development constitute another important dimension of the Directorate's strategic identity. Its research institutions maintain extensive programs in aerospace engineering, nuclear technology, missile propulsion, military communications, radar systems, automation and advanced materials. Specialized engineering facilities develop increasingly sophisticated weapons and experimental military equipment, while major aerospace installations support satellite operations, surveillance systems and the development of strategic missile capabilities. Within POLITIKA's fictionalized technological environment, these institutions will provide access to specialized research projects, powerful experimental weapons and military technologies that require substantial industrial investment and infrastructure.
 
+## Distinctive Espionage Specialization
+
+The **Red Directorate possesses its own special espionage features**, distinct from Atlantic Concord intelligence capabilities. Its precise intelligence advantages, unlocks and tactical effects remain to be defined; they should complement its established organization and security strengths without cloning the Concord's skill tree.
+
+The **Iron Ascendancy has more limited spying**, and cannot infiltrate a Directorate nuclear research facility until its **espionage capabilities are fully developed**. Eligible, successfully infiltrated Directorate sites can provide the Ascendancy with both nuclear-refinement technology and nuclear-weapons intelligence. The Directorate **does not have Intimidation**, which belongs exclusively to the Ascendancy. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Air Defense, Intelligence and Electronic Warfare
 
 A distinctive element of Directorate doctrine is the integration of ground-based air defenses with broader operational planning. Radar stations, mobile surface-to-air missile units, interceptor aviation and layered defensive positions protect important industrial centers and troop concentrations. Rather than assuming permanent control of the air, Directorate commanders seek to deny opponents easy access to protected territory and create conditions in which large formations can continue maneuvering despite hostile aviation.
