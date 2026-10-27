@@ -46,9 +46,9 @@ The game's 1980s setting provides a foundation in reconnaissance satellites, sur
 
 ## Distinctive Espionage Specialization
 
-The **Atlantic Concord has its own special espionage features**, distinct from those of the Red Directorate. The exact specialist abilities and numerical advantages remain to be authored; the faction's established intelligence and reconnaissance identity provides the design direction. These advantages should matter when protecting research sites, detecting intruders and exposing enemy operations.
+The Atlantic Concord has its own special espionage features, distinct from those of the Red Directorate. The exact specialist abilities and numerical advantages remain to be authored; the faction's established intelligence and reconnaissance identity provides the design direction. These advantages should matter when protecting research sites, detecting intruders and exposing enemy operations.
 
-The **Iron Ascendancy's spying starts more limited** than the Concord's; Ascendancy spies cannot infiltrate a Concord nuclear research facility until their faction has **fully developed its espionage progression**. This facility may then yield both nuclear-refining technology and nuclear-weapons research intelligence if an infiltration succeeds. The Concord **does not have Intimidation** and cannot force isolated enemy units into its army using that Ascendancy-exclusive ability. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+The Iron Ascendancy's spying starts more limited than the Concord's; Ascendancy spies cannot infiltrate a Concord nuclear research facility until their faction has fully developed its espionage progression. This facility may then yield both nuclear-refining technology and nuclear-weapons research intelligence if an infiltration succeeds. The Concord does not have Intimidation and cannot force isolated enemy units into its army using that Ascendancy-exclusive ability. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
 ## Intelligence and Diplomacy
 
@@ -70,7 +70,7 @@ Individual units are intended to offer strong performance and versatile support,
 
 ## Fossil-Fuel Refining and Cost Advantage
 
-The Atlantic Concord pays **slightly less** than other factions for fossil fuels: crude oil, natural gas, petroleum-derived fuels, and kerosene. Its **fuel-refinery operating costs are also slightly lower than other factions**, yielding a modest effective purchasing and supply-cost advantage, not exclusive ownership of deposits or an extraction-speed bonus. Scarcity, transport security, and the cost of its sophisticated units remain significant constraints.
+The Atlantic Concord pays slightly less than other factions for fossil fuels: crude oil, natural gas, petroleum-derived fuels, and kerosene. Its fuel-refinery operating costs are also slightly lower than other factions, yielding a modest effective purchasing and supply-cost advantage, not exclusive ownership of deposits or an extraction-speed bonus. Scarcity, transport security, and the cost of its sophisticated units remain significant constraints.
 
 ## Economic and Infrastructure Mechanics
 
@@ -92,20 +92,20 @@ Yugoslavia's independent socialist and nonaligned position complicates these amb
 
 ## Nuclear Refining, Power and Weapons
 
-The **Atlantic Concord is one of only two established nuclear powers**, alongside the Red Directorate. It can operate **nuclear-material refineries** that convert crude nuclear resources to processed game resources, then build **nuclear power plants** to supply electricity or costly, long-produced tactical nuclear weapons. Completed bombs are deployed using a **nuclear bomber**.
+The Atlantic Concord is one of only two established nuclear powers, alongside the Red Directorate. It can operate nuclear-material refineries that convert crude nuclear resources to processed game resources, then build nuclear power plants to supply electricity or costly, long-produced tactical nuclear weapons. Completed bombs are deployed using a nuclear bomber.
 
-The **Iron Ascendancy begins non-nuclear**. Concord nuclear research facilities are potential targets for Ascendancy spies seeking **both nuclear-refinement technology and weapons-production intelligence**. If the Ascendancy obtains the knowledge and finishes constructing its own first bomb, **the game immediately ends in its victory without deployment**. Protecting research, refining facilities and rare nuclear-material stock is consequently important. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
+The Iron Ascendancy begins non-nuclear. Concord nuclear research facilities are potential targets for Ascendancy spies seeking both nuclear-refinement technology and weapons-production intelligence. If the Ascendancy obtains the knowledge and finishes constructing its own first bomb, the game immediately ends in its victory without deployment. Protecting research, refining facilities and rare nuclear-material stock is consequently important. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## Solitary Deployment and Discipline Stability
 
-**Terminology:** The Atlantic Concord's solo-unit advantage concerns the **Discipline** of **combat units**. Every unit uses the same underlying resolve meter, named **Discipline** for combat and **Morale** for civilian/non-combat units. Population Morale remains a faction-wide summary. Iron Ascendancy can still intimidate an isolated Concord combatant by breaking its Discipline, or an eligible civilian by breaking Morale. Neither is an instant conversion. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+Terminology: The Atlantic Concord's solo-unit advantage concerns the Discipline of combat units. Every unit uses the same underlying resolve meter, named Discipline for combat and Morale for civilian/non-combat units. Population Morale remains a faction-wide summary. Iron Ascendancy can still intimidate an isolated Concord combatant by breaking its Discipline, or an eligible civilian by breaking Morale. Neither is an instant conversion. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 
-**The Atlantic Concord alone suffers no loss of combat Discipline merely because its soldiers operate individually or in very small detachments.** It specializes in resilient independent and small-unit operations; by contrast, **the Red Directorate and Iron Ascendancy alone gain an additional combat Discipline stability bonus for very massive, mutually supporting armies**. Meridian and Unaligned receive ordinary formation-size effects without that extra high-mass bonus. Concord soldiers maintain normal discipline even when deployed alone. This is not immunity to combat casualties, supply problems or deliberate Discipline damage: an isolated Concord unit can still be demoralized through Iron Ascendancy Intimidation, but **only after its Discipline is fully broken may it be converted**. Population morale still improves Concord production output and baseline discipline. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+The Atlantic Concord alone suffers no loss of combat Discipline merely because its soldiers operate individually or in very small detachments. It specializes in resilient independent and small-unit operations; by contrast, the Red Directorate and Iron Ascendancy alone gain an additional combat Discipline stability bonus for very massive, mutually supporting armies. Meridian and Unaligned receive ordinary formation-size effects without that extra high-mass bonus. Concord soldiers maintain normal discipline even when deployed alone. This is not immunity to combat casualties, supply problems or deliberate Discipline damage: an isolated Concord unit can still be demoralized through Iron Ascendancy Intimidation, but only after its Discipline is fully broken may it be converted. Population morale still improves Concord production output and baseline discipline. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Advanced Propaganda and Population Morale
 
-The Atlantic Concord has its **own distinct advanced propaganda methods**, using **radio, newspapers and television** to influence public confidence and support operational goals. Its media doctrine can emphasize public information and coordinated communications, with precise abilities still to be balanced. **The Concord has a population morale meter**, and higher morale improves **production output and army discipline**. The Meridian Pact does not possess advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+The Atlantic Concord has its own distinct advanced propaganda methods, using radio, newspapers and television to influence public confidence and support operational goals. Its media doctrine can emphasize public information and coordinated communications, with precise abilities still to be balanced. The Concord has a population morale meter, and higher morale improves production output and army discipline. The Meridian Pact does not possess advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
 ## Strategic Identity
 
