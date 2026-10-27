@@ -1,4 +1,3 @@
-# Local build outputs and generated version identities
+# Local generated build artifacts
 /build/
-__pycache__/
-*.py[cod]
+**/target/
