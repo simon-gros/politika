@@ -18,6 +18,20 @@ POLITIKA's economy assigns the greatest strategic value to **nuclear-weapons mat
 
 **Scarcity and value:** nuclear materials are the **most prized and scarce** strategically; fossil fuels are the **second-most valued group**. Their prices, extraction rates, storage limits, resource costs, regeneration rules and exchange ratios are not fixed in this document. A resource's rank does not guarantee an equal per-unit credit price across all maps or markets.
 
+## 1.1 Faction-specific economic and combat asymmetry
+
+The resource values above are shared across the game, but faction **effective costs and tactical doctrine differ**. These advantages are **canonical relative balance rules**; no percentages, absolute costs or specific damage multipliers are locked.
+
+| Faction | Established advantage | Implementation / balancing boundary |
+|---|---|---|
+| **Atlantic Concord** | **Fossil fuels cost slightly less** than for other factions | Apply a **modest effective price reduction** when acquiring crude oil, natural gas, petroleum-based fuel and kerosene; this does not automatically increase deposit yield, grant free fuel or reduce nuclear-material prices |
+| **Red Directorate** | **Infantry is far cheaper to produce than for every other faction** | Major reduction to infantry recruitment/production cost for comparable roles; preserves the strategic value of mass infantry, but does not make infantry free or remove supply constraints |
+| **Iron Ascendancy** | **Slightly stronger raw destructive power** and occasional **high-risk, potentially suicidal attacks** designed to inflict maximum damage | A modest offensive advantage and distinct attack behavior at greater risk of losing units; does not imply superior economy, invulnerability or limitless damage |
+| **Meridian Pact** | **Guaranteed starting proximity to existing fossil-fuel fields** | Spawn-location benefit near oil/gas source nodes, not guaranteed ownership or an extraction-rate bonus |
+| **The Unaligned** | **Neutral NPC world administration**, not a selectable economic competitor | Existing civilian/industrial networks follow simulation rules and cannot be commandeered by players without the relevant interactions |
+
+For the Atlantic Concord, distinguish **lower fossil-fuel purchase/acquisition cost** from extraction throughput: a modest discount is the established benefit. Resource markets and local scarcity can still fluctuate. For the Red Directorate, infantry-production prices must remain **substantially below every other faction's**, not merely slightly below one rival. The Ascendancy's offensive trade-off is specified in combat doctrine rather than encoded as a generalized resource or currency discount.
+
 ## 2. Nuclear materials: rare strategic resource
 
 **Nuclear-weapons materials are the most highly valued resource in the entire game.** They should be scarce, geographically contested, strategically defensible and important to late-game victory. Access may require exploration, control, contracts or specialized map objectives.
