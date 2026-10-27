@@ -68,11 +68,11 @@ The Directorate's ambitions in Yugoslavia are complicated by the history of the 
 
 Accordingly, the Directorate may attempt to gain influence through commercial arrangements, political contacts, infrastructure cooperation, intelligence activity or support for compatible movements. Such activity can provoke scrutiny or resistance from Yugoslav authorities and competing foreign factions. Unauthorized operations may bring it into conflict with the Yugoslav People's Army and other organs of the Unaligned, while negotiated agreements might permit limited cooperation without political subordination. This distinction preserves the historical specificity of Yugoslav nonalignment and makes ideological proximity a potential diplomatic resource rather than an automatic gameplay advantage.
 
-## Nuclear Deterrence and the Secondary Storyline
+## Nuclear Refining, Power and Weapons
 
-The **Red Directorate is a nuclear-armed power** in POLITIKA's fictional setting, alongside the Atlantic Concord and the Iron Ascendancy. Its strategic deterrent exists at the geopolitical level, while its battlefield identity continues to rely on mechanized forces, industry, air defense, and sustained conventional operations. The Iron Ascendancy's effort to obtain **a particular additional nuclear weapon** is a threat that the Directorate seeks to prevent.
+The **Red Directorate is one of two established nuclear powers**, alongside the Atlantic Concord. It possesses nuclear-material refining technology and can convert crude nuclear-material resources into processed material for **nuclear power plants** and rare, expensive tactical nuclear weapons. Its completed weapons are delivered using an **ICBM**.
 
-The Directorate's **secondary campaign arc** centers on intelligence collection, protection of strategically sensitive areas, interdiction of access and transfers, and disputes over custody or verification. Its opposition to the Ascendancy need not imply trust in the Concord: two nuclear powers can temporarily frustrate a common rival while competing over influence in Yugoslavia. These missions remain distinct from the central Tito assassination and cover-up plot. The exact asset, origin, and final outcome are intentionally undecided; nuclear weapons are not routine RTS buildables or Meridian Black Market goods.
+The **Iron Ascendancy begins without nuclear capabilities**, so Directorate nuclear research facilities must be defended against spies seeking **nuclear-refining intelligence and nuclear-weapons research**. If successful infiltration gives the Ascendancy both prerequisites, and its first bomb is later completed, **the Ascendancy immediately wins the active game with no launch required**. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## Strategic Identity
 
