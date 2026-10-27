@@ -27,7 +27,7 @@ The federal government exercises authority over important questions of national 
 
 The political legacy of Josip Broz Tito occupies a central position in the faction's historical and ideological background. His leadership established the principal institutions of Yugoslav socialism, promoted the doctrine of Brotherhood and Unity among the federation's constituent peoples and positioned Yugoslavia as a prominent participant in the international Non-Aligned Movement.
 
-Since Tito died in May 1980, the game's broader historical setting incorporates the subsequent period of collective federal leadership, during which the Yugoslav Presidency, federal government and republican political institutions attempted to preserve the constitutional and ideological order established during his rule. POLITIKA's alternate-history narrative retains the political importance of Titoism while allowing fictional developments to emerge from the economic, institutional and geopolitical circumstances of the 1980s.
+In real history, Tito died on 4 May 1980. POLITIKA diverges from that chronology: in its fictional timeline, he survives the illness that killed him historically and continues to appear as Yugoslavia's leader during the 1980s. The nature of the federal leadership's subsequent continuity, the authority exercised in Tito's name, and the hidden events of 1984–1989 form the central mystery of the campaign. For the complete spoiler-filled explanation, see [the story outline](../../Docs/STORY_OUTLINE.md).
 
 ## Economy
 
