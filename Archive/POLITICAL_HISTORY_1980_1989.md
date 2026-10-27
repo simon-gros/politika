@@ -358,13 +358,13 @@ Ante Marković assumed federal executive leadership in 1989 and pursued economic
 
 *POLITIKA applications:* economic_mechanics, cabinets, finance, diplomatic_news. *Chronology status:* HIGH. *Research caution:* Appointment date not fixed from this source; avoid a day-specific claim.
 
-#### 1989 — Macedonian political pluralism emerges late in Yugoslav decade
+#### Late November 1989 — Tenth Congress of the League of Communists of Macedonia signals reform
 
-**Region:** SR Macedonia; **place:** Skopje. **Record:** [`POL-1989-POL-MACEDONIA-TRANSITION`](POLITICAL_EVENTS.csv). **Source:** [Comparative Southeast European Studies / De Gruyter](https://www.degruyterbrill.com/document/doi/10.1515/soeu-2023-0042/html) (peer-reviewed-retrospective).
+**Region:** SR Macedonia; **place:** Skopje. **Record:** [`POL-1989-POL-MACEDONIA-TRANSITION`](POLITICAL_EVENTS.csv). **Source:** [Židas Daskalovski, *Elite Transformation and Democratic Transition in Macedonia and Slovenia*](https://doi.org/10.4000/balkanologie.281) (1999 comparative scholarly analysis).
 
-Social and political organizations in SR Macedonia were exposed to Yugoslavia-wide economic and party reforms, with more decisive electoral transition following in 1990. **Political significance:** Macedonian autonomy and republican institutions should not disappear from a federation-wide narrative.
+During the League of Communists of Macedonia's late-November 1989 congress and leadership change, reformists advanced political pluralism and new approaches to federal negotiations. **Political significance:** Macedonia's republican elite followed a trajectory distinct from both Serbia and Slovenia; democratization was not a uniform simultaneous process across all six republics.
 
-*POLITIKA applications:* Skopje_offices, party_maps, civic_groups, diplomatic_news. *Chronology status:* review. *Research caution:* Context-only, not a specific, exactly dated Macedonia-specific event; further Macedonian primary-source verification required.
+*POLITIKA applications:* Skopje republican offices, party press, constitutional debate, civilian political groups. *Chronology status:* divergence review. *Research caution:* Consult contemporaneous Macedonian newspapers and congress records before assigning an exact day or verbatim political resolutions.
 
 #### 1989-01 — Montenegrin leadership resigns amid mass demonstrations
 
@@ -592,7 +592,7 @@ Albanian intellectuals formed the Democratic League of Kosovo under Ibrahim Rugo
 1. **Exact dates and variants:** a month/year denotes the available precision; ranges often encode extended political processes. Do not render 1980s events with a made-up exact day.
 2. **Kosovo:** casualty counts, legality and quorum of the March 1989 vote, and accounts of ethnicity-related incidents are contested. Use independent and multilingual materials; never assert unverified collective guilt. Rights organizations, contemporary state institutions and Albanian-affiliated accounts should be compared.
 3. **1983 Sarajevo Trial and 1987 Agrokomerc:** first-pass sources include participant-affiliated historical writing and first-person testimony; events are documented but the causes, accusations and individual culpability must be cross-checked.
-4. **Macedonia:** this version has contextual research on its republican experience, but no reliably item-dated standalone Macedonian political event from 1980–1989. It is deliberately marked *context-only* rather than inventing a local milestone; acquire Macedonian-language party proceedings, 1980s assembly records and newspapers for a proper next pass.
+4. **Macedonia:** the late-November 1989 party congress and pluralism turn are now documented through comparative scholarship, but primary Macedonian-language congress proceedings, assembly amendments and period newspapers remain an important gap.
 5. **Economy:** IMF retrospective narratives establish policy trends and dates, not visual accuracy for a factory or an exact in-game resource price. External economic actions have consequences, not an automatic winner/loser on a political axis.
 6. **Period limit:** the Yugoslav League of Communists' 14th Congress, most republican multiparty elections, the armed Yugoslav wars and the break-up of the federation belong to **1990–1992**, not 1989. POLITIKA's 1989 finale is an intentional fictional acceleration.
 7. **Copyright:** all these entries link to sources; no third-party photographs or article reproductions were uploaded. See [Rights and provenance](RIGHTS_AND_PROVENANCE.md).
