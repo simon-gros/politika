@@ -12,11 +12,11 @@ The country is more than a battlefield. Its cities, industries, transport networ
 
 ## Versioning and release management
 
-**Current development identity: 0.1.0-dev.0** — this is an initial design-stage version, **not** a playable, packaged or publicly released game. POLITIKA adopts the same Semantic Versioning and independent compatibility-counter scheme as Magna Raedarum: Marburgum, with [version.json](version.json) as the canonical game/version manifest. Network, save, persistence and world/content schemas are versioned independently and their initial values are reserved placeholders until runtime implementations exist.
+**Current development identity: 0.1.0-dev.0** — this is an initial design-stage version, **not** a playable, packaged or publicly released game. POLITIKA uses Semantic Versioning and separate compatibility counters, with [version.json](version.json) as the canonical game/version manifest. Network, save, persistence and world/content schemas are versioned independently and their initial values are reserved placeholders until runtime implementations exist.
 
 Verified development milestones can advance the version through dev, alpha, beta and release-candidate stages toward stable releases. Contributors and development agents may perform justified bumps alongside validated work; ordinary documentation/archive commits do not automatically increase the version. Future builds will record their Git revision, CI build number, engine/platform and artifact integrity independently from the public version.
 
-See the [Versioning, Build Identity & Release Management Roadmap](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) and [Changelog](CHANGELOG.md). The source-checking and build-identity utility is a [Rust Cargo package](tools/version/Cargo.toml), with Rust unit tests and a GitHub Actions Cargo validation workflow. The versioning toolchain does not require Python.
+See the [Versioning, Build Identity & Release Management Roadmap](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) and [Changelog](CHANGELOG.md). The source-checking and build-identity utility is a [Rust Cargo package](tools/version/Cargo.toml), with Rust unit tests and a GitHub Actions Cargo validation workflow. Versioning tools and tests run natively through Cargo.
 
 ## Target platforms
 
