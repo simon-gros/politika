@@ -224,6 +224,12 @@ The Pact may sell to the Iron Ascendancy clandestinely, but the Unaligned's host
 
 Radio facilities, newspaper printing/distribution and television stations support contested objectives and in-world information. Faction-specific propaganda should affect reachable audiences and morale in bounded, counterable ways rather than bypassing military mechanics, the main story's fixed revelation or the requirements for nuclear production. The Unaligned's broadcast system is NPC-controlled and overlaps narratively with the Tito continuity cover-up. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### 6.5 Advanced propaganda and faction morale
+
+**All five factions have a population morale meter. Higher morale improves production output and army discipline.** The **Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned** have distinct advanced propaganda systems using **radio, newspapers and television**. The **Meridian Pact has no advanced propaganda abilities** but retains its morale meter and benefits.
+
+Media buildings, broadcast reach, printing/distribution and control of public communications are potential map objectives. Unaligned propaganda is run by world AI and, in the narrative, supports the fictional Tito continuity operation. Distinct faction methods require unique data definitions; their precise abilities and bonuses remain to be balanced. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 7. Faction Relationships: Allegiance, Identity, and Conduct
 
 POLITIKA should model at least four distinct concepts rather than folding them into a single friend-or-foe flag:
