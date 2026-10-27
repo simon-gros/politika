@@ -1,9 +1,9 @@
 # POLITIKA — Proposed Engine Layers
 
-**Status:** first-pass architecture proposal, 2026-10-27
-**Target runtime:** Unreal Engine 5.8.3
-**Design basis:** POLITIKA's gameplay and offline-first requirements
-**Product constraints:** offline play without mandatory account login; no cinematic sequences; 4K-capable UI and rendering
+Status: first-pass architecture proposal, 2026-10-27
+Target runtime: Unreal Engine 5.8.3
+Design basis: POLITIKA's gameplay and offline-first requirements
+Product constraints: offline play without mandatory account login; no cinematic sequences; 4K-capable UI and rendering
 
 ## 1. Purpose
 
@@ -44,103 +44,103 @@ flowchart TD
 
 ### 3.1 Platform & application
 
-**POLITIKA responsibility:** provide a direct path from process launch to the main menu and local play. Own settings, display/resolution changes, input-device setup, local profile/save data, language selection, and orderly shutdown. A missing network connection must not prevent campaign or local skirmish access. Do not require account creation, sign-in, or remote entitlement checks for offline content.
+POLITIKA responsibility: provide a direct path from process launch to the main menu and local play. Own settings, display/resolution changes, input-device setup, local profile/save data, language selection, and orderly shutdown. A missing network connection must not prevent campaign or local skirmish access. Do not require account creation, sign-in, or remote entitlement checks for offline content.
 
-**UE direction:** use GameInstance-level startup/settings coordination, GameUserSettings for display/scalability, Enhanced Input for device and mapping setup, and SaveGame/local config for progress and options. Hide platform-specific storage and distribution details behind a small adapter so game rules do not depend on Steam or another storefront.
+UE direction: use GameInstance-level startup/settings coordination, GameUserSettings for display/scalability, Enhanced Input for device and mapping setup, and SaveGame/local config for progress and options. Hide platform-specific storage and distribution details behind a small adapter so game rules do not depend on Steam or another storefront.
 
-**Acceptance criteria:** campaign and local skirmish launch with networking disabled. Settings, resolution, language selection and local progress work without account creation or third-party services. Platform-specific concerns remain isolated from gameplay code.
+Acceptance criteria: campaign and local skirmish launch with networking disabled. Settings, resolution, language selection and local progress work without account creation or third-party services. Platform-specific concerns remain isolated from gameplay code.
 
 ### 3.2 Presentation
 
-**POLITIKA responsibility:** make battlefield state understandable and commands responsive. Own camera controls, selection presentation, HUD, menus, cursor/target modes, alerts, animation, VFX, sound, and in-game dialogue/subtitles. Presentation must not be authoritative for health, resources, objective completion, or order validity.
+POLITIKA responsibility: make battlefield state understandable and commands responsive. Own camera controls, selection presentation, HUD, menus, cursor/target modes, alerts, animation, VFX, sound, and in-game dialogue/subtitles. Presentation must not be authoritative for health, resources, objective completion, or order validity.
 
-**UE direction:** PlayerController translates input; UMG/CommonUI presents menus and HUD; camera components own view motion; animation, Niagara, and Audio respond to game events. UI view models subscribe to state changes rather than polling every entity. Use authored radio dialogue, captions, briefings, and mission events for narrative; cinematic playback is outside POLITIKA's product scope.
+UE direction: PlayerController translates input; UMG/CommonUI presents menus and HUD; camera components own view motion; animation, Niagara, and Audio respond to game events. UI view models subscribe to state changes rather than polling every entity. Use authored radio dialogue, captions, briefings, and mission events for narrative; cinematic playback is outside POLITIKA's product scope.
 
-**Acceptance criteria:** selection changes update the HUD promptly; mouse and hotkey commands use one coherent action model; feedback stays legible during active combat. Narrative information is delivered through gameplay, dialogue and briefing interfaces rather than required cinematics.
+Acceptance criteria: selection changes update the HUD promptly; mouse and hotkey commands use one coherent action model; feedback stays legible during active combat. Narrative information is delivered through gameplay, dialogue and briefing interfaces rather than required cinematics.
 
 ### 3.3 Match framework
 
-**POLITIKA responsibility:** start, configure, run, and end a campaign mission or skirmish. Own teams, player slots, mission rules, objective state, pause policy, victory/defeat, result summaries, and transition to the next local screen. Keep campaign progression separate from per-match state so local saves and mission restarts are predictable.
+POLITIKA responsibility: start, configure, run, and end a campaign mission or skirmish. Own teams, player slots, mission rules, objective state, pause policy, victory/defeat, result summaries, and transition to the next local screen. Keep campaign progression separate from per-match state so local saves and mission restarts are predictable.
 
-**UE direction:** use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Treat online replication as a future adapter only if multiplayer is selected; do not make it a prerequisite for local game lifecycle.
+UE direction: use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Treat online replication as a future adapter only if multiplayer is selected; do not make it a prerequisite for local game lifecycle.
 
-**Acceptance criteria:** missions can start, pause where permitted, complete, fail and restart without stale state. Objectives and result summaries follow match rules, and local campaign progress is saved independently of a running match.
+Acceptance criteria: missions can start, pause where permitted, complete, fail and restart without stale state. Objectives and result summaries follow match rules, and local campaign progress is saved independently of a running match.
 
 ### 3.4 RTS simulation
 
-**POLITIKA responsibility:** resolve player and AI commands into authoritative game state: movement and formation, target selection, combat/damage, abilities, unit status, resources, ownership, detection, fog/intel, and squad behavior. Emit events for presentation and objectives. Define explicit state ownership and update-order rules even if cross-machine deterministic lockstep is not required.
+POLITIKA responsibility: resolve player and AI commands into authoritative game state: movement and formation, target selection, combat/damage, abilities, unit status, resources, ownership, detection, fog/intel, and squad behavior. Emit events for presentation and objectives. Define explicit state ownership and update-order rules even if cross-machine deterministic lockstep is not required.
 
-**UE direction:** implement shared rules in C++ systems/components and expose command/query APIs. Keep presentation effects, widget state, and authored one-off mission sequences outside the simulation authority. Serialize the state needed for local saves and potential replay.
+UE direction: implement shared rules in C++ systems/components and expose command/query APIs. Keep presentation effects, widget state, and authored one-off mission sequences outside the simulation authority. Serialize the state needed for local saves and potential replay.
 
-**Acceptance criteria:** identical valid orders and equivalent starting states produce testable gameplay outcomes independent of UI or VFX. State transitions, order rejection and save-state restoration are covered by automated tests; random inputs can be seeded for reproducibility.
+Acceptance criteria: identical valid orders and equivalent starting states produce testable gameplay outcomes independent of UI or VFX. State transitions, order rejection and save-state restoration are covered by automated tests; random inputs can be seeded for reproducibility.
 
 ### 3.5 World & navigation
 
-**POLITIKA responsibility:** represent the playable map and provide movement, line-of-sight, targeting, camera-bound, and interaction queries. Support authored terrain, roads, slopes, bridges, cover, buildings, blockers, spawn areas, capture/objective locations, and mission-script regions.
+POLITIKA responsibility: represent the playable map and provide movement, line-of-sight, targeting, camera-bound, and interaction queries. Support authored terrain, roads, slopes, bridges, cover, buildings, blockers, spawn areas, capture/objective locations, and mission-script regions.
 
-**UE direction:** use UE World/landscape and asset systems for rendering and scene ownership. Add an RTS-specific navigation/cost representation where general navigation does not adequately model formation movement, tactical terrain costs, or large-scale queries. Keep visibility/fog state player-specific and distinct from what is physically present in the world.
+UE direction: use UE World/landscape and asset systems for rendering and scene ownership. Add an RTS-specific navigation/cost representation where general navigation does not adequately model formation movement, tactical terrain costs, or large-scale queries. Keep visibility/fog state player-specific and distinct from what is physically present in the world.
 
-**Acceptance criteria:** authored spawn points and objectives are reachable under intended navigation rules. Terrain costs, blocked routes, bridges, camera bounds and player-specific fog-of-war state can be inspected and validated in test maps.
+Acceptance criteria: authored spawn points and objectives are reachable under intended navigation rules. Terrain costs, blocked routes, bridges, camera bounds and player-specific fog-of-war state can be inspected and validated in test maps.
 
 ### 3.6 Content definitions
 
-**POLITIKA responsibility:** store tunable authored values and references for factions, squads, vehicles, weapons, abilities, upgrades, objectives, AI profiles, and mission variants. Preserve stable IDs and validation so balance changes do not require duplicating behavior code.
+POLITIKA responsibility: store tunable authored values and references for factions, squads, vehicles, weapons, abilities, upgrades, objectives, AI profiles, and mission variants. Preserve stable IDs and validation so balance changes do not require duplicating behavior code.
 
-**UE direction:** use Primary Data Assets or DataTables for definitions, shared C++ components/ability types for behavior, and Blueprint subclasses for presentation or explicitly authored exceptions. Validate missing references, invalid values, unsupported combinations, and localization gaps in editor/build tooling.
+UE direction: use Primary Data Assets or DataTables for definitions, shared C++ components/ability types for behavior, and Blueprint subclasses for presentation or explicitly authored exceptions. Validate missing references, invalid values, unsupported combinations, and localization gaps in editor/build tooling.
 
-**Acceptance criteria:** a faction or unit can be introduced with validated data assets and reused behaviors, rather than duplicating combat code. Stable identifiers, invalid references, missing localization and unsupported combinations are diagnosed before release.
+Acceptance criteria: a faction or unit can be introduced with validated data assets and reused behaviors, rather than duplicating combat code. Stable identifiers, invalid references, missing localization and unsupported combinations are diagnosed before release.
 
 ### 3.7 Content pipeline & tools
 
-**POLITIKA responsibility:** let designers make and check maps, missions, units, tuning, text, and audio without hand-editing runtime code. Own import/build rules, validation, asset naming/IDs, localization checks, map diagnostics, and reproducible packaging.
+POLITIKA responsibility: let designers make and check maps, missions, units, tuning, text, and audio without hand-editing runtime code. Own import/build rules, validation, asset naming/IDs, localization checks, map diagnostics, and reproducible packaging.
 
-**UE direction:** build editor utilities for map/object placement and validation, data-asset checks, preview/debug overlays, and one-click local test launch. Add standalone command-line validators for CI and bulk data. Keep generated or imported reference material separate from source assets and document provenance.
+UE direction: build editor utilities for map/object placement and validation, data-asset checks, preview/debug overlays, and one-click local test launch. Add standalone command-line validators for CI and bulk data. Keep generated or imported reference material separate from source assets and document provenance.
 
-**Acceptance criteria:** map/content validators detect missing spawns, broken asset references, invalid objectives and localization gaps before packaging. Designers can launch a representative map for offline testing, with reproducible diagnostics for failures.
+Acceptance criteria: map/content validators detect missing spawns, broken asset references, invalid objectives and localization gaps before packaging. Designers can launch a representative map for offline testing, with reproducible diagnostics for failures.
 
 ### 3.8 Espionage, Intimidation, resources and nuclear ultimate weapons
 
-**World canon and rules:** Concord and Directorate are the **two existing nuclear powers**; Ascendancy begins non-nuclear; Meridian and Unaligned remain non-nuclear. Concord and Directorate have **distinct specialist espionage systems** (their exact special features are not yet locked). Ascendancy has **more limited espionage** and must **fully develop its spy progression** before it can infiltrate a **Concord or Directorate nuclear research facility** and steal both nuclear-refining technology and nuclear-weapons intelligence.
+World canon and rules: Concord and Directorate are the two existing nuclear powers; Ascendancy begins non-nuclear; Meridian and Unaligned remain non-nuclear. Concord and Directorate have distinct specialist espionage systems (their exact special features are not yet locked). Ascendancy has more limited espionage and must fully develop its spy progression before it can infiltrate a Concord or Directorate nuclear research facility and steal both nuclear-refining technology and nuclear-weapons intelligence.
 
-**Simulation:** own espionage upgrade levels, isolation/support evaluation for combat units, identity and ability permissions, covert-action success, capture/transfer of unit control, protection/detection, resource balances, oil-to-petroleum/kerosene refinery jobs, crude-to-processed nuclear-resource refinery jobs, facility power/production, and completed weapon custody. **Intimidation is Ascendancy-exclusive** and can convert **isolated eligible enemy units**, not groups protected by allied support. The engine must reject intimidation from any other faction.
+Simulation: own espionage upgrade levels, isolation/support evaluation for combat units, identity and ability permissions, covert-action success, capture/transfer of unit control, protection/detection, resource balances, oil-to-petroleum/kerosene refinery jobs, crude-to-processed nuclear-resource refinery jobs, facility power/production, and completed weapon custody. Intimidation is Ascendancy-exclusive and can convert isolated eligible enemy units, not groups protected by allied support. The engine must reject intimidation from any other faction.
 
-**Faction permissions:** Concord has **lower fuel-refining costs**, Directorate has **far cheaper infantry**, Ascendancy has **slightly higher unit damage and selected self-sacrificing attacks**, and Meridian starts near an **existing oil or natural-gas field**. Only Concord and Directorate can construct **nuclear power plants** and produce nuclear bombs with sufficient intelligence, processed material and long production. Meridian cannot refine nuclear materials, and Ascendancy may do so **only after fully developed spying and verified Concord/Directorate intelligence infiltration**, exclusively to build its **first bomb**, never a nuclear power plant.
+Faction permissions: Concord has lower fuel-refining costs, Directorate has far cheaper infantry, Ascendancy has slightly higher unit damage and selected self-sacrificing attacks, and Meridian starts near an existing oil or natural-gas field. Only Concord and Directorate can construct nuclear power plants and produce nuclear bombs with sufficient intelligence, processed material and long production. Meridian cannot refine nuclear materials, and Ascendancy may do so only after fully developed spying and verified Concord/Directorate intelligence infiltration, exclusively to build its first bomb, never a nuclear power plant.
 
-**Match framework:** issue the **immediate Ascendancy win on completion of its first *self-produced* bomb** after all eligibility conditions. No deployment or detonation is required. Stolen completed bombs remain deployable finite assets for Ascendancy and Meridian if delivery conditions hold, but do **not** trigger that victory. Match outcomes must not rewrite the canonical 1989 storyline.
+Match framework: issue the immediate Ascendancy win on completion of its first *self-produced* bomb after all eligibility conditions. No deployment or detonation is required. Stolen completed bombs remain deployable finite assets for Ascendancy and Meridian if delivery conditions hold, but do not trigger that victory. Match outcomes must not rewrite the canonical 1989 storyline.
 
-**Content/presentation/tools:** data assets define refinery recipes, resource rankings, faction bonuses, spy-tree completion requirements, eligible nuclear research facilities, Intimidation users/targets and mission rules. UI shows locked/unlocked infiltration, enemy isolation/Intimidation eligibility, processing queues and the Ascendancy instant-win threat without leaking unknown intelligence. Validators check absent Meridian fossil-fuel spawn nodes, forbidden nuclear refinery/nuclear plant construction, non-max spy infiltration, illegal unit conversion and mismatched own-produced/stolen bomb events.
+Content/presentation/tools: data assets define refinery recipes, resource rankings, faction bonuses, spy-tree completion requirements, eligible nuclear research facilities, Intimidation users/targets and mission rules. UI shows locked/unlocked infiltration, enemy isolation/Intimidation eligibility, processing queues and the Ascendancy instant-win threat without leaking unknown intelligence. Validators check absent Meridian fossil-fuel spawn nodes, forbidden nuclear refinery/nuclear plant construction, non-max spy infiltration, illegal unit conversion and mismatched own-produced/stolen bomb events.
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
 ### Shared resolve, combat Discipline and civilian Morale
 
-**Simulation truth:** one `UnitResolve` per eligible unit, with shared limits, break threshold, loss and recovery. **Presentation label:** `Discipline` for combat units and `Morale` for civilian/non-combat units. These must **not** become different meters or independent health/status systems. **Faction Population Morale** is a rolled-up civilian/public indicator within the same morale/resolve model, impacting production output and the baseline Discipline of soldiers.
+Simulation truth: one `UnitResolve` per eligible unit, with shared limits, break threshold, loss and recovery. Presentation label: `Discipline` for combat units and `Morale` for civilian/non-combat units. These must not become different meters or independent health/status systems. Faction Population Morale is a rolled-up civilian/public indicator within the same morale/resolve model, impacting production output and the baseline Discipline of soldiers.
 
-**Combat-unit modifiers only:** larger coordinated groups stabilize Discipline for Directorate, Ascendancy, Meridian and Unaligned; Directorate and Ascendancy alone get an extra **very-massive-army Discipline bonus**. Concord alone ignores the solo/small-group Discipline penalty. No such army-size modifier belongs to civilian Morale.
+Combat-unit modifiers only: larger coordinated groups stabilize Discipline for Directorate, Ascendancy, Meridian and Unaligned; Directorate and Ascendancy alone get an extra very-massive-army Discipline bonus. Concord alone ignores the solo/small-group Discipline penalty. No such army-size modifier belongs to civilian Morale.
 
-**Intimidation ownership:** Ascendancy may intimidate eligible isolated combatants **or** non-combat units. The authoritative transition is `isolated/eligible → UnitResolve reduced to BrokenThreshold → validated ownership change`. Target category changes **the label, not the conversion algorithm**. Save/replay should preserve resolve and unit ownership while remaining deterministic. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Intimidation ownership: Ascendancy may intimidate eligible isolated combatants or non-combat units. The authoritative transition is `isolated/eligible → UnitResolve reduced to BrokenThreshold → validated ownership change`. Target category changes the label, not the conversion algorithm. Save/replay should preserve resolve and unit ownership while remaining deterministic. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### Propaganda and morale layer responsibilities
 
-**Simulation:** track a distinct population morale meter for **each of the five factions**; high morale improves authorized production output and army discipline. Propaganda modifiers, decay and media reach must be authoritative. **Match/faction rules:** allow advanced propaganda actions for **Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**, but **not Meridian Pact**. **World/content:** define radio, newspaper production/distribution and television infrastructure and its ownership, power and access. **Presentation:** display every faction's relevant morale and explain production/discipline effects, showing propaganda controls only where eligible.
+Simulation: track a distinct population morale meter for each of the five factions; high morale improves authorized production output and army discipline. Propaganda modifiers, decay and media reach must be authoritative. Match/faction rules: allow advanced propaganda actions for Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned, but not Meridian Pact. World/content: define radio, newspaper production/distribution and television infrastructure and its ownership, power and access. Presentation: display every faction's relevant morale and explain production/discipline effects, showing propaganda controls only where eligible.
 
 The Unaligned's federal media operations remain AI-governed; Meridian still receives morale from ordinary game events. No propaganda effect may create missing nuclear technology or resources or change the unique Ascendancy first-bomb victory predicate. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 ### Match roster, controllers and neutral world separation
 
-**Match framework:** enforce **2–4 occupied player-faction slots** with **exactly one distinct playable faction per participant/controller**, selected from Concord, Directorate, Ascendancy and Meridian. **World/simulation:** instantiate **one autonomous Unaligned system-AI faction** in addition to—not within—those slots. A standard map thus has **3, 4 or 5 active faction presences (2+1, 3+1, 4+1)**. Offline play permits one human plus AI opponents to occupy the 2–4 playable slots.
+Match framework: enforce 2–4 occupied player-faction slots with exactly one distinct playable faction per participant/controller, selected from Concord, Directorate, Ascendancy and Meridian. World/simulation: instantiate one autonomous Unaligned system-AI faction in addition to—not within—those slots. A standard map thus has 3, 4 or 5 active faction presences (2+1, 3+1, 4+1). Offline play permits one human plus AI opponents to occupy the 2–4 playable slots.
 
-**Content/map validation:** confirm four-faction pool, one-to-one player/faction assignments, Unaligned existence, legal faction spawns, Meridian fossil-field proximity where applicable, and applicable Concord/Directorate research-facility prerequisites if Ascendancy nuclear victory is available. **Presentation:** label player slots separately from the always-present NPC Unaligned; never imply that Unaligned is a selectable or fifth human faction. See [Match Structure](MATCH_STRUCTURE.md).
+Content/map validation: confirm four-faction pool, one-to-one player/faction assignments, Unaligned existence, legal faction spawns, Meridian fossil-field proximity where applicable, and applicable Concord/Directorate research-facility prerequisites if Ascendancy nuclear victory is available. Presentation: label player slots separately from the always-present NPC Unaligned; never imply that Unaligned is a selectable or fifth human faction. See [Match Structure](MATCH_STRUCTURE.md).
 
 ## 4. Dependency and ownership rules
 
-- **Platform code** may start or configure a match, but simulation rules should not call into storefront/account code.
-- **Presentation** reads view state and submits commands; it never becomes the source of gameplay truth.
-- **Match framework** coordinates lifecycle and objectives; detailed movement/combat rules belong to simulation systems.
-- **Simulation** queries world/navigation and data definitions through explicit interfaces; it emits state changes for UI/audio/VFX.
-- **Content definitions** reference behavior types, not arbitrary hidden executable logic.
-- **Tools** validate and generate content, but packaged runtime content must not depend on the editor being installed.
-- **Local play** remains fully functional with the network unavailable. If online features are later added, they must sit above the local match/content layers.
+- Platform code may start or configure a match, but simulation rules should not call into storefront/account code.
+- Presentation reads view state and submits commands; it never becomes the source of gameplay truth.
+- Match framework coordinates lifecycle and objectives; detailed movement/combat rules belong to simulation systems.
+- Simulation queries world/navigation and data definitions through explicit interfaces; it emits state changes for UI/audio/VFX.
+- Content definitions reference behavior types, not arbitrary hidden executable logic.
+- Tools validate and generate content, but packaged runtime content must not depend on the editor being installed.
+- Local play remains fully functional with the network unavailable. If online features are later added, they must sit above the local match/content layers.
 
 ## 5. Suggested implementation order
 
@@ -161,4 +161,4 @@ The design currently assumes:
 - C++ ownership of gameplay rules; Unreal-native assets and editor tooling for configurable content; readable and scalable 4K presentation.
 - Multiplayer, networking, replay architecture and the exact economy/deployment model remain contingent on explicit product decisions.
 
-These are **POLITIKA design requirements and proposals**, not verified implementation results. Validate them with source-level reviews, functional prototypes, automated tests, map checks and representative performance measurements. Do not treat planned systems as implemented until their behaviour has been demonstrated.
+These are POLITIKA design requirements and proposals, not verified implementation results. Validate them with source-level reviews, functional prototypes, automated tests, map checks and representative performance measurements. Do not treat planned systems as implemented until their behaviour has been demonstrated.
