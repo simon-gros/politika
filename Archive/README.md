@@ -74,6 +74,12 @@ For significant historical claims, distinguish **direct evidence**, **well-suppo
 
 Do not upload protected scans, press photographs, music, broadcasts, film clips or third-party graphics simply because they are publicly viewable. Historical reference **does not equal permission to reproduce**. Prefer links and properly attributed metadata; check licences and permissions separately for redistribution, adaptation, promotional use and inclusion in a released game.
 
+### Cold War nuclear-context references
+
+Because POLITIKA's **secondary fictional campaign arc** concerns preventing the Iron Ascendancy from obtaining a particular additional nuclear weapon, historical research may include **Cold War nuclear deterrence, arms-control diplomacy, strategic competition, civil-defense communications, and international security debates** as period background. Such research informs atmosphere, terminology, political stakes, and plausible briefing material—not playable nuclear-weapons production or technical construction instructions.
+
+The three principal playable powers (Atlantic Concord, Red Directorate, Iron Ascendancy) are defined as nuclear-armed **within the fictional game world**; the Meridian Pact is a **non-nuclear playable faction excluded from this nuclear subplot**, and Yugoslavia's Unaligned authorities are non-nuclear NPCs. These are **design-canon statements**, not claims about real historical factions. Do not misclassify fictional nuclear acquisition events as archival evidence.
+
 ## Historical evidence versus fictional worldbuilding
 
 POLITIKA's campaign, events and factions are fictionalized. The archive documents **historical Yugoslavia and its international context**, not the fictional history of the game. In particular, do not present the fictional organizations documented in [`Factions/`](../Factions/) as real historical actors. Conversely, historical institutions should not be retroactively assigned fictional activities without clearly labelling the departure from fact.
