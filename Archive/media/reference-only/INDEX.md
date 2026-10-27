@@ -1,0 +1,40 @@
+# POLITIKA — Reference-only discovery index
+
+This index is generated from the initial curated `Archive/CATALOG.csv` research seed, not a repository of third-party scans. Linked archival material stays with its source institution. There are **27 records** as of 2026-10-27; item-level dates and licences are not guaranteed for collection leads. See [Catalogue](../../CATALOG.csv), [Source Guide](../../SOURCES.md), [Design Atlas](../../DESIGN_REFERENCE_ATLAS.md) and [Rights](../../RIGHTS_AND_PROVENANCE.md).
+
+| Ref | Time | Location | Priority | Source | Design application |
+| --- | --- | --- | --- | --- | --- |
+| `POL-1980-TITO-001` | 1980-05-04 | Ljubljana / federal Yugoslavia | P0 | [Death of Josip Broz Tito (real history)](https://www.clintonlibrary.gov/conflicts-former-yugoslavia-timeline) | narrative; chronology; propaganda |
+| `POL-1981-KOSOVO-001` | 1981 | Kosovo | P0 | [1981 Kosovo demonstrations and constitutional demands](https://archive.globalpolicy.org/security/issues/kosovo80.htm) | narrative; crowds; political-map; world_state |
+| `POL-1982-DEBT-001` | 1982–1984 | Federation-wide | P0 | [Yugoslav external debt and unemployment crisis](https://www.cambridge.org/core/journals/slavic-review/article/abs/systemic-changes-and-unemployment-growth-in-yugoslavia-19651984/ED652204DE3D6B46A7F10D943DB8CD00) | economy; missions; dialogue; newspapers; world_state |
+| `POL-1982-SAR-TRAM-001` | 1982-07-11 | Socijalno, Sarajevo | P0 | [Sarajevo tram track works at Socijalno](https://commons.wikimedia.org/wiki/File:Sarajevo_Tram_Reconstruction_1982-07-11.jpg) | roads; rails; tram-units; construction; architecture; colour_palette |
+| `POL-1982-SAR-TRAM-002` | 1982-08-27 | Sarajevo | P0 | [Tatra K2 tram by Church of the Holy Transfiguration](https://commons.wikimedia.org/wiki/File:Sarajevo_Tram_Church-of-the-Holy-Transfiguration_1982-08-27.jpg) | tram-units; roads; architecture; overhead-wire; colour_palette |
+| `POL-1982-SAR-TRAM-003` | 1982-08-27 | Hotel Bristol area, Sarajevo | P0 | [Sarajevo tram near Hotel Bristol](https://commons.wikimedia.org/wiki/File:Sarajevo_Tram_Hotel-Bristol_1982-08-27.jpg) | tram-units; roads; facades; props; colour_palette |
+| `POL-1982-SAR-TRAM-004` | 1982-09-22 | Pofalići, Sarajevo | P0 | [Sarajevo tram at Pofalići](https://commons.wikimedia.org/wiki/File:Sarajevo_Tram_Pofalici_1982-09-22.jpg) | tram-units; roads; maps; facades; overhead-wire; colour_palette |
+| `POL-1983-SAR-HOTEL-001` | 1982–1983 | Marijin Dvor, Sarajevo | P0 | [Holiday Inn Sarajevo: Ivan Štraus modernist building](https://www.spomenikdatabase.org/post/the-architectural-legacy-of-sarajevo-s-84-winter-olympics) | architecture; buildings; hub-map; colour_palette; interiors |
+| `POL-1984-SAR-GAMES-001` | 1984-02-08–1984-02-19 | Sarajevo; Igman; Jahorina; Bjelašnica | P0 | [XIV Sarajevo Winter Olympic Games and civic infrastructure](https://okbih.ba/en/text/wog-84/75) | city-maps; missions; security; winter-terrain; crowds |
+| `POL-1984-SAR-BRANDING-001` | 1980–1984 | Sarajevo | P0 | [Sarajevo '84 graphic standards and wayfinding design](https://www.museuminexile.com/index.php/olympics84) | UI; maps; signage; propaganda; documents; colour_palette |
+| `POL-1984-SAR-VUCKO-001` | 1983–1984 | Sarajevo | P1 | [Vučko official Olympics mascot poster](https://olympic-museum-artefacts.zetcom.net/en/collection/item/103918/) | posters; graphic_design; colour_palette; civilian-ephemera |
+| `POL-1984-MLADINA-001` | 1984-04-05 | Ljubljana | P1 | [Mladina issue 14, 5 April 1984](https://dlib.si/details/URN%3ANBN%3ASI%3ADOC-E01O55YN) | media; documents; UI; propaganda; street-props |
+| `POL-1985-KATEDRA-001` | 1985-11-09 | Maribor | P0 | [Katedra student newspaper, 9 November 1985](https://www.dlib.si/details/URN%3ANBN%3ASI%3Adoc-35EY0YN9) | media; documents; signage; propaganda; youth_culture |
+| `POL-1986-MLADINA-001` | 1986 | Ljubljana | P1 | [Mladina issue 25/26, 1986](https://www.dlib.si/details/URN%3ANBN%3ASI%3ADOC-PR77030L) | press; props; UI; propaganda; youth_culture |
+| `POL-1981-NEW-WAVE-001` | 1981 | Belgrade; Zagreb; Ljubljana; federation-wide | P1 | [1981 Paket aranžman and Yugoslav new-wave music](https://www.new-east-archive.org/features/show/12495/yugoslav-new-wave-1980s-music-40-years-on) | youth_culture; audio-mood; posters; clothing; civilian-narrative |
+| `POL-1987-DAY-YOUTH-001` | 1987 | Triglav / Yugoslavia | P0 | [1987 Relay of Youth baton](https://muzej-jugoslavije.org/en/art/stafeta-mladosti/) | propaganda; props; narrative; state-ritual; graphic_design |
+| `POL-1987-POSTER-001` | 1987 | Ljubljana and Yugoslav-wide publicity | P0 | [1987 Day of Youth Novi Kolektivizem poster affair](https://historia.europa.eu/en/our-work/news/behind-poster-day-youth) | propaganda; art_direction; authenticity; crisis-narrative; UI |
+| `POL-1988-JBTZ-001` | 1988 | Ljubljana | P0 | [1988 JBTZ military trial and civil-rights protests](https://www.gov.si/en/topics/history-of-slovenia/) | missions; newspapers; public_morale; civil_ai; narrative |
+| `POL-1988-KOSOVO-001` | 1988-11-17 | Trepča/Trepça to Priština/Prishtina | P0 | [November 1988 Trepča miners march to Priština](https://www.cambridge.org/core/journals/nationalities-papers/article/ethnopolitics-in-a-mining-enterprise-in-crisis-revisiting-the-albanian-miners-protests-in-late-socialist-kosovo/1F3B02E90DEF0490C8C2E2B11202822B) | mines; terrain; crowds; crisis-narrative; economy |
+| `POL-1988-MUSIC-PRESS-001` | 1988–1989 | Ljubljana | P1 | [Glasbena mladina issue 1, 1988/89](https://www.dlib.si/details/URN%3ANBN%3ASI%3ADOC-NSFGFEC5) | props; radio; music_mood; cultural_references; UI |
+| `POL-1989-TREPCA-001` | 1989-02-20–1989-02-27 | Stari Trg/Stantërg, Trepča | P0 | [Eight-day Trepča underground miners' strike](https://oralhistorykosovo.org/research/miners-strike-1989/) | missions; mine-map; civilian_ai; unrest; logistics; narrative |
+| `POL-1989-NAM-001` | 1989-09-04–1989-09-07 | Belgrade | P0 | [Ninth Non-Aligned Summit final documents: Belgrade](https://digitallibrary.un.org/record/80583) | mission; diplomacy; public_broadcast; civic_security; narrative |
+| `POL-1989-INFLATION-001` | 1989 | Federation-wide | P0 | [Yugoslav hyperinflation by late 1989](https://www.imf.org/en/publications/wp/issues/2016/12/30/yugoslav-inflation-and-money-927) | economy; shop-props; UI; resource_system; narrative |
+| `POL-1989-NAM-DOCS-001` | 1983–1989 | New Delhi; Harare; Belgrade | P1 | [NAM official summit chronology and declarations](https://www.nam.go.ug/previous-chairmanship-documents) | diplomacy; lore; document-props; foreign_merchant |
+| `POL-1980-1989-ARCHIVE-YU-001` | 1980–1989 | Belgrade / all federal territories | P1 | [Archives of Yugoslavia photography collections](https://www.arhivyu.rs/en/arhivska-gradja/fotografije) | buildings; documents; cities; units; archival_provenance |
+| `POL-1980-1989-FILM-001` | 1980–1989 | Belgrade and federation-wide | P1 | [Yugoslav Film Archive post-1945 collection](https://en.kinoteka.org.rs/archive/) | cinematic-language; camera; vehicles; crowds; sound |
+| `POL-1984-USOC-001` | 1984 | Mojmilo, Sarajevo | P1 | [Contemporary US Olympic report on Sarajevo security](https://digital.la84.org/digital/collection/p17103coll6/id/6531/rec/2) | security-checkpoints; environment; narrative; civilian_movement |
+
+## Caveats
+
+- `A` denotes authenticated primary-period item metadata or a dated period artifact, **not** that the full image/text has been inspected; `B` is strong secondary or metadata support; `C` contextual; `D` unverified collection leads.
+- Some `1980–1989` ranges mark **intended research coverage** only; the collection index does not establish item date.
+- The 1984 Sarajevo Olympics and the death of Tito in 1980 are real history. POLITIKA's Tito-survives-until-1984 premise deliberately diverges; no historical source should be represented as a record of fictional assassination, doubles or false intelligence.
+- Every source URL may be used as a research *reference*, never automatically as an authorised *game asset*.
