@@ -118,6 +118,12 @@ See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Econo
 
 The Unaligned's federal media operations remain AI-governed; Meridian still receives morale from ordinary game events. No propaganda effect may create missing nuclear technology or resources or change the unique Ascendancy first-bomb victory predicate. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Match roster, controllers and neutral world separation
+
+**Match framework:** enforce **2–4 occupied player-faction slots** with **exactly one distinct playable faction per participant/controller**, selected from Concord, Directorate, Ascendancy and Meridian. **World/simulation:** instantiate **one autonomous Unaligned system-AI faction** in addition to—not within—those slots. A standard map thus has **3, 4 or 5 active faction presences (2+1, 3+1, 4+1)**. Offline play permits one human plus AI opponents to occupy the 2–4 playable slots.
+
+**Content/map validation:** confirm four-faction pool, one-to-one player/faction assignments, Unaligned existence, legal faction spawns, Meridian fossil-field proximity where applicable, and applicable Concord/Directorate research-facility prerequisites if Ascendancy nuclear victory is available. **Presentation:** label player slots separately from the always-present NPC Unaligned; never imply that Unaligned is a selectable or fifth human faction. See [Match Structure](MATCH_STRUCTURE.md).
+
 ## 4. Dependency and ownership rules
 
 - **Platform code** may start or configure a match, but simulation rules should not call into storefront/account code.
