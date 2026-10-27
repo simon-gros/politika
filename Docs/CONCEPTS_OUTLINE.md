@@ -101,7 +101,7 @@ The main military contest centers on three primary factions with meaningfully di
 
 ### 4.1 Atlantic Concord — precision and access
 
-Specialized espionage: the Atlantic Concord has its own distinctive spying features, separate from those of the Red Directorate. Exact special abilities remain to be specified and balanced.
+Specialized espionage — Psy-Ops: the Concord has an intelligence subdivision able to affect eligible enemy combat units' Discipline or civilian/non-combat units' Morale. Its two outcomes are **(1)** full resolve breakdown causing in-game self-destruction and **(2)** a brief, bounded rampage in which affected units attack their own faction's eligible units before returning to normal targeting. Neither outcome transfers ownership; numeric tuning and protection remain open.
 
 Candidate identity: elite, expensive professional formations; high situational awareness; advanced communications, reconnaissance, air support, and precision weapons. A small, coordinated force is effective when supported by intelligence and logistics, but costly to replace and vulnerable if deprived of information or supply access.
 
@@ -113,7 +113,7 @@ Ultimate weapon: long-produced tactical nuclear weapon delivered by a nuclear bo
 
 ### 4.2 Red Directorate — mass and sustained operations
 
-Specialized espionage: the Red Directorate has its own distinctive spying features, separate from those of the Atlantic Concord. Exact special abilities remain to be specified and balanced.
+Specialized espionage — efficient intelligence theft: the Directorate's basic infiltration is slightly more advanced, allowing **stealing rival-faction intelligence slightly faster and at lower operational/resource cost** than comparable permitted operations by other factions. It does not grant Psy-Ops, Intimidation or guaranteed infiltration success. Exact modifiers remain open.
 
 Candidate identity: organized combined-arms formations, robust industrial logistics, fortified defense, attritional combat, and ideologically linked local networks. It can contest territory at scale but may be less tactically agile or precise than the Concord in some circumstances.
 
@@ -274,7 +274,7 @@ Roads, rail, bridges, ports, airfields, depots, border crossings, and checkpoint
 
 ### 9.3 Intelligence, concealment, counterintelligence and Intimidation
 
-Faction asymmetry is mandatory: Concord and Directorate have their own distinct special espionage features; Iron Ascendancy starts with more restricted spy capabilities, and must fully develop them before it can infiltrate a Concord/Directorate nuclear research facility. The Ascendancy alone receives Intimidation, converting isolated eligible enemy units into its forces when the game's isolation and ability conditions are met. No other faction can perform intimidation. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Faction asymmetry is mandatory. **Atlantic Concord Psy-Ops** can cause eligible combat units to self-destruct after fully breaking their Discipline (or eligible non-combat units after breaking Morale), or temporarily attack their own faction in a short rampage, without ever changing allegiance. **Red Directorate basic spies** steal rival intelligence slightly faster and cheaper. **Iron Ascendancy has more restricted spying** that must be fully upgraded before infiltrating Concord/Directorate nuclear research; it alone has Intimidation, which converts eligible isolated targets only after breaking their Discipline (combat) or Morale (non-combat). See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 Fog of war, line of sight, sensors, impersonation, document forgery as an abstract ability, surveillance, informants, intercepted communications, and evidence custody can generate decisions without replacing ordinary combat. Detection should be a calculable contest with counterplay, not arbitrary script-driven omniscience.
 
@@ -361,7 +361,7 @@ Before implementing full rosters and economy, resolve:
 - Whether match economies prioritize base construction, mobile deployment, territorial income, trade, or a hybrid.
 - Whether infantry is controlled as individual soldiers, squads, or both.
 - How far legal authorization, permits, customs, and disguise are simulated rather than scripted.
-- The exact special spying features of the Concord and the Directorate, and the Iron Ascendancy's full espionage-upgrade costs, prerequisites, and timing.
+- Balance the already established Concord Psy-Ops (breakdown/self-destruction vs. brief friendly-fire rampage, target eligibility, non-combat actions, duration and counterplay) and Directorate's slightly faster/cheaper rival-intelligence theft; specify Ascendancy's full espionage-upgrade costs, prerequisites and timing.
 - Formation and Intimidation balance: ordinary support size/radius and stability curves; separate very-massive-army threshold and bonus for Directorate and Ascendancy; Concord's solo/small-group exemption; unit resolve recovery (shown as combat Discipline or civilian Morale); Intimidation's fully broken threshold before transfer; eligible combat units and counterplay.
 - Whether all four playable factions are permitted in every competitive ruleset.
 - Whether mercenaries count toward population cap and how contracts expire during combat.
