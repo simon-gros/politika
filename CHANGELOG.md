@@ -4,7 +4,7 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
-- Replaced the initial Python-based version utility and tests with a Rust/Cargo implementation, removing Python requirements from version validation and CI.
+- Consolidated version validation, build identity generation, regression tests and CI into the Rust/Cargo toolchain.
 
 No playable release is currently available. Documentation and historical archive entries are not shipped game features.
 
