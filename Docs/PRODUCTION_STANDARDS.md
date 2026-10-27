@@ -40,6 +40,21 @@ Archived map metadata + rights
 
 **First playable map gate:** Validate spawn territory, commandable ground, impassable features, path corridors, production space, minimap placement and faction/NPC starting control. Review at gameplay camera scale and representative zoom.
 
+### Historical-world review for missions, maps and props
+
+The [Yugoslav World and Campaign Systems Model](YUGOSLAV_WORLD_MODEL.md) identifies which period-world distinctions should survive translation into RTS maps and campaign fixtures. This is a **review checklist for future historically situated content**, not an additional requirement for the current abstract prototype map.
+
+Before a dated Yugoslav mission/site is described as period-accurate, verify:
+
+1. **Administrative and geographic scope:** correct year, republic/province/municipality, historic city name, institution and border status. Kosovo and Vojvodina were autonomous provinces within Serbia, not additional socialist republics.
+2. **Physical versus institutional topology:** terrain connectivity, railway/road/bridge existence, access permissions, jurisdiction, operational infrastructure and the possible separation of controller from owner. Do not infer police jurisdiction from a pathing cell.
+3. **Location-specific civil activity:** credible period economy, transport, public services, newspapers, university/workplace life, signage and languages. Distinguish population and institutional diversity from fictional military allegiance.
+4. **Chronology and alternate-history ruling:** whether a claim is sourced from real 1980s history, an already locked fictional event, or a proposed divergence-sensitive interpretation. Do not mechanically import post-1980 real executive officeholders or commemorations into a story where Tito lives until 1984.
+5. **Narrative evidence and rights:** a prop styled as a historical newspaper is not an actual archive record; original fictional in-world dossiers need separate authenticity/custody metadata if the mission simulates it. Source image/art/audio licensing still requires item-level approval.
+6. **Visual gameplay readability:** map coverage, usable starts, passable movement profiles, protected civilians, noncombat objectives and observed/reported information must remain discernible at tactical camera distances.
+
+Keep the source-evidence review and any future in-world intelligence/evidence state **separately identified**. Review the archive source and approved alternate-history ruling before promoting a site, event or historical person to a mission. Incomplete research is reported as `needs_review`; it is not filled by a speculative fake citation.
+
 ## 3. 3D asset standards for an RTS camera
 
 An asset's **importance tier** reflects function and tactical recognizability, not narrative prestige alone.
