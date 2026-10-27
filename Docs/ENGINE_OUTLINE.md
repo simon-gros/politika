@@ -51,11 +51,15 @@ See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System
 
 ### Espionage progression and Intimidation as gameplay systems
 
-Distinct espionage abilities: the Atlantic Concord and Red Directorate have separate specialist spying features (exact abilities still to be authored). The Iron Ascendancy has more limited espionage, with an explicit faction-specific upgrade tree whose full completion is an authoritative gate to infiltrating Concord/Directorate nuclear research facilities. The already-required stolen refining and weapon technology flags are earned only after that gated infiltration succeeds.
+Espionage specializations: **Atlantic Concord Psy-Ops** can cause a successful full **Discipline/Morale breakdown and in-game self-destruction**, or instead impose a **short, timed friendly-fire rampage** without changing ownership; it acts on eligible combat and non-combat units through the single `UnitResolve` state. **Red Directorate basic infiltration for rival intelligence theft** completes **slightly faster and at slightly lower cost** than an otherwise equivalent authorized operation. The Iron Ascendancy still has more limited spying, with an explicit upgrade tree whose full completion gates access to Concord/Directorate nuclear research facilities and the associated stolen refining/weapon intel flags.
 
 Intimidation: an Iron Ascendancy-exclusive command/ability may convert eligible isolated combat and non-combat units, but only after fully breaking the shared unit resolve meter (labeled Discipline for combat targets and Morale for civilian targets). Validate category, meter, eligibility and isolation before control transfer. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
 
 Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as authoritative state, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
+### Psy-Ops and reduced intelligence-theft costs
+
+Psy-Ops and intelligence theft should be simulation-owned game actions rather than scripted UI effects. Validate Concord-only permission, target category/eligibility, authorized application of `UnitResolve` loss and a **full-break event before Psy-Ops self-destruction**. The rampage path uses a **temporary, expiring friendly-target override** that does not permanently alter owner, faction or diplomacy. The enemy unit must have a valid in-game attack capability. Directorate intelligence theft applies **modest, data-driven reductions to cost and duration only** for qualifying intelligence-acquisition operations; all research-site infiltration requirements remain unchanged. Unit ownership changes belong solely to separately authorized mechanisms such as Ascendancy Intimidation.
 
 ### Shared unit resolve: combat Discipline and civilian Morale
 
