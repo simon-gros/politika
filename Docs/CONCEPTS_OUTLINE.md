@@ -101,7 +101,7 @@ The main military contest centers on three primary factions with meaningfully di
 
 ### 4.1 Atlantic Concord — precision and access
 
-Specialized espionage — Psy-Ops: the Concord has an intelligence subdivision able to affect eligible enemy combat units' Discipline or civilian/non-combat units' Morale. Its two outcomes are **(1)** full resolve breakdown causing in-game self-destruction and **(2)** a brief, bounded rampage in which affected units attack their own faction's eligible units before returning to normal targeting. Neither outcome transfers ownership; numeric tuning and protection remain open.
+Specialized espionage — Psy-Ops: the Concord has an intelligence subdivision able to affect eligible enemy combat units' Discipline or civilian/non-combat units' Morale. Its two outcomes are (1) full resolve breakdown causing in-game self-destruction and (2) a brief, bounded rampage in which affected units attack their own faction's eligible units before returning to normal targeting. Neither outcome transfers ownership; numeric tuning and protection remain open.
 
 Candidate identity: elite, expensive professional formations; high situational awareness; advanced communications, reconnaissance, air support, and precision weapons. A small, coordinated force is effective when supported by intelligence and logistics, but costly to replace and vulnerable if deprived of information or supply access.
 
@@ -113,7 +113,7 @@ Ultimate weapon: long-produced tactical nuclear weapon delivered by a nuclear bo
 
 ### 4.2 Red Directorate — mass and sustained operations
 
-Specialized espionage — efficient intelligence theft: the Directorate's basic infiltration is slightly more advanced, allowing **stealing rival-faction intelligence slightly faster and at lower operational/resource cost** than comparable permitted operations by other factions. It does not grant Psy-Ops, Intimidation or guaranteed infiltration success. Exact modifiers remain open.
+Specialized espionage — efficient intelligence theft: the Directorate's basic infiltration is slightly more advanced, allowing stealing rival-faction intelligence slightly faster and at lower operational/resource cost than comparable permitted operations by other factions. It does not grant Psy-Ops, Intimidation or guaranteed infiltration success. Exact modifiers remain open.
 
 Candidate identity: organized combined-arms formations, robust industrial logistics, fortified defense, attritional combat, and ideologically linked local networks. It can contest territory at scale but may be less tactically agile or precise than the Concord in some circumstances.
 
@@ -274,7 +274,7 @@ Roads, rail, bridges, ports, airfields, depots, border crossings, and checkpoint
 
 ### 9.3 Intelligence, concealment, counterintelligence and Intimidation
 
-Faction asymmetry is mandatory. **Atlantic Concord Psy-Ops** can cause eligible combat units to self-destruct after fully breaking their Discipline (or eligible non-combat units after breaking Morale), or temporarily attack their own faction in a short rampage, without ever changing allegiance. **Red Directorate basic spies** steal rival intelligence slightly faster and cheaper. **Iron Ascendancy has more restricted spying** that must be fully upgraded before infiltrating Concord/Directorate nuclear research; it alone has Intimidation, which converts eligible isolated targets only after breaking their Discipline (combat) or Morale (non-combat). See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+Faction asymmetry is mandatory. Atlantic Concord Psy-Ops can cause eligible combat units to self-destruct after fully breaking their Discipline (or eligible non-combat units after breaking Morale), or temporarily attack their own faction in a short rampage, without ever changing allegiance. Red Directorate basic spies steal rival intelligence slightly faster and cheaper. Iron Ascendancy has more restricted spying that must be fully upgraded before infiltrating Concord/Directorate nuclear research; it alone has Intimidation, which converts eligible isolated targets only after breaking their Discipline (combat) or Morale (non-combat). See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 Fog of war, line of sight, sensors, impersonation, document forgery as an abstract ability, surveillance, informants, intercepted communications, and evidence custody can generate decisions without replacing ordinary combat. Detection should be a calculable contest with counterplay, not arbitrary script-driven omniscience.
 
