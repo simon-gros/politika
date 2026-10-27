@@ -98,11 +98,19 @@ flowchart TD
 
 **Acceptance criteria:** map/content validators detect missing spawns, broken asset references, invalid objectives and localization gaps before packaging. Designers can launch a representative map for offline testing, with reproducible diagnostics for failures.
 
-### 3.8 Campaign narrative flags and the nuclear subplot
+### 3.8 Espionage, Intimidation, resources and nuclear ultimate weapons
 
-The **story canon** contains a primary assassination-conspiracy arc and a distinct secondary arc in which the Iron Ascendancy attempts to acquire a particular additional nuclear weapon. The Concord and Directorate try to prevent acquisition; the Ascendancy pursues it. All three are nuclear-armed powers in the fictional world. The **Meridian Pact is non-nuclear and does not participate**, and the **Unaligned remains a non-nuclear NPC authority** responding to territorial threats.
+**World canon and rules:** Concord and Directorate are the **two existing nuclear powers**; Ascendancy begins non-nuclear; Meridian and Unaligned remain non-nuclear. Concord and Directorate have **distinct specialist espionage systems** (their exact special features are not yet locked). Ascendancy has **more limited espionage** and must **fully develop its spy progression** before it can infiltrate a **Concord or Directorate nuclear research facility** and steal both nuclear-refining technology and nuclear-weapons intelligence.
 
-The **match framework** should own authored mission eligibility, progression, victory/failure, and durable subplot state; the **simulation** should own any in-match custody, control, detection, and objective events; the **content layer** should define mission-specific actors, intel, routes, and target references; the **presentation layer** should expose only faction-known intelligence and permitted objectives. Nuclear weapons must **not** become generic inventory, Black Market purchases, faction production units, or ordnance activation commands. Use abstract states and standard tactical orders to test interdiction scenarios without nuclear physics or detonation mechanics.
+**Simulation:** own espionage upgrade levels, isolation/support evaluation for combat units, identity and ability permissions, covert-action success, capture/transfer of unit control, protection/detection, resource balances, oil-to-petroleum/kerosene refinery jobs, crude-to-processed nuclear-resource refinery jobs, facility power/production, and completed weapon custody. **Intimidation is Ascendancy-exclusive** and can convert **isolated eligible enemy units**, not groups protected by allied support. The engine must reject intimidation from any other faction.
+
+**Faction permissions:** Concord has **lower fuel-refining costs**, Directorate has **far cheaper infantry**, Ascendancy has **slightly higher unit damage and selected self-sacrificing attacks**, and Meridian starts near an **existing oil or natural-gas field**. Only Concord and Directorate can construct **nuclear power plants** and produce nuclear bombs with sufficient intelligence, processed material and long production. Meridian cannot refine nuclear materials, and Ascendancy may do so **only after fully developed spying and verified Concord/Directorate intelligence infiltration**, exclusively to build its **first bomb**, never a nuclear power plant.
+
+**Match framework:** issue the **immediate Ascendancy win on completion of its first *self-produced* bomb** after all eligibility conditions. No deployment or detonation is required. Stolen completed bombs remain deployable finite assets for Ascendancy and Meridian if delivery conditions hold, but do **not** trigger that victory. Match outcomes must not rewrite the canonical 1989 storyline.
+
+**Content/presentation/tools:** data assets define refinery recipes, resource rankings, faction bonuses, spy-tree completion requirements, eligible nuclear research facilities, Intimidation users/targets and mission rules. UI shows locked/unlocked infiltration, enemy isolation/Intimidation eligibility, processing queues and the Ascendancy instant-win threat without leaking unknown intelligence. Validators check absent Meridian fossil-fuel spawn nodes, forbidden nuclear refinery/nuclear plant construction, non-max spy infiltration, illegal unit conversion and mismatched own-produced/stolen bomb events.
+
+See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
 ## 4. Dependency and ownership rules
 
