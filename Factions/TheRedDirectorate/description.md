@@ -80,6 +80,10 @@ The **Red Directorate is one of two established nuclear powers**, alongside the 
 
 The **Iron Ascendancy begins without nuclear capabilities**, so Directorate nuclear research facilities must be defended against spies seeking **nuclear-refining intelligence and nuclear-weapons research**. If successful infiltration gives the Ascendancy both prerequisites, and its first bomb is later completed, **the Ascendancy immediately wins the active game with no launch required**. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
+## Advanced Propaganda and Population Morale
+
+The Red Directorate has **distinct advanced propaganda capabilities** using **radio, newspapers and television**. Its faction-specific direction may emphasize centralized communications and sustained industrial and military mobilization, while exact mechanics remain open. It has its **own population morale meter**; higher morale improves **production output and army discipline**, reinforcing but not replacing its low-cost infantry advantage. The Meridian Pact has no advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Strategic Identity
 
 The Red Directorate is ultimately conceived as a vast and highly organized socialist superpower whose strengths arise from industrial concentration, scientific research, centralized political authority and the coordinated deployment of military resources. At the same time, its development will illustrate the structural contradictions of a system attempting to reconcile revolutionary ideological objectives with the practical demands of bureaucratic administration, economic planning, technological competition and geopolitical expansion. Within POLITIKA, these characteristics will establish a distinctive playable faction whose strategic identity is defined by industrial supremacy, operational depth, overwhelming conventional firepower and the immense organizational demands of maintaining a centralized military and political system.
