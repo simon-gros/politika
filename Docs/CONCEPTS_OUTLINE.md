@@ -294,6 +294,14 @@ The principal factions extend espionage beyond individual units to eligible enem
 
 All building espionage effects require explicit faction permissions, qualifying infiltration/ability interactions, victim-facility eligibility and recoverable counterplay. Detection and attribution are separate from successful application; resources and staff totals must remain authoritative even when the cause is not yet known to the victim. This does not confer nuclear-weapons research rights, alter the 2–4 player slots or silently change ownership of a faction. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) and [Resource Economy](RESOURCE_ECONOMY.md).
 
+### 9.3.2 Reconnaissance versus conventional explosive sabotage
+
+The factions begin the match with different, inexpensive scouting platforms. Meridian Pact has the greatest overall reconnaissance advantage with cheap, very fast, lightly armored and lightly armed trucks combining scouting with limited combat; Atlantic Concord and Iron Ascendancy have cheap, light, unarmed scouting airplanes; and Red Directorate scouts using motorcycles armed with basic infantry rifles. None of these reconnaissance units automatically steals classified intelligence or places a sabotaging charge. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
+
+Meridian Pact is the strongest and cheapest conventional sabotage faction, with early access to an abstract explosive-charge attack against eligible enemy vehicles and buildings. Qualified non-spy Pact units can perform it. The other three factions unlock this form of sabotage later, pay more and may use spy units only. For Meridian the action is a core raiding specialty rather than part of an advanced spying tree; exact eligible units remain to be designed.
+
+This conventional explosive sabotage is separate from Concord Psy-Ops, Directorate budget diversion and Ascendancy's bounded fictional facility-contamination effect; none of them bypasses nuclear-intelligence prerequisites or transfers enemy faction ownership. See [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
 ### 9.4 Legitimacy, fear, and reputation
 
 Suggested reputation dimensions: federal standing, regional standing, market reliability, civilian harm, visibility, and political credibility. These should have mechanical consequences such as access restrictions, public compliance, rebellion, recruitment, prices, and checkpoint attention. No single moral score should decide every faction's behavior.
