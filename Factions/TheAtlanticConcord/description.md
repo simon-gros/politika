@@ -54,6 +54,12 @@ These are targeted spy abilities, not a replacement for the Concord's distinct a
 
 The Iron Ascendancy's spying starts more limited than the Concord's; Ascendancy spies cannot infiltrate a Concord nuclear research facility until their faction has fully developed its espionage progression. This facility may then yield both nuclear-refining technology and nuclear-weapons research intelligence if an infiltration succeeds. The Concord does not have Intimidation and cannot force isolated enemy units into its army using that Ascendancy-exclusive ability. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Psy-Ops targeting of enemy buildings
+
+In addition to targeting individual enemy combatants and non-combatants, Atlantic Concord Psy-Ops can infiltrate eligible enemy buildings and resolve one of two distinct sabotage actions. A successful building self-destruction operation removes or destroys the targeted game structure under the match's rules. Alternatively, an economic-disruption operation makes the facility waste some of its owner's resources over a limited duration, with the waste potentially going unnoticed until an audit, investigation or counterspy action reveals the anomaly. Wasted resources are deducted from the victim but never awarded to Concord.
+
+This building mechanic uses facility state and accountable resource debits rather than the combat Discipline/civilian Morale meter; those labels remain reserved for individual units. Target access, costs, chance of detection, counterplay and limits remain open. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Intelligence and Diplomacy
 
 The Concord's intelligence organizations combine diplomatic reporting, signals interception, aerial reconnaissance, commercial information and specialist analysis. Multinational coordination facilitates intelligence sharing, although agencies may disagree over assessments or protect national interests. Reliable information can guide negotiations, uncover opposing operations and identify infrastructure vulnerabilities. Incorrect analysis can instead produce costly deployments or political crises.
