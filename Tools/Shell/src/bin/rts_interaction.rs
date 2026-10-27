@@ -95,9 +95,9 @@ fn start_video_recording(display: &str, geometry: &str, evidence: &Path) -> Resu
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(log));
-    command
-        .spawn()
-        .map_err(|e| format!("start ffmpeg X11 video recording (install ffmpeg with x11grab/libx264): {e}"))
+    command.spawn().map_err(|e| {
+        format!("start ffmpeg X11 video recording (install ffmpeg with x11grab/libx264): {e}")
+    })
 }
 
 fn stop_video_recording(mut recorder: Child, evidence: &Path) -> Result<(), String> {
@@ -115,14 +115,18 @@ fn stop_video_recording(mut recorder: Child, evidence: &Path) -> Result<(), Stri
         .wait()
         .map_err(|e| format!("wait for ffmpeg recorder: {e}"))?;
     if !status.success() {
-        return Err(format!("ffmpeg recorder exited {status}; see video-recorder.log"));
+        return Err(format!(
+            "ffmpeg recorder exited {status}; see video-recorder.log"
+        ));
     }
     let path = evidence.join("take.mp4");
     let size = fs::metadata(&path)
         .map_err(|e| format!("video was not finalized: {e}"))?
         .len();
     if size < 1024 {
-        return Err(format!("recorded video is unexpectedly small ({size} bytes)"));
+        return Err(format!(
+            "recorded video is unexpectedly small ({size} bytes)"
+        ));
     }
     Ok(())
 }
@@ -266,7 +270,8 @@ fn main() -> Result<(), String> {
             return Err(format!("unexpected rendered window geometry: {geometry}"));
         }
         fs::write(evidence.join("window-geometry.txt"), &geometry).map_err(|e| e.to_string())?;
-        let display = env::var("DISPLAY").map_err(|_| "DISPLAY disappeared during recording setup")?;
+        let display =
+            env::var("DISPLAY").map_err(|_| "DISPLAY disappeared during recording setup")?;
         video_recorder = Some(start_video_recording(&display, &geometry, &evidence)?);
         let mut focus = Command::new("xdotool");
         focus.args(["windowfocus", &window]);
@@ -492,11 +497,11 @@ fn main() -> Result<(), String> {
         Ok(())
     })();
 
-    let _ = child.kill();
-    let _ = child.wait();
     let video_result = video_recorder
         .map(|recorder| stop_video_recording(recorder, &evidence))
         .unwrap_or_else(|| Err("video recording did not start".into()));
+    let _ = child.kill();
+    let _ = child.wait();
     result?;
     video_result?;
     fs::write(
