@@ -68,7 +68,7 @@ The destruction and temporary-rampage effects are distinct from Iron Ascendancy 
 
 ### Facility Psy-Ops and production disruption do not create another resolve meter
 
-Atlantic Concord Psy-Ops may also destroy eligible enemy buildings or induce covert finite resource waste; Directorate espionage can divert rival resources to its own budget; Iron Ascendancy may apply an abstract poison/disease facility status that reduces staffed workforce/research personnel, may trigger limited nearby facility chains, and lowers or stops production. These are building, resource and workforce mechanics, **not** separate instances of individual-unit Discipline/Morale and not direct edits to the defender's entire Population Morale meter.
+Atlantic Concord Psy-Ops may also destroy eligible enemy buildings or induce covert finite resource waste; Directorate espionage can divert rival resources to its own budget; Iron Ascendancy may apply an abstract poison/disease facility status that reduces staffed workforce/research personnel, may trigger limited nearby facility chains, and lowers or stops production. These are building, resource and workforce mechanics, not separate instances of individual-unit Discipline/Morale and not direct edits to the defender's entire Population Morale meter.
 
 A unit's `UnitResolve` remains a single numeric meter displayed as combat Discipline or non-combat Morale; facility worker-loss counts are related economy state, not another Morale bar. Story events and publicly discovered sabotage may influence faction Population Morale through explicitly defined, limited modifier rules, but there is no automatic zeroing of a whole population from one compromised building. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
