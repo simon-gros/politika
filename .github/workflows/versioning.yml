@@ -10,7 +10,6 @@ on:
 permissions:
   contents: read
 
-# Never cancel main/tag verdicts; supersede only older runs of a PR.
 concurrency:
   group: versioning-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -24,20 +23,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.12'
-      - name: Validate canonical version and tag matching
-        run: python3 tools/version.py check
-      - name: Run version-contract tests
-        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Verify deterministic header generation
+          components: rustfmt
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path tools/version/Cargo.toml -- --check
+      - name: Run Rust version-contract tests
+        run: cargo test --manifest-path tools/version/Cargo.toml --all-targets
+      - name: Validate canonical version and Git tag
+        run: cargo run --quiet --manifest-path tools/version/Cargo.toml -- check
+      - name: Verify deterministic generated header
         run: |
-          python3 tools/version.py generate --output "${RUNNER_TEMP}/PolitikaVersion.generated.h"
-          cp "${RUNNER_TEMP}/PolitikaVersion.generated.h" "${RUNNER_TEMP}/version-first.h"
-          python3 tools/version.py generate --output "${RUNNER_TEMP}/PolitikaVersion.generated.h"
-          cmp "${RUNNER_TEMP}/version-first.h" "${RUNNER_TEMP}/PolitikaVersion.generated.h"
-      - name: Require clean matching release checkout for version tags
+          cargo run --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
+          cp "$RUNNER_TEMP/PolitikaVersion.generated.h" "$RUNNER_TEMP/version-first.h"
+          cargo run --quiet --manifest-path tools/version/Cargo.toml -- generate --output "$RUNNER_TEMP/PolitikaVersion.generated.h"
+          cmp "$RUNNER_TEMP/version-first.h" "$RUNNER_TEMP/PolitikaVersion.generated.h"
+      - name: Require clean matching checkout for version tags
         if: startsWith(github.ref, 'refs/tags/v')
-        run: python3 tools/version.py check --release
+        run: cargo run --quiet --manifest-path tools/version/Cargo.toml -- check --release
