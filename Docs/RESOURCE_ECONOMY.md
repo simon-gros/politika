@@ -36,6 +36,22 @@ For the Atlantic Concord, lower refinery processing costs are the explicit sourc
 
 The Atlantic Concord's distinct espionage specialization is Psy-Ops, with fully broken Discipline/Morale leading to a targeted unit's in-game self-destruction or, alternatively, a short friendly-fire rampage. The Red Directorate gains slightly cheaper and faster basic infiltration for stealing rival intelligence, rather than a general discount on all spies or industrial research. The Iron Ascendancy begins with more limited spying, and its full espionage progression remains a prerequisite before any eligible spy can infiltrate a Concord/Directorate nuclear research facility for nuclear-refining and bomb-production intelligence. It alone has Intimidation, which can force eligible isolated enemy units to join its army. Conversion changes unit allegiance, not legal ownership of mineral deposits, refining technology, or nuclear production rights. Intimidating an eligible hostile combat unit cannot substitute for the designated research-facility infiltration objective or transfer resource ownership automatically. No other faction has Intimidation. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Facility espionage: resource waste, theft and workforce attrition
+
+Espionage affects budgets and production as well as intelligence. These three faction-specific facility attacks have distinct, auditable accounting:
+
+| Faction | Facility effect | Budget / production consequence |
+|---|---|---|
+| Atlantic Concord | Psy-Ops causes self-destruction of an eligible building, or finite, potentially unnoticed resource waste | The target loses a structure or consumes/wastes its own resources; the Concord receives no stolen resource credit |
+| Red Directorate | Covert resource diversion from an eligible enemy facility or budget | The enemy loses a bounded transferable amount and the Directorate gains the corresponding amount in its own account; transfer can remain unattributed |
+| Iron Ascendancy | Abstract poisoning/disease status affecting staffed enemy facilities and a limited chain of nearby eligible facilities | Simulated worker/researcher deaths lower available workforce, research and production throughput, possibly stopping production; costs include replacement, downtime and disrupted inputs |
+
+The engine must separately track the actual resource transaction, loss and responsible covert operation. Visibility/attribution may be withheld from the defending player's intelligence view, but never from authoritative accounting. **Resource waste is a sink; Directorate diversion is a debit-plus-credit transfer; facility contamination depletes worker capacity and indirectly wastes inputs and output.** These are not interchangeable balance effects.
+
+Staff losses apply to staffed facilities according to gameplay workforce requirements; a building at or below a configured minimum staff count has reduced or zero throughput. Replacement staff and restoration are legitimate time/resource expenditures, not instant free replenishment. Nearby facility contamination is a bounded fictional adjacency/status propagation mechanic with maximum hops/affected facilities, time limits, containment and recovery—not a real epidemiological or poisoning simulation.
+
+A targeted nuclear refinery, research building or other late-game installation follows these same rules only if explicitly eligible, but such sabotage **does not transfer research knowledge or count as the Ascendancy's required nuclear-facility spy-intelligence acquisition**. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ## 2. Nuclear materials: rare strategic resource
 
 Nuclear-weapons materials are the most highly valued resource in the entire game. They should be scarce, geographically contested, strategically defensible and important to late-game victory. Access may require exploration, control, contracts or specialized map objectives.
@@ -116,6 +132,9 @@ Suggested data-driven abstractions:
 - `ResourceDefinition`: stable resource ID, group/rank, stock/storage rules and extraction/source type.
 - `ResourceNode`: resource ID, on-map position, finite supply/regen policy, jurisdiction, owner/controller, harvest access.
 - `ResourceInventory`: available/reserved/in-transit amounts by owner/faction.
+- `CovertResourceTransaction`: action ID, source/destination or sink, currency/resource type, budget cap, actual debits/credits, detection/attribution status and audit metadata.
+- `FacilityWorkforce`: required/available staff, losses, replacement queue, staffing throughput modifier and stoppage state.
+- `FacilityIncidentChain`: fictional contamination status, nearby eligible building associations, bounded propagation count/depth, expiry and containment/recovery.
 - `PowerNetwork` or equivalent: optional electricity availability and connected consumers.
 - `FactionStartPolicy`: `MeridianRequiresNearbyFossilField = true`, allowed field types = oil/gas and map-scale-aware proximity threshold.
 - `RefinementJob`: facility ID, input resource type, reserved crude stock, abstract operating cost, duration, output product and faction eligibility.
