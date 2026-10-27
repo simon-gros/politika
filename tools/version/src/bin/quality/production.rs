@@ -307,6 +307,38 @@ pub(super) fn release_gate_checks(root: &Path) -> Vec<Check> {
     }).collect()
 }
 
+/// Report honest performance readiness; planned fixtures are not benchmarks.
+pub(super) fn performance_checks(root: &Path) -> Vec<Check> {
+    let value = match load_json(root, "Data/performance_cases.json") {
+        Ok(value) => value,
+        Err(error) => return vec![Check::new("performance.readiness", Verdict::Fail, error)],
+    };
+    if let Err(error) = check_performance(&value) {
+        return vec![Check::new("performance.readiness", Verdict::Fail, error)];
+    }
+    let fixtures = match list(&value, "fixtures") {
+        Ok(fixtures) => fixtures,
+        Err(error) => return vec![Check::new("performance.readiness", Verdict::Fail, error)],
+    };
+    fixtures.iter().map(|fixture| {
+        let id = fixture["id"].as_str().unwrap_or("unknown");
+        let state = fixture["status"].as_str().unwrap_or("planned");
+        let verdict = if state == "planned" {
+            Verdict::Blocked
+        } else {
+            Verdict::Inconclusive
+        };
+        Check::new(
+            &format!("performance.{id}"), verdict,
+            if state == "planned" {
+                "no executable RTS benchmark fixture or measurements yet"
+            } else {
+                "fixture declaration cannot independently verify measured Unreal performance"
+            },
+        )
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,6 +380,13 @@ mod tests {
     fn unverified_release_is_blocked() {
         let checks = release_gate_checks(&super::super::repo_root());
         assert_eq!(checks.len(), 7);
+        assert!(checks.iter().all(|check| check.verdict == Verdict::Blocked));
+    }
+
+    #[test]
+    fn current_benchmarks_are_unexecuted() {
+        let checks = performance_checks(&super::super::repo_root());
+        assert_eq!(checks.len(), 4);
         assert!(checks.iter().all(|check| check.verdict == Verdict::Blocked));
     }
 
