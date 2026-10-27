@@ -69,6 +69,14 @@ Display the population morale meter for every faction, including Meridian Pact a
 
 Propaganda-capable factions (Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned) use distinct methods expressed through radio, newspapers and television. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. Do not display an advanced propaganda action tree for the Meridian Pact, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Building espionage actions and incident visibility
+
+Facility target actions must be distinct from the individual-unit Discipline/Morale effects. A selected Concord spy can see eligible building Psy-Ops outcomes—self-destruction or resource waste; a Directorate infiltrator may redirect eligible resource budgets; an Ascendancy operative can initiate an abstract staffed-facility contamination action. None of these require reducing a building's `UnitResolve` (buildings do not use that meter).
+
+The attacker should see authorized action progress/costs and its own valid outcomes. The defender may initially see only ordinary-looking budget shortages or production losses: espionage **success, discovery and attribution are separate**. The UI must not automatically announce a covert waste or diversion when it has not been discovered. If the incident is detected, show contextual investigation, containment/cleanup, workforce replacement, repair and security options as appropriate.
+
+Building-inspection panels can represent assigned/required workers or researchers and effective throughput. Iron Ascendancy sabotage can cause fictional staff casualties, a production slowdown/stoppage, and a bounded local chain of impacted facilities; show nearby warning indicators only if observed/discovered. Avoid medical or technical real-world toxin/pathogen procedures. Directorate diversion should show a valid debit in the enemy's actual inventory and credit in the Directorate's, even if the enemy has no attacker-attribution. Nuclear infiltration and victory prerequisites remain independent of these sabotage controls.
+
 ### Discipline and Morale: one meter, contextual labels
 
 Unit inspection: show “Discipline” for a combat unit and “Morale” for a civilian/non-combat unit, using the same underlying unit resolve value, scale, break threshold and recovery behavior. Do not display both gauges simultaneously for the same individual. Population Morale remains the faction-level public indicator and may appear on the strategic/economic HUD, with production and baseline army Discipline effects.
