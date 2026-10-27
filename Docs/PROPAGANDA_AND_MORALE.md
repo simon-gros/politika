@@ -83,6 +83,14 @@ No instant conversion occurs simply because a target has no nearby friendly supp
 
 Intimidation's meter-reduction event and ownership transfer are separate authoritative transitions. Population Morale cannot be confused with an individual's meter; Intimidation against one civilian does not convert an entire population. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Unaligned false intelligence and its NPC propaganda channels
+
+The Unaligned has the most powerful counterintelligence apparatus in the game. Beyond normal interception and security, it can manufacture misleading intelligence and false-flag reports, sometimes reinforced by its NPC-run radio, television and newspaper propaganda. Fabricated intelligence and public propaganda are not identical: a secret report may deceive a specific playable faction's military command without becoming a broadcast or changing every citizen's Morale.
+
+When a playable faction is near defeat, with low resources and a very small remaining army, the Unaligned may plant reports about rival nuclear facilities, deployments or hostile intentions to redirect the stronger powers' attention and preserve overall faction balance. Such operations are governed by AI stability priorities and bounded credibility, exposure and verification checks. A fabricated report does not manipulate `UnitResolve`, instantaneously change Population Morale or directly alter real unit/building state; discovered deception may later affect faction trust and public Morale through explicit normal gameplay events.
+
+The false-intelligence system also supports the fictional Tito continuity propaganda, but its ordinary use does not imply that all federal officials or media employees are members of the cover-up. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 5. Narrative and AI integration
 
 In the central storyline, the Unaligned's media institutions support claims that Tito remains publicly active after his fictional 1984 assassination, using radio voices, televised body-double appearances and official press coverage. The restricted cover-up leadership may authorize disinformation, but ordinary Unaligned media workers and citizens do not automatically know the secret.
