@@ -127,7 +127,7 @@ The main military contest centers on three primary factions with meaningfully di
 
 **Established spy limitation:** the Iron Ascendancy possesses **more limited spying abilities** than the two rival nuclear powers, but can fully upgrade its espionage capabilities to unlock the exceptionally difficult nuclear-facility infiltration objective.
 
-**Exclusive ability — Intimidation:** only the Iron Ascendancy may attack the **battlefield morale of an isolated eligible enemy unit** and force a transfer of allegiance **only after that unit's morale has been fully broken**. Isolation alone, a partial morale reduction, or damage to health alone **must not convert** the target. The other factions cannot use Intimidation. Supported units are not eligible; timing, recovery and counters need balancing. Intimidation does not grant nuclear research or replace spy upgrades.
+**Exclusive ability — Intimidation:** only the Iron Ascendancy may target **eligible isolated combat or civilian/non-combat units**, and convert them **only after fully breaking their one resolve meter**: **Discipline for combatants, Morale for non-combatants**. Partial depletion, damage to health or isolation alone is insufficient; other factions lack Intimidation. It does not grant nuclear research or bypass spy upgrades.
 
 **Candidate identity:** covert action, sabotage, disinformation, rapid clandestine strikes, hidden cells, intimidation, and exploitation of disorder. Its ideology and role as the assassination perpetrator give it **specific advantages but equally meaningful drawbacks**. It is **not** simply an objectively stronger faction or the only one capable of immoral conduct.
 
@@ -141,11 +141,15 @@ The main military contest centers on three primary factions with meaningfully di
 
 The identity of its forces should be legible to the player but not automatically known to enemy AI: **gameplay faction ownership** and **in-world recognized identity** are separate variables. Concealment is a bounded ability with countermeasures and costs, not invulnerability.
 
-### 4.4 Formation size, discipline and morale
+### 4.4 Formation size and combat Discipline
 
-**Battlefield rule:** for Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned, a larger coherent fighting group has **more stable morale and discipline** than a small isolated detachment. **Red Directorate and Iron Ascendancy also receive a distinct, additional morale/discipline advantage when their fighting forces form very massive coherent armies**; Meridian and Unaligned gain only the ordinary larger-group stability. In contrast, **Atlantic Concord alone has no size-based morale/discipline penalty when operating with individuals or very small groups**, supporting independent small-unit tactics. The special massive-army bonus is tied to actually connected formation strength, not overall army population or UI selection count.
+**One underlying resolve meter for every unit:** a **combat unit's meter is called Discipline**; a **civilian/non-combat unit's meter is called Morale**. These names reflect unit category, **not two different gameplay meters**. Both share depletion, recovery and a fully broken threshold. Each faction's **Population Morale** is the faction-wide morale summary, supporting production output and soldiers' baseline Discipline.
 
-**Ascendancy conversion rule:** **isolate target → break its battlefield morale completely by Intimidation → convert unit to Ascendancy control**. This is not an instant capture of any unsupported soldier; high-morale isolated units must first be demoralized. The normal Concord small-group immunity does not imply immunity to direct Intimidation. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+**Formation Discipline rule:** Red Directorate, Iron Ascendancy, Meridian Pact and Unaligned combat units gain greater Discipline stability from larger, mutually supporting formations than from solitary deployment. **Red Directorate and Iron Ascendancy alone gain an additional bonus for very massive cohesive armies**; Meridian and Unaligned receive only the ordinary benefit. **Atlantic Concord alone suffers no Discipline penalty for deploying individual soldiers or very small squads**. These military formation bonuses do not apply to civilian Morale.
+
+**Intimidation conversion rule:** only Iron Ascendancy can target an **eligible isolated combat or non-combat unit**. First reduce the target's **one shared meter** to its broken threshold (**Discipline** for a soldier, **Morale** for a civilian/non-combat unit), then and only then transfer ownership. Isolation or partial depletion alone cannot convert a unit. Concord solo combat Discipline is resistant to the normal size penalty, not immune to direct Intimidation.
+
+See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ### 4.4 Unit diversity principle
 
@@ -296,19 +300,17 @@ Civilians and noncombatant infrastructure make the neutral federation credible. 
 
 The Pact **does not receive a dedicated nuclear campaign storyline** despite its optional theft and use of captured weapons. Nuclear weapons and production intelligence are **not ordinary Black Market purchases**. The Unaligned's neutral AI may respond to sabotage, stolen cargo, and deployment. This system should use abstract game states, not real-world construction specifications. See [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
-## 9.8 Advanced Propaganda and Population Morale
+### 9.8 Advanced propaganda, civilian Morale and military Discipline
 
-**Every faction—including the playable Meridian Pact and NPC-only Unaligned—has a population morale meter.** A higher population morale rating **increases production output and baseline army discipline**. **Local battlefield morale** is also tracked for units or coherent formations and responds to formation size and nearby allied support. Values, multipliers and thresholds require balancing.
+Every faction has **Population Morale**, the faction-level summary of the shared resolve/morale framework. Higher Population Morale improves production output and soldiers' baseline **Discipline**. **Every unit has only one numeric resolve meter**, called **Discipline** when the unit is a **combatant**, and **Morale** when it is **civilian/non-combat**; their reduction, recovery and break threshold use the same mechanic.
 
-**Distinct advanced propaganda capabilities belong to exactly four factions:** Atlantic Concord, Red Directorate, Iron Ascendancy and the Unaligned. The **Meridian Pact is the only faction without advanced propaganda actions**, but still gains the production and discipline benefits of high morale and can improve morale through ordinary commercial, economic and military performance. The Unaligned's media policies are operated by AI, not by a player.
+**Advanced propaganda** belongs to the Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned through **radio, newspapers and television**. The Meridian Pact has Population Morale and individual civilian Morale but **no advanced propaganda actions**.
 
-The three principal media are **radio, newspapers, and television**, modeled through coverage, operations and accessible infrastructure rather than identical global boosts. The Concord's, Directorate's, Ascendancy's and Unaligned's distinct advanced styles must offer genuinely different choices; exact abilities remain unfinalized. Media stations, printing houses and relay networks can become tactical objectives, subject to Unaligned sovereignty, existing world-control rules and player knowledge of the region.
+**Military Discipline formation rules:** larger coherent formations improve combat-unit Discipline stability for Directorate, Ascendancy, Meridian and Unaligned, with a distinct **extra massive-army bonus reserved for Directorate and Ascendancy**. The Atlantic Concord alone avoids the solo/very-small-group Discipline penalty. These combat-only perks do not change civilian Morale.
 
-**Formation-size morale rule:** Directorate, Ascendancy, Meridian and Unaligned receive ordinary morale/discipline stabilization from larger mutually supporting groups, while small detachments suffer a penalty. **Directorate and Ascendancy alone gain an additional positive morale/discipline bonus when they assemble very massive, cohesive armies**; it is stronger than the normal large-formation benefit. Meridian and Unaligned do not get this bonus. **Atlantic Concord alone avoids the normal penalty for being alone or in a very small group.** It is not immune to casualties or direct intimidation effects. Formations must have actual nearby support; total faction unit count never activates the massive-army bonus.
+**Intimidation** may target an eligible isolated combat or non-combat unit. It must **fully break the target's single resolve meter before allegiance changes**: Discipline for a combatant, Morale for a civilian/non-combat target. Breaking one civilian's Morale does **not** empty the faction's Population Morale meter. Intimidation and propaganda cannot grant nuclear intelligence or override faction production requirements.
 
-**Intimidation requires morale collapse:** an isolated enemy may be affected by Ascendancy Intimidation, but **cannot be converted until its battlefield morale is reduced to the fully broken threshold**. An isolated Concord soldier retains the usual Concord baseline rather than suffering a small-group penalty, although direct Intimidation can still eventually break morale. Propaganda/population morale are distinct from this local breakdown process; none of these mechanics replace nuclear-research espionage, refining, resource or instant-victory gates. The Unaligned's cover-up relies heavily on radio, television and newspapers, while the canonical revelation of Tito's assassination in 1989 remains unavoidable.
-
-See [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) for faction rules, battlefield morale, media, UI and validation.
+See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md), [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), and [Match Structure](MATCH_STRUCTURE.md).
 
 ### 9.9 Match population and faction control
 
@@ -376,7 +378,7 @@ Before implementing full rosters and economy, resolve:
 1. **The assassination conspiracy anchors the primary plot; a nuclear-intelligence/weapon acquisition and prevention race is the secondary plot, while nuclear ultimate weapons also function in RTS gameplay.**
 2. **The Unaligned is a non-playable, generally neutral, living governing environment—not a conventional fifth competitor.**
 3. **Only Atlantic Concord and Red Directorate begin as nuclear powers. The initially non-nuclear Iron Ascendancy can build its first bomb only after the qualifying spy-intelligence unlock, and completion wins immediately, without deployment.**
-4. **Concord and Directorate have unique spying specializations; Iron Ascendancy has more limited spying, full spy development is mandatory before nuclear infiltration, and Intimidation is Ascendancy-exclusive against isolated enemy units.**
+4. **Concord and Directorate have unique spying specializations; Iron Ascendancy has more limited spying, full spy development is mandatory before nuclear infiltration, and Intimidation is Ascendancy-exclusive against isolated combat and non-combat units after their Discipline/Morale is fully broken.**
 5. **The Meridian Pact is a non-producing, non-nuclear playable merchant/mercenary power with no dedicated nuclear story or nuclear Black Market sales, but can sabotage, steal and deploy completed nuclear weapons.**
 6. **Conventional exotic equipment uses the finite Black Market; crude oil and crude nuclear materials require refining. Nuclear bombs require processed nuclear material, valid technology, and long production, or theft of a completed weapon. Meridian has no nuclear refining, and Ascendancy cannot build nuclear power plants.**
 7. **Identity, diplomacy, hostility, ownership, and employment contracts remain separate gameplay concepts.**
