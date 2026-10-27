@@ -45,9 +45,17 @@ The **Atlantic Concord and Red Directorate** are the only **starting nuclear pow
 
 Implement these as **authoritative, data-driven rules**: validated production recipes and costs; input/output inventories; permission and intelligence checks; immutable construction provenance; interruptible refinery/production queues; electricity generation/consumption; map-generation spawn constraints; and a match-level completion-to-victory event. Protect against refinery bypass, double spending, illegal construction permissions and completion through stolen inventory. Exact quantities and timing remain balance work, not real-world technical specifications.
 
-**Other asymmetric rules:** Red Directorate infantry is **much cheaper to produce** than other factions' infantry; Iron Ascendancy has a **modest destructive-power advantage** and some **high-risk sacrificial attack behavior**; Concord refining is modestly cheaper; Meridian starts near fossil-fuel fields. Balance this alongside standard faction doctrine and the Unaligned's neutral sovereignty AI.
+**Other asymmetric rules:** the Atlantic Concord and Red Directorate have different specialist espionage features, and the Iron Ascendancy alone has Intimidation to convert isolated enemy units. Red Directorate infantry is **much cheaper to produce** than other factions' infantry; Iron Ascendancy has a **modest destructive-power advantage** and some **high-risk sacrificial attack behavior**; Concord refining is modestly cheaper; Meridian starts near fossil-fuel fields. Balance this alongside standard faction doctrine and the Unaligned's neutral sovereignty AI.
 
 See [Resource Economy](RESOURCE_ECONOMY.md) and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md). The 1984–1989 Tito conspiracy remains the primary authored story, independent of individual match victory results.
+
+### Espionage progression and Intimidation as gameplay systems
+
+**Distinct espionage abilities:** the Atlantic Concord and Red Directorate have separate specialist spying features (exact abilities still to be authored). The Iron Ascendancy has **more limited espionage**, with an explicit faction-specific upgrade tree whose **full completion** is an authoritative gate to infiltrating **Concord/Directorate nuclear research facilities**. The already-required stolen refining and weapon technology flags are earned only after that gated infiltration succeeds.
+
+**Intimidation:** an **Iron Ascendancy-exclusive command/ability** can convert **eligible isolated enemy units** to Ascendancy allegiance. The simulation must verify faction identity, ability ownership, target hostility, isolation and resolution before transferring control. Allied reinforcement and interruption are possible counterplay. No other faction can use Intimidation, and conversion does not replace nuclear research infiltration.
+
+Represent spy progression, facility ownership, unlocked infiltration actions, intelligence provenance, isolation conditions and unit controller transfers as **authoritative state**, not user-interface assumptions. Add separate test cases for partial versus complete Ascendancy spy upgrades, valid versus invalid research facilities, supported versus isolated intimidation targets, and unit ownership/persistence after a successful conversion. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 ## 4. Content model and authoring
 
