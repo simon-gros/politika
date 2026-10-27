@@ -50,6 +50,12 @@ The Red Directorate's espionage also includes building-level financial and logis
 
 This is not the same as the Directorate's separate advantage in ordinary intelligence theft, which is slightly faster and cheaper. It is also not Atlantic Concord Psy-Ops, which wastes rather than appropriates resources, or the Iron Ascendancy's contamination-based workforce sabotage. No real-world financial method is modeled. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Rifle-armed motorbike reconnaissance and later sabotage
+
+Red Directorate conducts its early-game reconnaissance primarily with motorcycles equipped with basic infantry rifles. These light ground scouts can reveal routes and enemy deployments and engage with limited rifle fire, but are not heavy armor or specialized infiltration agents. Their scouting does not automatically steal intelligence from a facility or divert its resources; those require the Directorate's separate spy actions.
+
+The Directorate can eventually deploy conventional explosive sabotage against eligible enemy vehicles and buildings through a fictional charge action, but its availability is later and its cost higher than Meridian Pact sabotage. Only eligible spy units can do this, not the Directorate's motorbike scouts or ordinary infantry. Efficient intelligence theft and covert resource diversion are separate Directorate espionage abilities. See [Reconnaissance and Scouting](../../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../../Docs/SABOTAGE_SYSTEM.md).
+
 ## Air Defense, Intelligence and Electronic Warfare
 
 A distinctive element of Directorate doctrine is the integration of ground-based air defenses with broader operational planning. Radar stations, mobile surface-to-air missile units, interceptor aviation and layered defensive positions protect important industrial centers and troop concentrations. Rather than assuming permanent control of the air, Directorate commanders seek to deny opponents easy access to protected territory and create conditions in which large formations can continue maneuvering despite hostile aviation.
