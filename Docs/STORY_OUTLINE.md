@@ -205,6 +205,14 @@ The Iron Ascendancy starts with more limited espionage and must fully develop it
 
 Intimidation can create tactical opportunities during ordinary operations, but cannot replace espionage upgrades, infiltration of a qualifying nuclear research facility, or the two nuclear-intelligence unlocks. This makes the nuclear side plot a long development race rather than an easy early-game raid. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Espionage against facilities and economic production
+
+Facility-level espionage provides conventional gameplay missions in parallel with the assassination mystery and nuclear race. Atlantic Concord Psy-Ops can destroy an eligible enemy building or discreetly waste its resources; the Red Directorate can instead secretly divert a targeted enemy facility's resources into Directorate accounts. Both may remain unattributed until discovered through military security or economic records, creating intelligence and counterintelligence objectives.
+
+The Iron Ascendancy can sabotage enemy staffed facilities through abstract fictional poisoning/disease incidents, causing simulated personnel deaths among workers and researchers, depleted labor capacity and production/research stoppages. The status can affect other nearby eligible facilities through a finite, bounded in-game chain, introducing containment, rescue/continuity, recovery and investigative objectives for opponents and the Unaligned NPC security apparatus. The game does not model real agents or transmission procedures.
+
+These incidents may alter tactical mission outcomes, resource availability and evidence trails, but do not replace the story's 1989 revelation, grant nuclear research by themselves or count as the Ascendancy's mandatory fully-upgraded-spy infiltration of Concord/Directorate nuclear research.
+
 ### The resource stakes
 
 Nuclear materials are the game's highest-value resources, and controlling crude and refined stocks is central to the nuclear race. Both nuclear power plants and bombs require refined nuclear materials; Concord and Directorate can construct both, Ascendancy can refine only after stealing research technology and build bombs alone, and Meridian cannot refine nuclear materials. Fossil fuels are the second-highest-value category: crude oil must be processed in refineries into petroleum fuel or kerosene; natural gas is obtained from source fields. Atlantic Concord has a lower fuel-refining cost than competing factions. The Meridian Pact always begins near at least one fossil-fuel source field, enabling its commercial and logistical specialization. Electricity and other industrial resources also support the wider wartime economy. These are abstract gameplay categories; exact prices, production requirements and map values are balance decisions. See the [Resource Economy](RESOURCE_ECONOMY.md).
