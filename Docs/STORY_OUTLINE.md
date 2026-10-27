@@ -223,6 +223,12 @@ See the [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) for the aut
 
 The Unaligned's radio speeches, television appearances and newspaper accounts support the fictional public image of Tito's continued leadership after 1984. Its media are also plausible campaign objectives whose seizure, interruption or contradictory messages may damage confidence. The 1989 public revelation is fixed; morale reflects destabilization rather than allowing the conspiracy's exposure to be prevented through propaganda. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Morale, Discipline and coercion in missions
+
+**One unit resolve system with two names:** **combat units use Discipline**, while **civilian/non-combat units use Morale**; both use the same underlying meter and fully broken threshold. Higher **faction Population Morale** supports production and soldier Discipline, but is not reduced to zero when a single civilian is intimidated.
+
+The **Iron Ascendancy** can use its exclusive Intimidation on **eligible isolated combat or non-combat units**, converting a target only after fully breaking its **Discipline (combat)** or **Morale (civilian/non-combat)**. Solo Concord combatants retain their normal Discipline baseline, while massive Directorate/Ascendancy armies have additional Discipline stability. Neutral civilian targeting remains conditional on eligibility and narrative consequences, not indiscriminate. These unit-level rules do not alter the 1989 revelation or the campaign's fixed ending. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 8. Principal Character Functions
 
 Names, biographies, and personal identities remain open for subsequent writing. These roles support a character-driven story without replacing the RTS perspective:
