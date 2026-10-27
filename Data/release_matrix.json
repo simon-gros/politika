@@ -4,9 +4,9 @@
   "gates": [
     {
       "id": "engine_build",
-      "status": "blocked",
-      "evidence": [],
-      "note": "No Unreal executable/project verified"
+      "status": "pass",
+      "evidence": ["Docs/SHELL_SKELETON.md#verified-delivery--27-october-2026"],
+      "note": "Linux UE 5.8.3 Development editor and application-shell game builds and package verified; not RTS gameplay or other-platform qualification"
     },
     {
       "id": "first_skirmish",
@@ -42,7 +42,7 @@
       "id": "packaged_release",
       "status": "blocked",
       "evidence": [],
-      "note": "No packaged, clean-install verified build"
+      "note": "Local Linux application-shell package passes isolated first-run and recovery checks; a playable RTS release and whole-device qualification remain blocked"
     }
   ]
 }

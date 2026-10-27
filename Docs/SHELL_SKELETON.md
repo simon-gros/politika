@@ -108,6 +108,50 @@ The 14 checks cover first-run/restart identity, explicit-map routing, byte-prese
 
 ## Delivery and acceptance status
 
-Implementation is being built with the locally installed UE 5.8.3 toolchain. See the final delivery record below for actual build/artifact outcomes. Do not infer runtime acceptance from compilation.
+The Linux Development shell has been built and checked with the locally installed UE 5.8.3 toolchain. See the delivery record below for actual build/artifact outcomes. Do not infer gameplay acceptance from compilation or shell checks.
 
-Build and runtime results are recorded below after final verification. Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance is deferred with the Server target. This milestone has no RTS simulation or campaign/skirmish implementation.
+Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance is deferred with the Server target. This milestone has no RTS simulation or campaign/skirmish implementation.
+
+## Verified delivery — 27 October 2026
+
+The interrupted task stopped after committing the shell implementation (`0487d6069a5cb33135bd8d9a066699c766d5cdb0`) and building an initial package. Its final verification section was missing; changelog/release-ledger edits were uncommitted and the ledger linked to that missing section. No compiler/game process remained active on recovery. The old UAT log ended with success, but the combined source was rebuilt rather than relying on that earlier artifact.
+
+### Reconciled source and artifact identity
+
+- Reviewed and merged GitHub changes through `861acf6cfbbe98ac5f2bd83714803ce89599c4b1`: production/performance/release tools, documentation policy, proposed faction rosters and unit-art references. These references are not imported gameplay assets.
+- Built from clean merge commit **`0b78535e096e42f32a3c1af4b59d2536e278d30c`**. Both packaged startup logs and `Saved/Packages/Linux/BuildIdentity.json` identify `0b78535e096e`; the identity reports `git_dirty: false`.
+- Engine: **5.8.3**, source **`396c9f059903aed5fec78ecd3d437a40c6415368`**, checked by `bash tools/unreal.sh doctor` with `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3`.
+- Host: CachyOS Linux, Vulkan on NVIDIA GeForce RTX 5080; rendered UI checks used an isolated Xvfb display. This is not a physical-display or whole-device qualification.
+- Game identity remains `0.1.0-dev.0`; protocol/save/persistence/world counters remain 1. No tag, published binary release, gameplay milestone or version bump is claimed.
+- Archive: `Saved/Packages/Linux/`, launcher `Politika.sh`. `SHA256SUMS` covers **37 files** and passed `sha256sum --quiet -c SHA256SUMS`.
+- Packaged game executable SHA-256: `a362251c42dbbe1080d870529934bdcd2956555597fb8a49dbc4e01462af315c`.
+
+The final evidence/ledger/test-fixture changes follow the package-source commit; they do not modify the runtime, maps or packaged configuration. Rebuilding solely for this documentation would change the recorded identity without validating additional runtime behavior.
+
+### Actual checks
+
+| Check | Result | Local evidence |
+|---|---|---|
+| `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 cargo run --locked --quiet --manifest-path Tools/Shell/Cargo.toml -- package` | PASS: Editor and game builds, map commandlet, cook, stage and archive; UAT exit 0 | `Saved/BuildLogs/package-recovered-20261027.log` |
+| Packaged `smoke` command above | **14/14 PASS**, including no-network startup and exit-70 settings-override preservation | `Saved/BuildLogs/package-smoke-recovered-20261027.log`; `Saved/ShellChecks/smoke-1793102886458/results.tsv` and per-case logs |
+| `cargo test --locked --manifest-path tools/version/Cargo.toml --all-targets` | **20 tests PASS**: 7 version tests and 13 quality/production tests | `Saved/BuildLogs/rust-recovered-20261027.log` |
+| Both Cargo projects' `cargo fmt … -- --check`; Shell `cargo test --locked … --all-targets` | PASS; Shell has no unit assertions, so its actual behavioral evidence is the process suite above | Cargo command results; source formatting |
+| `quality audit`, `quality core`, engine `doctor` | PASS: registry/document links, portable C++20 rules compile/assertions and exact engine pin | `build/diagnostics/audit.json`, `core.json`, `preflight.json` |
+| `quality performance` | **BLOCKED**, exit 3: all four RTS benchmark fixtures are planned | `build/diagnostics/performance.json` |
+| `quality release` | **Not release-ready**, exit 3: six gates BLOCKED; engine-build ledger assertion INCONCLUSIVE to the metadata-only tool | `build/diagnostics/release.json` |
+
+The release tool deliberately does not independently certify a ledger's `pass` entry. The engine-build evidence is the actual UBT/UAT/runtime record above, not that metadata report. Two inherited tests were corrected to construct an explicitly empty evidence list and allow independently unverified ledger claims without treating them as release acceptance. The production module import path and Rust formatting were also repaired after the integration exposed a compilation failure.
+
+### Rendered interaction and data-preservation checks
+
+All interaction fixtures used `-UserDir=` under `Saved/ShellChecks/`; no player data was used.
+
+1. Fresh packaged launch at **3840×2160** reached the menu and created a persistent local profile. Enter travelled to the cooked offline sandbox and back. `ui_ready` and travel events corroborate the visible screens.
+2. Keyboard safe-display control changed the real window to **1280×720**, with readable, unclipped controls. A byte comparison proved the original settings file remained unchanged.
+3. Reset first required confirmation. Cancelling preserved the original. Confirming produced a byte-identical backup and removed only the normal settings file; the local profile and campaign-preservation sentinel stayed byte-identical, including after orderly exit. The sentinel proves a storage boundary, not campaign loading.
+4. A corrupt-profile launch displayed `ProfileInvalid` and temporary-profile status without overwriting the corrupt bytes. Offline sandbox travel and return still worked. After externally restoring a valid test profile, the visible **Retry local profile** control restored persistent status and cleared the issue.
+5. Expanded diagnostics showed phase, last completed phase, game/engine versions, run ID and the actual `-ABSLOG` filename. UI Exit completed successfully.
+
+Screenshots and logs: `Saved/ShellChecks/ui-recovered-20261027/` (4K menu/sandbox, 720p safe mode, reset confirmation/cancellation/completion, normal/recovery run logs) and `Saved/ShellChecks/ui-profile-recovered-20261027/` (invalid profile, successful retry, diagnostics and run log). These and the package are local ignored artifacts, not files published with the source repository.
+
+**Handoff:** shell build steps 1–4 are delivered for the tested Linux environment. Conditional Server step 5 is deferred; there is no Server target. Gameplay, campaign persistence, performance, full accessibility/input coverage, clean-machine installs and other platforms remain separate milestones. Launch the local archive with `Saved/Packages/Linux/Politika.sh`.

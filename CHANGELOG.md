@@ -4,6 +4,10 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Implemented the UE 5.8.3 offline application shell, two cooked maps, persistent local profile with corruption detection, safe/reset recovery controls, canonical Rust-generated build identity, and Linux packaging. Recovered the interrupted build and fixed link exports, corrupt-profile deserialization, duplicate 4K DPI scaling, and fatal-shutdown settings writes. See [shell verification](Docs/SHELL_SKELETON.md) for compiler, package, 14-case process-check and UI evidence. This is not RTS gameplay or a public release; version/counters are unchanged.
+
+- Integrated the newer production validators, faction roster and unit-art references with the shell. Corrected the Rust production-module path and formatting, and completed the interrupted validation record.
+
 - Defined RTS-native historical authenticity, map-change review, 3D and visual standards, audio events, proportional validation, documentation authority, measurable performance fixtures and release acceptance. Added five source-controlled metadata ledgers and Rust schema/reference tests; performance and release claims remain blocked until real Unreal evidence exists.
 
 - Added Rust/Cargo design-metadata regression tests, five-faction content validation, Unreal 5.8.3 source/build preflight, structured JSON diagnostic verdicts, and a staged RTS-native adoption guide; no playable engine build or hosted workflow was added.

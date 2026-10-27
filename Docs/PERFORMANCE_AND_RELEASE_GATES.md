@@ -1,6 +1,6 @@
 # POLITIKA — RTS Performance and Release Acceptance
 
-**Status:** Planning, benchmark case definitions and unpassed release evidence ledger. No simulator, cooked UE 5.8.3 package, device results or release certificate currently exist.
+**Status:** Planning, benchmark case definitions and incomplete release evidence ledger. A local Linux UE 5.8.3 application-shell package is [verified](SHELL_SKELETON.md#verified-delivery--27-october-2026); no RTS simulator, representative gameplay benchmarks, platform-qualified release or release certificate exists.
 
 ## 1. Performance testing: measure the game that POLITIKA is building
 
@@ -19,13 +19,13 @@ Future fixture contract: scene/map version; deterministic seed where supported; 
 
 ## 2. Validation ladder and promotion criteria
 
-1. **Level P0 — design metadata:** Rust registry/source/format checks, native C++ rules tests. This is today's level and makes no gameplay claim.
-2. **Level P1 — engine smoke:** Verified UE pin, compiled Editor, selection and command loop, representative playable map and C++/Unreal Automation assertions. Not yet available.
+1. **Level P0 — design metadata:** Rust registry/source/format checks, native C++ rules tests. Implemented and checked; makes no gameplay claim.
+2. **Level P1 — engine smoke:** Verified UE pin, compiled Editor, selection and command loop, representative playable map and C++/Unreal Automation assertions. Partially complete: the compiled/packaged offline shell has process and UI evidence, but the RTS selection/command loop and playable map are not yet available.
 3. **Level P2 — representative skirmish:** A complete match from launch to victory/failure; all essential unit/production/orders, NPC authorities and fog/espionage tested with deterministic fixtures. Not yet available.
 4. **Level P3 — content and performance:** Four faction asymmetries, campaign objective variation, representative art/audio, navigation/fog regression, measured performance and reproducible original assets. Not yet available.
 5. **Level P4 — release candidate:** Packaged install on supported operating systems/devices, clean-machine first run, accessibility/input coverage, no blocking defects, save/replay compatibility where implemented, stable release identity, rights clearance and a reviewed change log. Not yet available.
 
-A skipped check does not become a pass. Release promotion must cite the evidence for the exact commit and package: test report, engine revision, content identity, platform, result and reviewer. The [release ledger](../Data/release_matrix.json) begins with **all seven gates blocked**. A gate may be marked `pass` only when its evidence list contains verifiable records from the actual running/build output; a narrative assertion is not evidence. A candidate is not releasable if any mandatory gate remains blocked or failed.
+A skipped check does not become a pass. Release promotion must cite the evidence for the exact commit and package: test report, engine revision, content identity, platform, result and reviewer. The [release ledger](../Data/release_matrix.json) records the Linux shell engine build with evidence; **the other six gates remain blocked**. A gate may be marked `pass` only when its evidence list contains verifiable records from the actual running/build output; a narrative assertion is not evidence. The metadata-only release tool reports such assertions as `INCONCLUSIVE` until independently checked. A candidate is not releasable if any mandatory gate remains blocked or failed.
 
 The public game version follows [Versioning and Release Management](VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md), not a numerical count of completed checkboxes. Documentation, archive research and tooling alone never warrant calling a release playable.
 

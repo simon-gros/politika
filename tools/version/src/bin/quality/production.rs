@@ -463,6 +463,8 @@ mod tests {
         let root = super::super::repo_root();
         let mut doc = load_json(&root, "Data/release_matrix.json").unwrap();
         doc["gates"][0]["status"] = Value::from("pass");
+        // Construct the malformed case explicitly; the repository may gain evidence.
+        doc["gates"][0]["evidence"] = Value::Array(Vec::new());
         assert!(check_release(&doc).is_err());
     }
 
@@ -470,7 +472,14 @@ mod tests {
     fn unverified_release_is_blocked() {
         let checks = release_gate_checks(&super::super::repo_root());
         assert_eq!(checks.len(), 7);
-        assert!(checks.iter().all(|check| check.verdict == Verdict::Blocked));
+        // Some individual gates may now have evidence; a ledger assertion still
+        // cannot independently certify acceptance or make the game releasable.
+        assert!(
+            checks
+                .iter()
+                .all(|check| matches!(check.verdict, Verdict::Blocked | Verdict::Inconclusive))
+        );
+        assert!(checks.iter().any(|check| check.verdict == Verdict::Blocked));
     }
 
     #[test]
