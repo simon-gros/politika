@@ -14,7 +14,7 @@ POLITIKA's economy assigns the greatest strategic value to **nuclear-weapons mat
 | **Additional systems** | **Electricity** | Grid generation, transmission and available power | Enables or constrains buildings, research, fuel processing and factory operation; shortages affect production |
 | **Other resources — to define** | Conventional industrial, construction and logistical inputs | Candidate examples: metals, manufactured components, cash/credits, supply capacity | Conventional production, buildings, repair, trade, upgrades and transport |
 
-**Critical distinction:** crude oil and natural gas can originate from on-map fossil-fuel fields. **Petroleum products and kerosene are processed or stored fuel categories**, not separate naturally occurring underground fields. Gameplay may abstract the refining/processing chain, but map generation should not depict kerosene wells.
+**Critical distinction:** crude oil and natural gas can originate from on-map fossil-fuel fields. **Petroleum products and kerosene are processed or stored fuel categories**, not separate naturally occurring underground fields. **Refining is a required gameplay transformation:** crude oil must be processed in a refinery into petroleum-derived fuel or kerosene. Map generation should not depict petroleum-product or kerosene wells.
 
 **Scarcity and value:** nuclear materials are the **most prized and scarce** strategically; fossil fuels are the **second-most valued group**. Their prices, extraction rates, storage limits, resource costs, regeneration rules and exchange ratios are not fixed in this document. A resource's rank does not guarantee an equal per-unit credit price across all maps or markets.
 
@@ -24,23 +24,23 @@ The resource values above are shared across the game, but faction **effective co
 
 | Faction | Established advantage | Implementation / balancing boundary |
 |---|---|---|
-| **Atlantic Concord** | **Fossil fuels cost slightly less** than for other factions | Apply a **modest effective price reduction** when acquiring crude oil, natural gas, petroleum-based fuel and kerosene; this does not automatically increase deposit yield, grant free fuel or reduce nuclear-material prices |
+| **Atlantic Concord** | **Fossil fuels cost slightly less** than for other factions | Apply **lower fuel-refining costs** than other factions, yielding a slight overall fossil-fuel cost advantage; this does not increase deposit yield, grant free fuel, or discount nuclear processing |
 | **Red Directorate** | **Infantry is far cheaper to produce than for every other faction** | Major reduction to infantry recruitment/production cost for comparable roles; preserves the strategic value of mass infantry, but does not make infantry free or remove supply constraints |
 | **Iron Ascendancy** | **Slightly stronger raw destructive power** and occasional **high-risk, potentially suicidal attacks** designed to inflict maximum damage | A modest offensive advantage and distinct attack behavior at greater risk of losing units; does not imply superior economy, invulnerability or limitless damage |
 | **Meridian Pact** | **Guaranteed starting proximity to existing fossil-fuel fields** | Spawn-location benefit near oil/gas source nodes, not guaranteed ownership or an extraction-rate bonus |
 | **The Unaligned** | **Neutral NPC world administration**, not a selectable economic competitor | Existing civilian/industrial networks follow simulation rules and cannot be commandeered by players without the relevant interactions |
 
-For the Atlantic Concord, distinguish **lower fossil-fuel purchase/acquisition cost** from extraction throughput: a modest discount is the established benefit. Resource markets and local scarcity can still fluctuate. For the Red Directorate, infantry-production prices must remain **substantially below every other faction's**, not merely slightly below one rival. The Ascendancy's offensive trade-off is specified in combat doctrine rather than encoded as a generalized resource or currency discount.
+For the Atlantic Concord, **lower refinery processing costs are the explicit source of its fossil-fuel economic edge**. A slight effective fuel-cost advantage is established, but any independent discount on raw-fuel purchases is a separate balancing decision. Resource markets and local scarcity can still fluctuate. For the Red Directorate, infantry-production prices must remain **substantially below every other faction's**, not merely slightly below one rival. The Ascendancy's offensive trade-off is specified in combat doctrine rather than encoded as a generalized resource or currency discount.
 
 ## 2. Nuclear materials: rare strategic resource
 
 **Nuclear-weapons materials are the most highly valued resource in the entire game.** They should be scarce, geographically contested, strategically defensible and important to late-game victory. Access may require exploration, control, contracts or specialized map objectives.
 
-For nuclear ultimate-weapon production, the following must all be satisfied: **verified nuclear-weapons intelligence**, sufficient **nuclear-material game resources** and other required inputs, an eligible production site and an extremely long game-time production process. The details are abstract fictional game resources; this document does not specify isotopes, enrichment, chemistry, design, or production procedures.
+**Crude nuclear materials must first pass through an eligible nuclear-refining facility as an abstract RTS processing step.** The resulting processed nuclear-material game resource can support **nuclear power plants** or **nuclear-weapons production**, subject to faction eligibility. For ultimate-weapon production, all of the following must be satisfied: **verified nuclear-weapons intelligence**, **processed nuclear materials**, other required inputs, an eligible production site and an extremely long game-time production process. The details are abstract fictional game resources; this document does not specify isotopes, enrichment, chemistry, design, or production procedures.
 
-The **Atlantic Concord** and **Red Directorate** are already nuclear powers and can manufacture their tactical nuclear ultimate weapons under these gates. The **Iron Ascendancy begins non-nuclear**: its spies must infiltrate an **Atlantic Concord or Red Directorate nuclear research facility**, acquire intelligence, then acquire the requisite materials and complete its **first atomic bomb**. **As soon as its own bomb is produced, the active game ends immediately in an Iron Ascendancy victory, without delivery or detonation**. A stolen completed weapon does not count as an own-produced bomb.
+The **Atlantic Concord** and **Red Directorate** are already nuclear powers. Both can **refine crude nuclear materials**, and construct **nuclear power plants** or tactical nuclear ultimate weapons under their respective construction and research gates. The **Iron Ascendancy begins non-nuclear**: its spies must infiltrate an **Atlantic Concord or Red Directorate nuclear research facility** and steal **nuclear-refinement technology intelligence and nuclear-weapons intelligence**. It may then refine crude nuclear materials **for bomb production only** and complete its **first atomic bomb**, but **cannot construct nuclear power plants and has no interest in doing so**. **As soon as its own bomb is produced, the active game ends immediately in an Iron Ascendancy victory, without delivery or detonation**. A stolen completed weapon does not count as an own-produced bomb.
 
-The **Meridian Pact cannot manufacture nuclear weapons**, although it can sabotage, steal and, with compatible game assets, deploy an already completed weapon. Nuclear weapons and nuclear-intelligence unlocks are not regular Black Market stock.
+The **Meridian Pact cannot refine crude nuclear materials at all**, cannot manufacture nuclear weapons, and has no nuclear power-plant production path; it may nevertheless sabotage, steal and deploy an already completed weapon with compatible game assets. Nuclear weapons and nuclear-intelligence unlocks are not regular Black Market stock.
 
 ## 3. Fossil fuels: the second-highest-value resources
 
@@ -51,9 +51,19 @@ The fossil-fuel category includes four named resources or fuel forms:
 - **Petroleum / petroleum-derived fuels:** processed fuel supplies, used in vehicle fleets and industrial/logistics systems. Naming should distinguish crude oil from refined petroleum products to avoid double counting.
 - **Kerosene:** a processed petroleum fuel, potentially particularly relevant to aircraft readiness, aviation support and trade.
 
-**Refining and conversions are optional implementation details**, not a prerequisite for the first playable prototype. An initial system may use grouped fuel stockpiles while preserving these named resources for later differentiation. Fuel supply should influence movement and logistical reach, production support, trade, and potentially the availability of nuclear delivery platforms without making resource scarcity a meaningless passive modifier.
+**Refining is mandatory for the finished economic design:** crude oil is an input to a **refinery facility**, which outputs **petroleum-derived fuel or kerosene**. These are distinct game resources, not a freely interchangeable combined stockpile. Early prototypes may stub the conversion with abstract formulas, but may not silently treat crude oil as usable refined fuel. **The Atlantic Concord refines at lower cost** than the other factions. Fuel supply should influence movement and logistical reach, production support, trade, and potentially the availability of nuclear delivery platforms without making resource scarcity a meaningless passive modifier.
 
 Fuel fields create contested regional value for all factions, but especially for the Meridian Pact's commercially oriented economy.
+
+## 3.1 Two abstract refining chains
+
+**Fossil-fuel refinery:** `CrudeOil + refinery operating cost → PetroleumFuel OR Kerosene`. The processing facility, available crude inventory, processing time, output storage and electricity/operating costs are part of the economy. **Atlantic Concord pays a lower refinery cost** than other factions. The user does not need a simulation of real chemical processing: recipes and resource ratios are fictional game values.
+
+**Nuclear-material refinery:** `CrudeNuclearMaterial + authorized refinement facility → ProcessedNuclearMaterial`. This represents an abstract fictional game transformation, not a real-world materials procedure. **Atlantic Concord and Red Directorate** have authorized refinement technology and can use the processed output for **nuclear power-plant construction** or **nuclear ultimate-weapon production**. **Iron Ascendancy** must **steal nuclear-refinement intelligence from a Concord or Directorate nuclear research facility** before it can operate such a process, and **may use it only for weapon production**, never nuclear power plants. **Meridian Pact has no nuclear-material refinement capability whatsoever**. The Unaligned remains non-nuclear and NPC-only.
+
+**Electricity output:** an eligible completed **nuclear power plant** contributes to the power network. Only **Concord and Directorate** may construct such plants. Grid-generation amounts, facility power needs, processing costs and conservation/consumption rates are balancing parameters.
+
+**Resource-state invariant:** crude and processed materials must be stored and tracked **separately**. Neither crude oil nor crude nuclear material can bypass its required refinement step when used for a finished product.
 
 ## 4. Meridian Pact starting-position advantage
 
@@ -72,7 +82,7 @@ This rule makes geography a signature component of Meridian gameplay. Early fuel
 
 ## 5. Electricity and infrastructure
 
-Electricity is an **additional game resource / utility flow**. Generation facilities, grid infrastructure, storage (if later chosen), transmission routes, and consumption by industrial buildings may affect supply and production. Electricity can be modeled as a local network capacity, an abstract resource stock, or a hybrid; the specific simulation remains open.
+Electricity is an **additional game resource / utility flow**. **Nuclear power plants** are a potential generation source built by the **Atlantic Concord and Red Directorate only**, using refined nuclear-material game resources; **the Iron Ascendancy cannot build and does not seek them**, and **the Meridian Pact cannot refine nuclear materials**. Generation facilities, grid infrastructure, storage (if later chosen), transmission routes, and consumption by industrial buildings may affect supply and production. Electricity can be modeled as a local network capacity, an abstract resource stock, or a hybrid; the specific simulation remains open.
 
 Potential relationships worth prototyping include:
 
@@ -100,14 +110,18 @@ Suggested data-driven abstractions:
 - `ResourceInventory`: available/reserved/in-transit amounts by owner/faction.
 - `PowerNetwork` or equivalent: optional electricity availability and connected consumers.
 - `FactionStartPolicy`: `MeridianRequiresNearbyFossilField = true`, allowed field types = oil/gas and map-scale-aware proximity threshold.
-- `NuclearProduction`: intelligence unlock, scarce nuclear-material cost, other abstract inputs, very long build duration, authorized faction, completed-bomb event.
+- `RefinementJob`: facility ID, input resource type, reserved crude stock, abstract operating cost, duration, output product and faction eligibility.
+- `NuclearRefinementIntel`: source Concord/Directorate research site, qualifying Ascendancy spy acquisition, verified ownership, and weapon-only restriction.
+- `NuclearProduction`: both nuclear intelligence unlocks, **processed nuclear-material** cost, other abstract inputs, very long build duration, authorized faction, completed-bomb event.
 
-**Validation checks:** every Meridian spawn has an eligible reachable fossil source in range; all declared materials exist on the map or have valid supply methods; storage cannot underflow; a fuel deposit is not confused with refined fuel; electricity outages apply predictably; nuclear production cannot complete without verified intelligence and fully committed materials; Ascendancy completion invokes immediate game victory.
+**Validation checks:** every Meridian spawn has an eligible reachable fossil source in range; all declared materials exist on the map or have valid supply methods; storage cannot underflow; a fuel deposit is not confused with refined fuel; electricity outages apply predictably; neither crude oil nor crude nuclear material bypasses refining; Meridian nuclear refinement and nuclear-plant construction are unavailable; Ascendancy nuclear-material refining and weapon construction require stolen Concord/Directorate refinement intelligence and cannot create power plants; nuclear production requires fully committed **processed nuclear materials**; Ascendancy completion invokes immediate game victory.
 
 ## 8. Open decisions
 
-Set actual resource names, costs, volumes, extraction rates and field distribution; determine whether crude oil and natural gas are separate from all refined fuels in the first playable slice; establish electricity as flow or stock; decide whether nuclear materials are solely captured from nodes or also earned via authored objectives; design how civilian power networks and resource ownership interact with the Unaligned; and test fuel advantages against fair map starts.
+Set actual resource names, costs, volumes, extraction rates, refinery operating costs and field distribution; implement crude oil and refined fuels as distinct resource states; establish electricity as flow or stock; decide whether nuclear materials are solely captured from nodes or also earned via authored objectives; design how civilian power networks and resource ownership interact with the Unaligned; and test fuel advantages against fair map starts.
+
+**Mandatory technology restrictions:** Meridian has no nuclear refinery or nuclear power-plant capability; Iron Ascendancy must steal refinement intelligence from a Concord/Directorate nuclear research facility, may then process materials exclusively toward its first bomb, and cannot build nuclear power plants.
 
 The starting rules should be enforced consistently in **campaign missions, local skirmish and any eventual multiplayer ruleset**, unless a specifically authored scenario explicitly overrides normal starting positions and tells players why.
 
-**Locked summary:** **nuclear materials rank first; fossil fuels rank second; the Meridian Pact always starts near oil or gas fields; electricity and other resources also exist; and the Iron Ascendancy remains non-nuclear until successful spy infiltration and completion of its first bomb immediately wins the game.**
+**Locked summary:** nuclear materials rank first and must be refined before nuclear power plants or bombs; fossil fuels rank second and crude oil must be refined into petroleum fuel or kerosene; **Concord has cheaper fuel refining**; Meridian always starts near oil/gas fields and **cannot refine nuclear materials**; Iron must steal Concord/Directorate **nuclear-refining and weapons intelligence**, may refine only for weapons and **cannot build nuclear power plants**; its first completed bomb instantly wins the game.
