@@ -92,6 +92,10 @@ The **Unaligned has its own distinct advanced propaganda apparatus**, operated e
 
 **The Unaligned also has a population morale meter** maintained by the world simulation. As with every faction, higher morale increases **production output and army discipline**, influencing the simulated Yugoslav economy and its armed forces. Neutral media buildings and audiences retain jurisdiction and sovereignty rules: propaganda infrastructure is not freely commandeered merely because a player approaches it. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
 
+## NPC Formation Support and Morale
+
+Unaligned military personnel gain more stable battlefield morale and discipline in **larger, mutually supporting formations**; individual troops and tiny detachments suffer the usual morale vulnerability. **The Atlantic Concord alone** avoids the small-group penalty. The Unaligned also retains an NPC-governed population morale meter. Iron Ascendancy Intimidation may convert only **eligible isolated hostile combat units** after their **battlefield morale is fully broken**; neutral civilians and non-hostile Unaligned units remain ineligible. These checks belong to the neutral world AI and authoritative simulation. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Strategic Identity
 
 From a game-design perspective, the Unaligned occupies a fundamentally different position from the Atlantic Concord, Red Directorate, Iron Ascendancy and Meridian Pact. While those four factions possess independent strategic objectives, player-controlled military structures and competing approaches to warfare, the Unaligned functions as the persistent administrative and territorial foundation of the game world. Its institutions establish the legal, political, economic and security conditions under which the principal factions operate. Players may encounter it as a cooperative administrative authority, a neutral territorial presence, a diplomatic intermediary or an armed opponent responding to violations of Yugoslav sovereignty, depending upon their actions and the circumstances of the campaign.
