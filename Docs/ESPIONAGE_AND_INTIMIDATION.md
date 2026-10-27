@@ -19,20 +19,20 @@ Atlantic Concord Psy-Ops and Red Directorate's more efficient basic intelligence
 
 ### 1.1 Atlantic Concord: Psy-Ops
 
-Psy-Ops is an Atlantic Concord espionage subdivision that acts upon an individual enemy unit's existing `UnitResolve` value, called **Discipline** for combatants and **Morale** for civilian/non-combat units. An eligible operation can produce one of two mutually exclusive outcomes:
+Psy-Ops is an Atlantic Concord espionage subdivision that acts upon an individual enemy unit's existing `UnitResolve` value, called Discipline for combatants and Morale for civilian/non-combat units. An eligible operation can produce one of two mutually exclusive outcomes:
 
-1. **Resolve breakdown and self-destruction:** the operation reduces the target's Discipline or Morale until it reaches `BrokenThreshold`. The affected unit then **self-destructs as a game-unit elimination event**. It does not become a Concord unit, and no realistic destructive method is simulated or specified.
-2. **Short-lived friendly-fire rampage:** a successful alternative operation makes the targeted combat or non-combat unit briefly **attack eligible units belonging to its own faction**. This is a temporary hostile-targeting override with a definite expiry and return to ordinary targeting if the unit survives. It does not change faction ownership or recruit the unit for the Concord. Non-combat units require an authored, valid in-game attack action for this outcome; ability details remain to be balanced.
+1. Resolve breakdown and self-destruction: the operation reduces the target's Discipline or Morale until it reaches `BrokenThreshold`. The affected unit then self-destructs as a game-unit elimination event. It does not become a Concord unit, and no realistic destructive method is simulated or specified.
+2. Short-lived friendly-fire rampage: a successful alternative operation makes the targeted combat or non-combat unit briefly attack eligible units belonging to its own faction. This is a temporary hostile-targeting override with a definite expiry and return to ordinary targeting if the unit survives. It does not change faction ownership or recruit the unit for the Concord. Non-combat units require an authored, valid in-game attack action for this outcome; ability details remain to be balanced.
 
-Both are bounded, counterable operations subject to faction ownership, target eligibility, cooldown/cost, valid range and success checks. The self-destruction outcome specifically requires a **fully broken** meter; the rampage is an **alternative successful Psy-Ops effect**, not necessarily a permanent break or a conversion. The precise activation threshold for rampage is open. Defensive responses may include spotting/interruption, protection effects, target recovery and preventing repeated ability chains.
+Both are bounded, counterable operations subject to faction ownership, target eligibility, cooldown/cost, valid range and success checks. The self-destruction outcome specifically requires a fully broken meter; the rampage is an alternative successful Psy-Ops effect, not necessarily a permanent break or a conversion. The precise activation threshold for rampage is open. Defensive responses may include spotting/interruption, protection effects, target recovery and preventing repeated ability chains.
 
-Psy-Ops does not replace Concord radio/newspaper/television propaganda; the former affects individual units, while the latter operates through faction media and Population Morale. It is also distinct from Iron Ascendancy Intimidation: **Intimidation breaks Discipline/Morale to transfer a target's allegiance**, whereas Psy-Ops can **eliminate** a broken target or **temporarily redirect its attacks** without transferring ownership.
+Psy-Ops does not replace Concord radio/newspaper/television propaganda; the former affects individual units, while the latter operates through faction media and Population Morale. It is also distinct from Iron Ascendancy Intimidation: Intimidation breaks Discipline/Morale to transfer a target's allegiance, whereas Psy-Ops can eliminate a broken target or temporarily redirect its attacks without transferring ownership.
 
 ### 1.2 Red Directorate: efficient infiltration and intelligence theft
 
-The Red Directorate's **basic spy infiltration is slightly more advanced specifically for obtaining rival intelligence**. In comparable, authorized intelligence-theft operations, Directorate agents require **slightly less gameplay time and slightly fewer game resources/costs** than other factions' agents. No exact percentage or currency price is canonical yet.
+The Red Directorate's basic spy infiltration is slightly more advanced specifically for obtaining rival intelligence. In comparable, authorized intelligence-theft operations, Directorate agents require slightly less gameplay time and slightly fewer game resources/costs than other factions' agents. No exact percentage or currency price is canonical yet.
 
-The advantage applies to stealing rival-faction intelligence, **not** to Intimidation, Psy-Ops, combat damage, mandatory facility permissions or guaranteed mission success. Target defenses, access, reconnaissance, detection and legitimate intelligence provenance still apply. The Directorate does not acquire a Concord Psy-Ops action tree, and does not bypass the Iron Ascendancy's separate maximum-spy-upgrade gate for infiltrating a Concord/Directorate nuclear research facility.
+The advantage applies to stealing rival-faction intelligence, not to Intimidation, Psy-Ops, combat damage, mandatory facility permissions or guaranteed mission success. Target defenses, access, reconnaissance, detection and legitimate intelligence provenance still apply. The Directorate does not acquire a Concord Psy-Ops action tree, and does not bypass the Iron Ascendancy's separate maximum-spy-upgrade gate for infiltrating a Concord/Directorate nuclear research facility.
 
 ## 2. Iron Ascendancy's limited espionage and full-development gate
 
@@ -113,9 +113,6 @@ Suggested authoritative state (names provisional):
 
 Acceptance tests:
 
-0. Concord alone can use Psy-Ops. In the self-destruction mode, the target must have its own Discipline (combat) or Morale (non-combat) fully broken before an in-game elimination event. A rampage lasts only a short bounded duration, makes a target attack valid own-faction units, and never permanently transfers ownership; combat and eligible civilian/non-combat target categories are supported.
-0a. For an otherwise identical permitted rival-intelligence infiltration, Directorate time and cost are each modestly below the baseline for other factions. Its bonus does not grant automatic success or enable Concord Psy-Ops or Ascendancy Intimidation.
-
 1. A partially developed Ascendancy spy cannot infiltrate a nuclear research facility; maxed spying permits a qualifying attempt at a Concord/Directorate site, but no intelligence unlock without success.
 2. An eligible isolated combat unit with remaining Discipline can lose meter value under Intimidation but cannot be converted until its shared meter reaches the broken threshold.
 3. An eligible isolated civilian/non-combat unit with remaining Morale behaves identically: no conversion until the same shared-meter break condition is met.
@@ -126,5 +123,8 @@ Acceptance tests:
 8. The UI shows Discipline on combat targets and Morale on non-combat targets, but the data model stores one `UnitResolve` mechanism.
 9. All other factions lack Intimidation; coercive conversion does not bypass the Ascendancy's espionage and nuclear-research prerequisites.
 10. Completing the Ascendancy's first self-produced bomb after full spying, valid research infiltration, dual intelligence unlock, refining and construction ends the active game before deployment; theft does not.
+
+11. Concord alone can use Psy-Ops. In the self-destruction mode, the target must have its own Discipline (combat) or Morale (non-combat) fully broken before an in-game elimination event. A rampage lasts only a short bounded duration, makes a target attack valid own-faction units, and never permanently transfers ownership; combat and eligible civilian/non-combat target categories are supported.
+12. For an otherwise identical permitted rival-intelligence infiltration, Directorate time and cost are each modestly below the baseline for other factions. Its bonus does not grant automatic success or enable Concord Psy-Ops or Ascendancy Intimidation.
 
 Open balancing: Concord Psy-Ops eligibility, outcome selection, rampage duration, valid non-combat attacks and defense; Directorate intelligence-theft cost/time reductions; Ascendancy spy upgrade costs and timing, defenses/detection rules, exact formation-support radius, massive-army threshold and exclusive Directorate/Ascendancy stability bonus, shared resolve/discipline/morale curves, a common broken threshold, depletion and recovery, valid intimidator and target archetypes, intimidation reliability/counterplay, and multiplayer arbitration.
