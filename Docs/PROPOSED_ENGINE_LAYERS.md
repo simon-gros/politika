@@ -126,6 +126,14 @@ The simulation and match framework own building-level espionage eligibility, res
 
 World/spatial code owns **eligible neighboring facilities** and caps propagation; economy/production owns worker counts and throughput; intelligence/fog owns what the defending player detects and can attribute; presentation shows staff losses, production failures or unexplained budget changes only as permitted by discovery state. Content assets define faction permissions, cost, eligible target types, duration, spread caps, immunity/exclusion flags and counterplay. The Iron Ascendancy nuclear intelligence/full-spy progression remains a separate permissioned objective. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Early scouting and asymmetric conventional sabotage permissions
+
+Unit content defines cheap, fast, lightly armored and armed Meridian scout-combat trucks; cheap, unarmed Atlantic Concord/Iron Ascendancy light reconnaissance airplanes; and basic-rifle-armed Red Directorate motorbike scouts. Meridian leads overall early reconnaissance efficiency, but every faction uses standard fog-of-war and movement/supply constraints. Visibility alone never counts as intelligence theft or unit sabotage.
+
+The match framework and simulation gate fictional attached-charge conventional sabotage: Meridian accesses it early, cheaply and via eligible non-spy units, whereas the three rival playable factions unlock it later, at higher cost and exclusively through spies. The world layer validates vehicles/buildings as targets and manages charge status, conventional explosion, damage, defenses and attribution. Unit-category tags must distinguish `Spy`, `Scout`, `Saboteur` and `Civilian` without treating the categories as mutually exclusive unless authoring explicitly requires it. An ordinary rival scout must fail the sabotage command even when it can see or reach the target.
+
+Presentation provides build-card scout roles, no weapon button on unarmed planes, valid sabotage target cues, costs/unlocks, and discovery versus actual operation state. These rules do not permit the Pact to manufacture nuclear weapons or bypass Ascendancy nuclear spy research. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
 ### Shared resolve, combat Discipline and civilian Morale
 
 Simulation truth: one `UnitResolve` per eligible unit, with shared limits, break threshold, loss and recovery. Presentation label: `Discipline` for combat units and `Morale` for civilian/non-combat units. These must not become different meters or independent health/status systems. Faction Population Morale is a rolled-up civilian/public indicator within the same morale/resolve model, impacting production output and the baseline Discipline of soldiers.
