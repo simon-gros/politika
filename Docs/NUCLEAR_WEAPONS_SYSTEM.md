@@ -70,6 +70,12 @@ See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
 The Red Directorate can steal rival intelligence slightly faster and for slightly less cost through basic infiltration; the Atlantic Concord instead has the separate Psy-Ops spying subdivision, whose outcomes are unit self-destruction upon fully broken Discipline/Morale or a temporary friendly-fire rampage. These do not automatically unlock nuclear research, duplicate the Ascendancy's unique victory, or bypass any facility-permission and provenance check. The Ascendancy continues to require fully developed espionage and theft of two intelligence unlocks from a Concord or Directorate nuclear research facility. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Building sabotage versus nuclear research acquisition
+
+Building infiltration may have other consequences than obtaining nuclear technology. Atlantic Concord Psy-Ops can destroy or induce covert resource waste in eligible enemy facilities; Red Directorate spying can covertly divert enemy resources to its own budget; Iron Ascendancy espionage can place a fictional poison/disease workforce-loss status on enemy staffed buildings, potentially spreading to other nearby eligible facilities in a bounded chain and slowing/stopping production. If a nuclear refinery, research center or bomb-production site is an eligible sabotage target, these effects may interrupt its operations under normal building rules.
+
+None of these outcomes automatically grants nuclear-refinement intelligence, nuclear-weapons intelligence or the Iron Ascendancy's first-bomb victory. For the Ascendancy, *stealing both required intelligence types* still demands a qualifying Concord/Directorate research facility, successful infiltration and fully developed spying. Only completing its own first bomb after those gates wins immediately. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ## 4. Spy infiltration and intelligence provenance
 
 The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy with fully developed faction espionage must penetrate a nuclear research facility owned by the Atlantic Concord or Red Directorate, acquire both nuclear-refining technology intelligence and nuclear-weapons production intelligence, and have those events independently recognized by match authority. One qualified facility can contain both required pieces of intelligence.
