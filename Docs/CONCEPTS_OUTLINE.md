@@ -310,6 +310,12 @@ The three principal media are **radio, newspapers, and television**, modeled thr
 
 See [Propaganda and Population Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) for faction rules, battlefield morale, media, UI and validation.
 
+### 9.9 Match population and faction control
+
+**Every map has 2–4 player-controlled faction positions plus a separate Unaligned system-AI faction**: **2+1, 3+1 or 4+1**, for 3–5 faction presences and **2–4 playable participants**. Every player controls **one distinct playable faction**, from Atlantic Concord, Red Directorate, Iron Ascendancy and Meridian Pact. The Unaligned never becomes a selectable participant or fifth player. Offline play fills other player slots with AI, so a lone human may play a 2-player skirmish against AI.
+
+Faction-specific objectives remain subject to the actual roster: if the Iron Ascendancy has no opposing Concord or Directorate **nuclear research facility** on the map, its first-bomb special victory cannot be silently unlocked. When Meridian is selected, its spawn must still be near an oil or gas field. See [Match Structure](MATCH_STRUCTURE.md).
+
 ## 10. Game Modes and Canon
 
 **Campaign:** linked 1984–1989 missions, faction-specific perspectives, continuity of evidence, and a fixed core secret and final revelation. A **separate nuclear-weapon intelligence, production, acquisition/interdiction chain** is reserved for the Atlantic Concord, Red Directorate, and Iron Ascendancy. The Ascendancy's qualifying production completion wins the active game; the Meridian Pact receives no dedicated nuclear missions despite its general ability to steal a ready weapon. The Iron Ascendancy may have privileged early knowledge within its assassination cell, but its ordinary commanders should still operate under partial information.
