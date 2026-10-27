@@ -66,6 +66,10 @@ Its required path is full spy development → successful spy infiltration of an 
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Spying asymmetry does not replace nuclear production prerequisites
+
+The Red Directorate can steal rival intelligence slightly faster and for slightly less cost through basic infiltration; the Atlantic Concord instead has the separate Psy-Ops spying subdivision, whose outcomes are unit self-destruction upon fully broken Discipline/Morale or a temporary friendly-fire rampage. These do not automatically unlock nuclear research, duplicate the Ascendancy's unique victory, or bypass any facility-permission and provenance check. The Ascendancy continues to require fully developed espionage and theft of two intelligence unlocks from a Concord or Directorate nuclear research facility. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
+
 ## 4. Spy infiltration and intelligence provenance
 
 The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy with fully developed faction espionage must penetrate a nuclear research facility owned by the Atlantic Concord or Red Directorate, acquire both nuclear-refining technology intelligence and nuclear-weapons production intelligence, and have those events independently recognized by match authority. One qualified facility can contain both required pieces of intelligence.
