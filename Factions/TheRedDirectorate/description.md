@@ -50,6 +50,10 @@ The Directorate's strategic philosophy places particular emphasis upon the relat
 
 In practical gameplay terms, the Red Directorate will specialize in large-scale industrial construction, heavy armored warfare, mass mobilization, extensive defensive installations and powerful artillery support. Players will be able to establish substantial military bases, construct interconnected production facilities, organize mechanized formations and conduct coordinated offensives supported by long-range weapons and specialized engineering units. Its strongest capabilities will emerge through the development of a comprehensive military-industrial economy capable of continuously supplying the battlefield. However, maintaining such an economy will require careful resource management, infrastructure protection and the coordination of increasingly complex logistical networks. The faction's military power will therefore depend not only upon the quantity of units produced, but also upon the efficiency with which its enormous industrial and administrative machinery is organized.
 
+## Low-Cost Infantry Advantage
+
+The Red Directorate can produce infantry **far more cheaply than any other playable faction**. This is a substantial unit-production price advantage, supporting numerical superiority, faster force replacement, and mass infantry tactics. It does not make infantry free, eliminate supply needs, or grant comparable discounts to every other unit category.
+
 ## Governance and Resource Mechanics
 
 The Directorate's proposed gameplay economy can distinguish industrial capacity from the administrative efficiency needed to employ it. Large production complexes may provide strong throughput once developed, while queues, logistical congestion or infrastructure damage limit the rate at which usable equipment reaches combat formations. Investment in rail connections, depots, repair installations and engineering support should consequently matter as much as construction of additional factories. Players may need to choose between rapid mobilization, research, improvements to distribution networks and the long-term security of their industrial base.
