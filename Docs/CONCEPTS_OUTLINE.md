@@ -95,6 +95,14 @@ Neutral roads, bases, broadcasters, depots, hospitals, industry, and border cros
 
 Proposed rule: neutral asset capture should require an explicit mechanic (political control, infiltration, occupation, or combat), not instant ownership merely because a player reaches it.
 
+### 3.5 Strongest counterintelligence: Unaligned deception and equilibrium
+
+The Unaligned is the game's most powerful counterintelligence faction, despite being unplayable. In addition to intercepting and identifying foreign intelligence activity, its system AI can insert fabricated reports, counterfeit attribution and false-flag claims into the rival powers' information streams. A faction can receive supposed evidence that an opponent is building a nuclear facility, while the apparent evidence is an Unaligned plant and no such building exists on the real map. An intelligence claim is not the same thing as an actually observed structure, stolen technology or authoritative construction state.
+
+This technique also makes the Unaligned a dynamic balance-preserving force rather than passive neutral scenery. The AI observes the strategic strength of the two to four active playable factions, including scarce resources, army strength, productive infrastructure and immediate elimination risk. When one faction is clearly losing and close to destruction, the Unaligned may generate believable threats or false-flag reports to draw the stronger rivals' attention toward one another and away from the weakest faction, preserving competition and perceived Yugoslav stability. The intent is to encourage diversion through normal player decisions, not grant the losing side free resources, disable enemy control or guarantee a rescue.
+
+Players should be able to verify claims through legitimate scouting, inspections, corroborating intelligence and detection of conflicting evidence. Interceptions, deliberate fabrications and false-flag attributions are different source types. Reports have bounded credibility, cost, duration and detection possibilities. The Unaligned remains hostile to identified Ascendancy units and cannot use fake intelligence to override the true nuclear production or first-bomb victory rules. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ## 4. Three Principal Playable Factions: Distinct Armed Forces
 
 The main military contest centers on three primary factions with meaningfully distinct unit rosters, equipment, mobility, capabilities, production constraints, doctrine, and intelligence styles. The difference cannot be merely cosmetic.
