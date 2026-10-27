@@ -219,7 +219,7 @@ The first map fixture may remain fictional and minimal. When a historical campai
 
 **Additional historical context** (used for high-level institutional/economic understanding, not to approve a game asset):
 
-1. Dejan Jović, *Nationalism and Federalism in Yugoslavia, 1962–1991*, [Indiana University Press, internal balance of power](https://publish.iupress.indiana.edu/read/nationalism-and-federalism-in-yugoslavia-1962-1991/section/9bfa5625-cfc5-4a13-82f2-941cd567d041) — federal-republican-provincial relations.
+1. Sabrina P. Ramet, *Nationalism and Federalism in Yugoslavia, 1962–1991*, [Indiana University Press, internal balance of power](https://publish.iupress.indiana.edu/read/nationalism-and-federalism-in-yugoslavia-1962-1991/section/9bfa5625-cfc5-4a13-82f2-941cd567d041) — federal-republican-provincial relations.
 2. "[Rokkan Rules? Communist Elites and the Choice of Electoral Systems in the Yugoslav Republics, 1989–1990](https://pmc.ncbi.nlm.nih.gov/articles/PMC11073039/)" — representation, League of Communists organizations and competing regional responses to economic crisis.
 3. "[Kosovo in the 1980s — Yugoslav Perspectives and Interpretations](https://www.degruyterbrill.com/document/doi/10.1515/soeu-2021-0059/html)" — historiographical cautions and cross-republic perspectives.
 4. [1985 CIA World Factbook Yugoslavia government profile](https://geographic.org/wfb1985/yugoslavia/yugoslavia_government.html) — period snapshot of federal structure; historical rather than alternate-world leadership.
