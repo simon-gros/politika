@@ -62,9 +62,9 @@ In practical gameplay terms, the Atlantic Concord is a playable faction speciali
 
 Individual units are intended to offer strong performance and versatile support, balanced by high acquisition costs, specialist maintenance and potentially slower replacement rates. An unprotected airbase or interrupted communications network may have consequences beyond the immediate loss of a structure; a well-positioned reconnaissance system can improve the effectiveness of several nearby forces.
 
-## Fossil-Fuel Cost Advantage
+## Fossil-Fuel Refining and Cost Advantage
 
-The Atlantic Concord pays **slightly less** than other factions for fossil fuels: crude oil, natural gas, petroleum-derived fuels, and kerosene. This is a **modest purchasing and supply-cost advantage**, not exclusive ownership of deposits or an extraction-speed bonus. Scarcity, transport security, and the cost of its sophisticated units remain significant constraints.
+The Atlantic Concord pays **slightly less** than other factions for fossil fuels: crude oil, natural gas, petroleum-derived fuels, and kerosene. Its **fuel-refinery operating costs are also slightly lower than other factions**, yielding a modest effective purchasing and supply-cost advantage, not exclusive ownership of deposits or an extraction-speed bonus. Scarcity, transport security, and the cost of its sophisticated units remain significant constraints.
 
 ## Economic and Infrastructure Mechanics
 
