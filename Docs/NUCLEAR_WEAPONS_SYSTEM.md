@@ -76,6 +76,12 @@ Building infiltration may have other consequences than obtaining nuclear technol
 
 None of these outcomes automatically grants nuclear-refinement intelligence, nuclear-weapons intelligence or the Iron Ascendancy's first-bomb victory. For the Ascendancy, *stealing both required intelligence types* still demands a qualifying Concord/Directorate research facility, successful infiltration and fully developed spying. Only completing its own first bomb after those gates wins immediately. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Conventional sabotage is not nuclear weaponry
+
+The Meridian Pact can undertake cheap early conventional explosive sabotage against eligible enemy vehicles and buildings using authorized non-spy units. The Atlantic Concord, Red Directorate and Iron Ascendancy can use comparable fictional charges only later, more expensively and through spies alone. This action is separate from tactical nuclear ultimate weapons, and it never provides the Meridian Pact with nuclear refining or bomb-production capability.
+
+Neither planting a conventional charge nor scouting a nuclear research complex replaces the Iron Ascendancy's fully upgraded espionage, validated infiltration of a Concord/Directorate nuclear research facility and theft of nuclear-refining and bomb intelligence. An explosive sabotage attack can impair an eligible enemy facility under normal destruction/repair rules, but it does not create technology or complete the first-bomb instant-win objective. See [Explosive Sabotage](SABOTAGE_SYSTEM.md) and [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md).
+
 ## 4. Spy infiltration and intelligence provenance
 
 The Iron Ascendancy's special path is uniquely asymmetric. An Ascendancy-controlled spy with fully developed faction espionage must penetrate a nuclear research facility owned by the Atlantic Concord or Red Directorate, acquire both nuclear-refining technology intelligence and nuclear-weapons production intelligence, and have those events independently recognized by match authority. One qualified facility can contain both required pieces of intelligence.
