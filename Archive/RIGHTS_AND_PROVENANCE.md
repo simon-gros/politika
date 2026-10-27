@@ -20,7 +20,7 @@ The archive is also **not** a claim of historicity for the Story Outline. Tito h
 
 ## Metadata rules
 
-Every row should provide `ref_id`, title, creator/source institution, stable URL or shelfmark, historical date (or an explicit unknown range), location, medium, subject tags, proposed gameplay/art use, `time_relation`, `evidence_confidence`, `canon_relation`, current `rights_status`, `repository_status`, checked date and a limitations note. The extra columns in POLITIKA's CSV are **deliberate extensions** of Marburgum's master catalogue.
+Every row should provide `ref_id`, title, creator/source institution, stable URL or shelfmark, historical date (or an explicit unknown range), location, medium, subject tags, proposed gameplay/art use, `time_relation`, `evidence_confidence`, `canon_relation`, current `rights_status`, `repository_status`, checked date and a limitations note. POLITIKA's catalogue extends its source records with game-specific provenance and licensing metadata.
 
 - **A — direct:** original period artifact with reliable dating/provenance or primary document *metadata* for the relevant year; it does not guarantee the complete contents were inspected.
 - **B — strong:** museum research, competent secondary academic/official history or reliably contextualized period artefact.
