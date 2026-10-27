@@ -54,6 +54,12 @@ Reconnaissance provides **line-of-sight/fog-of-war information**, contacts, rout
 
 Scouting interactions with the Unaligned respect its system-AI neutrality, protected facilities, territorial rules and reaction to trespass or combat.
 
+### Reconnaissance does not automatically grant sabotage
+
+The Meridian Pact is both the game's best early reconnaissance faction and its strongest conventional sabotage faction. Its low-cost, fast, lightly armed and armored trucks support scouting, target discovery and raids, but carrying out an explosive sabotage action still requires an explicit unit ability. Some authorized non-spy Meridian units can perform early low-cost sabotage against eligible vehicles or buildings; a scouting truck does not inherit this permission just because it has a spotting role.
+
+Atlantic Concord and Iron Ascendancy light unarmed planes, and Red Directorate rifle-armed motorbikes, are reconnaissance units and are not sabotage agents. Their three factions gain conventional attached-charge sabotage later, at greater cost, through spy units only. A scout's sighting of a target can inform an authorized spy operation but does not place a charge, grant nuclear research access or trigger other special actions. See [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
 ## 6. Suggested simulation and UI contracts
 
 Represent cheap scouts with normal unit data rather than a global reveal cheat:
