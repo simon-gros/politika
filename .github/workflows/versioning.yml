@@ -31,6 +31,11 @@ jobs:
         run: cargo fmt --manifest-path tools/version/Cargo.toml -- --check
       - name: Run Rust version-contract tests
         run: cargo test --manifest-path tools/version/Cargo.toml --all-targets
+      - name: Record resolved Cargo lock for reproducible tooling
+        run: |
+          echo POLITIKA_CARGO_LOCK_BEGIN
+          cat tools/version/Cargo.lock
+          echo POLITIKA_CARGO_LOCK_END
       - name: Validate canonical version and Git tag
         run: cargo run --quiet --manifest-path tools/version/Cargo.toml -- check
       - name: Verify deterministic generated header
