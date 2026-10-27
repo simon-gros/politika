@@ -118,6 +118,10 @@ See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Econo
 
 The Unaligned's federal media operations remain AI-governed; Meridian still receives morale from ordinary game events. No propaganda effect may create missing nuclear technology or resources or change the unique Ascendancy first-bomb victory predicate. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Propaganda and morale responsibilities
+
+**Simulation:** maintain a separate population morale meter for every faction, including Meridian Pact and NPC Unaligned; higher morale boosts eligible production output and army discipline. **Match rules:** distinct propaganda permissions for Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned; **Meridian has no advanced propaganda**. **World/content:** represent radio, newspaper and television infrastructure, access, operations and reach. **Presentation:** show relevant morale values and permitted media objectives; Unaligned propaganda is AI-directed. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 4. Dependency and ownership rules
 
 - **Platform code** may start or configure a match, but simulation rules should not call into storefront/account code.
