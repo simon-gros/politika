@@ -1,6 +1,8 @@
 //! Offline POLITIKA repository quality and environment checks.
 //! Uses Rust, the canonical version manifest, and design-stage content metadata.
 //! Never interprets missing gameplay/Unreal builds as successful engine tests.
+mod production;
+
 use politika_version::{build_identity, load_manifest, repo_root};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -275,6 +277,7 @@ fn audit(root: &Path) -> Vec<Check> {
         )),
         Err(error) => checks.push(Check::new("engine.version_pin", Verdict::Fail, error)),
     }
+    checks.extend(production::production_audit(root));
     checks
 }
 
@@ -439,9 +442,9 @@ fn core_tests(root: &Path) -> Vec<Check> {
 fn execute() -> Result<u8, String> {
     let mut args = env::args().skip(1);
     let stage = args.next().ok_or(
-        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|core|preflight|all> [--output PATH]",
+        "usage: cargo run --locked --manifest-path tools/version/Cargo.toml --bin quality -- <audit|core|preflight|release|all> [--output PATH]",
     )?;
-    if !matches!(stage.as_str(), "audit" | "core" | "preflight" | "all") {
+    if !matches!(stage.as_str(), "audit" | "core" | "preflight" | "release" | "all") {
         return Err(format!("invalid quality stage: {stage}"));
     }
     let mut output = None;
@@ -461,6 +464,9 @@ fn execute() -> Result<u8, String> {
     }
     if stage == "preflight" || stage == "all" {
         checks.extend(preflight(&root));
+    }
+    if stage == "release" || stage == "all" {
+        checks.extend(production::release_gate_checks(&root));
     }
     let report = Report::new(&root, &stage, checks);
     let target = output.unwrap_or_else(|| {
