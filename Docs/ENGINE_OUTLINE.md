@@ -3,7 +3,9 @@
 Status: first-pass architecture, 2026-10-27  
 Target runtime: Unreal Engine 5.8.3  
 Design emphasis: clear RTS command interactions and POLITIKA-specific mechanics  
-Resolution requirement: full native 4K (3840×2160), including usable/readable UI
+Display requirement: 4K (3840×2160) desktop capability plus adaptive handheld/mobile layouts and performance
+
+Planned primary target platforms: Linux, Windows, SteamOS/Steam Deck, and Android; consoles and Apple platforms may follow later. See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
 
 ## 1. Goal and boundary
 
@@ -123,7 +125,7 @@ Maps need authored playable bounds, terrain/navigation representation, spawn/dep
 
 ## 5. 4K as a first-class target
 
-Treat 3840×2160 as a supported baseline, not a later high-resolution toggle.
+Treat 3840×2160 as a **desktop high-resolution target**, not a universal minimum or a requirement for Steam Deck/Android devices. Support adaptive resolutions, screen sizes, input methods, scalability tiers and safe areas across the declared platform scope.
 
 - Display: windowed, borderless, and fullscreen modes; correct 16:9 aspect; runtime resolution changes; DPI-aware UI scale; safe margins; configurable text/UI scale.
 - UI: design in logical layout units, anchor responsively, and test HUD, menus, tactical map, tooltips, text, selection rings and cursor at 1080p, 1440p, ultrawide, and 4K. At 4K, preserve readable world scale without making the command surface tiny.
@@ -154,7 +156,7 @@ Keep simulation state and commands explicit and serializable. If multiplayer is 
 - Exact strategic loop: fixed-base construction/economy, mobile command-post deployment with loadouts and objectives, or a POLITIKA-specific hybrid.
 - Infantry control granularity: individual soldiers, squads as the controllable entity, or mixed by archetype.
 - Single-player/campaign, skirmish, multiplayer and modding scope for the first release.
-- Required platforms, minimum/target hardware, unit counts, map sizes, frame-rate and network player count.
+- Planned platforms are Linux, Windows, SteamOS/Steam Deck and Android; determine release order, exact supported OS/device/hardware baselines, frame-rate budgets, unit counts, map sizes and network player count.
 - Replay requirements and whether deterministic simulation is actually needed.
 - Whether maps/mods are editor-only or user-authored and loadable at runtime.
 
@@ -165,3 +167,16 @@ Keep simulation state and commands explicit and serializable. If multiplayer is 
 - Before locking the design, test command latency, mixed-unit selection, pathfinding around blockers and bridges, gameplay-state serialization, and HUD usability at supported resolutions. Benchmark representative entity counts and frame-time budgets rather than assuming scalability.
 
 This outline is a starting architecture contract, not a claim of implemented features or a locked strategic design.
+
+## 10. Multi-platform architecture and acceptance
+
+POLITIKA is a multi-platform product by design, not a Windows-first product with unspecified ports. The initial target set is Linux, Windows, SteamOS/Steam Deck-class handheld PCs, and Android. PlayStation, Xbox, Nintendo, and Apple systems are future candidates, subject to separate feasibility and support decisions. None of these targets is a claim of an existing executable or a certified release. The maintained target matrix and cross-platform requirements live in [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
+
+- **Shared rules:** one portable RTS gameplay and mission simulation in C++ and data assets. No platform, store, controller or windowing API may control combat, resource, faction, mission or victory logic.
+- **Input abstraction:** translate mouse/keyboard, handheld gamepad/Steam Input and Android touch gestures into the same validated selection and order intents; support focus/navigation without assuming hover or right-click.
+- **Adaptive presentation:** preserve a 4K-capable desktop HUD while supporting handheld-readable controls, Android touch targets, screen safe areas, changed aspect ratios and density scaling. Mobile must not depend on desktop-only tooltips or precision-pointer gestures.
+- **Packaging and local services:** keep save/config paths, system dialogs, device input, graphics APIs and platform distribution adapters isolated from the match rules. Offline campaign and skirmish must remain accessible without mandatory accounts wherever a build is offered.
+- **Performance profiles:** separately define and benchmark PC high-resolution, handheld power/thermal and Android memory/GPU/thermal budgets. Scale VFX, textures, shadowing and UI without changing gameplay rule outcomes.
+- **Qualification:** test real builds on representative Linux, Windows, SteamOS/Steam Deck and Android devices; confirm launch, menus, mission loop, readable HUD, input, save/load, resume, performance and graceful quit. Cross-play, shared cloud saves, release dates and storefront certification are outside the current commitments.
+
+A single Unreal project with platform-specific targets and configurations is the desired direction. Validate actual Unreal/SDK/platform support, build-tool availability and device testing before locking packaging or release plans.
