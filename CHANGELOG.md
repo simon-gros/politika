@@ -4,6 +4,8 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Added Rust/Cargo design-metadata regression tests, five-faction content validation, Unreal 5.8.3 source/build preflight, structured JSON diagnostic verdicts, and a staged RTS-native adoption guide; no playable engine build or hosted workflow was added.
+
 - Consolidated version validation, build identity generation, regression tests and CI into the Rust/Cargo toolchain.
 
 No playable release is currently available. Documentation and historical archive entries are not shipped game features.
