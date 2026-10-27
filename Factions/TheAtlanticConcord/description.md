@@ -96,6 +96,10 @@ The **Atlantic Concord is one of only two established nuclear powers**, alongsid
 
 The **Iron Ascendancy begins non-nuclear**. Concord nuclear research facilities are potential targets for Ascendancy spies seeking **both nuclear-refinement technology and weapons-production intelligence**. If the Ascendancy obtains the knowledge and finishes constructing its own first bomb, **the game immediately ends in its victory without deployment**. Protecting research, refining facilities and rare nuclear-material stock is consequently important. See [Nuclear Ultimate Weapons System](../../Docs/NUCLEAR_WEAPONS_SYSTEM.md).
 
+## Advanced Propaganda and Population Morale
+
+The Atlantic Concord has its **own distinct advanced propaganda methods**, using **radio, newspapers and television** to influence public confidence and support operational goals. Its media doctrine can emphasize public information and coordinated communications, with precise abilities still to be balanced. **The Concord has a population morale meter**, and higher morale improves **production output and army discipline**. The Meridian Pact does not possess advanced propaganda. See [Propaganda and Morale](../../Docs/PROPAGANDA_AND_MORALE.md).
+
 ## Strategic Identity
 
 The Atlantic Concord is ultimately conceived as a wealthy, politically complex and technologically sophisticated coalition whose strength arises from advanced industry, professional armed forces, intelligence networks, air and maritime power, and the coordination of specialized resources. Its weaknesses follow from the same organization: expensive equipment, sensitive logistical networks, conflicting national interests and a need to maintain political consent.
