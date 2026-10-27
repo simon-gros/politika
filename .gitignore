@@ -1,0 +1,4 @@
+# Local build outputs and generated version identities
+/build/
+__pycache__/
+*.py[cod]

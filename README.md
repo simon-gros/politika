@@ -10,6 +10,14 @@ The country is more than a battlefield. Its cities, industries, transport networ
 
 > Project status: POLITIKA is in its foundational design and documentation stage. The faction identities, central story premise, and overarching design principles are established; unit rosters, balance, detailed economic rules, and many gameplay systems remain proposals rather than implemented features. This README describes the intended game, not a currently playable release.
 
+## Versioning and release management
+
+**Current development identity: 0.1.0-dev.0** — this is an initial design-stage version, **not** a playable, packaged or publicly released game. POLITIKA adopts the same Semantic Versioning and independent compatibility-counter scheme as Magna Raedarum: Marburgum, with [version.json](version.json) as the canonical game/version manifest. Network, save, persistence and world/content schemas are versioned independently and their initial values are reserved placeholders until runtime implementations exist.
+
+Verified development milestones can advance the version through dev, alpha, beta and release-candidate stages toward stable releases. Contributors and development agents may perform justified bumps alongside validated work; ordinary documentation/archive commits do not automatically increase the version. Future builds will record their Git revision, CI build number, engine/platform and artifact integrity independently from the public version.
+
+See the [Versioning, Build Identity & Release Management Roadmap](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) and [Changelog](CHANGELOG.md). The standalone source-checking tool is [tools/version.py](tools/version.py), with Python tests and a lightweight GitHub versioning CI check.
+
 ## Target platforms
 
 POLITIKA is designed as a **multi-platform RTS**, with **Linux, Windows, SteamOS (including Steam Deck-class handheld PCs), and Android** in its planned initial platform scope. These are development targets—not available builds, verified compatibility claims, or a confirmed simultaneous release schedule.
