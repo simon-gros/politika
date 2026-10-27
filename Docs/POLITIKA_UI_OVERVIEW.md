@@ -69,6 +69,14 @@ Display the population morale meter for every faction, including Meridian Pact a
 
 Propaganda-capable factions (Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned) use distinct methods expressed through radio, newspapers and television. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. Do not display an advanced propaganda action tree for the Meridian Pact, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Unaligned intelligence claims, false flags and verification
+
+The Unaligned can inject reports into a playable faction's intelligence feed, even though the source may appear to be a rival transmission, covert observation or seemingly credible third-party account. A report might allege that another player is building a nuclear facility when no such structure exists. Represent it as an intelligence claim or alleged-map marker, not a genuinely scouted building or real nuclear research asset.
+
+Support confidence/provenance cues, `unverified` or disputed states, report age, investigation or independent-reconnaissance actions, and correction when a claim is disproved. Do not show secret `is_fabricated` or the Unaligned's responsibility before discovery; equally do not suppress direct factual scouting that finds an empty location. False-flag attribution can change who an unverified report alleges is responsible without changing actual unit ownership or diplomacy.
+
+The Unaligned's NPC balance director may plant such reports when a playable faction has very few resources and surviving forces, attempting to divert stronger players and preserve overall competitive equilibrium. The UI must leave final decisions to the human player, provide no compulsory retargeting and not reveal the privileged strength analysis or fabricated nature of a report by default. Critical victory conditions and the truth of nuclear research are never decided by the presence of a report. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ### Building espionage actions and incident visibility
 
 Facility target actions must be distinct from the individual-unit Discipline/Morale effects. A selected Concord spy can see eligible building Psy-Ops outcomes—self-destruction or resource waste; a Directorate infiltrator may redirect eligible resource budgets; an Ascendancy operative can initiate an abstract staffed-facility contamination action. None of these require reducing a building's `UnitResolve` (buildings do not use that meter).
