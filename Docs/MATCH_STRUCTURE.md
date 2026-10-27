@@ -53,6 +53,12 @@ The Iron Ascendancy's Intimidation affects eligible isolated combat units after 
 
 Atlantic Concord may destroy or make eligible enemy buildings waste resources; the Red Directorate may transfer stolen resources into its budget; the Iron Ascendancy may disrupt staffed facilities with a bounded fictional poisoning/disease chain. These affect structures, workers and economic state inside the existing four selectable faction identities; they cannot create new player slots or convert Unaligned AI into a playable fifth faction. The map still includes exactly 2–4 player factions plus one autonomous Unaligned NPC faction. See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Reconnaissance and sabotage across playable slots
+
+For a match of 2–4 playable factions plus autonomous Unaligned, every participating faction retains its distinct cheap starting scout: Meridian truck, Concord/Ascendancy unarmed light plane, and Directorate rifle-armed motorcycle. Meridian's superior reconnaissance and cheap early explosive sabotage are faction traits, not additional player slots or a general privilege of all neutral vehicles.
+
+Meridian may authorize non-spy saboteurs against eligible enemy buildings/vehicles from the early game; the other three playable factions may perform the comparable conventional explosive-charge action only after later technology, at greater cost and using their spies alone. Unaligned remains NPC-controlled and may independently defend its territory, repair damaged buildings and respond to sabotage. See [Reconnaissance and Scouting](RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](SABOTAGE_SYSTEM.md).
+
 ## 5. Engine/UI contracts and acceptance tests
 
 Suggested authoritative fields: `ParticipantSlots` (2–4), `ParticipantControllerType` (human or AI), `ParticipantFactionId` (one of four), `UnalignedSystemFaction` (always true, non-slot), `MatchRosterValidated`, `MapSpawnValidated`, and optional `SpectatorControllers` (separate from playing participants).
