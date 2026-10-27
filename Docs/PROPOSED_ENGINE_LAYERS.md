@@ -112,6 +112,12 @@ flowchart TD
 
 See [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md), [Resource Economy](RESOURCE_ECONOMY.md), and [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md).
 
+### Propaganda and morale layer responsibilities
+
+**Simulation:** track a distinct population morale meter for **each of the five factions**; high morale improves authorized production output and army discipline. Propaganda modifiers, decay and media reach must be authoritative. **Match/faction rules:** allow advanced propaganda actions for **Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**, but **not Meridian Pact**. **World/content:** define radio, newspaper production/distribution and television infrastructure and its ownership, power and access. **Presentation:** display every faction's relevant morale and explain production/discipline effects, showing propaganda controls only where eligible.
+
+The Unaligned's federal media operations remain AI-governed; Meridian still receives morale from ordinary game events. No propaganda effect may create missing nuclear technology or resources or change the unique Ascendancy first-bomb victory predicate. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
 ## 4. Dependency and ownership rules
 
 - **Platform code** may start or configure a match, but simulation rules should not call into storefront/account code.
