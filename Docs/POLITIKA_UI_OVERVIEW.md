@@ -69,6 +69,12 @@ Display the **population morale meter for every faction**, including Meridian Pa
 
 Propaganda-capable factions (**Atlantic Concord, Red Directorate, Iron Ascendancy and NPC Unaligned**) use distinct methods expressed through **radio, newspapers and television**. Player-facing propaganda controls belong only to the three playable eligible factions; the Unaligned is AI-controlled. **Do not display an advanced propaganda action tree for the Meridian Pact**, even though its morale remains present and mechanically relevant. Media control, regional coverage and propaganda effects should be reflected in mission objectives and event notifications. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
+### Two-to-four-player match setup
+
+Map/match setup supports **2, 3 or 4 participant slots**, with **one distinct playable faction per slot** (Concord, Directorate, Ascendancy or Meridian). In local single-player, remaining slots may be filled by AI opponents. **The Unaligned always appears as a separate non-editable NPC/system AI presence**, not a fifth selectable faction or player slot. Explain the map population as **2+1, 3+1 or 4+1**; the +1 is always Unaligned.
+
+Match validation should flag too few/many participants, duplicate faction assignments, missing Unaligned initialization, missing Meridian nearby fossil-fuel source, or unavailable special nuclear infiltration objectives where no qualifying Concord/Directorate research facility is present. See [Match Structure](MATCH_STRUCTURE.md).
+
 ## 5. In-match UI structure
 
 Exact placement can be tuned with prototypes, but the initial layout should provide these functional regions:
