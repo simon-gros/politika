@@ -46,7 +46,11 @@ The game's 1980s setting provides a foundation in reconnaissance satellites, sur
 
 ## Distinctive Espionage Specialization
 
-The Atlantic Concord has its own special espionage features, distinct from those of the Red Directorate. The exact specialist abilities and numerical advantages remain to be authored; the faction's established intelligence and reconnaissance identity provides the design direction. These advantages should matter when protecting research sites, detecting intruders and exposing enemy operations.
+The Atlantic Concord's established specialist espionage subdivision is **Psy-Ops**, distinct from the Red Directorate's superior efficiency at ordinary intelligence theft. Psy-Ops can affect eligible enemy combat units by degrading their **Discipline**, or eligible civilian/non-combat units by degrading their **Morale**. Both are the same underlying resolve meter.
+
+Psy-Ops has two alternative outcomes. In **breakdown/self-destruction**, the target's Discipline or Morale is fully broken and the unit destroys itself through a fictional RTS elimination event. Alternatively, a successful Psy-Ops operation can provoke a **short-lived rampage**, making the affected unit attack eligible units belonging to its own faction for a limited duration before ordinary targeting resumes if it survives. The temporary rampage does **not** transfer allegiance or permanently grant the Concord control of the victim. Eligible non-combat units may enter the rampage only if their in-game unit definition permits an attack action.
+
+These are targeted spy abilities, not a replacement for the Concord's distinct advanced radio, newspaper and television propaganda. Neither ability grants nuclear research intelligence or the Iron Ascendancy's Intimidation, which instead converts isolated targets only after their Discipline/Morale has been fully broken. Target eligibility, defense, cooldowns and numeric timing remain design parameters.
 
 The Iron Ascendancy's spying starts more limited than the Concord's; Ascendancy spies cannot infiltrate a Concord nuclear research facility until their faction has fully developed its espionage progression. This facility may then yield both nuclear-refining technology and nuclear-weapons research intelligence if an infiltration succeeds. The Concord does not have Intimidation and cannot force isolated enemy units into its army using that Ascendancy-exclusive ability. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
