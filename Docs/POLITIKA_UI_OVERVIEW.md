@@ -49,6 +49,12 @@ Use authored in-game UI and audio rather than pre-rendered or real-time cinemati
 
 Briefings and dialogue should be concise, pausable/skippable, subtitle-capable, and available in text for players who mute audio or need to revisit an instruction.
 
+### Distinct narrative arcs in mission presentation
+
+Briefings, objective trackers, field intelligence, and debriefings must distinguish the **primary Tito assassination/cover-up conspiracy** from the **secondary attempt to prevent the Iron Ascendancy acquiring a particular additional nuclear weapon**. The Atlantic Concord and Red Directorate have prevention-oriented nuclear missions; the Iron Ascendancy has acquisition-oriented missions. These are the **three nuclear-armed playable powers**. The non-nuclear Meridian Pact has **no nuclear subplot missions**; the Unaligned remains a non-nuclear NPC authority.
+
+Use the same existing objective and intelligence UI patterns for an authored nuclear-subplot mission: known custody status, location uncertainty, guarding or interdiction objectives, countdowns only if scripted, and clear post-mission outcomes. Do not expose omniscient weapon locations, nuclear detonation controls, nuclear build menus, or Black Market nuclear-weapon listings. The two threads may coincide in a mission, but their objectives and evidence should remain independently legible.
+
 ## 5. In-match UI structure
 
 Exact placement can be tuned with prototypes, but the initial layout should provide these functional regions:
