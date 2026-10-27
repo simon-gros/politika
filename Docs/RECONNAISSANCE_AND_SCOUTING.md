@@ -9,43 +9,43 @@ Each of the four playable factions has a different affordable early-game scoutin
 
 | Playable faction | Early-game scouting unit | Armament / protection | Tactical role |
 |---|---|---|---|
-| Meridian Pact | Cheap, very fast, lightly armored and lightly armed truck | Light armor and light weapons | Half-scout/half-combat vehicle; rapid traversal and useful limited fighting capability; greatest **overall reconnaissance advantage** of all playable factions |
+| Meridian Pact | Cheap, very fast, lightly armored and lightly armed truck | Light armor and light weapons | Half-scout/half-combat vehicle; rapid traversal and useful limited fighting capability; greatest overall reconnaissance advantage of all playable factions |
 | Atlantic Concord | Cheap, light, unarmed reconnaissance airplane | No weapons; light and vulnerable | Quickly scout from the air at the start of the game; avoid fighting |
 | Iron Ascendancy | Cheap, light, unarmed reconnaissance airplane | No weapons; light and vulnerable | Quickly scout from the air at the start of the game; avoid fighting |
 | Red Directorate | Motorcycle-based reconnaissance equipped with basic infantry rifles | Basic infantry rifle armament; minimal protection | Mobile ground scouting with limited rifle fire and exposure to enemy response |
 | The Unaligned | NPC world patrols, administration, police and military observation | According to NPC unit type | Autonomous world surveillance, not a fifth selectable reconnaissance faction |
 
-The Meridian Pact's superiority is an **overall, comparative early-game reconnaissance advantage**, not an assertion that its truck outruns an airplane or sees through fog anywhere on the map. Its cheap production, unusually fast ground-map traversal and combined spotting/light-combat flexibility make it the strongest reconnaissance-oriented playable faction. The Pact is already guaranteed to start near an oil or natural-gas field; scouting trucks complement that advantage by exploring access routes, deposits, markets and contested infrastructure.
+The Meridian Pact's superiority is an overall, comparative early-game reconnaissance advantage, not an assertion that its truck outruns an airplane or sees through fog anywhere on the map. Its cheap production, unusually fast ground-map traversal and combined spotting/light-combat flexibility make it the strongest reconnaissance-oriented playable faction. The Pact is already guaranteed to start near an oil or natural-gas field; scouting trucks complement that advantage by exploring access routes, deposits, markets and contested infrastructure.
 
 ## 2. Meridian Pact: scout-combat trucks
 
 The Pact can cheaply manufacture lightly armored, lightly armed trucks early in a match. Their defining characteristics are:
 
-- Very high **map-traversal speed** for their ground-vehicle class.
+- Very high map-traversal speed for their ground-vehicle class.
 - Low production cost and early availability, enabling several scouting routes without major investment.
 - Lightweight protection and weapons: they can engage weak targets or defend themselves in limited encounters but cannot replace a proper armored combat force.
-- A mixed role: **roughly half scouting and half light combat**, with both uses important in normal gameplay.
+- A mixed role: roughly half scouting and half light combat, with both uses important in normal gameplay.
 - Strong reconnaissance efficiency and map coverage compared with the other playable factions.
 
 The exact scouting range, weapons/damage values, survivability, fuel consumption, terrain traversability, availability by map and unit-cap balance are not yet fixed. They remain ordinary vulnerable ground vehicles and cannot magically ignore obstacles, Unaligned jurisdiction or hostile defenses.
 
 ## 3. Atlantic Concord and Iron Ascendancy: early unarmed planes
 
-Both factions can cheaply produce **light, unarmed reconnaissance aircraft** early in the game. These are dedicated air scouts rather than bombers, troop transports or attack aircraft. They provide an early aerial view across accessible terrain, but **cannot attack** enemy units or facilities.
+Both factions can cheaply produce light, unarmed reconnaissance aircraft early in the game. These are dedicated air scouts rather than bombers, troop transports or attack aircraft. They provide an early aerial view across accessible terrain, but cannot attack enemy units or facilities.
 
-Their flight speed, sensing range, anti-air vulnerability, airfield or launch requirements, supply needs and visibility counterplay are to be defined. The same platform class may have faction-specific models and production requirements later, but the **shared cheap, unarmed, light early-game plane role is established**.
+Their flight speed, sensing range, anti-air vulnerability, airfield or launch requirements, supply needs and visibility counterplay are to be defined. The same platform class may have faction-specific models and production requirements later, but the shared cheap, unarmed, light early-game plane role is established.
 
-The Atlantic Concord's lack of a solo/small-unit combat Discipline penalty concerns **soldiers**, not immunity from aircraft interception; its Psy-Ops specialization is separate from flying a scout. The Iron Ascendancy's initially limited espionage and required full spy progression for nuclear research infiltration are **not bypassed by aerial reconnaissance**.
+The Atlantic Concord's lack of a solo/small-unit combat Discipline penalty concerns soldiers, not immunity from aircraft interception; its Psy-Ops specialization is separate from flying a scout. The Iron Ascendancy's initially limited espionage and required full spy progression for nuclear research infiltration are not bypassed by aerial reconnaissance.
 
 ## 4. Red Directorate: rifle-armed motorcycles
 
-The Red Directorate's early reconnaissance uses **motorbikes with basic infantry rifle armament**. They are relatively light ground scouts that can observe, move and engage with basic rifle fire, but are not heavy cavalry, armored trucks or specialized infiltration teams.
+The Red Directorate's early reconnaissance uses motorbikes with basic infantry rifle armament. They are relatively light ground scouts that can observe, move and engage with basic rifle fire, but are not heavy cavalry, armored trucks or specialized infiltration teams.
 
 Exact motorcycle cost, rider/weapon configuration, mobility, speed relative to the Pact trucks, sight range and counterplay need playtesting. Their primary purpose is early scouting and route awareness, with limited self-defense. Cheap Directorate infantry and massive-army Discipline bonuses remain distinct faction traits, not automatic enhancements to every motorcycle scout.
 
 ## 5. Scouting versus espionage, propaganda and targeting
 
-Reconnaissance provides **line-of-sight/fog-of-war information**, contacts, route mapping and observed buildings. It does not independently steal research blueprints, transfer budgets, trigger Psy-Ops, spread facility contamination, create Intimidation conversions, or grant technology flags.
+Reconnaissance provides line-of-sight/fog-of-war information, contacts, route mapping and observed buildings. It does not independently steal research blueprints, transfer budgets, trigger Psy-Ops, spread facility contamination, create Intimidation conversions, or grant technology flags.
 
 - Atlantic Concord Psy-Ops targets eligible units or buildings through an authorized spy action, not a basic reconnaissance-airplane flyover.
 - Red Directorate's slightly faster/cheaper rival intelligence theft and covert resource transfers require appropriate infiltration actions, not merely sending motorcycles past a facility.
@@ -69,19 +69,19 @@ Represent cheap scouts with normal unit data rather than a global reveal cheat:
 - `FogOfWarVisibility`: observed cells/areas, current versus stale contacts, terrain/obstacle occlusion where applicable, airborne detection rules, and diplomacy/jurisdiction.
 - `ReconEfficiency`: a balancing/telemetry metric comparing scouting coverage and cost, not a universal magical spotting multiplier.
 
-UI should show whether a scout is **unarmed** (light planes), **lightly armed** (Pact trucks) or **rifle-armed** (Directorate motorcycles), plus movement class, spotting capabilities and vulnerability. Recon command icons and build cards must not misrepresent light scouting aircraft as nuclear bombers or combat airplanes. The Pact's early recon superiority should be easy to recognize in faction selection and match planning.
+UI should show whether a scout is unarmed (light planes), lightly armed (Pact trucks) or rifle-armed (Directorate motorcycles), plus movement class, spotting capabilities and vulnerability. Recon command icons and build cards must not misrepresent light scouting aircraft as nuclear bombers or combat airplanes. The Pact's early recon superiority should be easy to recognize in faction selection and match planning.
 
 ## 7. Acceptance scenarios and open balancing
 
 1. Each playable faction can obtain its specified cheap early scout unit during the opening phase, under normal production/resource rules.
-2. Pact scouting trucks travel very quickly on passable map routes, spot enemies using ordinary visibility, and can undertake **limited combat**; they are not armored heavy hitters.
-3. Concord and Ascendancy light reconnaissance planes can scout but **cannot attack**; their appearance early does not imply that they already have bombers or nuclear weapons.
-4. Directorate motorcycle scouts can reveal terrain and use **basic infantry rifle fire**, without an unintended heavy-weapon or intelligence-theft bonus.
-5. At comparable early-game cost and map conditions, Meridian is the **strongest overall reconnaissance-oriented faction**, assessed across scout availability, traversal, map coverage and scout-combat versatility; the precise numeric tuning remains open.
-6. Scouting a nuclear research facility does **not** fulfill the Iron Ascendancy's special espionage technology/intelligence gate.
+2. Pact scouting trucks travel very quickly on passable map routes, spot enemies using ordinary visibility, and can undertake limited combat; they are not armored heavy hitters.
+3. Concord and Ascendancy light reconnaissance planes can scout but cannot attack; their appearance early does not imply that they already have bombers or nuclear weapons.
+4. Directorate motorcycle scouts can reveal terrain and use basic infantry rifle fire, without an unintended heavy-weapon or intelligence-theft bonus.
+5. At comparable early-game cost and map conditions, Meridian is the strongest overall reconnaissance-oriented faction, assessed across scout availability, traversal, map coverage and scout-combat versatility; the precise numeric tuning remains open.
+6. Scouting a nuclear research facility does not fulfill the Iron Ascendancy's special espionage technology/intelligence gate.
 7. All scout units respect fog rules, route obstruction (where appropriate), hostile fire, neutral Unaligned restrictions and supply constraints.
 8. In maps with 2–4 player factions plus Unaligned, reconnaissance works with any valid subset of playable factions and does not spawn a fifth selectable player.
 
-Balance speed, price, production time, fog reveal, detection, armor, damage, scouting efficiency, terrain/air access, early counters and resource use later. Do not presume that cheap aircraft are faster at **every** kind of reconnaissance simply because they fly.
+Balance speed, price, production time, fog reveal, detection, armor, damage, scouting efficiency, terrain/air access, early counters and resource use later. Do not presume that cheap aircraft are faster at every kind of reconnaissance simply because they fly.
 
-Locked summary: **Meridian Pact has the greatest overall reconnaissance advantage through cheap, very fast, lightly armored/armed half-scout/half-combat trucks; Atlantic Concord and Iron Ascendancy use cheap, unarmed light reconnaissance airplanes; Red Directorate uses basic-rifle-armed motorbikes.**
+Locked summary: Meridian Pact has the greatest overall reconnaissance advantage through cheap, very fast, lightly armored/armed half-scout/half-combat trucks; Atlantic Concord and Iron Ascendancy use cheap, unarmed light reconnaissance airplanes; Red Directorate uses basic-rifle-armed motorbikes.
