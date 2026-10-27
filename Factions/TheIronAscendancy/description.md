@@ -66,6 +66,14 @@ Yugoslavia's geography complicates expansionist operations. Mountainous terrain,
 
 The Atlantic Concord's Psy-Ops may break an eligible enemy combat unit's Discipline or non-combat unit's Morale, triggering its in-game self-destruction, or cause a brief friendly-fire rampage without changing ownership. The Red Directorate's basic infiltration acquires rival intelligence slightly faster and more cheaply. These are opposing intelligence advantages, not powers the Iron Ascendancy shares. The Ascendancy's unique Intimidation still requires isolating and fully breaking an eligible unit before permanently converting it; its own high-risk assaults and full nuclear-spy progression remain separate.
 
+### Facility contamination: poison, disease and workforce depletion
+
+The Iron Ascendancy's additional covert specialty is abstract poisoning/disease sabotage of eligible enemy facilities. When a suitable espionage operation succeeds, the targeted building enters a fictional contamination state. Assigned workers, researchers or other personnel suffer simulated deaths, reducing the available workforce. The resulting staffing deficits reduce factory throughput or research progress and can eventually stop production altogether. Replacing lost personnel and restarting operations impose costs on the defending faction.
+
+Facility contamination can propagate in a chain to other nearby eligible buildings through a finite, bounded in-game adjacency rule. Range, duration, propagation cap, containment and restoration are balance and counterplay settings; the design models no real poison recipe, pathogen, exposure mechanism or transmission procedure. An affected facility can be isolated or restored through game-defined recovery actions. Such sabotage drains enemy productive capacity rather than stealing funds or converting units.
+
+This specialty is separate from Iron Ascendancy Intimidation and does not bypass the mandatory fully upgraded spying and Concord/Directorate nuclear research infiltration required to construct its first bomb. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
+
 ## Limited Espionage and Exclusive Intimidation
 
 Intimidation works on both eligible combatants and eligible civilian/non-combat units. Every unit has one shared resolve meter: labeled Discipline for combatants, Morale for civilians/non-combatants. The Ascendancy must first fully break that meter while the target remains isolated before it can convert the individual unit. These are two names for the same gameplay system, not two different abilities. Civilian targeting requires explicit eligibility; it is not a blanket right to seize neutral populations. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
