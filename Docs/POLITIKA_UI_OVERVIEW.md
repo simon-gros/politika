@@ -2,7 +2,7 @@
 
 **Status:** first-pass product/UI direction, 2026-10-27
 **Engine target:** Unreal Engine 5.8.3
-**Design reference:** C&C4's command readability and RTS interaction patterns
+**Design emphasis:** readable RTS commands, map awareness and fast tactical interaction
 **Product constraints:** no cinematics; no mandatory internet connection or online-account login
 **Display target:** full 4K (3840×2160) with readable, scalable UI
 
@@ -10,7 +10,7 @@
 
 POLITIKA's interface should make the player feel like a commander managing a fluid operation, not an operator navigating a software dashboard. It should keep the map and tactical decisions central, surface the next useful action, and make the state of squads, vehicles, objectives, and orders easy to read at a glance.
 
-Borrow C&C's compact command loop—select, inspect, issue an order, see clear feedback—without copying every panel or assuming C&C4's exact economy. Establish POLITIKA-specific terminology and strategic rules as those systems are decided.
+Use a compact RTS command loop—select, inspect, issue an order, see clear feedback—without committing the layout to any particular economic or production system. Establish POLITIKA-specific terminology and strategic rules as those systems are decided.
 
 The visual language should evoke plausible 1980s Yugoslav military and civil-administration materials: printed topographic maps, field reports, typed labels, stamped status marks, restrained institutional color, and period-appropriate symbols. Use these as framing and texture, not as a reason to reduce contrast, legibility, or interaction clarity. Avoid making every screen look like a faux terminal.
 
@@ -63,7 +63,7 @@ Exact placement can be tuned with prototypes, but the initial layout should prov
 | Resources/force status | The chosen POLITIKA economy, deployment/production state, and any unit/force cap that affects decisions |
 | Alert/status layer | Under-attack, completed order, lost communication, objective change, and other time-sensitive notices |
 
-Do not lock the resource and production panel to the C&C4 Crawler/Command Point model. The HUD should reflect POLITIKA's eventual gameplay loop, whether it uses a mobile HQ, fixed production, reinforcements, or a hybrid.
+The resource and production panel should reflect POLITIKA's own gameplay rules, whether those use mobile command posts, fixed-base production, reinforcements, or a hybrid. Show only the resources and limits the player can act upon.
 
 ### Command interaction
 
@@ -104,7 +104,7 @@ Treat UI as a presentation layer over the game state:
 - Local save/settings services handle progress and configuration without requiring a remote identity.
 - A shared command/action definition should drive both button availability and hotkey execution to prevent inconsistent behavior.
 
-This is a proposed POLITIKA structure, not a claim about C&C4's proprietary implementation. See [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md) for the broader engine boundaries and [CNC_UI_OVERVIEW.md](CNC_UI_OVERVIEW.md) for reference-game UI observations.
+This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md) and [PROPOSED_ENGINE_LAYERS.md](PROPOSED_ENGINE_LAYERS.md) for related architectural decisions.
 
 ## 9. First playable UI slice
 

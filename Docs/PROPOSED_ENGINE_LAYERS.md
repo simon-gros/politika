@@ -2,12 +2,12 @@
 
 **Status:** first-pass architecture proposal, 2026-10-27
 **Target runtime:** Unreal Engine 5.8.3
-**Reference example:** Command & Conquer 4: Tiberian Twilight
+**Design basis:** POLITIKA's gameplay and offline-first requirements
 **Product constraints:** offline play without mandatory account login; no cinematic sequences; 4K-capable UI and rendering
 
 ## 1. Purpose
 
-This document expands the “Proposed layers” table in [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md). It uses C&C4 as a structural reference for separating application shell, gameplay runtime, packaged content, and authoring tools. It does **not** assume that POLITIKA should copy C&C4's executable architecture, technology, or strategic rules.
+This document expands the “Proposed layers” table in [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md). It separates the application shell, gameplay runtime, packaged content, and authoring tools according to POLITIKA's needs, without assuming a particular external game's executable architecture or strategic rules.
 
 The core boundary is:
 
@@ -40,7 +40,7 @@ flowchart TD
   T --> W
 ```
 
-## 3. Layer responsibilities and C&C4 comparison
+## 3. Layer responsibilities and acceptance criteria
 
 ### 3.1 Platform & application
 
@@ -48,7 +48,7 @@ flowchart TD
 
 **UE direction:** use GameInstance-level startup/settings coordination, GameUserSettings for display/scalability, Enhanced Input for device and mapping setup, and SaveGame/local config for progress and options. Hide platform-specific storage and distribution details behind a small adapter so game rules do not depend on Steam or another storefront.
 
-**C&C4 evidence and lesson:** the latest REA inspection identifies `CNC4.exe` as a managed x86 CIL launcher, separate from `Data/CNC4.game`, the native x86 game executable. Launcher metadata contains named areas such as patch checking, user login, persona creation/selection, and configuration/hash providers. This proves that a substantial launcher/account surface exists in the artifact; the static inspection does not establish which flows execute or when. POLITIKA should not inherit that login/patch-gate pattern because it conflicts with the offline-first product requirement.
+**Acceptance criteria:** campaign and local skirmish launch with networking disabled. Settings, resolution, language selection and local progress work without account creation or third-party services. Platform-specific concerns remain isolated from gameplay code.
 
 ### 3.2 Presentation
 
@@ -56,7 +56,7 @@ flowchart TD
 
 **UE direction:** PlayerController translates input; UMG/CommonUI presents menus and HUD; camera components own view motion; animation, Niagara, and Audio respond to game events. UI view models subscribe to state changes rather than polling every entity. Use authored radio dialogue, captions, briefings, and mission events for narrative; cinematic playback is outside POLITIKA's product scope.
 
-**C&C4 evidence and lesson:** the REA/UM surface inventory finds a large `Data/Apt.big` package and separate movie/audio packages, but did not inspect package contents in this pass. The installed manual documents a player-facing HUD and control surface. Treat those as evidence that presentation/content is a substantial subsystem, not proof of C&C4's internal UI implementation. POLITIKA should copy the useful command readability described in [CNC_UI_OVERVIEW.md](CNC_UI_OVERVIEW.md), not its media pipeline or resolution assumptions.
+**Acceptance criteria:** selection changes update the HUD promptly; mouse and hotkey commands use one coherent action model; feedback stays legible during active combat. Narrative information is delivered through gameplay, dialogue and briefing interfaces rather than required cinematics.
 
 ### 3.3 Match framework
 
@@ -64,7 +64,7 @@ flowchart TD
 
 **UE direction:** use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Treat online replication as a future adapter only if multiplayer is selected; do not make it a prerequisite for local game lifecycle.
 
-**C&C4 evidence and lesson:** the manual and UI surface show campaign/skirmish/multiplayer modes, mission objectives, results/progression concepts, and a separate launcher. The recent REA analysis did not trace match lifecycle or multiplayer code, so these are player-facing references, not findings about internal C&C4 class boundaries. POLITIKA should implement its own simpler offline mission/match contract first.
+**Acceptance criteria:** missions can start, pause where permitted, complete, fail and restart without stale state. Objectives and result summaries follow match rules, and local campaign progress is saved independently of a running match.
 
 ### 3.4 RTS simulation
 
@@ -72,7 +72,7 @@ flowchart TD
 
 **UE direction:** implement shared rules in C++ systems/components and expose command/query APIs. Keep presentation effects, widget state, and authored one-off mission sequences outside the simulation authority. Serialize the state needed for local saves and potential replay.
 
-**C&C4 evidence and lesson:** the `CNC4.game` binary is a native x86 PE. REA/Ghidra reports 37,534 procedure inventory entries and 17,088 defined strings, but gameplay functions were not individually traced or decompiled. The evidence confirms a substantial native game executable, not how its simulation is divided. Do not infer Crawler, pathfinding, combat, or networking architecture from the executable format or inventory counts.
+**Acceptance criteria:** identical valid orders and equivalent starting states produce testable gameplay outcomes independent of UI or VFX. State transitions, order rejection and save-state restoration are covered by automated tests; random inputs can be seeded for reproducibility.
 
 ### 3.5 World & navigation
 
@@ -80,7 +80,7 @@ flowchart TD
 
 **UE direction:** use UE World/landscape and asset systems for rendering and scene ownership. Add an RTS-specific navigation/cost representation where general navigation does not adequately model formation movement, tactical terrain costs, or large-scale queries. Keep visibility/fog state player-specific and distinct from what is physically present in the world.
 
-**C&C4 evidence and lesson:** C&C4's surfaced install includes `Maps.big`, `Terrain.big`, `WBData.big`, a separate WorldBuilder executable, and WorldBuilder documentation; the mod-support tree includes map and WorldBuilder data. REA's recent pass did not extract the BIG archive members, and the earlier report explicitly records that package contents were not inventoried. These observations support treating map/world authoring and packaged map/terrain assets as first-class production concerns, but reveal no exact pathfinding or world-partition design.
+**Acceptance criteria:** authored spawn points and objectives are reachable under intended navigation rules. Terrain costs, blocked routes, bridges, camera bounds and player-specific fog-of-war state can be inspected and validated in test maps.
 
 ### 3.6 Content definitions
 
@@ -88,7 +88,7 @@ flowchart TD
 
 **UE direction:** use Primary Data Assets or DataTables for definitions, shared C++ components/ability types for behavior, and Blueprint subclasses for presentation or explicitly authored exceptions. Validate missing references, invalid values, unsupported combinations, and localization gaps in editor/build tooling.
 
-**C&C4 evidence and lesson:** the separate C&C Modding Support pack exposes XML trees for templates, units, map-specific data, skirmish AI, progression, audio, UI, and global data, with schemas for game objects, commands, abilities, hotkeys, maps, and other asset types. This is direct evidence of a data-oriented authoring surface in the support pack. It is not proof that the shipped runtime loads every definition directly from loose XML. POLITIKA should preserve inspectable authoring and validation while using UE-native assets.
+**Acceptance criteria:** a faction or unit can be introduced with validated data assets and reused behaviors, rather than duplicating combat code. Stable identifiers, invalid references, missing localization and unsupported combinations are diagnosed before release.
 
 ### 3.7 Content pipeline & tools
 
@@ -96,7 +96,7 @@ flowchart TD
 
 **UE direction:** build editor utilities for map/object placement and validation, data-asset checks, preview/debug overlays, and one-click local test launch. Add standalone command-line validators for CI and bulk data. Keep generated or imported reference material separate from source assets and document provenance.
 
-**C&C4 evidence and lesson:** the installation contains a distinct `Data/WorldBuilder.exe` and user-facing WorldBuilder documentation; UM lists `WBData.big` and the main game data packages. The support pack provides an additional authoring reference. These show that tooling and packaged tool data are part of a mature RTS production ecosystem; REA did not analyze WorldBuilder internals. POLITIKA should invest early in map validation rather than attempt to reproduce the proprietary tool.
+**Acceptance criteria:** map/content validators detect missing spawns, broken asset references, invalid objectives and localization gaps before packaging. Designers can launch a representative map for offline testing, with reproducible diagnostics for failures.
 
 ## 4. Dependency and ownership rules
 
@@ -117,19 +117,14 @@ flowchart TD
 5. Add AI, campaign authoring, audio/dialogue/subtitles, mission debrief, and skirmish setup.
 6. Profile and scale; add multiplayer/replay adapters only after product requirements are decided.
 
-## 6. C&C4 evidence boundary
+## 6. Implementation assumptions and validation boundary
 
-This proposal draws from the latest REA run and UM/file inventory:
+The design currently assumes:
 
-- REA report: `/mnt/data/CommandAndConquer/REA/Command and Conquer 4 Tiberian Twilight/rea-2026-10-27/README.md` and its linked evidence JSON.
-- Earlier REA file/package inventory: `/mnt/data/CommandAndConquer/REA/Command and Conquer 4 Tiberian Twilight/surface-inspection.md`.
-- UM scan: `/mnt/data/CommandAndConquer/UM/Command and Conquer 4 Tiberian Twilight/surface-inspection.md` and `universal-modder-scan.json`.
-- Mod-support authoring examples: `/mnt/data/CommandAndConquer/CnC_Modding_Support/Tiberian Twilight/`.
+- Unreal Engine 5.8.3 for the runtime, editor, packaging and asset pipeline.
+- An offline-first application with local campaign and skirmish access, local settings and saved progress, and no mandatory sign-in.
+- In-game briefings, radio dialogue, subtitles and mission events in place of required cinematic sequences.
+- C++ ownership of gameplay rules; Unreal-native assets and editor tooling for configurable content; readable and scalable 4K presentation.
+- Multiplayer, networking, replay architecture and the exact economy/deployment model remain contingent on explicit product decisions.
 
-**Observed:** separate managed launcher and native x86 game binary; launcher type/method metadata; a set of BIG packages and separate WorldBuilder tool/docs; C&C4 mod-support XML/schema surface.
-
-**Not established:** runtime call flow, actual feature use of launcher login/patch code, package member contents from this REA run, exact game subsystem boundaries, or the internals of pathfinding/combat/multiplayer.
-
-**POLITIKA choices:** UE 5.8.3, offline-first local application, no account gate, no cinematic sequences, C++ gameplay authority, UE-native content/tooling, and full 4K support.
-
-The purpose of the reference is to identify useful production concerns and separation of responsibilities—not to treat C&C4's legacy executable, launcher, or proprietary internals as the target architecture.
+These are **POLITIKA design requirements and proposals**, not verified implementation results. Validate them with source-level reviews, functional prototypes, automated tests, map checks and representative performance measurements. Do not treat planned systems as implemented until their behaviour has been demonstrated.
