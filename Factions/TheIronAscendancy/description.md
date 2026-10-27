@@ -74,6 +74,12 @@ Facility contamination can propagate in a chain to other nearby eligible buildin
 
 This specialty is separate from Iron Ascendancy Intimidation and does not bypass the mandatory fully upgraded spying and Concord/Directorate nuclear research infiltration required to construct its first bomb. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
 
+### Light reconnaissance planes and restricted explosive sabotage
+
+The Iron Ascendancy can produce cheap, light, unarmed reconnaissance airplanes early in a match. Their job is aerial scouting and early map awareness; they are not combat aircraft and cannot acquire nuclear research intelligence simply by observing a site. They do not override the faction's limited espionage progression.
+
+Ascendancy conventional explosive sabotage against eligible enemy buildings and vehicles requires a later-game unlock, higher costs than the Meridian Pact and an authorized spy unit. An ordinary ground unit, scout plane or self-sacrificing combat attacker cannot use the spy-only attached-charge action. This conventional explosive interaction is separate from the Ascendancy's distinctive abstract poison/disease facility contamination, intimidation-based conversion and mandatory full-spy-development nuclear research infiltration. See [Reconnaissance and Scouting](../../Docs/RECONNAISSANCE_AND_SCOUTING.md) and [Explosive Sabotage](../../Docs/SABOTAGE_SYSTEM.md).
+
 ## Limited Espionage and Exclusive Intimidation
 
 Intimidation works on both eligible combatants and eligible civilian/non-combat units. Every unit has one shared resolve meter: labeled Discipline for combatants, Morale for civilians/non-combatants. The Ascendancy must first fully break that meter while the target remains isolated before it can convert the individual unit. These are two names for the same gameplay system, not two different abilities. Civilian targeting requires explicit eligibility; it is not a blanket right to seize neutral populations. See [Espionage and Intimidation](../../Docs/ESPIONAGE_AND_INTIMIDATION.md).
