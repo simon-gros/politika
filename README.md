@@ -10,6 +10,23 @@ The country is more than a battlefield. Its cities, industries, transport networ
 
 > Project status: POLITIKA is in its foundational design and documentation stage. The faction identities, central story premise, and overarching design principles are established; unit rosters, balance, detailed economic rules, and many gameplay systems remain proposals rather than implemented features. This README describes the intended game, not a currently playable release.
 
+## Target platforms
+
+POLITIKA is designed as a **multi-platform RTS**, with **Linux, Windows, SteamOS (including Steam Deck-class handheld PCs), and Android** in its planned initial platform scope. These are development targets—not available builds, verified compatibility claims, or a confirmed simultaneous release schedule.
+
+| Platform | Product target | Primary interaction |
+|---|---|---|
+| **Linux** | Native desktop release target | Keyboard and mouse; scalable desktop HUD |
+| **Windows** | Native desktop release target | Keyboard and mouse; scalable desktop HUD |
+| **SteamOS / Steam Deck** | Handheld PC compatibility target, including portable performance and control layouts | Gamepad/Steam Input-style controls, with touchscreen or external peripherals where available; native Linux versus compatibility-layer delivery to be validated |
+| **Android** | Mobile release target | Touch-oriented RTS controls and adaptive menus/HUD, with controller support considered where practical |
+
+The same campaign, factions, match rules, AI and offline-first single-player design should be shared across platforms. Platform-specific controls, layouts, graphics presets, packaging and performance budgets must adapt to the available device. The desktop 4K presentation target must not be imposed on small handheld or mobile screens. Release timing, supported hardware, deployment methods and parity will depend on practical prototyping and testing.
+
+**Possible later expansion:** PlayStation, Xbox and Nintendo console families, plus Apple platforms (macOS and potentially iOS/iPadOS). These are exploratory future possibilities, not committed launches; they depend on platform access, porting feasibility, performance, certification and maintenance capacity. Nothing here promises console certification, Steam Deck Verified status, cross-play or cross-platform saves.
+
+See the [Platform Support and Portability Plan](Docs/PLATFORM_SUPPORT.md) for the platform matrix, input strategy, technical boundaries and validation requirements.
+
 ## The setting
 
 POLITIKA takes place in an alternate-history Socialist Federal Republic of Yugoslavia during the final years of the Cold War. The federation stands at the intersection of rival political and economic systems, yet is neither an Atlantic satellite nor a subordinate of the Soviet-style bloc. Its distinctive combination of socialist self-management, federal institutions, and nonalignment makes it both strategically valuable and difficult for outside powers to control.
@@ -142,7 +159,7 @@ Multiplayer and scenario/editor support remain potential future extensions, not 
 
 POLITIKA's proposed technical foundation is Unreal Engine 5.8.3, with primarily C++ gameplay and RTS simulation systems, Unreal-native content assets, and a clear separation between authoritative game state and its visual presentation. Map authoring, faction definitions, unit data, AI, missions, and validation tools are intended to be maintainable and data-driven.
 
-The interface is being designed for readable tactical control at 4K (3840 × 2160) while also scaling appropriately at lower resolutions. Its visual direction takes cues from 1980s Yugoslav topographic maps, field reports, military documentation, and civil-administration materials, without sacrificing clarity, accessibility, or command responsiveness.
+The desktop interface is being designed for readable tactical control at 4K (3840 × 2160), with device-appropriate layouts and interaction models for handheld and Android screens. Its visual direction takes cues from 1980s Yugoslav topographic maps, field reports, military documentation, and civil-administration materials, without sacrificing clarity, accessibility, or command responsiveness.
 
 These are architecture and product targets, not evidence that the corresponding engine systems already exist. The exact economy, multiplayer scope, performance targets, and several simulation decisions remain under design.
 
@@ -159,7 +176,8 @@ These are architecture and product targets, not evidence that the corresponding 
 | [Explosive Sabotage](Docs/SABOTAGE_SYSTEM.md) | Meridian early, cheap non-spy-capable vehicle/building sabotage; Concord, Directorate and Ascendancy later, expensive and spy-only. |
 | [Espionage, Psy-Ops and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) | Unit and building Psy-Ops, concealed resource waste and Directorate diversion, Ascendancy facility contamination, spy progression, Intimidation, and Discipline/Morale. |
 | [Nuclear Ultimate Weapons System](Docs/NUCLEAR_WEAPONS_SYSTEM.md) | Stolen nuclear-refining and weapons intelligence, processed nuclear materials, long production, bomber/ICBM delivery, nuclear power plants, theft, and Ascendancy's instant first-bomb victory. |
-| [Engine Outline](Docs/ENGINE_OUTLINE.md) | Proposed Unreal Engine foundation, RTS systems, technical requirements, 4K support, and implementation priorities. |
+| [Engine Outline](Docs/ENGINE_OUTLINE.md) | Proposed Unreal Engine foundation, RTS systems, technical requirements, desktop 4K support, and implementation priorities. |
+| [Platform Support and Portability Plan](Docs/PLATFORM_SUPPORT.md) | Planned Linux, Windows, SteamOS/Steam Deck and Android targets; future console/Apple possibilities; controls, portability and release validation. |
 | [Proposed Engine Layers](Docs/PROPOSED_ENGINE_LAYERS.md) | Separation of platform, presentation, match rules, simulation, world, content, and authoring tools. |
 | [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Offline-first user experience, battlefield HUD, controls, campaign screens, interface scale, and accessibility goals. |
 | [Faction files](Factions/) | Detailed ideological, political, economic, and military descriptions, plus faction logos and banners. |
