@@ -197,6 +197,14 @@ The Atlantic Concord and Red Directorate are already nuclear powers. The Iron As
 | Meridian Pact | Non-nuclear and unable to produce bombs | No nuclear side-story missions; can sabotage or steal and deploy an existing finished bomb in general gameplay, separately from its main trade/mercenary role |
 | The Unaligned | Non-nuclear; NPC-only | Protects Yugoslav territorial authority and responds to security threats without joining the nuclear production contest |
 
+### The Unaligned's false intelligence and stability strategy
+
+The Unaligned is not merely a neutral institutional map layer: it possesses the game's strongest counterintelligence network and can intercept rival intelligence, inject fabricated reports and conduct false-flag operations to sustain Yugoslav stability. A Concord or Directorate commander may obtain what looks like reliable evidence of a rival nuclear facility, only to discover later that the Unaligned planted the claim. The apparent intelligence can divert attention or provoke suspicion without creating a real nuclear complex or satisfying a nuclear-research objective.
+
+The NPC authority also monitors the military and economic position of each of the actual playable factions. If one is severely weakened and near elimination, the Unaligned may attempt to preserve its survival by feeding the stronger rivals misleading reports that draw them into conflicts or costly investigations elsewhere. The result is contingent on what players believe and do: it neither guarantees survival nor changes the storyline's fixed ultimate revelation in 1989. The Unaligned can pursue stability through manipulative, sometimes morally compromising actions while remaining institutionally hostile toward identified Ascendancy troops.
+
+The restricted federal continuity leadership may benefit from media deception surrounding Tito's death, but widespread Unaligned counterintelligence activity does not mean every ordinary state official knows about the fictional assassination and impersonators. Reports can be corroborated or disproven through normal reconnaissance and evidence collection. See [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md).
+
 ### The espionage rivalry and Intimidation
 
 The Atlantic Concord's specialized spying subdivision is Psy-Ops, capable of making an eligible enemy combat unit's Discipline or civilian/non-combat unit's Morale completely break and produce an in-game self-destruction event, or temporarily induce a brief friendly-fire rampage against allied units. The Red Directorate instead has a modest advantage in ordinary intelligence theft: valid infiltration operations acquire rival-faction intelligence slightly faster and more cheaply. Both tools can support distinct conventional campaign objectives, intelligence missions and political consequences; neither replaces the primary Tito conspiracy or grants an automatic nuclear win.
