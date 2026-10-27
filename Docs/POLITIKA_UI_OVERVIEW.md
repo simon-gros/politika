@@ -4,7 +4,8 @@ Status: first-pass product/UI direction, 2026-10-27
 Engine target: Unreal Engine 5.8.3
 Design emphasis: readable RTS commands, map awareness and fast tactical interaction
 Product constraints: no cinematics; no mandatory internet connection or online-account login
-Display target: full 4K (3840×2160) with readable, scalable UI
+Display target: desktop 4K (3840×2160) plus readable, adaptive handheld/mobile resolutions
+Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; console/Apple platforms are possible later expansions
 
 ## 1. Product direction
 
@@ -17,11 +18,11 @@ The visual language should evoke plausible 1980s Yugoslav military and civil-adm
 ## 2. Design principles
 
 1. Battlefield first: the map remains visible and is the primary command target; HUD panels organize decisions around it.
-2. Fast, predictable commands: mouse actions, hotkeys, and buttons should invoke the same order and share clear cancel/invalid-target behavior.
+2. Fast, predictable commands: keyboard/mouse, handheld controller and touch UI actions should invoke the same orders and share clear cancel/invalid-target behavior.
 3. Show what matters now: persistent HUD space is reserved for objectives, selected-force status, essential resource/production state, and match-critical alerts.
 4. Explain consequences: show costs, prerequisites, target requirements, cooldowns, and unavailable states before commitment where possible.
 5. Respect uncertainty: map and HUD only show what the player's units/sensors are allowed to know; stale or uncertain intel must not look current.
-6. Readable at every supported resolution: 4K is a design baseline, not a pixel-doubled 1080p layout. Support useful scale and text settings.
+6. Readable at every supported resolution: 4K is a desktop capability, not the required render size on Steam Deck or Android. Support responsive layouts, screen safe areas, suitable touch targets and useful scale/text settings.
 7. Offline by default: the game should reach its main menu and support its single-player modes without internet, account creation, or sign-in.
 8. Story without cinematics: narrative context is delivered in concise briefings, radio dialogue, mission events, debriefs, and documents; gameplay remains the visual focus.
 
@@ -149,14 +150,14 @@ Use a restrained military-document palette, clear faction/unit iconography, disc
 
 The interface must not convey ownership, danger, or order state by color alone. Pair colors with icons, shape, labels, patterns, or animation. Provide adjustable text/UI scale, high-contrast option, subtitle controls, and remappable bindings. Keep cursor and selection feedback visible against both bright snow/sky and dark terrain.
 
-At 4K, scale UI in logical units and preserve ergonomic text/icon sizes; do not simply anchor tiny 1080p controls to the corners. Validate 1920×1080, 2560×1440, 3840×2160, and ultrawide layouts, including display changes at runtime. Keep the tactical camera/world scale independent from HUD scale.
+At desktop 4K, scale UI in logical units and preserve ergonomic text/icon sizes; do not simply anchor tiny 1080p controls to the corners. Validate 1920×1080, 2560×1440, 3840×2160 and ultrawide desktop layouts, and separately validate Steam Deck-class handheld and representative Android portrait/landscape constraints (with landscape-first gameplay if validated). Respect mobile system insets, device pixel density, touch occlusion and handheld viewing distance. Keep the tactical camera/world scale independent from HUD scale.
 
 ## 8. Technical ownership in UE
 
 Treat UI as a presentation layer over the game state:
 
 - C++ match/simulation systems own units, orders, objectives, visibility, resources and match results.
-- PlayerController/input actions translate mouse and keyboard input into player command intents.
+- PlayerController/input actions translate keyboard/mouse, handheld controller/Steam Input and Android touch actions into the same player command intents; gameplay remains independent of the originating device.
 - UMG/CommonUI presents selection, objectives, resources, menus, map and notifications.
 - UI reacts to state events and view models; it must not become the authority for gameplay rules or poll every unit every frame.
 - Local save/settings services handle progress and configuration without requiring a remote identity.
@@ -185,7 +186,18 @@ Acceptance for the slice: no online login is needed to launch or play; keyboard 
 - Whether any multiplayer is planned (and if so, local/LAN/online scope); this overview only fixes offline single-player access as a requirement.
 - Which unit categories are individually controlled versus grouped as squads.
 - The exact campaign briefing/debrief presentation and radio-dialogue cadence.
-- Supported display aspect ratios, minimum hardware, and the final accessibility/settings list.
+- Supported display aspect ratios, per-platform minimum hardware, mobile/handheld orientation and the final accessibility/settings list.
 - Whether the strategic map is always visible, collapsible, or switchable to a larger planning view.
 
 These should be decided through interaction prototypes. The present document defines the UI's product posture, not final screen mockups or locked bindings.
+
+## 11. Multi-platform command and HUD profiles
+
+The first planned platforms are Windows, Linux, SteamOS/Steam Deck and Android. Preserve the same underlying order vocabulary and information integrity across them, while allowing purpose-built presentation and control mappings. These are product specifications for future prototypes, not evidence of shipped ports. See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
+
+- **Desktop (Linux/Windows):** pointer-precise unit selection, multi-select, drag selection, context orders and keyboard shortcuts; a scalable 4K-capable HUD.
+- **Handheld (SteamOS/Steam Deck):** gamepad-friendly focus paths, radial or context command menus where prototyping supports them, scalable overlays, legible mission text and selection without requiring a hardware mouse. Steam Input mapping and optional trackpad/touchscreen behavior should be tested on actual handheld hardware.
+- **Android:** tap/drag selection and camera movement without relying on hover/right-click; explicit target-confirm and cancel affordances, large enough touch controls, UI safe areas and a compressed or collapsible information hierarchy. Evaluate multi-touch, pause/slow-time accessibility and optional gamepad support through prototypes, not assumptions.
+- **Consistency:** all adaptations generate the same authoritative selection/order intents. Gameplay balance, fog-of-war visibility, enemy information and victory rules must not depend on controller type. Validate accidental orders, camera gestures, occlusion, readability and tutorial discoverability for each device.
+
+Consoles (PlayStation, Xbox, Nintendo) and Apple systems (macOS and possibly iOS/iPadOS) may be assessed later. Do not claim controller or mobile UX parity, platform certification or first-release commitments until validated.
