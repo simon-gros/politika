@@ -114,7 +114,7 @@ fn main() -> Result<(), String> {
         for marker in [
             "expected=1|actual=2",
             "MATCH_ADMISSION_REJECTED fixture=map.test.invalid_schema units=0 objective=0 simulation_started=0",
-            "MATCH_ADMISSION_STATE map=map.test.invalid_schema units=0 objectives=0 simulation_steps=0 content_ready=0",
+            "MATCH_ADMISSION_STATE map=map.test.invalid_schema units=0 objectives=0 commands=0 simulation_steps=0 content_ready=0",
             "MATCH_ADMISSION_RECOVERY map=map.test.invalid_schema route=main_menu",
             "LoadMap: /Game/Maps/MainMenu",
         ] {

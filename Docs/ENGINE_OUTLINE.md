@@ -480,12 +480,12 @@ The stages below define **what to build**, **what must remain unchanged**, **wha
 |---|---|---|---|
 | **1. Project foundation** | **Partly implemented and locally evidenced** through the shell/toolchain; maintain and close gaps as needed | Stable UE project, portable rules kernel, application shell, local build/quality infrastructure and asset policy | Exact-pin toolchain checks, shell regression, clean builds and reproducible diagnostic records |
 | **2. First RTS vertical slice** | **Complete for scoped Linux Development acceptance** | Bounded, explicitly launched tactical interaction prototype | The recorded [vertical-slice acceptance](RTS_VERTICAL_SLICE_MILESTONE.md); no other-platform or release assertion |
-| **3. Data-driven content and map validation** | **Next bounded implementation milestone; not yet accepted** | Existing unit/weapon behavior and fixture expressed through typed UE content, validated before match admission | Positive and negative editor/commandlet/cooked admission evidence with behavioral parity |
+| **3. Data-driven content and map validation** | **Accepted for scoped Linux UE 5.8.3 Development content/gameplay and Shipping fixture isolation** | Existing unit/weapon behavior and fixture expressed through typed UE content, validated before match admission | See the [Stage 3 acceptance record](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md); Shipping rendering and non-Linux platforms remain unqualified |
 | **4. Full single-player match loop** | **Planned; dependent on Stage 3** | A playable rules-complete small match from setup to result, including the minimum chosen economy/deployment and information rules | Reproducible full-match tests including failure and recovery, not merely isolated mechanics |
 | **5. Missions and decision-making AI** | **Planned; dependent on Stage 4's stable rules** | One representative campaign mission, one complete skirmish opponent and bounded Unaligned behavior | Mission and AI integration tests with player-specific knowledge and consistent command permissions |
 | **6. Scale, platform qualification and delivery** | **Planned; progressively measurable before the final stage** | Performance-controlled builds, adaptive controls/presentation and validated release candidates | Per-platform packaged/device evidence; multiplayer and replay remain separate optional decisions |
 
-The project has since implemented the initial typed-asset/map-validation slice described by Stage 3; see [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md). The broader Stage 3 exit boundary above remains the roadmap gate. The reusable command/simulation contract now passes its scoped Linux acceptance, including coordinator-level rejection-state assertions, multi-frame fixed-step repeatability, packaged Development interaction/recovery, and Shipping isolation/default-menu startup. See the [command/simulation milestone record](RTS_COMMAND_SIMULATION_CONTRACT.md) for evidence, exact source identity and limitations.
+Stage 3 is accepted only within the Linux scope and evidence boundaries in the [acceptance record](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md). Shipping rendering, physical display/input devices, and other target platforms remain separate qualifications. The reusable command/simulation contract has its own scoped Linux acceptance, including coordinator-level rejection-state assertions, multi-frame fixed-step repeatability, packaged Development interaction/recovery, and Shipping isolation/default-menu startup; that record is independent and neither promotes nor substitutes for Stage 3 evidence. See the [command/simulation milestone record](RTS_COMMAND_SIMULATION_CONTRACT.md) for its source identity and limitations.
 
 ### 7.1 Cross-stage engineering and promotion rules
 
@@ -522,7 +522,9 @@ The project has since implemented the initial typed-asset/map-validation slice d
 
 **Preservation contract for Stage 3:** retain the same test map experience, archetype distinctions, authorized/rejected orders, attack damage and death cleanup, capture contest/pause/completion, HUD projections, and default menu route unless a separately approved behavioral change is made. Existing acceptance fixtures become regression oracles; matching the visuals without matching rule behavior is insufficient.
 
-### 7.4 Stage 3 — next bounded increment: data-driven RTS content and map validation
+### 7.4 Stage 3 — data-driven RTS content and map validation
+
+**Current status:** accepted for the scoped Linux UE 5.8.3 Development content/gameplay gate and Shipping fixture isolation. See [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) for current-source evidence and limits. Shipping rendering, physical display/input devices, and non-Linux targets remain unqualified.
 
 **Goal:** replace the prototype's *authored gameplay constants and hand-wired map setup* with inspectable UE-native, stable-ID content while preserving the simulation's existing behavior. Add a small validator and a fail-closed pre-match loading path. The relevant detailed contracts are [Content validation](#content-validation-contract-and-first-implementation), [Map authoring](#map-authoring-contract-and-validation-pass) and [Asset ingest/package gate](#asset-ingest-editor-validation-and-package-gate). The code currently centered in `Source/Politika/Private/PolitikaPrototypeGameplay.cpp` provides the behavioral baseline to extract, not a reason to introduce a parallel runtime.
 
@@ -605,7 +607,7 @@ This stage should **integrate performance and product qualification**, not postp
 
 ### 7.8 Immediate next action and milestone handoff
 
-**Start with Stage 3, packages 3A–3F, in that order.** The first implementation change should inventory and externalize only the *existing* two archetypes, their weapons and test-map setup, then introduce the single validator/admission path and prove parity. Do not begin the broader strategic economy, faction roster, AI framework or final Yugoslav production maps as prerequisites for validating that fixture.
+**Stage 3 packages 3A–3F have their scoped acceptance record.** The next roadmap stage remains the bounded Stage 4 match-loop design/decision gate; its economy/deployment model must be chosen before gameplay implementation. This handoff does not include Stage 4 work or authorize expansion into the broader faction roster, AI framework, multiplayer, or final production maps.
 
 At handoff, record a concise **milestone evidence packet** in the owning milestone/implementation documentation:
 

@@ -16,10 +16,11 @@
 
 - [Engine Outline](ENGINE_OUTLINE.md) — system responsibilities and implementation direction.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
+- [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) — scoped ST3-01–ST3-18 verdicts, exact evidence identities, and remaining acceptance gaps.
 - [First RTS Vertical Slice Milestone](RTS_VERTICAL_SLICE_MILESTONE.md) — accepted scoped Linux Development prototype, validation evidence, remaining platform gaps and follow-on content/model work; not a finished RTS or release.
 - [RTS Command and Simulation Contract — Milestone Record](RTS_COMMAND_SIMULATION_CONTRACT.md) — accepted scoped Linux command/admission/simulation contract with test matrices, packaged interaction/recovery, Shipping isolation and known platform limits.
 - [RTS Game Ontology](RTS_GAME_ONTOLOGY.md) — foundational RTS categories, C&C and StarCraft comparison, and POLITIKA-specific distinctions between entities, agents, ownership, actions, resources, information, and objectives; conceptual reference, not an implementation claim.
-- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; links to the [UM file-level reference catalog](</mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md>).
+- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; its local UM file-level reference catalog is at `/mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md` (external to this repository).
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
 - [C&C Visual/Audio Reference Study](ART_AUDIO_REFERENCE_STUDY.md) — observations from local texture, model, UI and sound references, with original POLITIKA concept and sound prototypes.
 - [StarCraft Remastered Reference Analysis](STARCRAFT_REMASTERED_REFERENCE_ANALYSIS.md) — extraction-backed recommendations for POLITIKA command feedback, animation coverage, icon grammar, terrain authoring and data boundaries; assets remain reference-only.

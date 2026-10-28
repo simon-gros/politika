@@ -450,6 +450,34 @@ void APolitikaPrototypeMatch::BuildScenario()
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
+#if !UE_BUILD_SHIPPING
+    for (int32 Index = 0; Index < MapDefinition->UnitPlacements.Num(); ++Index)
+    {
+        const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
+        const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
+        const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
+        const FPolitikaPrototypePlayerSlot* Slot = MapDefinition->PlayerSlots.FindByPredicate(
+            [&Placement](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Placement.SlotId; });
+        const APolitikaPrototypeUnit* Unit = Units.IsValidIndex(Index) ? Units[Index] : nullptr;
+        if (Unit && Definition && Weapon && Slot)
+        {
+            const FVector Location = Unit->GetActorLocation();
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("MATCH_AUTHORITATIVE_UNIT index=%d entity=%llu archetype=%s owner=%u slot=%d location=%.1f,%.1f,%.1f health=%d speed=%.1f weapon_ref=%s weapon_resolved=%s weapon_range=%.1f weapon_damage=%.1f weapon_cooldown=%.2f attackable=%d"),
+                Index, Unit->GetStableId(), *Definition->StableId.ToString(), Unit->GetOwnerPlayer(), Slot->SlotId,
+                Location.X, Location.Y, Location.Z, Definition->MaxHealth, Definition->MovementSpeedCmPerSecond,
+                *Definition->WeaponId.ToString(), *Weapon->StableId.ToString(), Weapon->RangeCm, Weapon->Damage,
+                Weapon->CooldownSeconds, Definition->bAttackable ? 1 : 0);
+        }
+    }
+    const FVector ObjectiveLocation = Objective->GetActorLocation();
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MATCH_AUTHORITATIVE_OBJECTIVE id=%s type=%d location=%.1f,%.1f,%.1f radius=%.1f duration=%.2f"),
+        *MapDefinition->Objective.StableId.ToString(), static_cast<int32>(MapDefinition->Objective.Type),
+        ObjectiveLocation.X, ObjectiveLocation.Y, ObjectiveLocation.Z, MapDefinition->Objective.CaptureRadiusCm,
+        MapDefinition->Objective.CaptureDurationSeconds);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_AUTHORITATIVE_SNAPSHOT_COMPLETE units=%d objectives=%d"), Units.Num(), Objective ? 1 : 0);
+#endif
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_CONTENT_READY map=%s units=%d objective=%s"),
         *MapDefinition->StableId.ToString(), Units.Num(), *MapDefinition->Objective.StableId.ToString());
 }
@@ -466,8 +494,8 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
     for (TActorIterator<APolitikaPrototypeUnit> It(World); It; ++It) ++WorldUnitCount;
     for (TActorIterator<APolitikaPrototypeObjective> It(World); It; ++It) ++WorldObjectiveCount;
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("MATCH_ADMISSION_STATE map=%s units=%d objectives=%d simulation_steps=%llu content_ready=%d"),
-        *MapId.ToString(), WorldUnitCount, WorldObjectiveCount, SimulationStepsExecuted, bContentReady ? 1 : 0);
+        TEXT("MATCH_ADMISSION_STATE map=%s units=%d objectives=%d commands=%llu simulation_steps=%llu content_ready=%d"),
+        *MapId.ToString(), WorldUnitCount, WorldObjectiveCount, NextCommandSequence - 1, SimulationStepsExecuted, bContentReady ? 1 : 0);
 
     World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]
     {

@@ -1,8 +1,45 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "PolitikaPrototypeContent.h"
+#include "PolitikaPrototypeGameplay.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+
+namespace
+{
+bool HasExactDiagnostic(const TArray<FPolitikaContentDiagnostic>& Diagnostics, FName Code, FName AssetId, const FString& PropertyPath)
+{
+    return Diagnostics.ContainsByPredicate([&](const FPolitikaContentDiagnostic& Diagnostic)
+    {
+        return Diagnostic.Code == Code && Diagnostic.AssetId == AssetId && Diagnostic.PropertyPath == PropertyPath;
+    });
+}
+
+UPolitikaPrototypeContentCatalog* MakeValidTestCatalog(UPolitikaWeaponDefinition*& OutWeapon, UPolitikaUnitArchetypeDefinition*& OutUnit)
+{
+    UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    OutWeapon = NewObject<UPolitikaWeaponDefinition>();
+    OutWeapon->StableId = TEXT("weapon.test_rifle");
+    OutWeapon->DisplayName = FText::FromString(TEXT("Test Rifle"));
+    OutWeapon->RangeCm = 500.0f;
+    OutWeapon->Damage = 10.0f;
+    OutWeapon->CooldownSeconds = 1.0f;
+    OutUnit = NewObject<UPolitikaUnitArchetypeDefinition>();
+    OutUnit->StableId = TEXT("unit.test_infantry");
+    OutUnit->FactionId = TEXT("faction.test");
+    OutUnit->DisplayName = FText::FromString(TEXT("Test Infantry"));
+    OutUnit->MaxHealth = 100;
+    OutUnit->MovementSpeedCmPerSecond = 200.0f;
+    OutUnit->WeaponId = OutWeapon->StableId;
+    OutUnit->VisualMesh = Mesh;
+    UPolitikaPrototypeContentCatalog* Catalog = NewObject<UPolitikaPrototypeContentCatalog>();
+    Catalog->StableId = UPolitikaPrototypeContentCatalog::CatalogAssetId;
+    Catalog->Weapons.Add(OutWeapon);
+    Catalog->Units.Add(OutUnit);
+    return Catalog;
+}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaPrototypeContentResolutionTest,
     "Politika.Content.ValidTypedDefinitionsResolve",
@@ -170,6 +207,209 @@ bool FPolitikaPrototypeContentRejectionTest::RunTest(const FString& Parameters)
     Diagnostics.Reset();
     TestFalse(TEXT("Missing level world cannot pass spatial validation"), UPolitikaPrototypeContentValidator::ValidateMapSpatial(nullptr, nullptr, Diagnostics));
     TestTrue(TEXT("Missing level world has a stable diagnostic"), Diagnostics.ContainsByPredicate([](const FPolitikaContentDiagnostic& D) { return D.Code == TEXT("MAP.LEVEL.WORLD_MISSING"); }));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaPrototypeStructuralNegativeCoverageTest,
+    "Politika.Content.StructuralNegativeDiagnosticsAreSpecific",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaPrototypeStructuralNegativeCoverageTest::RunTest(const FString& Parameters)
+{
+    UPolitikaWeaponDefinition* Weapon = nullptr;
+    UPolitikaUnitArchetypeDefinition* Unit = nullptr;
+    UPolitikaPrototypeContentCatalog* Catalog = MakeValidTestCatalog(Weapon, Unit);
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+
+    Unit->StableId = TEXT("unit.Bad-ID");
+    UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
+    TestTrue(TEXT("Malformed stable ID reports CONTENT.ID.INVALID on the unit StableId"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.ID.INVALID"), TEXT("unit.Bad-ID"), TEXT("StableId")));
+    TestEqual(TEXT("Malformed-ID case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    Unit->StableId = TEXT("unit.test_infantry");
+    Unit->MaxHealth = 0;
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
+    TestTrue(TEXT("Invalid required health reports CONTENT.VALUE.RANGE on MaxHealth"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.VALUE.RANGE"), Unit->StableId, TEXT("MaxHealth")));
+    TestEqual(TEXT("Invalid-health case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    Unit->MaxHealth = 100;
+    Unit->SchemaVersion = UPolitikaUnitArchetypeDefinition::CurrentSchemaVersion + 1;
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
+    TestTrue(TEXT("Unsupported unit schema reports CONTENT.SCHEMA.UNSUPPORTED on SchemaVersion"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.SCHEMA.UNSUPPORTED"), Unit->StableId, TEXT("SchemaVersion")));
+    TestEqual(TEXT("Unsupported-unit-schema case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    Unit->SchemaVersion = UPolitikaUnitArchetypeDefinition::CurrentSchemaVersion;
+    Weapon->SchemaVersion = UPolitikaWeaponDefinition::CurrentSchemaVersion + 1;
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
+    TestTrue(TEXT("Unsupported weapon schema reports CONTENT.SCHEMA.UNSUPPORTED on SchemaVersion"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.SCHEMA.UNSUPPORTED"), Weapon->StableId, TEXT("SchemaVersion")));
+    TestEqual(TEXT("Unsupported-weapon-schema case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    Weapon->SchemaVersion = UPolitikaWeaponDefinition::CurrentSchemaVersion;
+    const UPolitikaPrototypeContentCatalog* AuthoredCatalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    const UPolitikaPrototypeMapDefinition* AuthoredMap = AuthoredCatalog
+        ? AuthoredCatalog->FindMap(UPolitikaPrototypeContentValidator::PrototypeMapAssetId) : nullptr;
+    TestNotNull(TEXT("Canonical map is available for focused capability diagnostics"), AuthoredMap);
+    if (!AuthoredMap) return false;
+    UPolitikaPrototypeMapDefinition* MismatchedMap = DuplicateObject<UPolitikaPrototypeMapDefinition>(AuthoredMap, GetTransientPackage());
+    MismatchedMap->UnitPlacements[0].UnitArchetypeId = TEXT("unit.opposing_patrol");
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(MismatchedMap, AuthoredCatalog, Diagnostics);
+    TestTrue(TEXT("Slot/archetype faction mismatch reports CONTENT.FACTION.MISMATCH at the placement reference"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.FACTION.MISMATCH"), MismatchedMap->StableId, TEXT("UnitPlacements[0].UnitArchetypeId")));
+    TestEqual(TEXT("Faction-mismatch case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    UPolitikaPrototypeMapDefinition* MissingMarkerMap = DuplicateObject<UPolitikaPrototypeMapDefinition>(AuthoredMap, GetTransientPackage());
+    MissingMarkerMap->Objective.MarkerMesh = nullptr;
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(MissingMarkerMap, AuthoredCatalog, Diagnostics);
+    TestTrue(TEXT("Missing required objective marker reports CONTENT.REFERENCE.MISSING_MESH at Objective.MarkerMesh"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.REFERENCE.MISSING_MESH"), MissingMarkerMap->StableId, TEXT("Objective.MarkerMesh")));
+    TestEqual(TEXT("Missing-marker case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    UPolitikaPrototypeMapDefinition* OutOfBoundsObjectiveMap = DuplicateObject<UPolitikaPrototypeMapDefinition>(AuthoredMap, GetTransientPackage());
+    OutOfBoundsObjectiveMap->Objective.Location = FVector(5000.0, 0.0, 0.0);
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(OutOfBoundsObjectiveMap, AuthoredCatalog, Diagnostics);
+    TestTrue(TEXT("Out-of-bounds required objective marker reports MAP.OBJECTIVE.OUT_OF_BOUNDS at Objective.Location"),
+        HasExactDiagnostic(Diagnostics, TEXT("MAP.OBJECTIVE.OUT_OF_BOUNDS"), OutOfBoundsObjectiveMap->StableId, TEXT("Objective.Location")));
+    TestEqual(TEXT("Out-of-bounds objective case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    UPolitikaPrototypeMapDefinition* InvalidObjectiveScaleMap = DuplicateObject<UPolitikaPrototypeMapDefinition>(AuthoredMap, GetTransientPackage());
+    InvalidObjectiveScaleMap->Objective.MarkerScale.X = 0.0;
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(InvalidObjectiveScaleMap, AuthoredCatalog, Diagnostics);
+    TestTrue(TEXT("Invalid required objective marker scale reports CONTENT.VALUE.RANGE at Objective.MarkerScale"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.VALUE.RANGE"), InvalidObjectiveScaleMap->StableId, TEXT("Objective.MarkerScale")));
+    TestEqual(TEXT("Invalid objective-scale case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+
+    UPolitikaPrototypeMapDefinition* InvalidObjectiveIdMap = DuplicateObject<UPolitikaPrototypeMapDefinition>(AuthoredMap, GetTransientPackage());
+    InvalidObjectiveIdMap->Objective.StableId = TEXT("objective.Bad-ID");
+    Diagnostics.Reset();
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(InvalidObjectiveIdMap, AuthoredCatalog, Diagnostics);
+    TestTrue(TEXT("Malformed required objective marker ID reports CONTENT.ID.INVALID at Objective.StableId"),
+        HasExactDiagnostic(Diagnostics, TEXT("CONTENT.ID.INVALID"), InvalidObjectiveIdMap->StableId, TEXT("Objective.StableId")));
+    TestEqual(TEXT("Invalid objective-ID case emits only its intended diagnostic"), Diagnostics.Num(), 1);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaPrototypeAuthoredAuthorityTest,
+    "Politika.Content.AuthoredValueChangesAuthoritativeCombatThroughLoader",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaPrototypeAuthoredAuthorityTest::RunTest(const FString& Parameters)
+{
+    FPolitikaPrototypeContentSnapshot Baseline;
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    if (!FPolitikaPrototypeContentLoader::LoadAndValidate(nullptr,
+        UPolitikaPrototypeContentValidator::PrototypeMapAssetId, Baseline, Diagnostics))
+    {
+        AddError(TEXT("Canonical runtime content loader failed before controlled authored-value mutation"));
+        return false;
+    }
+    UPolitikaUnitArchetypeDefinition* AuthoredUnit = const_cast<UPolitikaUnitArchetypeDefinition*>(
+        Baseline.Catalog->FindUnit(TEXT("unit.recon_vehicle")));
+    UPolitikaWeaponDefinition* AuthoredWeapon = const_cast<UPolitikaWeaponDefinition*>(
+        Baseline.Catalog->FindWeapon(TEXT("weapon.recon_cannon")));
+    if (!AuthoredUnit || !AuthoredWeapon) return false;
+
+    const float OriginalDamage = AuthoredWeapon->Damage;
+    const int32 WeaponIndex = Baseline.Catalog->Weapons.IndexOfByPredicate(
+        [](const TObjectPtr<UPolitikaWeaponDefinition>& Candidate)
+        {
+            return Candidate && Candidate->StableId == TEXT("weapon.recon_cannon");
+        });
+    TestTrue(TEXT("Authored weapon has a catalog slot for an isolated test copy"), WeaponIndex != INDEX_NONE);
+    if (WeaponIndex == INDEX_NONE) return false;
+    UPolitikaWeaponDefinition* TestWeaponCopy = DuplicateObject<UPolitikaWeaponDefinition>(AuthoredWeapon, GetTransientPackage());
+    TestNotNull(TEXT("Transient weapon test copy created"), TestWeaponCopy);
+    if (!TestWeaponCopy) return false;
+    TestWeaponCopy->Damage = OriginalDamage + 37.0f;
+    Baseline.Catalog->Weapons[WeaponIndex] = TestWeaponCopy;
+    FPolitikaPrototypeContentSnapshot Mutated;
+    Diagnostics.Reset();
+    const bool bLoaded = FPolitikaPrototypeContentLoader::LoadAndValidate(nullptr,
+        UPolitikaPrototypeContentValidator::PrototypeMapAssetId, Mutated, Diagnostics);
+    TestTrue(TEXT("Runtime content loader validates and resolves the isolated in-memory authored copy"), bLoaded);
+    TestTrue(TEXT("Loader returns the edited weapon definition through its stable ID"),
+        bLoaded && Mutated.Catalog->FindWeapon(TEXT("weapon.recon_cannon"))->Damage == OriginalDamage + 37.0f);
+    if (bLoaded)
+    {
+        const UWorld::InitializationValues InitValues = UWorld::InitializationValues()
+            .AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(false)
+            .CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false)
+            .SetTransactional(false).CreateFXSystem(false);
+        UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PolitikaAuthoredAuthorityWorld"),
+            GetTransientPackage(), false, ERHIFeatureLevel::Num, &InitValues);
+        TestNotNull(TEXT("Transient authoritative simulation world created"), World);
+        if (World)
+        {
+            const UPolitikaWeaponDefinition* ResolvedWeapon = Mutated.Catalog->FindWeapon(AuthoredUnit->WeaponId);
+            APolitikaPrototypeUnit* Attacker = World->SpawnActor<APolitikaPrototypeUnit>(FVector::ZeroVector, FRotator::ZeroRotator);
+            APolitikaPrototypeUnit* Target = World->SpawnActor<APolitikaPrototypeUnit>(FVector(100.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+            TestNotNull(TEXT("Authoritative simulation attacker spawned"), Attacker);
+            TestNotNull(TEXT("Authoritative simulation target spawned"), Target);
+            if (ResolvedWeapon && Attacker && Target)
+            {
+                Attacker->Configure(1, 1, AuthoredUnit->DisplayName, AuthoredUnit->MaxHealth,
+                    AuthoredUnit->MovementSpeedCmPerSecond, ResolvedWeapon->RangeCm, ResolvedWeapon->Damage,
+                    ResolvedWeapon->CooldownSeconds, AuthoredUnit->bAttackable, AuthoredUnit->VisualMesh,
+                    AuthoredUnit->VisualScale, AuthoredUnit->FactionTint);
+                Target->Configure(2, 2, FText::FromString(TEXT("Target")), 500, 0, 0, 0, 1,
+                    true, AuthoredUnit->VisualMesh, FVector::OneVector, FLinearColor::Red);
+                Attacker->SetAttackOrder(Target);
+                Attacker->ResolveCombat(0.01f);
+                const int32 AppliedDamage = Target->ApplyPendingDamage();
+                TestEqual(TEXT("Mutated authored damage is applied by authoritative combat"), AppliedDamage,
+                    FMath::RoundToInt(OriginalDamage + 37.0f));
+            }
+            World->DestroyWorld(false);
+        }
+    }
+    Baseline.Catalog->Weapons[WeaponIndex] = AuthoredWeapon;
+    TestEqual(TEXT("Canonical authored definition was never mutated"), AuthoredWeapon->Damage, OriginalDamage);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaPrototypeDisplayLabelIdentityTest,
+    "Politika.Content.DisplayLabelDoesNotChangeStableIdentityOrResolution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaPrototypeDisplayLabelIdentityTest::RunTest(const FString& Parameters)
+{
+    FPolitikaPrototypeContentSnapshot Snapshot;
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    if (!FPolitikaPrototypeContentLoader::LoadAndValidate(nullptr,
+        UPolitikaPrototypeContentValidator::PrototypeMapAssetId, Snapshot, Diagnostics)) return false;
+    UPolitikaUnitArchetypeDefinition* Unit = const_cast<UPolitikaUnitArchetypeDefinition*>(Snapshot.Catalog->FindUnit(TEXT("unit.recon_vehicle")));
+    if (!Unit) return false;
+    const FPrimaryAssetId OriginalAssetId = Unit->GetPrimaryAssetId();
+    const FName StableId = Unit->StableId;
+    const int32 UnitIndex = Snapshot.Catalog->Units.IndexOfByPredicate(
+        [](const TObjectPtr<UPolitikaUnitArchetypeDefinition>& Candidate)
+        {
+            return Candidate && Candidate->StableId == TEXT("unit.recon_vehicle");
+        });
+    TestTrue(TEXT("Authored unit has a catalog slot for an isolated label test copy"), UnitIndex != INDEX_NONE);
+    if (UnitIndex == INDEX_NONE) return false;
+    UPolitikaUnitArchetypeDefinition* TestUnitCopy = DuplicateObject<UPolitikaUnitArchetypeDefinition>(Unit, GetTransientPackage());
+    TestNotNull(TEXT("Transient unit test copy created"), TestUnitCopy);
+    if (!TestUnitCopy) return false;
+    TestUnitCopy->DisplayName = FText::FromString(TEXT("Controlled Label Change"));
+    Snapshot.Catalog->Units[UnitIndex] = TestUnitCopy;
+    const UPolitikaUnitArchetypeDefinition* ResolvedCopy = Snapshot.Catalog->FindUnit(StableId);
+    TestTrue(TEXT("Display-label edit leaves stable ID unchanged"), TestUnitCopy->StableId == StableId);
+    TestTrue(TEXT("Display-label edit leaves primary asset identity unchanged"), TestUnitCopy->GetPrimaryAssetId() == OriginalAssetId);
+    TestTrue(TEXT("Catalog stable-ID resolution resolves the controlled label copy"), ResolvedCopy == TestUnitCopy);
+    Snapshot.Catalog->Units[UnitIndex] = Unit;
+    TestTrue(TEXT("Canonical display label and definition are restored"), Snapshot.Catalog->FindUnit(StableId) == Unit);
     return true;
 }
 

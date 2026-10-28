@@ -1,6 +1,7 @@
 //! Packaged Linux Development content-admission acceptance checks.
 //! Usage: cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin content_acceptance -- PACKAGE/POLITIKA/Binaries/Linux/Politika
 use std::{
+    collections::BTreeSet,
     env, fs,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -134,7 +135,7 @@ fn main() -> Result<(), String> {
         "CONTENT.SCHEMA.UNSUPPORTED|error|map.test.invalid_schema|SchemaVersion|",
         "expected=1|actual=2",
         "MATCH_ADMISSION_REJECTED fixture=map.test.invalid_schema units=0 objective=0 simulation_started=0",
-        "MATCH_ADMISSION_STATE map=map.test.invalid_schema units=0 objectives=0 simulation_steps=0 content_ready=0",
+        "MATCH_ADMISSION_STATE map=map.test.invalid_schema units=0 objectives=0 commands=0 simulation_steps=0 content_ready=0",
         "MATCH_ADMISSION_RECOVERY map=map.test.invalid_schema route=main_menu",
         "LoadMap: /Game/Maps/MainMenu",
     ];
@@ -150,7 +151,7 @@ fn main() -> Result<(), String> {
             "Development fixture selector leaked into startup as InvalidLaunchOptions".into(),
         );
     }
-    results.push(("PAC-02/03/04/05/06", "PASS", "cooked fixture rejected; zero units/objectives/simulation steps observed; same-process MainMenu transition observed".into()));
+    results.push(("PAC-02/03/04/05/06", "PASS", "cooked fixture rejected; zero units/objectives/accepted commands/simulation steps explicitly observed; same-process MainMenu transition observed".into()));
     results.push(("PAC-07", "INCONCLUSIVE", "MainMenu loaded and process remained alive, but -nullrhi cannot establish rendered shell usability".into()));
     let stable_signature = first
         .lines()
@@ -224,6 +225,63 @@ fn main() -> Result<(), String> {
         "PAC-09",
         "PASS",
         "fresh valid match initialized three units and objective after rejection run".into(),
+    ));
+
+    let snapshot_markers = ["MATCH_AUTHORITATIVE_SNAPSHOT_COMPLETE units=3 objectives=1"];
+    let first_snapshot = launch_live(
+        &binary,
+        &evidence,
+        "canonical-initialization-first",
+        &["/Game/Maps/RTSVerticalSlice"],
+        &snapshot_markers,
+    )?;
+    let second_snapshot = launch_live(
+        &binary,
+        &evidence,
+        "canonical-initialization-repeat",
+        &["/Game/Maps/RTSVerticalSlice"],
+        &snapshot_markers,
+    )?;
+    let authoritative_lines = |log: &str| -> Vec<String> {
+        log.lines()
+            .filter(|line| {
+                line.contains("MATCH_AUTHORITATIVE_UNIT ")
+                    || line.contains("MATCH_AUTHORITATIVE_OBJECTIVE ")
+                    || line.contains("MATCH_AUTHORITATIVE_SNAPSHOT_COMPLETE ")
+            })
+            .filter_map(|line| {
+                line.split_once("MATCH_AUTHORITATIVE_")
+                    .map(|(_, snapshot)| format!("MATCH_AUTHORITATIVE_{snapshot}"))
+            })
+            .collect()
+    };
+    let first_authoritative = authoritative_lines(&first_snapshot);
+    let repeated_authoritative = authoritative_lines(&second_snapshot);
+    if first_authoritative != repeated_authoritative {
+        return Err("repeated canonical map initialization changed its authoritative snapshot".into());
+    }
+    let unit_lines: Vec<&String> = first_authoritative
+        .iter()
+        .filter(|line| line.contains("MATCH_AUTHORITATIVE_UNIT "))
+        .collect();
+    let objective_lines = first_authoritative
+        .iter()
+        .filter(|line| line.contains("MATCH_AUTHORITATIVE_OBJECTIVE "))
+        .count();
+    let entity_ids: BTreeSet<&str> = unit_lines
+        .iter()
+        .filter_map(|line| line.split_whitespace().find_map(|field| field.strip_prefix("entity=")))
+        .collect();
+    if unit_lines.len() != 3 || objective_lines != 1 || entity_ids.len() != 3 {
+        return Err(format!(
+            "authoritative snapshot has unexpected counts/duplicates: units={}, objectives={}, unique_entities={}",
+            unit_lines.len(), objective_lines, entity_ids.len()
+        ));
+    }
+    results.push((
+        "ST3-07",
+        "PASS",
+        "two fresh packaged canonical initializations had identical authoritative archetype/owner/slot/position/health/movement/weapon snapshots and objective rules; 3 unique entities and 1 objective, no duplicates".into(),
     ));
     let regression = launch_live(
         &binary,
