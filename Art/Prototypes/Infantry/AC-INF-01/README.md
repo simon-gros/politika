@@ -10,8 +10,7 @@ This source-art directory preserves an actual **single-mesh glTF 2.0 GLB** for r
 | --- | --- |
 | `SM_AC_INF_01_Playtest.glb` | 1.7 MB textured, triangulated, **one-piece static** mesh with embedded PNG atlas; Blender/UE import source. |
 | `manifest.json` | Stable ID, dimensions, source provenance, SHA-256, capabilities and qualification states. |
-| `generate_ac_inf_01_v2.py` | Optional **offline asset-authoring** script to reproduce editable multi-component review geometry and texture from original procedural design; uses numpy, trimesh and Pillow. This is **not runtime scripting** or a build requirement. |
-| `build_playtest_glb.py` | Offline merge of multi-component GLB into a single presentation mesh; preserves UV/atlas. |
+| [Rust authoring tool](../../../../Tools/InfantryAuthoring/README.md) | Cargo commands to generate named review components and the atlas, merge a static playtest GLB, or inspect existing exports. Offline only; not runtime scripting or a build requirement. |
 | `.gitignore` | Ignores regeneration-only files in `Generated/`. |
 
 The GLB has **22,544 triangles**, one named mesh, UVs and an embedded color texture; bounds approximately **1.423 × 1.010 × 1.914 m**, standing **1.914 m** high. Original Blender-style source has many individually named components, but this playtest export is combined for one `UStaticMesh`. This is a posed soldier, with helmet/goggles, field clothing, webbing, rucksack and rifle. **No skeleton, skin weights, movement animation, sockets, authored LODs, physics asset, collision mesh, or baked normal map.**
@@ -46,12 +45,16 @@ The current `APolitikaPrototypeUnit` uses a `UStaticMeshComponent` as its root/c
 
 ## Regeneration (optional)
 
-Run in a separate Python asset-authoring environment (not inside the engine runtime):
+Run with Rust/Cargo from the repository root (not inside the engine runtime):
 
 ```bash
-python -m pip install numpy trimesh Pillow
-python Art/Prototypes/Infantry/AC-INF-01/generate_ac_inf_01_v2.py
-python Art/Prototypes/Infantry/AC-INF-01/build_playtest_glb.py
+cargo run --locked --manifest-path Tools/InfantryAuthoring/Cargo.toml -- generate
+cargo run --locked --manifest-path Tools/InfantryAuthoring/Cargo.toml -- merge
+cargo run --locked --manifest-path Tools/InfantryAuthoring/Cargo.toml -- inspect Art/Prototypes/Infantry/AC-INF-01/Generated/SM_AC_INF_01_Playtest.glb
 ```
+
+No existing output is overwritten. For another generation, choose a fresh `generate --output-dir DIR` and use matching `merge --input DIR/AC-INF-01_Professional_Rifle_Section_v2.glb --output DIR/SM_AC_INF_01_Playtest.glb` paths. See the [tool documentation and migration evidence](../../../../Tools/InfantryAuthoring/README.md).
+
+The Rust recipe retains 299 components and 22,544 triangles, with a deterministic 20-region PNG atlas. Its noise sequence and circular-primitive orientation differ from the legacy export, and varying-ellipse cap winding is corrected. Regeneration is **not byte-identical** to the existing committed GLB, which is preserved unchanged.
 
 Regenerated exports can vary with dependency versions. Do not silently replace the committed GLB without visual review, geometry/texture verification, a new manifest/hash, and an updated acceptance record. The input sketch is original project concept artwork; colors are deliberately restrained approximations. No historical-uniform or insignia authenticity has been certified.

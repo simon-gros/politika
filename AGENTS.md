@@ -16,6 +16,8 @@ The authoritative version lives in [version.json](version.json). Follow [Version
 - Run `cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- performance` for benchmark readiness and `-- release` for release gating; planned/unproven checks must return BLOCKED or INCONCLUSIVE, not PASS. Follow [Performance and Release Gates](Docs/PERFORMANCE_AND_RELEASE_GATES.md).
 - Preserve historical sourcing, copyright and licenses, and distinguish fictional in-game factions from history.
 
+Use Rust/Cargo for offline asset-authoring tools; do not reintroduce Python authoring scripts.
+
 Keep POLITIKA's release process self-contained, with explicit game compatibility identities and no unrelated engine-specific assumptions.
 
 ## Native shell recovery/build conventions
