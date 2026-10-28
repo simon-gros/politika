@@ -95,7 +95,7 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
 void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const FText& InName,
     int32 InHealth, float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
     bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
-    FName InFactionId)
+    FName InFactionId, bool bInUseAuthoredMeshMaterials)
 {
     StableId = InStableId;
     OwnerPlayer = InOwner;
@@ -110,7 +110,16 @@ void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const 
     bAttackable = bInAttackable;
     Body->SetStaticMesh(InMesh);
     SetActorScale3D(InMeshScale);
-    ApplyPrototypeColor(Body, InColor);
+    if (bInUseAuthoredMeshMaterials)
+    {
+        // The constructor sets an Engine BasicShapes material override. Clear it so
+        // Unreal uses the imported static mesh material/texture in cooked playtests.
+        Body->SetMaterial(0, nullptr);
+    }
+    else
+    {
+        ApplyPrototypeColor(Body, InColor);
+    }
     SelectionIndicator->SetStaticMesh(LoadPrototypeMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
     SelectionIndicator->SetRelativeLocation(FVector(0, 0, -34.0f / InMeshScale.Z));
     SelectionIndicator->SetRelativeScale3D(FVector(2.1f / InMeshScale.X, 2.1f / InMeshScale.Y, 0.025f / InMeshScale.Z));
@@ -538,7 +547,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         Unit->Configure(NextStableId++, Slot->RuntimePlayerId, Definition->DisplayName, Definition->MaxHealth,
             Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
             Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint,
-            Slot->FactionId);
+            Slot->FactionId, Definition->bUseAuthoredMeshMaterials);
         Units.Add(Unit);
     };
 

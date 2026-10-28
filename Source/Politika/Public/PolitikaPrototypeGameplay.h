@@ -57,7 +57,7 @@ public:
     void Configure(uint64 InStableId, uint32 InOwner, const FText& InName, int32 InHealth,
         float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
         bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
-        FName InFactionId = NAME_None);
+        FName InFactionId = NAME_None, bool bInUseAuthoredMeshMaterials = false);
     void SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination);
     void SetAttackOrder(APolitikaPrototypeUnit* Target);
     void SetGuardOrder();

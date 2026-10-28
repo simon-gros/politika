@@ -78,6 +78,8 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") TObjectPtr<UStaticMesh> VisualMesh;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") FVector VisualScale = FVector::OneVector;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") FLinearColor FactionTint = FLinearColor::White;
+    // Opt-in for imported textured presentation meshes; existing primitive art remains tinted.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") bool bUseAuthoredMeshMaterials = false;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") bool bAttackable = true;
 
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
