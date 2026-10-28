@@ -12,6 +12,16 @@ The archive provides evidence for historical grounding, not a library of automat
 
 The Olympic Museum explicitly limits its website content to private, educational, editorial and non-commercial purposes. Its original Olympic poster designs, wordmarks, mascot, and the IOC Olympic rings must **not** be copied into released game art simply because a web image is available. Museum images, actual federal coats of arms, trade logos and printed period newspaper pages can have separate rights concerns even if the subject is historically relevant.
 
+## Archiving and licensing original 1980s map sources (October 2026 update)
+
+- **1988 Yugoslav Railways map:** Wikimedia Commons labels the scan public domain as a Yugoslav official work; however, the uploading file history has an inconsistent description and successor-state copyright treatment should be checked before a game-repository commit. The Spomenik Database presentation separately claims site rights; neither website's reproduction should be automatically mirrored.
+- **Croatian TK100 and TK200 official map services:** an agency WMS may disseminate transformed historical map sheets. Its endpoint accessibility is not automatically an open redistribution license, and its modern reprojection does not change the original survey age.
+- **Institutional holdings:** library catalogues (COBISS/CiNii) and state archive records confirm original maps but do not authorize making scans or claim the repository has downloaded the item.
+- **Yugoslav military maps and museum photographs:** archive access and paper original legality differ from museum scan and redistribution permission.
+- Any acquired map binaries should have a sidecar with source URL, stable ID, map publication date, depicted/surveyed date, revision date, exact licence evidence and original credit; SHA-256; download timestamp; scan/geo metadata; and derivative attribution chain.
+
+See [MAP_ACQUISITION_GUIDE.md](MAP_ACQUISITION_GUIDE.md) for the complete workflow.
+
 ## Cartographic rights, map dates and original game assets
 
 The [map catalogue](MAP_CATALOG.csv) records map publication or known revision date, geographic coverage, scale, source institution, edition/sheet identifier, period status and rights. A map printed in 1996 can be useful for persistent geography without providing reliable 1985 roads, jurisdiction or buildings.
