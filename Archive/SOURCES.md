@@ -1,6 +1,6 @@
 # POLITIKA — Yugoslavia 1980–1989: Source Guide
 
-Research collection: **166 catalogue records**, including **69 political developments** researched on 27 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Maps](MAPS_1980_1989.md) | [Map catalogue](MAP_CATALOG.csv) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
+Research collection: **194 catalogue records**, including **69 political developments** researched through 29 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Maps](MAPS_1980_1989.md) | [Map catalogue](MAP_CATALOG.csv) | [Map acquisition](MAP_ACQUISITION_GUIDE.md) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
 
 ## Political-history source collection (69 indexed developments)
 
@@ -24,7 +24,7 @@ The [political-history narrative](POLITICAL_HISTORY_1980_1989.md) and [machine-r
 
 **External political and diplomatic:** [Non-Aligned summit documents](https://www.nam.go.ug/previous-chairmanship-documents), [UN 1989 Belgrade summit records](https://digitallibrary.un.org/record/80583), [CSCE/OSCE Madrid–Vienna conference timelines](https://www.osce.org/mc/43198), [1989 CSCE Vienna final document](https://www.osce.org/mc/40881), [European Communities 1980s history](https://european-union.europa.eu/principles-countries-history/history-eu/1980-89_en), [NATO INF Treaty](https://www.nato.int/en/what-we-do/wider-activities/nato-and-the-inf-treaty), [German federal archive history of the Berlin Wall opening](https://www.bundesarchiv.de/themen-entdecken/online-entdecken/storys/die-stasi-im-jahr-1989/november-1989/), [German account of the Hungarian–Austrian border opening](https://www.bundesregierung.de/breg-de/schwerpunkte/deutsche-einheit/ungarn-oeffnet-seine-grenze-337804), [Bulgarian News Agency's Zhivkov chronology](https://www.bta.bg/en/news/archives/1005141-november-10-1989-todor-zhivkov-is-ousted-as-bulgarian-communist-party-chief), [Human Rights Watch on Bulgaria's Turkish minority](https://www.hrw.org/reports/1989/WR89/Bulgaria.htm), [Albanian leadership history](https://enciklopedija.hr/clanak/hoxha-enver) and [Romanian December 1989 history](https://www.history.com/this-day-in-history/december-22/romanian-government-falls).
 
-## Yugoslav historical map research — 66 indexed map references
+## Yugoslav historical map research — 94 indexed map references
 
 The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) and [map-only index](media/reference-only/maps/INDEX.md) document three contemporary original maps from 1981, one 1981-revised aeronautical compilation, earlier Yugoslav road atlases, later/undated topographic series, and 44 individual geographical sheet leads.
 
@@ -35,6 +35,23 @@ The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) an
 **Topography:** [Former Yugoslavia DMA Series M709 GeoPDF collection](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) and [coverage grid](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/index_map.jpg). Some sheets were published in 1995–1996; no map's publication date may be inferred from the series label. [UT Austin's country index](https://maps.lib.utexas.edu/maps/yugoslav.html) includes other pre- and post-period mapping.
 
 **Still-to-inspect period publications:** [1985 Yugoslav yearbook](https://publikacije.stat.gov.rs/G1985/Pdf/G19852003.pdf) and [1989 yearbook](https://publikacije.stat.gov.rs/G1989/Pdf/G19892003.pdf) may contain useful cartographic graphics, but no individual map pages have been authenticated in this research pass.
+
+### Further authenticated 1980s original maps and library holdings
+
+- [Croatian History Museum: 1981/82 Sisak topographic map](https://kartevgi.hismus.hr/en/e-catalog/belgrade/), HPM-102650, 1:50,000, assembled from sheets printed in 1981 and 1982.
+- [Wikimedia Commons: 1988 Yugoslav Railways / Geokarta map](https://commons.wikimedia.org/wiki/File:Yugoslavia_Railway-Lines_1988.jpg), with an independent [interactive 1988 map presentation](https://www.spomenikdatabase.org/1988-map); both refer to the **same map edition**. Public-domain status claimed online is not considered verified for inclusion in Git.
+- [Spomenik Database 1986 WWII monuments tourist map](https://www.spomenikdatabase.org/1986-map): 1:2,500,000, author Gojko Jokić. Illustrated contemporary map; copyright conditions require checking.
+- [CiNii: Geokarta 1988–89 Belgrade city plan](https://ci.nii.ac.jp/ncid/BA75523445), 1:20,000, with urban/municipal and transit insets; no downloadable image verified.
+- [University of Maribor Library: 1988 Yugoslavia road map](https://plus-legacy.cobiss.net/cobiss/si/en/bib/ukm/35263233), 4th edition, 1:1,550,000; physical holding confirmed.
+- [Austrian State Archives: 1982 Jugoslavija tourist map](https://www.archivinformationssystem.at/detail.aspx?ID=2139619), with eight illustrated routes, original association held in the Kriegsarchiv map series.
+- [Serbian COBISS: 1986 Swedish tourist map](https://plus-legacy.cobiss.net/cobiss/sr/sr_latn/bib/204791815), with analogous issues in 1980, 1982 and 1985; archival library map records.
+- [CiNii: Michelin Yugoslavia road map, map 991, 8th ed.](https://ci.nii.ac.jp/ncid/BC14808956) (1989 / copyright 1988).
+- [Slovenian COBISS: 1981–1989 SFRY maps](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0), 1984 copies may represent separate editions or duplicates; 1989 record still credits Ivan Selan after his death.
+- [Croatian State Geodetic Administration historical TK100/TK200](https://registri.nipp.hr/izvori/11): 55 sheets produced in 1980–1984 at 1:100,000, and 18 sheets in 1982–1986 at 1:200,000; series-level confirmation is not sheet ingestion.
+- [Slovenian state cartographic history](https://dlib.si/details/URN:NBN:SI:DOC-N9BMLCDV): VGI 1:25,000 map content from 1985/86 survives in reproductions.
+- [Serbian Military Geographical Institute former-Yugoslavia holdings](https://www.vgi.mod.gov.rs/lat/221/karte-bivse-jugoslavije-221) document eight map scales; individual edition dates and digital availability remain pending.
+
+[Map acquisition guide](MAP_ACQUISITION_GUIDE.md) documents exact access and permission stages. This archive has not mirrored third-party map binaries.
 
 ## High-value primary artefacts and original imagery
 
