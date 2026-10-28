@@ -14,6 +14,8 @@
 
 ## Engine and development
 
+- [Test-map terrain and camera controls](TEST_MAP_TERRAIN.md) — grass/elevation provenance, material-only import, camera pan/zoom fixes and scoped package evidence.
+
 - [Engine Outline](ENGINE_OUTLINE.md) — **the single authoritative implementation sequence**, including incomplete Stage 4A closure and the dependency-ordered First Playable Skirmish milestone; owns implementation order and promotion boundaries.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
 - [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) — scoped ST3-01–ST3-18 verdicts, exact evidence identities, and remaining acceptance gaps.

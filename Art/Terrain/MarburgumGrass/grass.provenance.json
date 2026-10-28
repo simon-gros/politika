@@ -1,0 +1,96 @@
+{
+  "approved_runtime_class": "1024",
+  "author": "tools/textures/generate_materials_comfy.py",
+  "checkpoint_sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+  "colour_space": {
+    "albedo": "sRGB",
+    "normal": "linear",
+    "orm": "linear"
+  },
+  "generated": "2026-10-07",
+  "historical_confidence": "high",
+  "manual_edits": [],
+  "model": "SDXL base 1.0 (sd_xl_base_1.0.safetensors, sha256 31e35c80fc48); PBRify Remix 1.7.2 (1x-PBRify_NormalV3, 1x-PBRify_RoughnessV2; 4x-PBRify_UpscalerSPANV4 only when the tile needs more texels than the source has)",
+  "model_license": "CreativeML Open RAIL++-M (SDXL base 1.0); CC0-1.0 (PBRify Remix)",
+  "negative_prompt": "pattern, ornament, wallpaper, fabric, graphic design, illustration, drawing, vector art, cartoon, painting, 3d render, text, letters, watermark, logo, people, perspective, horizon, sky, harsh shadows, vignette, border, frame, blurry",
+  "normal_convention": "OpenGL +Y",
+  "orm_channels": {
+    "b": "metallic",
+    "g": "roughness",
+    "r": "ambient_occlusion"
+  },
+  "output_hashes": {
+    "albedo": "15d2d97334a10e83",
+    "normal": "79f009dc44aee747",
+    "orm": "99c4d7d8e5d9f1dd"
+  },
+  "output_texture_id": "grass",
+  "outputs": {
+    "albedo": "grass_albedo.png",
+    "normal": "grass_normal.png",
+    "orm": "grass_orm.png"
+  },
+  "parameters": {
+    "albedo_linear_gains": [
+      1.4397,
+      0.4722,
+      1.673
+    ],
+    "albedo_linear_mean_target": [
+      0.0762,
+      0.1142,
+      0.038
+    ],
+    "albedo_toe": null,
+    "ambient_occlusion": 1.0,
+    "maps_computed_at": 1024,
+    "metallic_policy": "dielectric",
+    "normal_fit": {
+      "pbrify_tilt": 0.0647,
+      "relief_scale": 1.0,
+      "texels_tipped_outward": 0.0,
+      "tilt": 0.0647
+    },
+    "normal_intensity_band": [
+      0.2,
+      0.5
+    ],
+    "repeat": 1,
+    "resolution": 1024,
+    "roll_seams": null,
+    "roughness_band": [
+      0.8,
+      0.95
+    ],
+    "roughness_fit": {
+      "pbrify_p2": 0.3765,
+      "pbrify_p98": 0.5098
+    },
+    "sampler": {
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "size": 1024,
+      "steps": 30
+    },
+    "source_footprint_m": 4.0,
+    "source_size": 1024,
+    "texel_density_px_per_m": 256.0,
+    "tile_metres": 4.0,
+    "upscale": null,
+    "wrap_padding_px": 128
+  },
+  "preserve_identity": false,
+  "prompt": "close-up photograph looking straight down at short mown lawn grass, dense green grass blades, a little clover, natural uneven texture, overcast daylight, high detail, no paving, no paths, no lines, no stripes, no squares",
+  "recipe": "path_c_generic",
+  "reference_ids": [],
+  "reviewer": null,
+  "schema": 1,
+  "seed": 24,
+  "source_hashes": {},
+  "source_license": null,
+  "source_texture_ids": [],
+  "tool": "tools/textures/generate_materials_comfy.py via um comfy run (ComfyUI 0.39.0, ComfyUI-seamless-tiling)",
+  "tool_version": "c8a407d19a2d",
+  "workflow_version": "sdxl-tiling+pbrify-v1-c8a407d19a2d"
+}

@@ -1477,10 +1477,16 @@ void APolitikaPrototypePlayerController::PanForward(float Value)
 void APolitikaPrototypePlayerController::PanRight(float Value)
 {
     if (FMath::IsNearlyZero(Value) || !GetPawn()) return;
+    const APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn());
+    if (!CameraPawn || !CameraPawn->GetCamera()) return;
+    // Screen-right is not world +X for this map's camera orientation.
+    FVector Right = CameraPawn->GetCamera()->GetRightVector();
+    Right.Z = 0.0f;
+    Right.Normalize();
 #if !UE_BUILD_SHIPPING
     const bool bLogAcceptancePan = Value > 0.0f && !bAcceptancePanRightLogged;
 #endif
-    GetPawn()->AddActorWorldOffset(FVector(Value * 1400.0f * GetWorld()->GetDeltaSeconds(), 0, 0), true);
+    GetPawn()->AddActorWorldOffset(Right * Value * 1400.0f * GetWorld()->GetDeltaSeconds(), true);
     FVector Location = GetPawn()->GetActorLocation();
     if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch())
     {
@@ -1504,7 +1510,22 @@ void APolitikaPrototypePlayerController::Zoom(float Value)
     if (FMath::IsNearlyZero(Value)) return;
     if (APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn()))
     {
-        CameraPawn->GetCamera()->SetFieldOfView(FMath::Clamp(CameraPawn->GetCamera()->FieldOfView - Value * 4.0f, 38.0f, 82.0f));
+        UCameraComponent* Camera = CameraPawn->GetCamera();
+        if (!Camera) return;
+        const FVector Offset = Camera->GetRelativeLocation();
+        const FVector Forward = Camera->GetRelativeRotation().Vector();
+        if (Forward.Z >= -UE_SMALL_NUMBER) return;
+        // Dolly along the view ray, keeping the ground point at screen centre fixed.
+        // Wheel-up moves closer; wheel-down moves away. Keep perspective unchanged.
+        const float Distance = -Offset.Z / Forward.Z;
+        if (Distance <= UE_SMALL_NUMBER) return;
+        const FVector Focus = Offset + Forward * Distance;
+        const float NewDistance = FMath::Clamp(Distance * FMath::Pow(0.85f, Value), 900.0f, 7500.0f);
+        Camera->SetRelativeLocation(Focus - Forward * NewDistance);
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_CAMERA_ZOOM wheel=%.2f distance_before=%.1f distance_after=%.1f fov=%.1f"),
+            Value, Distance, NewDistance, Camera->FieldOfView);
+#endif
     }
 }
 
