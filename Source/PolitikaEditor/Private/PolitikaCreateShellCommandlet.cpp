@@ -28,6 +28,9 @@
 #include "Misc/FileHelper.h"
 #include "PolitikaBootstrap.h"
 #include "PolitikaPrototypeGameplay.h"
+#include "StaticMeshCompiler.h"
+#include "NavigationData.h"
+#include "PolitikaNavigationObstacleFixture.h"
 #include "PolitikaShellGameMode.h"
 
 namespace
@@ -123,6 +126,109 @@ bool CreateInvalidParticipantFactionFixture()
         TEXT("TEST_FIXTURE_CREATED map=%s source=%s fault=UnitPlacements[0].UnitArchetypeId value=%s"),
         *Fixture->StableId.ToString(), *ValidMap->GetPathName(), *Fixture->UnitPlacements[0].UnitArchetypeId.ToString());
     return SaveDefinitionAsset(Fixture);
+}
+
+bool CreateStaticObstacleDetourFixture()
+{
+    using namespace PolitikaNavigationObstacleFixture;
+    const FString Filename = FPackageName::LongPackageNameToFilename(Level, FPackageName::GetMapPackageExtension());
+    const FString DefinitionPackage = TEXT("/Game/Politika/TestFixtures/Navigation/DA_StaticObstacleDetour");
+    const FString DefinitionFilename = FPackageName::LongPackageNameToFilename(DefinitionPackage, FPackageName::GetAssetPackageExtension());
+    // Never overwrite an existing authored fixture (including a partial run).
+    if (IFileManager::Get().FileExists(*Filename) || IFileManager::Get().FileExists(*DefinitionFilename))
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("Static obstacle fixture already exists; inspect/reuse it without regeneration."));
+        return false;
+    }
+    const auto* Source = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(TEXT("/Game/Maps/RTSVerticalSlice"));
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!Source || !World || !Cube) return false;
+    // Pending static-mesh compilation makes IsNavigationRelevant() false. A
+    // commandlet must finish it explicitly before exporting obstacle geometry.
+    FStaticMeshCompilingManager::Get().FinishAllCompilation();
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
+    // Like the Editor regression, modify the source world only in memory. The
+    // sole save below names the isolated destination, never the canonical file.
+    AStaticMeshActor* Wall = World->SpawnActor<AStaticMeshActor>(WallLocation, FRotator::ZeroRotator);
+    if (!Wall) return false;
+    Wall->Tags.Add(WallTag);
+    Wall->SetActorLabel(TEXT("Navigation Static Obstacle"));
+    Wall->GetStaticMeshComponent()->SetStaticMesh(Cube);
+    Wall->SetActorScale3D(WallScale);
+    Wall->GetStaticMeshComponent()->SetMobility(EComponentMobility::Static);
+    Wall->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
+    Wall->GetStaticMeshComponent()->SetCanEverAffectNavigation(true);
+    Wall->GetStaticMeshComponent()->ReregisterComponent();
+    ExcludeSolidInterior(Wall);
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (!Nav) return false;
+    // Match the existing PreparePrototypeFixture commandlet's collision setup;
+    // unlike Editor Automation, commandlets do not initialize it through ticks.
+    Nav->InitializeLevelCollisions();
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (auto* Bounds = Cast<ANavMeshBoundsVolume>(*It)) Nav->OnNavigationBoundsUpdated(Bounds);
+        UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(**It);
+    }
+    UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(*Wall);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FIXTURE_GEOMETRY relevant=%d static_system=%d world=%s"),
+        Wall->GetStaticMeshComponent()->IsNavigationRelevant() ? 1 : 0,
+        UNavigationSystemV1::IsNavigationSystemStatic() ? 1 : 0, *World->GetPathName());
+    Nav->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+    Nav->ReleaseInitialBuildingLock();
+    // A commandlet has no Editor tick to drain newly registered geometry.
+    // Build() synchronously builds tiles, but does not flush pending octree edits.
+    Nav->FlushPendingOperations();
+    if (!Wall->GetStaticMeshComponent()->IsNavigationRelevant()) return false;
+    Nav->Build();
+    int32 Wait = 0;
+    while (Nav->IsNavigationBuildInProgress() && Wait++ < 600) FPlatformProcess::Sleep(0.1f);
+    if (Nav->IsNavigationBuildInProgress()) return false;
+    FNavLocation BlockedProjection;
+    const bool bProjectsInsideWall = Nav->ProjectPointToNavigation(FVector(0, -600, 42),
+        BlockedProjection, FVector(5, 5, 80));
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FIXTURE_BUILD blocked_projection=%d location=%s"),
+        bProjectsInsideWall ? 1 : 0, *BlockedProjection.Location.ToString());
+    const ANavigationData* DebugData = Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
+    if (DebugData)
+    {
+        FNavLocation DebugStart, DebugGoal;
+        Nav->ProjectPointToNavigation(Start, DebugStart, FVector(80,80,180), DebugData);
+        Nav->ProjectPointToNavigation(Goal, DebugGoal, FVector(80,80,180), DebugData);
+        FPathFindingQuery DebugQuery(nullptr, *DebugData, DebugStart.Location, DebugGoal.Location);
+        const FPathFindingResult DebugPath = Nav->FindPathSync(DebugQuery);
+        UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FIXTURE_DEBUG data=%s result=%d"), *DebugData->GetPathName(), DebugPath.Result);
+        if (DebugPath.Path.IsValid()) for (const FNavPathPoint& Point : DebugPath.Path->GetPathPoints())
+            UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FIXTURE_DEBUG point=%s"), *Point.Location.ToString());
+    }
+    if (bProjectsInsideWall || !FEditorFileUtils::SaveMap(World, Filename)) return false;
+    World = UEditorLoadingAndSavingUtils::LoadMap(Filename);
+    if (!World || World->GetPackage()->GetName() != Level) return false;
+
+    UPackage* Package = CreatePackage(*DefinitionPackage);
+    auto* Fixture = DuplicateObject<UPolitikaPrototypeMapDefinition>(Source, Package, TEXT("DA_StaticObstacleDetour"));
+    if (!Fixture) return false;
+    Fixture->SetFlags(RF_Public | RF_Standalone);
+    FAssetRegistryModule::AssetCreated(Fixture);
+    Fixture->StableId = MapId;
+    Fixture->LevelAsset = FSoftObjectPath(Level);
+    Fixture->PlayerSlots[0].StartLocation = Start;
+    // Use the unchanged authored fireteam (210 cm/s), not a tiny test collision body.
+    FPolitikaPrototypeUnitPlacement Placement = Source->UnitPlacements[1];
+    Placement.Location = Start;
+    Fixture->UnitPlacements = {Placement};
+    Fixture->Objective.Location = FVector(0, 1200, 4);
+    Fixture->MarkPackageDirty();
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(Fixture, Catalog, Diagnostics);
+    UPolitikaPrototypeContentValidator::ValidateMapSpatial(World, Fixture, Diagnostics);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FIXTURE_AUTHORING diagnostics=%s"),
+        *UPolitikaPrototypeContentValidator::DiagnosticsToJson(Diagnostics));
+    return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
 }
 
 bool CreatePrototypeDefinitions()
@@ -277,6 +383,8 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
     }
     // Isolated fixture authoring must not load/save or regenerate canonical maps,
     // navigation, catalog entries, or the existing schema fixture.
+    if (FParse::Param(*Params, TEXT("CreateStaticObstacleDetourFixture")))
+        return CreateStaticObstacleDetourFixture() ? 0 : 13;
     if (FParse::Param(*Params, TEXT("CreateInvalidParticipantFactionFixture")))
         return CreateInvalidParticipantFactionFixture() ? 0 : 12;
     if (FParse::Param(*Params, TEXT("ValidateBlockedRoute")))

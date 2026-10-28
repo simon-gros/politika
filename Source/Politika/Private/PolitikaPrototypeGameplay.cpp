@@ -22,6 +22,12 @@
 #include "PolitikaGameInstance.h"
 #include "PolitikaPrototypeContent.h"
 #include "Rules.h"
+#include "NavigationSystem.h"
+#include "NavigationData.h"
+#include "HAL/PlatformTime.h"
+#if !UE_BUILD_SHIPPING
+#include "PolitikaNavigationObstacleFixture.h"
+#endif
 
 namespace
 {
@@ -81,6 +87,7 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
     Body->SetCollisionObjectType(ECC_WorldDynamic);
     Body->SetCollisionResponseToAllChannels(ECR_Ignore);
     Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+    Body->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
     Body->SetGenerateOverlapEvents(false);
     if (CubeMesh.Succeeded()) Body->SetStaticMesh(CubeMesh.Object);
     if (ShapeMaterial.Succeeded()) Body->SetMaterial(0, ShapeMaterial.Object);
@@ -125,12 +132,24 @@ void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const 
     SelectionIndicator->SetRelativeScale3D(FVector(2.1f / InMeshScale.X, 2.1f / InMeshScale.Y, 0.025f / InMeshScale.Z));
     ApplyPrototypeColor(SelectionIndicator, FLinearColor(0.96f, 0.83f, 0.30f));
     SetActorEnableCollision(true);
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationOrderSequence = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
 }
 
-void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination)
+void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination,
+    const FVector& ResolvedDestination, TArray<FVector>&& Route)
 {
     CurrentOrder = Kind;
     OrderDestination = Destination;
+    ResolvedNavigationDestination = ResolvedDestination;
+    NavigationWaypoints = MoveTemp(Route);
+    NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
     OrderTarget.Reset();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
@@ -139,6 +158,12 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
 
 void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
 {
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationOrderSequence = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
     CurrentOrder = EPolitikaPrototypeOrder::Attack;
     OrderTarget = Target;
 #if !UE_BUILD_SHIPPING
@@ -148,6 +173,12 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
 
 void APolitikaPrototypeUnit::SetGuardOrder()
 {
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationOrderSequence = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
     CurrentOrder = EPolitikaPrototypeOrder::Guard;
     OrderTarget.Reset();
 #if !UE_BUILD_SHIPPING
@@ -158,6 +189,12 @@ void APolitikaPrototypeUnit::SetGuardOrder()
 void APolitikaPrototypeUnit::StopOrder()
 {
     CurrentOrder = EPolitikaPrototypeOrder::Stop;
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationOrderSequence = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
     OrderTarget.Reset();
     OrderDestination = GetActorLocation();
 }
@@ -177,6 +214,7 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     if (!bCanAdvance) return politika::rules::OrderEndReason::None;
 
     FVector Destination = OrderDestination;
+    bool bTargetAlreadyInRange = false;
     if ((CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
         && OrderTarget.IsValid())
     {
@@ -184,18 +222,136 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
         const FVector ToTarget = Destination - GetActorLocation();
         if (ToTarget.Size2D() <= WeaponRange)
         {
-            Destination = GetActorLocation();
+            bTargetAlreadyInRange = true;
         }
         else
         {
-            Destination -= ToTarget.GetSafeNormal2D() * WeaponRange;
+            // Navigation projection may shift a goal by up to 80 cm and route
+            // consumption tolerates 2 cm. Aim inside the firing radius rather
+            // than repeatedly replanning to an endpoint just outside range.
+            Destination -= ToTarget.GetSafeNormal2D() * FMath::Max(0.0f, WeaponRange - 100.0f);
         }
     }
-    Destination.Z = GetActorLocation().Z;
-    const FVector Next = FMath::VInterpConstantTo(GetActorLocation(), Destination, DeltaSeconds, MoveSpeed);
-    FHitResult Hit;
+    if (bTargetAlreadyInRange) return politika::rules::OrderEndReason::None;
+    // Target-following orders resolve a route only when the current route is
+    // exhausted or the target has materially moved. Never turn them back into
+    // direct-line movement or query every 20 Hz step.
+    if (CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
+    {
+        NavigationReplanCooldownSeconds = FMath::Max(0.0f, NavigationReplanCooldownSeconds - DeltaSeconds);
+        const bool bTargetMoved = FlatDistance(ResolvedNavigationDestination, Destination) > 100.0f;
+        if (bTargetMoved)
+        {
+            NavigationWaypoints.Reset();
+            NavigationWaypointIndex = 0;
+            NavigationReplanAttempts = 0;
+            NavigationReplanCooldownSeconds = 0.0f;
+        }
+        if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
+        {
+            if (NavigationReplanCooldownSeconds > 0.0f) return politika::rules::OrderEndReason::None;
+            if (NavigationReplanAttempts >= 3)
+            {
+                StopOrder();
+                return politika::rules::OrderEndReason::NavigationFailed;
+            }
+            ++NavigationReplanAttempts;
+            NavigationReplanCooldownSeconds = 0.5f;
+            UNavigationSystemV1* NavSystem = GetWorld()
+                ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()) : nullptr;
+            ANavigationData* NavData = NavSystem
+                ? NavSystem->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+            FNavLocation ProjectedStart, ProjectedGoal;
+            const bool bProjected = NavSystem && NavData && !NavSystem->IsNavigationBuildInProgress()
+                && NavSystem->ProjectPointToNavigation(GetActorLocation(), ProjectedStart,
+                    FVector(80.0f, 80.0f, 180.0f), NavData)
+                && NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal,
+                    FVector(80.0f, 80.0f, 180.0f), NavData)
+                && FlatDistance(ProjectedGoal.Location, Destination) <= 80.0f;
+            bool bRouteReady = false;
+            if (bProjected)
+            {
+                FPathFindingQuery Query(this, *NavData, ProjectedStart.Location, ProjectedGoal.Location);
+                Query.SetAllowPartialPaths(false);
+                const double QueryStartSeconds = FPlatformTime::Seconds();
+                const FPathFindingResult Result = NavSystem->FindPathSync(Query);
+#if !UE_BUILD_SHIPPING
+                UE_LOG(LogPolitikaStartup, Display,
+                    TEXT("RTS_NAV_TARGET_QUERY generation=%llu unit=%llu sequence=%llu result=%u partial=%d points=%d duration_us=%.1f attempt=%u"),
+                    NavigationMatchGeneration, StableId, NavigationOrderSequence,
+                    static_cast<uint32>(Result.Result), Result.IsPartial() ? 1 : 0,
+                    Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0,
+                    (FPlatformTime::Seconds() - QueryStartSeconds) * 1000000.0, NavigationReplanAttempts);
+#endif
+                if (Result.Result == ENavigationQueryResult::Success && Result.Path.IsValid()
+                    && !Result.Path->IsPartial() && Result.Path->GetPathPoints().Num() > 0)
+                {
+                    NavigationWaypoints.Reset();
+                    for (const FNavPathPoint& Point : Result.Path->GetPathPoints())
+                    {
+                        if (!FMath::IsFinite(Point.Location.X) || !FMath::IsFinite(Point.Location.Y)
+                            || !FMath::IsFinite(Point.Location.Z)) { NavigationWaypoints.Reset(); break; }
+                        NavigationWaypoints.Add(Point.Location
+                            + FVector(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z));
+                    }
+                    NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+                    const FVector VerticalOffset(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z);
+                    ResolvedNavigationDestination = ProjectedGoal.Location + VerticalOffset;
+                    bRouteReady = !NavigationWaypoints.IsEmpty()
+                        && FVector::Dist(NavigationWaypoints.Last(), ResolvedNavigationDestination) <= 150.0f;
+                }
+            }
+            if (!bRouteReady)
+            {
+                StopOrder();
+                return politika::rules::OrderEndReason::NavigationFailed;
+            }
+        }
+    }
+
+    if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
+    {
+        StopOrder();
+        return politika::rules::OrderEndReason::NavigationFailed;
+    }
+
+    float RemainingDistance = MoveSpeed * DeltaSeconds;
+    int32 WaypointsConsumed = 0;
     const FVector PreviousLocation = GetActorLocation();
-    SetActorLocation(Next, true, &Hit, ETeleportType::None);
+    while (RemainingDistance > KINDA_SMALL_NUMBER && NavigationWaypointIndex < NavigationWaypoints.Num()
+        && WaypointsConsumed < 16)
+    {
+        const FVector Waypoint = NavigationWaypoints[NavigationWaypointIndex];
+        const FVector Current = GetActorLocation();
+        FVector Offset = Waypoint - Current;
+        const float SegmentDistance = Offset.Size();
+        if (!FMath::IsFinite(SegmentDistance))
+        {
+            StopOrder();
+            return politika::rules::OrderEndReason::NavigationFailed;
+        }
+        if (SegmentDistance <= 2.0f)
+        {
+            ++NavigationWaypointIndex;
+            ++WaypointsConsumed;
+            continue;
+        }
+        const float Travel = FMath::Min(RemainingDistance, SegmentDistance);
+        const FVector Next = Current + Offset.GetSafeNormal() * Travel;
+        FHitResult Hit;
+        SetActorLocation(Next, true, &Hit, ETeleportType::None);
+#if !UE_BUILD_SHIPPING
+        if (bTraceNavigationTraversal) NavigationStepTraversal.Add(GetActorLocation());
+#endif
+        if (Hit.bBlockingHit)
+        {
+            StopOrder();
+            return politika::rules::OrderEndReason::Obstructed;
+        }
+        RemainingDistance -= Travel;
+        ++WaypointsConsumed;
+        if (Travel + 2.0f >= SegmentDistance) ++NavigationWaypointIndex;
+    }
 #if !UE_BUILD_SHIPPING
     if (!bAcceptanceMovementLogged && FlatDistance(PreviousLocation, GetActorLocation()) > 1.0f)
     {
@@ -207,15 +363,13 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
         bAcceptanceMovementLogged = true;
     }
 #endif
-    if (Hit.bBlockingHit && CurrentOrder == EPolitikaPrototypeOrder::Move)
-    {
-        StopOrder();
-        return politika::rules::OrderEndReason::Obstructed;
-    }
-    if (CurrentOrder == EPolitikaPrototypeOrder::Move
-        && FlatDistance(GetActorLocation(), OrderDestination) < 18.0f)
+    if ((CurrentOrder == EPolitikaPrototypeOrder::Move || CurrentOrder == EPolitikaPrototypeOrder::AttackMove)
+        && NavigationWaypointIndex >= NavigationWaypoints.Num()
+        && FlatDistance(GetActorLocation(), ResolvedNavigationDestination) <= 18.0f)
     {
         CurrentOrder = EPolitikaPrototypeOrder::Idle;
+        NavigationWaypoints.Reset();
+        NavigationWaypointIndex = 0;
         return politika::rules::OrderEndReason::Arrived;
     }
     return politika::rules::OrderEndReason::None;
@@ -437,6 +591,9 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
         // let terminal handling, teardown, or recovery carry it into later work.
         PendingOrders.Reset();
         StepAccumulator = 0.0f;
+        if (Previous == politika::rules::MatchPhase::Active)
+            for (APolitikaPrototypeUnit* Unit : Units)
+                if (Unit && Unit->CanMove()) Unit->StopOrder();
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
     return true;
@@ -453,6 +610,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     {
         if (FixtureId == TEXT("InvalidMapSchema")) RequestedMapId = TEXT("map.test.invalid_schema");
         else if (FixtureId == TEXT("InvalidParticipantFaction")) RequestedMapId = TEXT("map.test.invalid_participant_faction");
+        else if (FixtureId == TEXT("StaticObstacleDetour")) RequestedMapId = TEXT("map.test.static_obstacle_detour");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -683,6 +841,13 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     if (!bContentReady || !Lifecycle.IsActive()) return;
+#if !UE_BUILD_SHIPPING
+    const bool bScheduled = NavigationAcceptance.bRunning && NavigationAcceptance.Schedule != 0;
+    const uint64 FirstStep = SimulationStepsExecuted;
+    if (bScheduled)
+        DeltaSeconds = PolitikaNavigationObstacleFixture::ScheduleDelta(
+            NavigationAcceptance.Schedule, NavigationAcceptance.OuterUpdates);
+#endif
     StepAccumulator += FMath::Min(DeltaSeconds, 0.25f);
     int32 Steps = 0;
     if (StepAccumulator >= SimulationStepSeconds) PublishedEvents.Reset();
@@ -693,17 +858,51 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
         RunSimulationStep(SimulationStepSeconds);
         StepAccumulator -= SimulationStepSeconds;
         ++Steps;
+#if !UE_BUILD_SHIPPING
+        // Stop capture exactly at arrival + 20, including multi-step updates.
+        // No additional scheduler: the ordinary Tick loop is the only driver.
+        if (bScheduled && !NavigationAcceptance.bRunning) break;
+#endif
     }
     if (!Lifecycle.IsActive()) StepAccumulator = 0.0f;
     if (Steps == 5 && StepAccumulator >= SimulationStepSeconds) StepAccumulator = 0.0f;
 #if !UE_BUILD_SHIPPING
+    if (bScheduled)
+    {
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("NAV_REPEATABILITY_UPDATE ordinal=%llu delta=%.9f clamped=%.9f steps=%d first=%llu last=%llu accumulator=%.9f cap_reached=%d"),
+            ++NavigationAcceptance.OuterUpdates, DeltaSeconds, FMath::Min(DeltaSeconds, 0.25f), Steps,
+            FirstStep, SimulationStepsExecuted, StepAccumulator, Steps == 5 ? 1 : 0);
+    }
     TickAcceptanceHarness(DeltaSeconds);
 #endif
 }
 
 #if !UE_BUILD_SHIPPING
+void APolitikaPrototypeMatch::SetAcceptanceMove(APolitikaPrototypeUnit* Unit, const FVector& Destination)
+{
+    TArray<FVector> Route;
+    FVector Resolved = Destination;
+    FString Failure;
+    if (ResolveNavigationRoute(Unit, Destination, Route, Resolved, Failure, 0))
+    {
+        Unit->SetMoveOrder(EPolitikaPrototypeOrder::Move, Destination, Resolved, MoveTemp(Route));
+        Unit->NavigationMatchGeneration = MatchGeneration;
+    }
+    else
+    {
+        Unit->StopOrder();
+        UE_LOG(LogPolitikaStartup, Error, TEXT("RTS_ACCEPTANCE_NAVIGATION_FAILED reason=%s"), *Failure);
+    }
+}
+
 void APolitikaPrototypeMatch::BeginAcceptanceHarness()
 {
+    if (MapDefinition && MapDefinition->StableId == TEXT("map.test.static_obstacle_detour"))
+    {
+        BeginNavigationAcceptance();
+        return;
+    }
     FParse::Value(FCommandLine::Get(), TEXT("RTSAcceptance="), AcceptanceMode);
     AcceptanceMode = AcceptanceMode.ToLower();
     if (AcceptanceMode != TEXT("capturepause") && AcceptanceMode != TEXT("attackerdeath")
@@ -724,7 +923,7 @@ void APolitikaPrototypeMatch::BeginAcceptanceHarness()
         // condition and shorten its configured capture duration. Completion still runs
         // through UpdateCapture, the authoritative coordinator and normal event publish.
         Capturer->SetActorLocation(Objective->GetActorLocation());
-        Capturer->SetMoveOrder(EPolitikaPrototypeOrder::Stop, Capturer->GetActorLocation());
+        Capturer->StopOrder();
         Opponent->SetActorLocation(FVector(1500.0f, 1500.0f, UnitGroundZ));
         Objective->SetAcceptanceCaptureDuration(0.1f);
         UE_LOG(LogTemp, Display, TEXT("RTS_ACCEPTANCE_OBJECTIVE_COMPLETION armed eligible_player=%u uncontested=1 duration=0.1"), LocalRuntimePlayerId);
@@ -741,7 +940,7 @@ void APolitikaPrototypeMatch::BeginAcceptanceHarness()
             AcceptancePhase = EAcceptancePhase::Done;
             return;
         }
-        Capturer->SetMoveOrder(EPolitikaPrototypeOrder::Move, Objective->GetActorLocation());
+        SetAcceptanceMove(Capturer, Objective->GetActorLocation());
         AcceptancePhase = EAcceptancePhase::CaptureApproach;
         LastCommandFeedback = TEXT("Acceptance fixture: moving into the control point.");
     }
@@ -849,7 +1048,7 @@ void APolitikaPrototypeMatch::TickAcceptanceHarness(float DeltaSeconds)
         if (AcceptanceElapsed >= 1.5f)
         {
             AcceptanceProgressAtPause = Objective->GetProgress();
-            Capturer->SetMoveOrder(EPolitikaPrototypeOrder::Move, FVector(-500.0f, -400.0f, UnitGroundZ));
+            SetAcceptanceMove(Capturer, FVector(-500.0f, -400.0f, UnitGroundZ));
             AcceptanceElapsed = 0.0f;
             AcceptancePhase = EAcceptancePhase::CaptureExit;
             LastCommandFeedback = TEXT("Acceptance fixture: moving the capturer out of the area.");
@@ -1096,6 +1295,9 @@ static FString DescribeRejection(politika::rules::OrderRejection Rejection)
 void APolitikaPrototypeMatch::PublishGameplayEvent(politika::rules::GameplayEvent&& Event)
 {
 #if !UE_BUILD_SHIPPING
+    ObserveNavigationAcceptanceEvent(Event);
+#endif
+#if !UE_BUILD_SHIPPING
     using namespace politika::rules;
     if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Event))
     {
@@ -1146,6 +1348,107 @@ void APolitikaPrototypeMatch::PublishGameplayEvents()
     PendingGameplayEvents.Reset();
 }
 
+bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Unit, const FVector& Destination,
+    TArray<FVector>& OutWaypoints, FVector& OutResolvedDestination, FString& OutFailure,
+    uint64 OrderSequence) const
+{
+    OutWaypoints.Reset();
+    OutFailure = TEXT("NavigationUnavailable");
+    if (!Unit || !GetWorld()) return false;
+    UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!NavSystem) return false;
+    if (NavSystem->IsNavigationBuildInProgress())
+    {
+        OutFailure = TEXT("NavigationBuilding");
+        return false;
+    }
+    const ANavigationData* NavData = NavSystem->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
+    if (!NavData) return false;
+    FNavLocation ProjectedStart, ProjectedGoal;
+    const FVector QueryExtent(80.0f, 80.0f, 180.0f);
+    if (!NavSystem->ProjectPointToNavigation(Unit->GetActorLocation(), ProjectedStart, QueryExtent, NavData))
+    {
+        OutFailure = TEXT("OriginNotNavigable");
+        return false;
+    }
+    if (!NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal, QueryExtent, NavData)
+        || FVector::Dist(ProjectedGoal.Location, Destination) > 150.0f)
+    {
+        OutFailure = TEXT("DestinationNotNavigable");
+        return false;
+    }
+    FPathFindingQuery Query(Unit, *NavData, ProjectedStart.Location, ProjectedGoal.Location);
+    Query.SetAllowPartialPaths(false);
+    Query.SetRequireNavigableEndLocation(true);
+    const double QueryStartSeconds = FPlatformTime::Seconds();
+    const FPathFindingResult Result = NavSystem->FindPathSync(Query);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_NAV_QUERY generation=%llu unit=%llu sequence=%llu result=%u partial=%d points=%d duration_us=%.1f"),
+        MatchGeneration, Unit->GetStableId(), OrderSequence, static_cast<uint32>(Result.Result),
+        Result.IsPartial() ? 1 : 0, Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0,
+        (FPlatformTime::Seconds() - QueryStartSeconds) * 1000000.0);
+#endif
+    if (Result.Result != ENavigationQueryResult::Success || !Result.Path.IsValid())
+    {
+        OutFailure = TEXT("NoCompletePath");
+        return false;
+    }
+    if (Result.Path->IsPartial())
+    {
+        OutFailure = TEXT("PartialPath");
+        return false;
+    }
+    const TArray<FNavPathPoint>& Points = Result.Path->GetPathPoints();
+    if (Points.IsEmpty())
+    {
+        OutFailure = TEXT("EmptyPath");
+        return false;
+    }
+    OutWaypoints.Reserve(Points.Num());
+    for (const FNavPathPoint& Point : Points)
+    {
+        if (!FMath::IsFinite(Point.Location.X) || !FMath::IsFinite(Point.Location.Y)
+            || !FMath::IsFinite(Point.Location.Z))
+        {
+            OutWaypoints.Reset();
+            OutFailure = TEXT("InvalidWaypoint");
+            return false;
+        }
+        OutWaypoints.Add(Point.Location + FVector(0.0, 0.0,
+            Unit->GetActorLocation().Z - ProjectedStart.Location.Z));
+    }
+    if (FVector::Dist(OutWaypoints.Last(), ProjectedGoal.Location) > 150.0f)
+    {
+        OutWaypoints.Reset();
+        OutFailure = TEXT("PathEndMismatch");
+        return false;
+    }
+    OutResolvedDestination = ProjectedGoal.Location
+        + FVector(0.0, 0.0, Unit->GetActorLocation().Z - ProjectedStart.Location.Z);
+    OutFailure.Reset();
+#if !UE_BUILD_SHIPPING
+    if (NavigationAcceptance.bRunning)
+    {
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("NAV_ACCEPTANCE_QUERY generation=%llu unit=%llu sequence=%llu profile=%s nav=%s result=%u partial=%d projected_start=%.6f,%.6f,%.6f projected_goal=%.6f,%.6f,%.6f resolved=%.6f,%.6f,%.6f points=%d"),
+            MatchGeneration, Unit->GetStableId(), OrderSequence, *MapDefinition->MovementProfileId.ToString(),
+            *NavData->GetPathName(), static_cast<uint32>(Result.Result), Result.IsPartial() ? 1 : 0,
+            ProjectedStart.Location.X, ProjectedStart.Location.Y, ProjectedStart.Location.Z,
+            ProjectedGoal.Location.X, ProjectedGoal.Location.Y, ProjectedGoal.Location.Z,
+            OutResolvedDestination.X, OutResolvedDestination.Y, OutResolvedDestination.Z, OutWaypoints.Num());
+        for (int32 Index = 0; Index < OutWaypoints.Num(); ++Index)
+            UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_ACCEPTANCE_POINT index=%d position=%.6f,%.6f,%.6f sequence=%llu"),
+                Index, OutWaypoints[Index].X, OutWaypoints[Index].Y, OutWaypoints[Index].Z, OrderSequence);
+    }
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_NAVIGATION_READY generation=%llu unit=%llu points=%d requested=(%.1f,%.1f,%.1f) resolved=(%.1f,%.1f,%.1f)"),
+        MatchGeneration, Unit->GetStableId(), OutWaypoints.Num(), Destination.X, Destination.Y, Destination.Z,
+        OutResolvedDestination.X, OutResolvedDestination.Y, OutResolvedDestination.Z);
+#endif
+    return true;
+}
+
 void APolitikaPrototypeMatch::AdmitPendingOrders()
 {
     for (const FPendingOrder& Pending : PendingOrders)
@@ -1168,12 +1471,45 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
             continue;
         }
         const EPolitikaPrototypeOrder PreviousOrder = Unit->GetCurrentOrder();
+        bool bNavigationReady = true;
+        FString NavigationFailure;
+        TArray<FVector> Route;
+        FVector ResolvedDestination = Pending.Destination;
+        if (Pending.Kind == EPolitikaPrototypeOrder::Move || Pending.Kind == EPolitikaPrototypeOrder::AttackMove)
+        {
+            bNavigationReady = ResolveNavigationRoute(Unit, Pending.Destination, Route,
+                ResolvedDestination, NavigationFailure, Pending.Request.sequence);
+        }
         switch (Pending.Kind)
         {
-            case EPolitikaPrototypeOrder::Move: Unit->SetMoveOrder(Pending.Kind, Pending.Destination); LastCommandFeedback = TEXT("Move order accepted."); break;
-            case EPolitikaPrototypeOrder::AttackMove: Unit->SetMoveOrder(Pending.Kind, Pending.Destination); LastCommandFeedback = TEXT("Attack-move order accepted."); break;
-            case EPolitikaPrototypeOrder::Attack: Unit->SetAttackOrder(Pending.Target.Get()); LastCommandFeedback = TEXT("Attack order accepted."); break;
-            case EPolitikaPrototypeOrder::Guard: Unit->SetGuardOrder(); LastCommandFeedback = TEXT("Guard order accepted."); break;
+            case EPolitikaPrototypeOrder::Move:
+            case EPolitikaPrototypeOrder::AttackMove:
+                if (bNavigationReady)
+                {
+                    Unit->SetMoveOrder(Pending.Kind, Pending.Destination, ResolvedDestination, MoveTemp(Route));
+                    Unit->NavigationMatchGeneration = MatchGeneration;
+                    Unit->NavigationOrderSequence = Pending.Request.sequence;
+                    LastCommandFeedback = Pending.Kind == EPolitikaPrototypeOrder::Move
+                        ? TEXT("Move order accepted.") : TEXT("Attack-move order accepted.");
+                }
+                else
+                {
+                    Unit->StopOrder();
+                    LastCommandFeedback = FString::Printf(TEXT("Movement route unavailable: %s."), *NavigationFailure);
+                }
+                break;
+            case EPolitikaPrototypeOrder::Attack:
+                Unit->SetAttackOrder(Pending.Target.Get());
+                Unit->NavigationMatchGeneration = MatchGeneration;
+                Unit->NavigationOrderSequence = Pending.Request.sequence;
+                LastCommandFeedback = TEXT("Attack order accepted.");
+                break;
+            case EPolitikaPrototypeOrder::Guard:
+                Unit->SetGuardOrder();
+                Unit->NavigationMatchGeneration = MatchGeneration;
+                Unit->NavigationOrderSequence = Pending.Request.sequence;
+                LastCommandFeedback = TEXT("Guard order accepted.");
+                break;
             case EPolitikaPrototypeOrder::Stop: Unit->StopOrder(); LastCommandFeedback = TEXT("Unit stopped."); break;
             case EPolitikaPrototypeOrder::Idle: break;
         }
@@ -1181,6 +1517,17 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
             SimulationStepsExecuted + 1, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), true,
             politika::rules::OrderRejection::None});
+        if (!bNavigationReady)
+        {
+            UE_LOG(LogPolitikaStartup, Warning,
+                TEXT("RTS_NAVIGATION_FAILED generation=%llu unit=%llu sequence=%llu reason=%s x=%.1f y=%.1f"),
+                MatchGeneration, Unit->GetStableId(), Pending.Request.sequence, *NavigationFailure,
+                Pending.Destination.X, Pending.Destination.Y);
+            QueueGameplayEvent(politika::rules::OrderChangedEvent{
+                SimulationStepsExecuted + 1, Unit->GetStableId(), ToExecutionOrder(PreviousOrder),
+                ToExecutionOrder(Unit->GetCurrentOrder()), politika::rules::OrderEndReason::NavigationFailed});
+            continue;
+        }
         const bool bOrderTransitioned = PreviousOrder != Unit->GetCurrentOrder()
             || (PreviousOrder != EPolitikaPrototypeOrder::Idle && Pending.Kind != EPolitikaPrototypeOrder::Stop);
         if (bOrderTransitioned)
@@ -1210,6 +1557,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 {
     ++SimulationStepsExecuted;
 #if !UE_BUILD_SHIPPING
+    BeforeNavigationAcceptanceStep();
     if (SimulationStepsExecuted == 1)
         UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_SIMULATION_STEP first=1"));
 #endif
@@ -1218,8 +1566,29 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
     for (APolitikaPrototypeUnit* Unit : Units)
     {
         if (!Unit) continue;
+        if ((Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Move
+            || Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::AttackMove)
+            && Unit->NavigationMatchGeneration != MatchGeneration)
+        {
+            const EPolitikaPrototypeOrder PreviousOrder = Unit->GetCurrentOrder();
+            Unit->StopOrder();
+            QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted + 1,
+                Unit->GetStableId(), ToExecutionOrder(PreviousOrder), ToExecutionOrder(Unit->GetCurrentOrder()),
+                politika::rules::OrderEndReason::NavigationFailed});
+            continue;
+        }
         const EPolitikaPrototypeOrder PreviousOrder = Unit->GetCurrentOrder();
         const politika::rules::OrderEndReason EndReason = Unit->SimulateMovement(DeltaSeconds);
+#if !UE_BUILD_SHIPPING
+        if (NavigationAcceptance.bRunning && Unit == NavigationAcceptance.Unit.Get()
+            && EndReason != politika::rules::OrderEndReason::None)
+        {
+            if (EndReason == politika::rules::OrderEndReason::Arrived) ++NavigationAcceptance.Terminations;
+            else ++NavigationAcceptance.Failures;
+            UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_ACCEPTANCE_TERMINATION step=%llu sequence=%llu reason=%u"),
+                SimulationStepsExecuted, Unit->NavigationOrderSequence, static_cast<uint32>(EndReason));
+        }
+#endif
         if (EndReason != politika::rules::OrderEndReason::None)
             QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted,
                 Unit->GetStableId(), ToExecutionOrder(PreviousOrder), ToExecutionOrder(Unit->GetCurrentOrder()), EndReason});
@@ -1299,6 +1668,12 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
     // Publication is the final simulation phase; observers get a const snapshot
     // until the next authoritative step, with step IDs to avoid duplicate handling.
     PublishGameplayEvents();
+#if !UE_BUILD_SHIPPING
+    AfterNavigationAcceptanceStep(DeltaSeconds);
+#endif
+#if WITH_DEV_AUTOMATION_TESTS
+    if (NavigationStepObserver) NavigationStepObserver();
+#endif
 }
 
 APolitikaPrototypeCameraPawn::APolitikaPrototypeCameraPawn()

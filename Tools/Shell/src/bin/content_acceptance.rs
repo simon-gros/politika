@@ -104,10 +104,24 @@ fn main() -> Result<(), String> {
     )
     .canonicalize()
     .map_err(|e| e.to_string())?;
-    let fixture = env::args().nth(2).unwrap_or_else(|| "InvalidMapSchema".into());
+    let fixture = env::args()
+        .nth(2)
+        .unwrap_or_else(|| "InvalidMapSchema".into());
     let (fixture_map, diagnostic, property, values, asset_name) = match fixture.as_str() {
-        "InvalidMapSchema" => ("map.test.invalid_schema", "CONTENT.SCHEMA.UNSUPPORTED", "SchemaVersion", "expected=1|actual=2", "DA_InvalidMapSchema"),
-        "InvalidParticipantFaction" => ("map.test.invalid_participant_faction", "CONTENT.FACTION.MISMATCH", "UnitPlacements[0].UnitArchetypeId", "expected=faction.player|actual=faction.opposition", "DA_InvalidParticipantFaction"),
+        "InvalidMapSchema" => (
+            "map.test.invalid_schema",
+            "CONTENT.SCHEMA.UNSUPPORTED",
+            "SchemaVersion",
+            "expected=1|actual=2",
+            "DA_InvalidMapSchema",
+        ),
+        "InvalidParticipantFaction" => (
+            "map.test.invalid_participant_faction",
+            "CONTENT.FACTION.MISMATCH",
+            "UnitPlacements[0].UnitArchetypeId",
+            "expected=faction.player|actual=faction.opposition",
+            "DA_InvalidParticipantFaction",
+        ),
         other => return Err(format!("unknown acceptance fixture `{other}`")),
     };
     let package = binary
@@ -117,7 +131,9 @@ fn main() -> Result<(), String> {
         .and_then(Path::parent)
         .ok_or("could not determine package root from Binaries/Linux/ executable")?;
     let manifest = read(&package.join("Manifest_UFSFiles_Linux.txt"))?;
-    if !manifest.contains(&format!("Politika/Content/Politika/TestFixtures/{asset_name}.uasset")) {
+    if !manifest.contains(&format!(
+        "Politika/Content/Politika/TestFixtures/{asset_name}.uasset"
+    )) {
         return Err("BLOCKED: cooked fixture is absent from this package manifest".into());
     }
     let epoch = SystemTime::now()
@@ -136,10 +152,21 @@ fn main() -> Result<(), String> {
     let selector_argument = format!("-PolitikaTestFixture={fixture}");
     let invalid_args = ["/Game/Maps/RTSVerticalSlice", selector_argument.as_str()];
     let diagnostic_marker = format!("{diagnostic}|error|{fixture_map}|{property}|");
-    let rejection_marker = format!("MATCH_ADMISSION_REJECTED fixture={fixture_map} units=0 objective=0 simulation_started=0");
-    let state_marker = format!("MATCH_ADMISSION_STATE map={fixture_map} participants=0 local_player=0 unaligned_system=0 units=0 objectives=0 selection=0 pending_commands=0 accepted_sequences=0 simulation_steps=0 content_ready=0 terminal_result=0");
+    let rejection_marker = format!(
+        "MATCH_ADMISSION_REJECTED fixture={fixture_map} units=0 objective=0 simulation_started=0"
+    );
+    let state_marker = format!(
+        "MATCH_ADMISSION_STATE map={fixture_map} participants=0 local_player=0 unaligned_system=0 units=0 objectives=0 selection=0 pending_commands=0 accepted_sequences=0 simulation_steps=0 content_ready=0 terminal_result=0"
+    );
     let recovery_marker = format!("MATCH_ADMISSION_RECOVERY map={fixture_map} route=main_menu");
-    let negative_markers = [diagnostic_marker.as_str(), values, rejection_marker.as_str(), state_marker.as_str(), recovery_marker.as_str(), "LoadMap: /Game/Maps/MainMenu"];
+    let negative_markers = [
+        diagnostic_marker.as_str(),
+        values,
+        rejection_marker.as_str(),
+        state_marker.as_str(),
+        recovery_marker.as_str(),
+        "LoadMap: /Game/Maps/MainMenu",
+    ];
     let first = launch_live(
         &binary,
         &evidence,
@@ -259,7 +286,9 @@ fn main() -> Result<(), String> {
     let first_authoritative = authoritative_lines(&first_snapshot);
     let repeated_authoritative = authoritative_lines(&second_snapshot);
     if first_authoritative != repeated_authoritative {
-        return Err("repeated canonical map initialization changed its authoritative snapshot".into());
+        return Err(
+            "repeated canonical map initialization changed its authoritative snapshot".into(),
+        );
     }
     let unit_lines: Vec<&String> = first_authoritative
         .iter()
@@ -271,12 +300,17 @@ fn main() -> Result<(), String> {
         .count();
     let entity_ids: BTreeSet<&str> = unit_lines
         .iter()
-        .filter_map(|line| line.split_whitespace().find_map(|field| field.strip_prefix("entity=")))
+        .filter_map(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("entity="))
+        })
         .collect();
     if unit_lines.len() != 3 || objective_lines != 1 || entity_ids.len() != 3 {
         return Err(format!(
             "authoritative snapshot has unexpected counts/duplicates: units={}, objectives={}, unique_entities={}",
-            unit_lines.len(), objective_lines, entity_ids.len()
+            unit_lines.len(),
+            objective_lines,
+            entity_ids.len()
         ));
     }
     results.push((

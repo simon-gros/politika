@@ -138,9 +138,10 @@ bool FPolitikaMatchParticipantsAutomationTest::RunTest(const FString& Parameters
     // PlayerController interaction harness separately exercises the real input route.
     Match->SubmitCommand(HumanId, LocalUnit, nullptr, MoveOrder{{100, 100}});
     Match->Tick(0.05f);
-    TestEqual(TEXT("Trusted admitted local order reaches authoritative simulation"), LocalUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Move);
+    TestEqual(TEXT("Trusted local Move still requires a complete NavMesh route"), LocalUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Stop);
 
     const int32 InitialOpponentHealth = OpponentUnit->GetHealth();
+    const EPolitikaPrototypeOrder InitialOpponentOrder = OpponentUnit->GetCurrentOrder();
     TestFalse(TEXT("Unbound input source cannot use the local-human binding"),
         Match->SubmitLocalControllerCommand(nullptr, OpponentUnit, nullptr, MoveOrder{{100, 100}}));
     TestFalse(TEXT("Unbound input source cannot claim opposing authority"),
@@ -154,9 +155,9 @@ bool FPolitikaMatchParticipantsAutomationTest::RunTest(const FString& Parameters
     TestEqual(TEXT("Opponent unit is not selected by the local-player selection store"),
         Match->GetSelectedUnitForPlayer(OpponentId), static_cast<APolitikaPrototypeUnit*>(nullptr));
     TestEqual(TEXT("Rejected authority requests do not change opponent health"), OpponentUnit->GetHealth(), InitialOpponentHealth);
-    TestEqual(TEXT("Rejected authority requests do not apply an order"), OpponentUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Idle);
+    TestEqual(TEXT("Rejected authority requests do not change the opposing unit order"), OpponentUnit->GetCurrentOrder(), InitialOpponentOrder);
     TestEqual(TEXT("Valid order was consumed and rejected authority requests leave no runnable commands"), Match->PendingOrders.Num(), 0);
-    TestEqual(TEXT("Rejected spoof attempts do not replace the local positive-control order"), LocalUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Move);
+    TestEqual(TEXT("Rejected spoof attempts do not resume the unavailable local route"), LocalUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Stop);
 
     Match->BeginReturnToMenu();
     TestEqual(TEXT("Return retires runtime participants"), Match->RuntimeParticipants.Num(), 0);

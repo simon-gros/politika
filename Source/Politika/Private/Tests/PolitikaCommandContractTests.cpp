@@ -316,25 +316,27 @@ bool FPolitikaCommandCoordinatorAcceptanceAutomationTest::RunTest(const FString&
     Match->SubmitCommand(1, Issuer, Friendly, AttackOrder{303});
     Match->AdmitPendingOrders();
     TestEqual(TEXT("Mixed request queue is fully consumed"), Match->PendingOrders.Num(), 0);
-    TestEqual(TEXT("Later rejected request does not cancel earlier accepted Move"),
-        Issuer->GetCurrentOrder(), EPolitikaPrototypeOrder::Move);
-    TestTrue(TEXT("Earlier Move destination is the active execution state"),
-        Issuer->OrderDestination.Equals(FVector(-700, -750, 42), 0.001f));
-    TestEqual(TEXT("Mixed queue publishes command outcomes and one order transition"), Match->PendingGameplayEvents.Num(), 3);
+    TestEqual(TEXT("Accepted command without NavMesh fails closed instead of executing direct movement"),
+        Issuer->GetCurrentOrder(), EPolitikaPrototypeOrder::Stop);
+    TestTrue(TEXT("Failed route does not move the unit to its requested destination"),
+        !Issuer->GetActorLocation().Equals(FVector(-700, -750, 42), 0.001f));
+    TestEqual(TEXT("Mixed queue publishes acceptance, navigation termination, and rejection"), Match->PendingGameplayEvents.Num(), 3);
     if (Match->PendingGameplayEvents.Num() == 3)
     {
         const CommandOutcomeEvent* First = std::get_if<CommandOutcomeEvent>(&Match->PendingGameplayEvents[0]);
         const OrderChangedEvent* Transition = std::get_if<OrderChangedEvent>(&Match->PendingGameplayEvents[1]);
         const CommandOutcomeEvent* Second = std::get_if<CommandOutcomeEvent>(&Match->PendingGameplayEvents[2]);
         TestNotNull(TEXT("First queued result is typed"), First);
-        TestNotNull(TEXT("Accepted Move emits an order transition"), Transition);
+        TestNotNull(TEXT("Unusable route emits an explicit order termination"), Transition);
         TestNotNull(TEXT("Second queued result is typed"), Second);
         if (First && Second)
         {
-            TestTrue(TEXT("First Move is admitted"), First->accepted);
+            TestTrue(TEXT("Typed Move command passes existing authority admission"), First->accepted);
             TestFalse(TEXT("Second friendly attack is rejected"), Second->accepted);
             TestTrue(TEXT("Processing preserves submission sequence"), First->sequence < Second->sequence);
             TestEqual(TEXT("Second request reports friendly target"), Second->rejection, OrderRejection::FriendlyTarget);
+            TestEqual(TEXT("The route failure has its distinct termination reason"),
+                Transition->previous_end, OrderEndReason::NavigationFailed);
         }
     }
 
@@ -438,7 +440,7 @@ bool FPolitikaCommandRepeatabilityAutomationTest::RunTest(const FString& Paramet
         Target->Configure(402, 2, FText::FromString(TEXT("Target")), 100, 0, 200, 0, 0.25f,
             true, nullptr, FVector::OneVector, FLinearColor::Red);
         Objective->CaptureRadius = 75;
-        Objective->CaptureDuration = 1;
+        Objective->CaptureDuration = 1000;
         Objective->LocalRuntimePlayerId = 1;
         Objective->SetActorLocation(FVector(100, 100, 42));
         Match->OnGameplayEventPublished().AddLambda([&Result](const GameplayEvent& Event)
@@ -534,7 +536,9 @@ bool FPolitikaCommandRepeatabilityAutomationTest::RunTest(const FString& Paramet
     TestEqual(TEXT("Over-cap schedule entity survival count agrees"), Fine.EntityCount, OverCap.EntityCount);
     TestTrue(TEXT("Published event signatures agree across render schedules"), Fine.EventSignatures == Medium.EventSignatures
         && Fine.EventSignatures == Coarse.EventSignatures && Fine.EventSignatures == OverCap.EventSignatures);
-    TestTrue(TEXT("Script applied damage and Stop through the real coordinator"), Fine.TargetHealth < 100
+    TestEqual(TEXT("No NavMesh means the scripted Attack cannot bypass blockers"), Fine.TargetHealth, 100);
+    TestTrue(TEXT("The no-navigation result is stable and Stop runs through the real coordinator"),
+        Fine.IssuerLocation.Equals(FVector(100, 100, 42), 0.1f)
         && Fine.FinalOrder == EPolitikaPrototypeOrder::Stop);
     return true;
 }

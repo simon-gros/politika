@@ -44,7 +44,7 @@ bool FPolitikaMatchLifecycleAutomationTest::RunTest(const FString& Parameters)
         Match->SubmitMove(1, Unit, FVector(500, 0, 42));
         Match->Tick(0.05f);
         TestEqual(TEXT("Active coordinator executes one fixed 20 Hz step"), Match->SimulationStepsExecuted, uint64(1));
-        TestEqual(TEXT("Active positive control applies Move order"), Unit->GetCurrentOrder(), EPolitikaPrototypeOrder::Move);
+        TestEqual(TEXT("Active Move with no NavMesh fails closed"), Unit->GetCurrentOrder(), EPolitikaPrototypeOrder::Stop);
     }
     Match->SubmitMove(1, Unit, FVector(-500, 0, 42));
     TestEqual(TEXT("Active request awaits authoritative admission"), Match->PendingOrders.Num(), 1);
@@ -63,7 +63,7 @@ bool FPolitikaMatchLifecycleAutomationTest::RunTest(const FString& Parameters)
         && std::get<CommandOutcomeEvent>(Match->PublishedEvents.Last()).rejection == OrderRejection::MatchInactive);
     Match->Tick(1.0f);
     TestEqual(TEXT("Non-active request is never executed"), Match->SimulationStepsExecuted, StepsAtTerminal);
-    TestTrue(TEXT("Non-active request does not alter unit order"), Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Move);
+    TestTrue(TEXT("Leaving Active cannot resume unavailable movement"), Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop);
     World->DestroyWorld(false);
 
     UWorld* ObjectiveWorld = UWorld::CreateWorld(EWorldType::Game, false,

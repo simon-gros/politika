@@ -11,6 +11,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[path = "../navigation_obstacle.rs"]
+mod navigation_obstacle;
+
 fn output(command: &mut Command) -> Result<String, String> {
     let result = command
         .output()
@@ -273,6 +276,15 @@ fn wait_for(
 }
 
 fn main() -> Result<(), String> {
+    if env::args().nth(2).as_deref() == Some("--navigation-interruption") {
+        return navigation_obstacle::run_interruption();
+    }
+    if env::args().nth(2).as_deref() == Some("--navigation-repeatability") {
+        return navigation_obstacle::run_repeatability();
+    }
+    if env::args().nth(2).as_deref() == Some("--static-obstacle") {
+        return navigation_obstacle::run();
+    }
     if env::var_os("DISPLAY").is_none() {
         return Err(
             "BLOCKED: run this rendered acceptance tool under xvfb-run (DISPLAY is unset)".into(),

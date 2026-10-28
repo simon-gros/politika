@@ -58,7 +58,8 @@ public:
         float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
         bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
         FName InFactionId = NAME_None, bool bInUseAuthoredMeshMaterials = false);
-    void SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination);
+    void SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination,
+        const FVector& ResolvedDestination, TArray<FVector>&& Route);
     void SetAttackOrder(APolitikaPrototypeUnit* Target);
     void SetGuardOrder();
     void StopOrder();
@@ -89,6 +90,15 @@ private:
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaNavigationUnavailableAutomationTest;
+    friend class FPolitikaNavigationObstacleAutomationTest;
+    friend class FPolitikaNavigationScheduleAutomationTest;
+    friend class FPolitikaNavigationInterruptionAutomationTest;
+#endif
+    friend class APolitikaPrototypeMatch;
+#if !UE_BUILD_SHIPPING
+    bool bTraceNavigationTraversal = false;
+    TArray<FVector> NavigationStepTraversal;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionIndicator;
@@ -107,6 +117,15 @@ private:
     UPROPERTY() bool bAttackable = false;
     UPROPERTY() EPolitikaPrototypeOrder CurrentOrder = EPolitikaPrototypeOrder::Idle;
     UPROPERTY() FVector OrderDestination = FVector::ZeroVector;
+    // Route state belongs to this unit's current order and is advanced only by
+    // APolitikaPrototypeMatch's authoritative fixed-step movement phase.
+    UPROPERTY(Transient) TArray<FVector> NavigationWaypoints;
+    UPROPERTY(Transient) int32 NavigationWaypointIndex = 0;
+    UPROPERTY(Transient) FVector ResolvedNavigationDestination = FVector::ZeroVector;
+    UPROPERTY(Transient) uint64 NavigationMatchGeneration = 0;
+    UPROPERTY(Transient) uint64 NavigationOrderSequence = 0;
+    UPROPERTY(Transient) float NavigationReplanCooldownSeconds = 0.0f;
+    UPROPERTY(Transient) uint8 NavigationReplanAttempts = 0;
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> OrderTarget;
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;
@@ -135,6 +154,10 @@ private:
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaNavigationUnavailableAutomationTest;
+    friend class FPolitikaNavigationObstacleAutomationTest;
+    friend class FPolitikaNavigationScheduleAutomationTest;
+    friend class FPolitikaNavigationInterruptionAutomationTest;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Marker;
     UPROPERTY() float CaptureRadius = 0.0f;
@@ -182,7 +205,12 @@ private:
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaNavigationUnavailableAutomationTest;
+    friend class FPolitikaNavigationObstacleAutomationTest;
+    friend class FPolitikaNavigationScheduleAutomationTest;
+    friend class FPolitikaNavigationInterruptionAutomationTest;
     friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
+    TFunction<void()> NavigationStepObserver;
 #endif
     struct FPendingOrder
     {
@@ -231,12 +259,51 @@ private:
     bool TransitionLifecycle(politika::rules::MatchPhase NextPhase);
     void RecoverToShellAfterAdmissionFailure(FName MapId);
     void AdmitPendingOrders();
+    bool ResolveNavigationRoute(APolitikaPrototypeUnit* Unit, const FVector& Destination,
+        TArray<FVector>& OutWaypoints, FVector& OutResolvedDestination, FString& OutFailure,
+        uint64 OrderSequence = 0) const;
     void RunSimulationStep(float DeltaSeconds);
     void QueueGameplayEvent(politika::rules::GameplayEvent&& Event);
     void PublishGameplayEvent(politika::rules::GameplayEvent&& Event);
     void PublishGameplayEvents();
     politika::rules::OrderResult ValidateOrder(const FPendingOrder& Pending) const;
 #if !UE_BUILD_SHIPPING
+    struct FNavigationAcceptance
+    {
+        bool bRunning = false;
+        int32 Schedule = 0;
+        uint64 OuterUpdates = 0;
+        bool bRouteRecorded = false;
+        bool bValid = true;
+        TWeakObjectPtr<APolitikaPrototypeUnit> Unit;
+        TWeakObjectPtr<AActor> Wall;
+        FVector Previous = FVector::ZeroVector;
+        FVector Extent = FVector::ZeroVector;
+        float CollisionRadius = 0.0f;
+        FVector Resolved = FVector::ZeroVector;
+        FBox Blocker;
+        TArray<FVector> Route;
+        uint64 Sequence = 0;
+        FString Interruption;
+        uint64 FollowupSequence = 0;
+        uint64 DuplicateSequence = 0;
+        FVector BoundaryPosition = FVector::ZeroVector;
+        int32 Stopped = 0;
+        int32 Replaced = 0;
+        int32 Rejected = 0;
+        uint64 ArrivalStep = 0;
+        int32 Commands = 0;
+        int32 Terminations = 0;
+        int32 Arrivals = 0;
+        int32 Failures = 0;
+        int32 Samples = 0;
+        double MaxTravel = 0.0;
+    } NavigationAcceptance;
+    void BeginNavigationAcceptance();
+    void BeforeNavigationAcceptanceStep();
+    void AfterNavigationAcceptanceStep(float DeltaSeconds);
+    void ObserveNavigationAcceptanceEvent(const politika::rules::GameplayEvent& Event);
+    void FinishNavigationAcceptance(const TCHAR* Failure);
     enum class EAcceptancePhase : uint8 { None, CaptureApproach, CaptureHold, CaptureExit, CapturePause, CombatSetup, CombatResolve, Done };
     EAcceptancePhase AcceptancePhase = EAcceptancePhase::None;
     FString AcceptanceMode;
@@ -245,6 +312,7 @@ private:
     bool bAcceptanceAttackerOrderCleared = false;
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceAttacker;
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceDefender;
+    void SetAcceptanceMove(APolitikaPrototypeUnit* Unit, const FVector& Destination);
     void BeginAcceptanceHarness();
     void TickAcceptanceHarness(float DeltaSeconds);
     void StartAttackerDeathFixture();

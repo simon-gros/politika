@@ -151,7 +151,7 @@ struct OrderResult {
     }
 };
 
-enum class OrderEndReason : std::uint8_t { None, Replaced, Stopped, TargetLost, UnitDestroyed, Arrived, Obstructed };
+enum class OrderEndReason : std::uint8_t { None, Replaced, Stopped, TargetLost, UnitDestroyed, Arrived, Obstructed, NavigationFailed };
 struct CommandOutcomeEvent {
     std::uint64_t step = 0, sequence = 0, correlation_id = 0, issuer_id = 0;
     OrderKind order = OrderKind::Stop;

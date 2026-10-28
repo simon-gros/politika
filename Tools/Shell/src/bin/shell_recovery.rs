@@ -66,10 +66,24 @@ fn main() -> Result<(), String> {
     )
     .canonicalize()
     .map_err(|e| e.to_string())?;
-    let fixture = env::args().nth(2).unwrap_or_else(|| "InvalidMapSchema".into());
+    let fixture = env::args()
+        .nth(2)
+        .unwrap_or_else(|| "InvalidMapSchema".into());
     let (fixture_map, diagnostic, property, values, asset_name) = match fixture.as_str() {
-        "InvalidMapSchema" => ("map.test.invalid_schema", "CONTENT.SCHEMA.UNSUPPORTED", "SchemaVersion", "expected=1|actual=2", "DA_InvalidMapSchema"),
-        "InvalidParticipantFaction" => ("map.test.invalid_participant_faction", "CONTENT.FACTION.MISMATCH", "UnitPlacements[0].UnitArchetypeId", "expected=faction.player|actual=faction.opposition", "DA_InvalidParticipantFaction"),
+        "InvalidMapSchema" => (
+            "map.test.invalid_schema",
+            "CONTENT.SCHEMA.UNSUPPORTED",
+            "SchemaVersion",
+            "expected=1|actual=2",
+            "DA_InvalidMapSchema",
+        ),
+        "InvalidParticipantFaction" => (
+            "map.test.invalid_participant_faction",
+            "CONTENT.FACTION.MISMATCH",
+            "UnitPlacements[0].UnitArchetypeId",
+            "expected=faction.player|actual=faction.opposition",
+            "DA_InvalidParticipantFaction",
+        ),
         other => return Err(format!("unknown recovery fixture `{other}`")),
     };
     let package = binary
@@ -80,9 +94,14 @@ fn main() -> Result<(), String> {
         .ok_or("expected packaged Binaries/Linux/ executable")?;
     let identity =
         fs::read_to_string(package.join("BuildIdentity.json")).map_err(|e| e.to_string())?;
-    let manifest = fs::read_to_string(package.join("Manifest_UFSFiles_Linux.txt")).map_err(|e| e.to_string())?;
-    if !manifest.contains(&format!("Politika/Content/Politika/TestFixtures/{asset_name}.uasset")) {
-        return Err(format!("BLOCKED: cooked fixture {asset_name} is absent from package manifest"));
+    let manifest = fs::read_to_string(package.join("Manifest_UFSFiles_Linux.txt"))
+        .map_err(|e| e.to_string())?;
+    if !manifest.contains(&format!(
+        "Politika/Content/Politika/TestFixtures/{asset_name}.uasset"
+    )) {
+        return Err(format!(
+            "BLOCKED: cooked fixture {asset_name} is absent from package manifest"
+        ));
     }
     let revision = identity
         .lines()
@@ -102,7 +121,13 @@ fn main() -> Result<(), String> {
     let mut child = Command::new(&binary)
         .arg("/Game/Maps/RTSVerticalSlice")
         .arg(selector_argument)
-        .args(["-windowed", "-ResX=1280", "-ResY=720", "-unattended", "-nosplash"])
+        .args([
+            "-windowed",
+            "-ResX=1280",
+            "-ResY=720",
+            "-unattended",
+            "-nosplash",
+        ])
         .arg(format!("-UserDir={}/", user.display()))
         .arg(format!("-ABSLOG={}", log.display()))
         .stdout(Stdio::null())
@@ -112,8 +137,12 @@ fn main() -> Result<(), String> {
     let process_id = child.id();
     let result = (|| -> Result<(), String> {
         let diagnostic_marker = format!("{diagnostic}|error|{fixture_map}|{property}|");
-        let rejected_marker = format!("MATCH_ADMISSION_REJECTED fixture={fixture_map} units=0 objective=0 simulation_started=0");
-        let state_marker = format!("MATCH_ADMISSION_STATE map={fixture_map} participants=0 local_player=0 unaligned_system=0 units=0 objectives=0 selection=0 pending_commands=0 accepted_sequences=0 simulation_steps=0 content_ready=0 terminal_result=0");
+        let rejected_marker = format!(
+            "MATCH_ADMISSION_REJECTED fixture={fixture_map} units=0 objective=0 simulation_started=0"
+        );
+        let state_marker = format!(
+            "MATCH_ADMISSION_STATE map={fixture_map} participants=0 local_player=0 unaligned_system=0 units=0 objectives=0 selection=0 pending_commands=0 accepted_sequences=0 simulation_steps=0 content_ready=0 terminal_result=0"
+        );
         let recovery_marker = format!("MATCH_ADMISSION_RECOVERY map={fixture_map} route=main_menu");
         let mut rejected = wait_for(
             &mut child,
@@ -188,18 +217,35 @@ fn main() -> Result<(), String> {
             "MATCH_CONTENT_READY map=map.prototype.rts_vertical_slice units=3 objective=objective.central_control",
             Duration::from_secs(15),
         )?;
-        wait_for(&mut child, &log, "MATCH_LIFECYCLE phase=4", Duration::from_secs(10))?;
-        wait_for(&mut child, &log, "MATCH_SIMULATION_STEP first=1", Duration::from_secs(10))?;
+        wait_for(
+            &mut child,
+            &log,
+            "MATCH_LIFECYCLE phase=4",
+            Duration::from_secs(10),
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "MATCH_SIMULATION_STEP first=1",
+            Duration::from_secs(10),
+        )?;
         thread::sleep(Duration::from_millis(500));
         if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-            return Err("the packaged process exited between rejection and canonical Active retry".into());
+            return Err(
+                "the packaged process exited between rejection and canonical Active retry".into(),
+            );
         }
         let retried = fs::read_to_string(&log).map_err(|e| e.to_string())?;
-        let retry_start = retried.rfind("MATCH_PARTICIPANTS_ADMITTED map=map.prototype.rts_vertical_slice")
+        let retry_start = retried
+            .rfind("MATCH_PARTICIPANTS_ADMITTED map=map.prototype.rts_vertical_slice")
             .ok_or("canonical retry did not admit the production participant roster")?;
         let rejected_attempt = &retried[..retry_start];
-        if rejected_attempt.contains("RTS_ORDER_ADMITTED") || rejected_attempt.contains("MATCH_SIMULATION_STEP") {
-            return Err("rejected participant fixture executed gameplay before canonical retry".into());
+        if rejected_attempt.contains("RTS_ORDER_ADMITTED")
+            || rejected_attempt.contains("MATCH_SIMULATION_STEP")
+        {
+            return Err(
+                "rejected participant fixture executed gameplay before canonical retry".into(),
+            );
         }
         let retry_log = &retried[retry_start..];
         for marker in [
@@ -211,13 +257,22 @@ fn main() -> Result<(), String> {
             "MATCH_CONTENT_READY map=map.prototype.rts_vertical_slice units=3 objective=objective.central_control",
         ] {
             if !retry_log.contains(marker) {
-                return Err(format!("canonical retry is missing fresh authoritative mapping `{marker}`"));
+                return Err(format!(
+                    "canonical retry is missing fresh authoritative mapping `{marker}`"
+                ));
             }
         }
-        let phase_markers = ["MATCH_LIFECYCLE phase=1", "MATCH_LIFECYCLE phase=2", "MATCH_LIFECYCLE phase=3", "MATCH_LIFECYCLE phase=4"];
+        let phase_markers = [
+            "MATCH_LIFECYCLE phase=1",
+            "MATCH_LIFECYCLE phase=2",
+            "MATCH_LIFECYCLE phase=3",
+            "MATCH_LIFECYCLE phase=4",
+        ];
         let mut phase_cursor = retry_start;
         for phase in phase_markers {
-            let offset = retried[phase_cursor..].find(phase).ok_or(format!("canonical retry lacks legal lifecycle phase `{phase}`"))?;
+            let offset = retried[phase_cursor..].find(phase).ok_or(format!(
+                "canonical retry lacks legal lifecycle phase `{phase}`"
+            ))?;
             phase_cursor += offset + phase.len();
         }
         if retried.matches("MATCH_ADMISSION_REJECTED").count() != 1 {
