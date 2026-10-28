@@ -3,6 +3,10 @@
 Status: Core match population and faction-control rules locked; online multiplayer and UI implementation details remain provisional.
 Related: [README](../README.md) · [Concepts Outline](CONCEPTS_OUTLINE.md) · [Engine Outline](ENGINE_OUTLINE.md) · [Proposed Engine Layers](PROPOSED_ENGINE_LAYERS.md) · [UI Overview](POLITIKA_UI_OVERVIEW.md) · [Nuclear Ultimate Weapons](NUCLEAR_WEAPONS_SYSTEM.md)
 
+## Implemented prototype boundary
+
+The current UE prototype uses a narrower authored test profile than the standard match rules below. Its `faction.player` / `faction.opposition` identities are test identities, not assignments to the four canonical playable factions. Runtime startup preserves the authored slot, participant, controller-kind, and faction mapping and creates a separate Unaligned NPC/system authority record, but creates no Unaligned world units or autonomous behavior. This prototype does not qualify standard 2–4 faction match setup.
+
 ## 1. Fixed rule: 2–4 players plus the Unaligned
 
 A POLITIKA map has two to four player-controlled faction slots, plus one separate, always-present Unaligned NPC/system-AI faction. Each player controls exactly one playable faction; no player controls two factions at once. The Unaligned does not occupy a player slot and cannot be selected by a human player.

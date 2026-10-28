@@ -94,10 +94,12 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
 
 void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const FText& InName,
     int32 InHealth, float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
-    bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor)
+    bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
+    FName InFactionId)
 {
     StableId = InStableId;
     OwnerPlayer = InOwner;
+    FactionId = InFactionId;
     UnitName = InName;
     MaxHealth = InHealth;
     Health = MaxHealth;
@@ -356,6 +358,61 @@ void APolitikaPrototypeMatch::BeginPlay()
 #endif
 }
 
+bool APolitikaPrototypeMatch::BuildRuntimeParticipantsFromSlots(
+    const UPolitikaPrototypeMapDefinition& Definition,
+    TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants,
+    uint32& OutLocalRuntimePlayerId, FName& OutFailureCode)
+{
+    OutParticipants.Reset();
+    OutLocalRuntimePlayerId = 0;
+    OutFailureCode = NAME_None;
+    if (Definition.PlayerSlots.Num() < 2)
+    {
+        OutFailureCode = TEXT("MAP.SLOTS.INSUFFICIENT");
+        return false;
+    }
+    int32 LocalHumanCount = 0;
+    TSet<uint32> ParticipantIds;
+    TSet<int32> SlotIds;
+    TSet<FName> FactionIds;
+    for (const FPolitikaPrototypePlayerSlot& Slot : Definition.PlayerSlots)
+    {
+        if (Slot.SlotId <= 0 || Slot.RuntimePlayerId <= 0 || Slot.FactionId.IsNone()
+            || Slot.FactionId == FName(TEXT("faction.unaligned"))
+            || SlotIds.Contains(Slot.SlotId) || ParticipantIds.Contains(static_cast<uint32>(Slot.RuntimePlayerId))
+            || FactionIds.Contains(Slot.FactionId))
+        {
+            OutParticipants.Reset();
+            OutLocalRuntimePlayerId = 0;
+            OutFailureCode = Slot.FactionId == FName(TEXT("faction.unaligned"))
+                ? FName(TEXT("MAP.FACTION.UNALIGNED_PLAYABLE")) : FName(TEXT("MAP.PARTICIPANT.MAPPING_INVALID"));
+            return false;
+        }
+        SlotIds.Add(Slot.SlotId);
+        ParticipantIds.Add(static_cast<uint32>(Slot.RuntimePlayerId));
+        FactionIds.Add(Slot.FactionId);
+        FPolitikaPrototypeRuntimeParticipant& Participant = OutParticipants.AddDefaulted_GetRef();
+        Participant.SlotId = Slot.SlotId;
+        Participant.RuntimePlayerId = static_cast<uint32>(Slot.RuntimePlayerId);
+        Participant.FactionId = Slot.FactionId;
+        Participant.ControllerKind = Slot.bHumanControlled
+            ? EPolitikaPrototypeControllerKind::LocalHuman : EPolitikaPrototypeControllerKind::AssignedOpponent;
+        if (Slot.bHumanControlled)
+        {
+            ++LocalHumanCount;
+            OutLocalRuntimePlayerId = Participant.RuntimePlayerId;
+        }
+    }
+    if (LocalHumanCount != 1)
+    {
+        OutParticipants.Reset();
+        OutLocalRuntimePlayerId = 0;
+        OutFailureCode = TEXT("MAP.SLOTS.HUMAN_COUNT");
+        return false;
+    }
+    return true;
+}
+
 bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase NextPhase)
 {
     const politika::rules::MatchPhase Previous = Lifecycle.phase;
@@ -364,6 +421,13 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
         UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_LIFECYCLE_TRANSITION_REJECTED from=%u to=%u"),
             static_cast<uint32>(Previous), static_cast<uint32>(NextPhase));
         return false;
+    }
+    if (NextPhase != politika::rules::MatchPhase::Active)
+    {
+        // A queued request belongs to the phase in which it was submitted. Never
+        // let terminal handling, teardown, or recovery carry it into later work.
+        PendingOrders.Reset();
+        StepAccumulator = 0.0f;
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
     return true;
@@ -402,15 +466,28 @@ void APolitikaPrototypeMatch::BuildScenario()
     MapDefinition = Snapshot.MapDefinition;
     PlayableMin = MapDefinition->PlayableMin;
     PlayableMax = MapDefinition->PlayableMax;
-    const FPolitikaPrototypePlayerSlot* HumanSlot = MapDefinition->PlayerSlots.FindByPredicate([](const FPolitikaPrototypePlayerSlot& Slot) { return Slot.bHumanControlled; });
-    if (!HumanSlot)
+    TArray<FPolitikaPrototypeRuntimeParticipant> CandidateParticipants;
+    uint32 CandidateLocalRuntimePlayerId = 0;
+    FName ParticipantFailureCode;
+    if (!BuildRuntimeParticipantsFromSlots(*MapDefinition, CandidateParticipants,
+        CandidateLocalRuntimePlayerId, ParticipantFailureCode))
     {
-        LastCommandFeedback = TEXT("Prototype setup failed: no human-controlled player slot was configured.");
-        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED map=%s reason=missing_human_slot"), *RequestedMapId.ToString());
+        LastCommandFeedback = TEXT("Prototype setup failed: participant, controller, or playable-faction assignments are invalid.");
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED map=%s reason=%s participants=%d"),
+            *RequestedMapId.ToString(), *ParticipantFailureCode.ToString(), CandidateParticipants.Num());
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
-    LocalRuntimePlayerId = static_cast<uint32>(HumanSlot->RuntimePlayerId);
+    RuntimeParticipants = MoveTemp(CandidateParticipants);
+    LocalRuntimePlayerId = CandidateLocalRuntimePlayerId;
+    UnalignedSystemAuthority = {FName(TEXT("faction.unaligned")), true};
+    const FPolitikaPrototypeRuntimeParticipant* LocalParticipant = RuntimeParticipants.FindByPredicate(
+        [this](const FPolitikaPrototypeRuntimeParticipant& Participant)
+        { return Participant.RuntimePlayerId == LocalRuntimePlayerId; });
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MATCH_PARTICIPANTS_ADMITTED map=%s playable=%d local_player=%u local_faction=%s unaligned_system=1"),
+        *RequestedMapId.ToString(), RuntimeParticipants.Num(), LocalRuntimePlayerId,
+        LocalParticipant ? *LocalParticipant->FactionId.ToString() : TEXT("invalid"));
 
     Diagnostics.Reset();
     if (!UPolitikaPrototypeContentValidator::ValidateMapSpatial(GetWorld(), MapDefinition, Diagnostics))
@@ -450,13 +527,14 @@ void APolitikaPrototypeMatch::BuildScenario()
     {
         const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
         const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
-        const FPolitikaPrototypePlayerSlot* Slot = MapDefinition->PlayerSlots.FindByPredicate([&](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Placement.SlotId; });
+        const FPolitikaPrototypeRuntimeParticipant* Slot = RuntimeParticipants.FindByPredicate([&](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
         if (!Definition || !Weapon || !Slot) return;
         APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Placement.Location, Placement.Rotation);
         if (!Unit) return;
         Unit->Configure(NextStableId++, Slot->RuntimePlayerId, Definition->DisplayName, Definition->MaxHealth,
             Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
-            Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint);
+            Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint,
+            Slot->FactionId);
         Units.Add(Unit);
     };
 
@@ -489,15 +567,16 @@ void APolitikaPrototypeMatch::BuildScenario()
         const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
         const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
         const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
-        const FPolitikaPrototypePlayerSlot* Slot = MapDefinition->PlayerSlots.FindByPredicate(
-            [&Placement](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Placement.SlotId; });
+        const FPolitikaPrototypeRuntimeParticipant* Slot = RuntimeParticipants.FindByPredicate(
+            [&Placement](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
         const APolitikaPrototypeUnit* Unit = Units.IsValidIndex(Index) ? Units[Index] : nullptr;
         if (Unit && Definition && Weapon && Slot)
         {
             const FVector Location = Unit->GetActorLocation();
             UE_LOG(LogPolitikaStartup, Display,
-                TEXT("MATCH_AUTHORITATIVE_UNIT index=%d entity=%llu archetype=%s owner=%u slot=%d location=%.1f,%.1f,%.1f health=%d speed=%.1f weapon_ref=%s weapon_resolved=%s weapon_range=%.1f weapon_damage=%.1f weapon_cooldown=%.2f attackable=%d"),
-                Index, Unit->GetStableId(), *Definition->StableId.ToString(), Unit->GetOwnerPlayer(), Slot->SlotId,
+                TEXT("MATCH_AUTHORITATIVE_UNIT index=%d entity=%llu archetype=%s owner=%u faction=%s slot=%d location=%.1f,%.1f,%.1f health=%d speed=%.1f weapon_ref=%s weapon_resolved=%s weapon_range=%.1f weapon_damage=%.1f weapon_cooldown=%.2f attackable=%d"),
+                Index, Unit->GetStableId(), *Definition->StableId.ToString(), Unit->GetOwnerPlayer(),
+                *Unit->GetFactionId().ToString(), Slot->SlotId,
                 Location.X, Location.Y, Location.Z, Definition->MaxHealth, Definition->MovementSpeedCmPerSecond,
                 *Definition->WeaponId.ToString(), *Weapon->StableId.ToString(), Weapon->RangeCm, Weapon->Damage,
                 Weapon->CooldownSeconds, Definition->bAttackable ? 1 : 0);
@@ -517,6 +596,16 @@ void APolitikaPrototypeMatch::BuildScenario()
 
 void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
 {
+    for (APolitikaPrototypeUnit* Unit : Units) if (Unit) Unit->Destroy();
+    Units.Reset();
+    if (Objective) Objective->Destroy();
+    Objective = nullptr;
+    RuntimeParticipants.Reset();
+    LocalRuntimePlayerId = 0;
+    UnalignedSystemAuthority = {};
+    SelectionByPlayer.Reset();
+    bContentReady = false;
+    PendingOrders.Reset();
     if (Lifecycle.phase != politika::rules::MatchPhase::AdmissionRejected)
         TransitionLifecycle(politika::rules::MatchPhase::AdmissionRejected);
     UWorld* World = GetWorld();
@@ -547,6 +636,24 @@ void APolitikaPrototypeMatch::BeginReturnToMenu()
     if (Lifecycle.phase == politika::rules::MatchPhase::Active
         || Lifecycle.phase == politika::rules::MatchPhase::Results)
         TransitionLifecycle(politika::rules::MatchPhase::Returning);
+    if (Lifecycle.phase == politika::rules::MatchPhase::Returning)
+    {
+        if (APlayerController* Player = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+            if (APolitikaPrototypePlayerController* PrototypePlayer = Cast<APolitikaPrototypePlayerController>(Player))
+            {
+                PrototypePlayer->SelectedUnit.Reset();
+                PrototypePlayer->bMapCameraApplied = false;
+            }
+        SelectionByPlayer.Reset();
+        RuntimeParticipants.Reset();
+        LocalRuntimePlayerId = 0;
+        UnalignedSystemAuthority = {};
+        bContentReady = false;
+        for (APolitikaPrototypeUnit* Unit : Units) if (Unit) Unit->Destroy();
+        Units.Reset();
+        if (Objective) Objective->Destroy();
+        Objective = nullptr;
+    }
 }
 
 void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
@@ -577,9 +684,29 @@ void APolitikaPrototypeMatch::BeginAcceptanceHarness()
     FParse::Value(FCommandLine::Get(), TEXT("RTSAcceptance="), AcceptanceMode);
     AcceptanceMode = AcceptanceMode.ToLower();
     if (AcceptanceMode != TEXT("capturepause") && AcceptanceMode != TEXT("attackerdeath")
-        && AcceptanceMode != TEXT("combined")) return;
+        && AcceptanceMode != TEXT("combined") && AcceptanceMode != TEXT("objectivecompletion")) return;
 
     UE_LOG(LogTemp, Display, TEXT("RTS_ACCEPTANCE_BEGIN mode=%s"), *AcceptanceMode);
+    if (AcceptanceMode == TEXT("objectivecompletion"))
+    {
+        APolitikaPrototypeUnit* Capturer = Units.IsEmpty() ? nullptr : Units[0];
+        APolitikaPrototypeUnit* Opponent = Units.Num() >= 3 ? Units[2] : nullptr;
+        if (!Capturer || !Opponent || !Objective)
+        {
+            UE_LOG(LogTemp, Error, TEXT("RTS_ACCEPTANCE_OBJECTIVE_COMPLETION result=FAIL reason=fixture_missing"));
+            AcceptancePhase = EAcceptancePhase::Done;
+            return;
+        }
+        // Development acceptance only: arrange a legitimate uncontested control-point
+        // condition and shorten its configured capture duration. Completion still runs
+        // through UpdateCapture, the authoritative coordinator and normal event publish.
+        Capturer->SetActorLocation(Objective->GetActorLocation());
+        Capturer->SetMoveOrder(EPolitikaPrototypeOrder::Stop, Capturer->GetActorLocation());
+        Opponent->SetActorLocation(FVector(1500.0f, 1500.0f, UnitGroundZ));
+        Objective->SetAcceptanceCaptureDuration(0.1f);
+        UE_LOG(LogTemp, Display, TEXT("RTS_ACCEPTANCE_OBJECTIVE_COMPLETION armed eligible_player=%u uncontested=1 duration=0.1"), LocalRuntimePlayerId);
+        return;
+    }
     if (AcceptanceMode == TEXT("capturepause") || AcceptanceMode == TEXT("combined"))
     {
         APolitikaPrototypeUnit* Capturer = Units.IsEmpty() ? nullptr : Units[0];
@@ -765,6 +892,17 @@ FVector2D APolitikaPrototypeMatch::GetCameraPanMax() const
 
 void APolitikaPrototypeMatch::SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit)
 {
+    if (!RuntimeParticipants.IsEmpty())
+    {
+        const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+            [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == PlayerId; });
+        if (!Participant || Participant->ControllerKind != EPolitikaPrototypeControllerKind::LocalHuman)
+        {
+            if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId)) Previous->SetSelectedVisual(false);
+            SelectionByPlayer.Remove(PlayerId);
+            return;
+        }
+    }
     if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId))
         Previous->SetSelectedVisual(false);
     if (!Unit || Unit->GetOwnerPlayer() != PlayerId || !Unit->IsAlive())
@@ -802,6 +940,31 @@ void APolitikaPrototypeMatch::SubmitGuard(uint32 PlayerId, APolitikaPrototypeUni
     SubmitCommand(PlayerId, Unit, nullptr, politika::rules::GuardOrder{});
 }
 
+bool APolitikaPrototypeMatch::IsLocalControllerBound(const APlayerController* Source) const
+{
+    if (!Source || !GetWorld() || Source != GetWorld()->GetFirstPlayerController() || LocalRuntimePlayerId == 0)
+        return false;
+    const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+        [this](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+        {
+            return Candidate.RuntimePlayerId == LocalRuntimePlayerId
+                && Candidate.ControllerKind == EPolitikaPrototypeControllerKind::LocalHuman;
+        });
+    return Participant != nullptr;
+}
+
+bool APolitikaPrototypeMatch::SubmitLocalControllerCommand(APlayerController* Source,
+    APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent)
+{
+    if (!IsLocalControllerBound(Source))
+    {
+        LastCommandFeedback = TEXT("This controller is not bound to a playable participant.");
+        return false;
+    }
+    SubmitCommand(LocalRuntimePlayerId, Unit, Target, Intent);
+    return true;
+}
+
 void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit,
     APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent)
 {
@@ -812,6 +975,38 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
     Pending.Request.issuer_entity_id = Unit ? Unit->GetStableId() : 0;
     Pending.Request.correlation_id = Pending.Request.sequence;
     Pending.Request.intent = Intent;
+    if (!Lifecycle.IsActive())
+    {
+        LastCommandFeedback = TEXT("The match is not accepting commands.");
+        PublishGameplayEvent(politika::rules::CommandOutcomeEvent{
+            SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
+            Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
+            politika::rules::OrderRejection::MatchInactive});
+        return;
+    }
+    if (!RuntimeParticipants.IsEmpty())
+    {
+        const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+            [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == PlayerId; });
+        if (!Participant)
+        {
+            LastCommandFeedback = TEXT("That command authority is not assigned to a playable participant.");
+            PublishGameplayEvent(politika::rules::CommandOutcomeEvent{
+                SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
+                Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
+                politika::rules::OrderRejection::Unauthorized});
+            return;
+        }
+        if (Unit && (Unit->GetOwnerPlayer() != PlayerId || Unit->GetFactionId() != Participant->FactionId))
+        {
+            LastCommandFeedback = TEXT("The unit owner or faction does not match the admitted participant.");
+            PublishGameplayEvent(politika::rules::CommandOutcomeEvent{
+                SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
+                Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
+                politika::rules::OrderRejection::NotOwned});
+            return;
+        }
+    }
     Pending.Unit = Unit;
     Pending.Target = Target;
     if (const auto* Move = std::get_if<politika::rules::MoveOrder>(&Intent))
@@ -1062,10 +1257,16 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
         if (!bWasComplete && Objective->IsComplete())
         {
             PendingOrders.Reset();
-            TransitionLifecycle(politika::rules::MatchPhase::Terminal);
-            TransitionLifecycle(politika::rules::MatchPhase::Results);
-            LastCommandFeedback = TEXT("Objective secured. Match results are ready; press Escape to return to menu.");
-            UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_RESULTS outcome=objective_secured player=%u"), LocalRuntimePlayerId);
+            if (TransitionLifecycle(politika::rules::MatchPhase::Terminal)
+                && TransitionLifecycle(politika::rules::MatchPhase::Results)
+                && !CommittedResult.IsSet())
+            {
+                CommittedResult.Emplace(FPolitikaPrototypeMatchResult{
+                    LocalRuntimePlayerId, TEXT("objective_secured")});
+                LastCommandFeedback = TEXT("Objective secured. Match results are ready; press Escape to return to menu.");
+                UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_RESULTS outcome=%s player=%u committed=1"),
+                    *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId);
+            }
         }
     }
     // Publication is the final simulation phase; observers get a const snapshot
@@ -1151,7 +1352,8 @@ void APolitikaPrototypePlayerController::SelectUnderCursor()
     if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
         APolitikaPrototypeUnit* Unit = Cast<APolitikaPrototypeUnit>(Hit.GetActor());
-        if (Unit && Unit->GetOwnerPlayer() == GetCommandPlayerId() && Unit->IsAlive())
+        if (ActiveMatch->IsLocalControllerBound(this) && Unit
+            && Unit->GetOwnerPlayer() == GetCommandPlayerId() && Unit->IsAlive())
         {
             SelectedUnit = Unit;
             ActiveMatch->SetSelection(GetCommandPlayerId(), Unit);
@@ -1174,24 +1376,28 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
     }
     if (APolitikaPrototypeUnit* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor()))
     {
-        ActiveMatch->SubmitAttack(GetCommandPlayerId(), SelectedUnit.Get(), Target);
+        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), Target,
+            politika::rules::AttackOrder{Target->GetStableId()});
     }
     else
     {
-        ActiveMatch->SubmitMove(GetCommandPlayerId(), SelectedUnit.Get(), Hit.ImpactPoint);
+        const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
+            Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
+        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr,
+            politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
 }
 }
 
 void APolitikaPrototypePlayerController::StopSelected()
 {
     if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch(); ActiveMatch && SelectedUnit.IsValid())
-        ActiveMatch->SubmitStop(GetCommandPlayerId(), SelectedUnit.Get());
+        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr, politika::rules::StopOrder{});
 }
 
 void APolitikaPrototypePlayerController::GuardSelected()
 {
     if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch(); ActiveMatch && SelectedUnit.IsValid())
-        ActiveMatch->SubmitGuard(GetCommandPlayerId(), SelectedUnit.Get());
+        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr, politika::rules::GuardOrder{});
 }
 
 void APolitikaPrototypePlayerController::AttackMoveSelected()
@@ -1200,7 +1406,12 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
     if (!ActiveMatch || !SelectedUnit.IsValid()) return;
     FHitResult Hit;
     if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
-        ActiveMatch->SubmitMove(GetCommandPlayerId(), SelectedUnit.Get(), Hit.ImpactPoint, true);
+    {
+        const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
+            Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
+        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr,
+            politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
+    }
     else
         ActiveMatch->ReportRejectedCommand(TEXT("Attack-move rejected: click valid map ground."));
 }

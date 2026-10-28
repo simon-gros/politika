@@ -22,6 +22,28 @@ class APolitikaPrototypeObjective;
 DECLARE_MULTICAST_DELEGATE_OneParam(FPolitikaPrototypeGameplayEventPublished,
     const politika::rules::GameplayEvent& /* Event */);
 
+struct FPolitikaPrototypeMatchResult
+{
+	uint32 WinningPlayerId = 0;
+	FName Reason;
+};
+
+enum class EPolitikaPrototypeControllerKind : uint8 { LocalHuman, AssignedOpponent };
+
+struct FPolitikaPrototypeRuntimeParticipant
+{
+    int32 SlotId = 0;
+    uint32 RuntimePlayerId = 0;
+    FName FactionId;
+    EPolitikaPrototypeControllerKind ControllerKind = EPolitikaPrototypeControllerKind::AssignedOpponent;
+};
+
+struct FPolitikaPrototypeSystemFactionAuthority
+{
+    FName FactionId;
+    bool bNpcSystemControlled = false;
+};
+
 UENUM(BlueprintType)
 enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard };
 
@@ -33,7 +55,8 @@ public:
     APolitikaPrototypeUnit();
     void Configure(uint64 InStableId, uint32 InOwner, const FText& InName, int32 InHealth,
         float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
-        bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor);
+        bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
+        FName InFactionId = NAME_None);
     void SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination);
     void SetAttackOrder(APolitikaPrototypeUnit* Target);
     void SetGuardOrder();
@@ -49,6 +72,7 @@ public:
     uint64 CleanupDeadTarget();
     uint64 GetStableId() const { return StableId; }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
+    FName GetFactionId() const { return FactionId; }
     int32 GetHealth() const { return Health; }
     int32 GetMaxHealth() const { return MaxHealth; }
     bool IsAlive() const { return Health > 0; }
@@ -62,6 +86,8 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
     friend class FPolitikaCommandRepeatabilityAutomationTest;
+    friend class FPolitikaMatchLifecycleAutomationTest;
+    friend class FPolitikaMatchParticipantsAutomationTest;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionIndicator;
@@ -70,6 +96,7 @@ private:
     UPROPERTY() int32 MaxHealth = 0;
     UPROPERTY() uint64 StableId = 0;
     UPROPERTY() uint32 OwnerPlayer = 0;
+    UPROPERTY() FName FactionId;
     UPROPERTY() float MoveSpeed = 0.0f;
     UPROPERTY() float WeaponRange = 0.0f;
     UPROPERTY() float WeaponDamage = 0.0f;
@@ -98,10 +125,15 @@ public:
     bool IsContested() const { return bContested; }
     bool IsComplete() const { return bComplete; }
     FText GetStatusText() const;
+#if !UE_BUILD_SHIPPING
+    void SetAcceptanceCaptureDuration(float Seconds) { CaptureDuration = FMath::Max(Seconds, KINDA_SMALL_NUMBER); }
+#endif
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
     friend class FPolitikaCommandRepeatabilityAutomationTest;
+    friend class FPolitikaMatchLifecycleAutomationTest;
+    friend class FPolitikaMatchParticipantsAutomationTest;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Marker;
     UPROPERTY() float CaptureRadius = 0.0f;
@@ -124,12 +156,9 @@ public:
     APolitikaPrototypeObjective* GetObjective() const { return Objective; }
     APolitikaPrototypeUnit* GetSelectedUnitForPlayer(uint32 PlayerId) const;
     void SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
-    void SubmitMove(uint32 PlayerId, APolitikaPrototypeUnit* Unit, const FVector& Destination, bool bAttackMove = false);
-    void SubmitAttack(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target);
-    void SubmitStop(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
-    void SubmitGuard(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
-    void SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
-        const politika::rules::Order& Intent);
+    bool SubmitLocalControllerCommand(APlayerController* Source, APolitikaPrototypeUnit* Unit,
+        APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent);
+    bool IsLocalControllerBound(const APlayerController* Source) const;
     void ReportRejectedCommand(const FString& Reason) { LastCommandFeedback = Reason; }
     FString GetLastCommandFeedback() const { return LastCommandFeedback; }
     const TArray<politika::rules::GameplayEvent>& GetPublishedEvents() const { return PublishedEvents; }
@@ -139,14 +168,19 @@ public:
     FVector2D GetCameraPanMin() const;
     FVector2D GetCameraPanMax() const;
     uint32 GetLocalRuntimePlayerId() const { return LocalRuntimePlayerId; }
+    const TArray<FPolitikaPrototypeRuntimeParticipant>& GetRuntimeParticipants() const { return RuntimeParticipants; }
+    const FPolitikaPrototypeSystemFactionAuthority& GetUnalignedSystemAuthority() const { return UnalignedSystemAuthority; }
     const class UPolitikaPrototypeMapDefinition* GetMapDefinition() const { return MapDefinition; }
     politika::rules::MatchPhase GetMatchPhase() const { return Lifecycle.phase; }
+    const TOptional<FPolitikaPrototypeMatchResult>& GetCommittedResult() const { return CommittedResult; }
     void BeginReturnToMenu();
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaGameplayEventPublicationAutomationTest;
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
     friend class FPolitikaCommandRepeatabilityAutomationTest;
+    friend class FPolitikaMatchLifecycleAutomationTest;
+    friend class FPolitikaMatchParticipantsAutomationTest;
 #endif
     struct FPendingOrder
     {
@@ -164,8 +198,11 @@ private:
     UPROPERTY() FVector2D PlayableMin = FVector2D::ZeroVector;
     UPROPERTY() FVector2D PlayableMax = FVector2D::ZeroVector;
     UPROPERTY() uint32 LocalRuntimePlayerId = 0;
+    TArray<FPolitikaPrototypeRuntimeParticipant> RuntimeParticipants;
+    FPolitikaPrototypeSystemFactionAuthority UnalignedSystemAuthority;
     UPROPERTY() bool bContentReady = false;
     politika::rules::MatchLifecycle Lifecycle;
+    TOptional<FPolitikaPrototypeMatchResult> CommittedResult;
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeContentCatalog> ContentCatalog;
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeMapDefinition> MapDefinition;
     UPROPERTY() float StepAccumulator = 0.0f;
@@ -178,6 +215,16 @@ private:
     uint64 NextCommandSequence = 1;
     uint64 MatchGeneration = 1;
     void BuildScenario();
+    // Trusted coordinator/test entry points; ordinary input must use the controller-bound method above.
+    void SubmitMove(uint32 PlayerId, APolitikaPrototypeUnit* Unit, const FVector& Destination, bool bAttackMove = false);
+    void SubmitAttack(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target);
+    void SubmitStop(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
+    void SubmitGuard(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
+    void SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
+        const politika::rules::Order& Intent);
+    static bool BuildRuntimeParticipantsFromSlots(const UPolitikaPrototypeMapDefinition& Definition,
+        TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants, uint32& OutLocalRuntimePlayerId,
+        FName& OutFailureCode);
     bool TransitionLifecycle(politika::rules::MatchPhase NextPhase);
     void RecoverToShellAfterAdmissionFailure(FName MapId);
     void AdmitPendingOrders();
@@ -217,6 +264,7 @@ UCLASS()
 class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerController
 {
     GENERATED_BODY()
+    friend class APolitikaPrototypeMatch;
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;

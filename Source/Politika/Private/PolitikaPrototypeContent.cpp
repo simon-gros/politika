@@ -330,6 +330,10 @@ void UPolitikaPrototypeContentValidator::ValidateMapStructure(
             AddDiagnostic(OutDiagnostics, TEXT("MAP.SLOT.INVALID"), Id, Prefix + TEXT("SlotId/RuntimePlayerId/FactionId"), TEXT("A slot needs positive slot/player IDs and a faction ID."), TEXT("slot > 0; player > 0; faction ID"), FString::Printf(TEXT("slot=%d player=%d faction=%s"), Slot.SlotId, Slot.RuntimePlayerId, *Slot.FactionId.ToString()), TEXT("Assign valid, unique slot metadata."));
         else if (!IsStableId(Slot.FactionId))
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.ID.INVALID"), Id, Prefix + TEXT("FactionId"), TEXT("Faction identifiers must use the stable-ID format."), TEXT("lowercase namespaced ID"), Slot.FactionId.ToString(), TEXT("Correct the faction identifier."));
+        if (Slot.FactionId == FName(TEXT("faction.unaligned")))
+            AddDiagnostic(OutDiagnostics, TEXT("MAP.FACTION.UNALIGNED_PLAYABLE"), Id, Prefix + TEXT("FactionId"),
+                TEXT("The Unaligned system faction cannot occupy an ordinary playable slot."), TEXT("playable faction ID"),
+                Slot.FactionId.ToString(), TEXT("Assign a playable test faction; initialize Unaligned separately as system authority."));
         if (!InBounds(*Map, Slot.StartLocation))
             AddDiagnostic(OutDiagnostics, TEXT("MAP.START.OUT_OF_BOUNDS"), Id, Prefix + TEXT("StartLocation"), TEXT("The player start is outside playable bounds or has non-finite coordinates."), FString::Printf(TEXT("XY inside %s..%s"), *Map->PlayableMin.ToString(), *Map->PlayableMax.ToString()), Slot.StartLocation.ToString(), TEXT("Move the start into legal playable bounds."));
     }

@@ -123,6 +123,12 @@ bool FPolitikaCommandCoordinatorAcceptanceAutomationTest::RunTest(const FString&
     Match->PlayableMin = FVector2D(-1000, -1000);
     Match->PlayableMax = FVector2D(1000, 1000);
     Match->bContentReady = true;
+    Match->Lifecycle = {};
+    TestTrue(TEXT("Fixture enters Active through legal startup phases"),
+        Match->TransitionLifecycle(MatchPhase::SetupValidated)
+        && Match->TransitionLifecycle(MatchPhase::Loading)
+        && Match->TransitionLifecycle(MatchPhase::Starting)
+        && Match->TransitionLifecycle(MatchPhase::Active));
     Match->Units = {Issuer, Hostile, Friendly};
     Match->Objective = Objective;
     Issuer->Configure(101, 1, FText::FromString(TEXT("Issuer")), 100, 100, 250, 10, 0.5f,
@@ -155,6 +161,11 @@ bool FPolitikaCommandCoordinatorAcceptanceAutomationTest::RunTest(const FString&
         Match->PlayableMin = FVector2D(-1000, -1000);
         Match->PlayableMax = FVector2D(1000, 1000);
         Match->bContentReady = true;
+        Match->Lifecycle = {};
+        Match->TransitionLifecycle(MatchPhase::SetupValidated);
+        Match->TransitionLifecycle(MatchPhase::Loading);
+        Match->TransitionLifecycle(MatchPhase::Starting);
+        Match->TransitionLifecycle(MatchPhase::Active);
         Match->Units = {Issuer, Hostile, Friendly};
         Match->PendingOrders.Reset();
         Match->PendingGameplayEvents.Reset();
@@ -414,6 +425,12 @@ bool FPolitikaCommandRepeatabilityAutomationTest::RunTest(const FString& Paramet
         Match->PlayableMin = FVector2D(0, 0);
         Match->PlayableMax = FVector2D(1000, 1000);
         Match->bContentReady = true;
+        Match->Lifecycle = {};
+        const bool bActivated = Match->TransitionLifecycle(MatchPhase::SetupValidated)
+            && Match->TransitionLifecycle(MatchPhase::Loading)
+            && Match->TransitionLifecycle(MatchPhase::Starting)
+            && Match->TransitionLifecycle(MatchPhase::Active);
+        if (!bActivated) { World->DestroyWorld(false); return Result; }
         Match->Units = {Issuer, Target};
         Match->Objective = Objective;
         Issuer->Configure(401, 1, FText::FromString(TEXT("Issuer")), 100, 100, 200, 5, 0.25f,

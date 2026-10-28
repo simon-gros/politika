@@ -7,6 +7,75 @@
 using namespace politika::rules;
 
 int main() {
+    // The production lifecycle is the single portable authority for match phase.
+    // Cover every legal edge, then verify illegal and duplicate requests are inert.
+    const auto Reach = [](MatchPhase Target) {
+        MatchLifecycle State;
+        if (Target == MatchPhase::AdmissionRejected) {
+            assert(State.TransitionTo(MatchPhase::AdmissionRejected));
+            return State;
+        }
+        constexpr MatchPhase Path[] = {MatchPhase::SetupValidated, MatchPhase::Loading,
+            MatchPhase::Starting, MatchPhase::Active, MatchPhase::Terminal,
+            MatchPhase::Results, MatchPhase::Returning};
+        if (Target == MatchPhase::SetupPending) return State;
+        for (const MatchPhase Phase : Path) {
+            assert(State.TransitionTo(Phase));
+            if (State.phase == Target) break;
+        }
+        return State;
+    };
+    MatchLifecycle Lifecycle;
+    assert(Lifecycle.phase == MatchPhase::SetupPending && !Lifecycle.IsActive());
+    constexpr MatchPhase LegalEdges[][2] = {
+        {MatchPhase::SetupPending, MatchPhase::SetupValidated},
+        {MatchPhase::SetupPending, MatchPhase::AdmissionRejected},
+        {MatchPhase::SetupValidated, MatchPhase::Loading},
+        {MatchPhase::SetupValidated, MatchPhase::AdmissionRejected},
+        {MatchPhase::Loading, MatchPhase::Starting},
+        {MatchPhase::Loading, MatchPhase::AdmissionRejected},
+        {MatchPhase::Starting, MatchPhase::Active},
+        {MatchPhase::Starting, MatchPhase::AdmissionRejected},
+        {MatchPhase::Active, MatchPhase::Terminal},
+        {MatchPhase::Active, MatchPhase::Returning},
+        {MatchPhase::Terminal, MatchPhase::Results},
+        {MatchPhase::Results, MatchPhase::Returning},
+    };
+    for (const auto& Edge : LegalEdges) {
+        MatchLifecycle State = Reach(Edge[0]);
+        assert(State.phase == Edge[0]);
+        assert(State.TransitionTo(Edge[1]));
+        assert(State.phase == Edge[1]);
+        assert(State.IsActive() == (Edge[1] == MatchPhase::Active));
+    }
+    constexpr MatchPhase Phases[] = {MatchPhase::SetupPending, MatchPhase::SetupValidated,
+        MatchPhase::Loading, MatchPhase::Starting, MatchPhase::Active, MatchPhase::Terminal,
+        MatchPhase::Results, MatchPhase::Returning, MatchPhase::AdmissionRejected};
+    for (const MatchPhase From : Phases) for (const MatchPhase To : Phases) {
+        if (CanTransition(From, To)) continue;
+        MatchLifecycle State = Reach(From);
+        assert(State.phase == From);
+        assert(!State.TransitionTo(To));
+        assert(State.phase == From);
+    }
+    for (const MatchPhase Phase : {MatchPhase::Active, MatchPhase::Terminal, MatchPhase::Results,
+            MatchPhase::AdmissionRejected, MatchPhase::Returning}) {
+        MatchLifecycle State = Reach(Phase);
+        assert(!State.TransitionTo(Phase));
+        assert(State.phase == Phase);
+        assert(State.IsActive() == (Phase == MatchPhase::Active));
+        if (Phase != MatchPhase::Active) assert(!State.TransitionTo(MatchPhase::Active));
+    }
+    MatchLifecycle Rejected;
+    assert(Rejected.TransitionTo(MatchPhase::AdmissionRejected));
+    assert(!Rejected.TransitionTo(MatchPhase::AdmissionRejected));
+    assert(!Rejected.TransitionTo(MatchPhase::Active));
+    MatchLifecycle Finished = Reach(MatchPhase::Terminal);
+    assert(!Finished.TransitionTo(MatchPhase::Terminal));
+    assert(Finished.TransitionTo(MatchPhase::Results));
+    assert(!Finished.TransitionTo(MatchPhase::Results));
+    assert(!Finished.TransitionTo(MatchPhase::Active));
+
     // Unit selection is player-owned; neutral/NPC and enemy units are not selectable.
     constexpr Entity own{1, 2, true, true};
     constexpr Entity enemy{2, 3, true, true};
