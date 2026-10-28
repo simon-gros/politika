@@ -9,6 +9,57 @@
 
 namespace politika::rules {
 
+// Explicit local-match lifecycle. This records authority boundaries; it does
+// not prescribe a faction economy, save format, or network replication model.
+enum class MatchPhase : std::uint8_t {
+    SetupPending,
+    SetupValidated,
+    Loading,
+    Starting,
+    Active,
+    Terminal,
+    Results,
+    Returning,
+    AdmissionRejected,
+};
+
+[[nodiscard]] constexpr bool CanTransition(MatchPhase from, MatchPhase to) noexcept {
+    switch (from) {
+        case MatchPhase::SetupPending:
+            return to == MatchPhase::SetupValidated || to == MatchPhase::AdmissionRejected;
+        case MatchPhase::SetupValidated:
+            return to == MatchPhase::Loading || to == MatchPhase::AdmissionRejected;
+        case MatchPhase::Loading:
+            return to == MatchPhase::Starting || to == MatchPhase::AdmissionRejected;
+        case MatchPhase::Starting:
+            return to == MatchPhase::Active || to == MatchPhase::AdmissionRejected;
+        case MatchPhase::Active:
+            return to == MatchPhase::Terminal || to == MatchPhase::Returning;
+        case MatchPhase::Terminal:
+            return to == MatchPhase::Results;
+        case MatchPhase::Results:
+            return to == MatchPhase::Returning;
+        case MatchPhase::Returning:
+        case MatchPhase::AdmissionRejected:
+            return false;
+    }
+    return false;
+}
+
+struct MatchLifecycle {
+    MatchPhase phase = MatchPhase::SetupPending;
+
+    [[nodiscard]] constexpr bool TransitionTo(MatchPhase next) noexcept {
+        if (!CanTransition(phase, next)) return false;
+        phase = next;
+        return true;
+    }
+
+    [[nodiscard]] constexpr bool IsActive() const noexcept {
+        return phase == MatchPhase::Active;
+    }
+};
+
 enum class Faction : std::uint8_t {
     AtlanticConcord,
     RedDirectorate,

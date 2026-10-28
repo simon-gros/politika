@@ -140,6 +140,8 @@ public:
     FVector2D GetCameraPanMax() const;
     uint32 GetLocalRuntimePlayerId() const { return LocalRuntimePlayerId; }
     const class UPolitikaPrototypeMapDefinition* GetMapDefinition() const { return MapDefinition; }
+    politika::rules::MatchPhase GetMatchPhase() const { return Lifecycle.phase; }
+    void BeginReturnToMenu();
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaGameplayEventPublicationAutomationTest;
@@ -163,6 +165,7 @@ private:
     UPROPERTY() FVector2D PlayableMax = FVector2D::ZeroVector;
     UPROPERTY() uint32 LocalRuntimePlayerId = 0;
     UPROPERTY() bool bContentReady = false;
+    politika::rules::MatchLifecycle Lifecycle;
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeContentCatalog> ContentCatalog;
     UPROPERTY() TObjectPtr<class UPolitikaPrototypeMapDefinition> MapDefinition;
     UPROPERTY() float StepAccumulator = 0.0f;
@@ -175,6 +178,7 @@ private:
     uint64 NextCommandSequence = 1;
     uint64 MatchGeneration = 1;
     void BuildScenario();
+    bool TransitionLifecycle(politika::rules::MatchPhase NextPhase);
     void RecoverToShellAfterAdmissionFailure(FName MapId);
     void AdmitPendingOrders();
     void RunSimulationStep(float DeltaSeconds);

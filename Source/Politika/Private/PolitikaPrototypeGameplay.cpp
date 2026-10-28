@@ -356,6 +356,19 @@ void APolitikaPrototypeMatch::BeginPlay()
 #endif
 }
 
+bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase NextPhase)
+{
+    const politika::rules::MatchPhase Previous = Lifecycle.phase;
+    if (!Lifecycle.TransitionTo(NextPhase))
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_LIFECYCLE_TRANSITION_REJECTED from=%u to=%u"),
+            static_cast<uint32>(Previous), static_cast<uint32>(NextPhase));
+        return false;
+    }
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
+    return true;
+}
+
 void APolitikaPrototypeMatch::BuildScenario()
 {
     FName RequestedMapId = UPolitikaPrototypeContentValidator::PrototypeMapAssetId;
@@ -390,7 +403,13 @@ void APolitikaPrototypeMatch::BuildScenario()
     PlayableMin = MapDefinition->PlayableMin;
     PlayableMax = MapDefinition->PlayableMax;
     const FPolitikaPrototypePlayerSlot* HumanSlot = MapDefinition->PlayerSlots.FindByPredicate([](const FPolitikaPrototypePlayerSlot& Slot) { return Slot.bHumanControlled; });
-    if (!HumanSlot) return;
+    if (!HumanSlot)
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: no human-controlled player slot was configured.");
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED map=%s reason=missing_human_slot"), *RequestedMapId.ToString());
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
     LocalRuntimePlayerId = static_cast<uint32>(HumanSlot->RuntimePlayerId);
 
     Diagnostics.Reset();
@@ -399,6 +418,13 @@ void APolitikaPrototypeMatch::BuildScenario()
         for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
             UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_VALIDATION %s"), *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
         LastCommandFeedback = TEXT("Prototype setup failed: map traversal validation failed. See CONTENT_VALIDATION diagnostics.");
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
+    if (!TransitionLifecycle(politika::rules::MatchPhase::SetupValidated)
+        || !TransitionLifecycle(politika::rules::MatchPhase::Loading))
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: invalid match lifecycle transition.");
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
@@ -450,6 +476,13 @@ void APolitikaPrototypeMatch::BuildScenario()
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
+    if (!TransitionLifecycle(politika::rules::MatchPhase::Starting)
+        || !TransitionLifecycle(politika::rules::MatchPhase::Active))
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: match could not enter active play.");
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
 #if !UE_BUILD_SHIPPING
     for (int32 Index = 0; Index < MapDefinition->UnitPlacements.Num(); ++Index)
     {
@@ -484,6 +517,8 @@ void APolitikaPrototypeMatch::BuildScenario()
 
 void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
 {
+    if (Lifecycle.phase != politika::rules::MatchPhase::AdmissionRejected)
+        TransitionLifecycle(politika::rules::MatchPhase::AdmissionRejected);
     UWorld* World = GetWorld();
     if (!World) return;
     if (UPolitikaGameInstance* Game = World->GetGameInstance<UPolitikaGameInstance>())
@@ -506,14 +541,22 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
     }));
 }
 
+void APolitikaPrototypeMatch::BeginReturnToMenu()
+{
+    PendingOrders.Reset();
+    if (Lifecycle.phase == politika::rules::MatchPhase::Active
+        || Lifecycle.phase == politika::rules::MatchPhase::Results)
+        TransitionLifecycle(politika::rules::MatchPhase::Returning);
+}
+
 void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
-    if (!bContentReady) return;
+    if (!bContentReady || !Lifecycle.IsActive()) return;
     StepAccumulator += FMath::Min(DeltaSeconds, 0.25f);
     int32 Steps = 0;
     if (StepAccumulator >= SimulationStepSeconds) PublishedEvents.Reset();
-    while (StepAccumulator >= SimulationStepSeconds && Steps < 5)
+    while (Lifecycle.IsActive() && StepAccumulator >= SimulationStepSeconds && Steps < 5)
     {
         PendingGameplayEvents.Reset();
         AdmitPendingOrders();
@@ -521,6 +564,7 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
         StepAccumulator -= SimulationStepSeconds;
         ++Steps;
     }
+    if (!Lifecycle.IsActive()) StepAccumulator = 0.0f;
     if (Steps == 5 && StepAccumulator >= SimulationStepSeconds) StepAccumulator = 0.0f;
 #if !UE_BUILD_SHIPPING
     TickAcceptanceHarness(DeltaSeconds);
@@ -803,7 +847,8 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
         TargetRules.attackable = Target->IsAttackable();
         TargetRules.alive = Target->IsAlive();
     }
-    return politika::rules::AdmitCommand(Pending.Request, MatchGeneration, bContentReady,
+    return politika::rules::AdmitCommand(Pending.Request, MatchGeneration,
+        bContentReady && Lifecycle.IsActive(),
         Issuer ? &IssuerRules : nullptr,
         {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y}, Target ? &TargetRules : nullptr);
 }
@@ -1014,6 +1059,14 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
             QueueGameplayEvent(politika::rules::ObjectiveChangedEvent{SimulationStepsExecuted,
                 Objective->IsContested(), Objective->IsComplete(),
                 static_cast<uint16>(FMath::Clamp(CurrentProgressMilli, 0, 1000))});
+        if (!bWasComplete && Objective->IsComplete())
+        {
+            PendingOrders.Reset();
+            TransitionLifecycle(politika::rules::MatchPhase::Terminal);
+            TransitionLifecycle(politika::rules::MatchPhase::Results);
+            LastCommandFeedback = TEXT("Objective secured. Match results are ready; press Escape to return to menu.");
+            UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_RESULTS outcome=objective_secured player=%u"), LocalRuntimePlayerId);
+        }
     }
     // Publication is the final simulation phase; observers get a const snapshot
     // until the next authoritative step, with step IDs to avoid duplicate handling.
@@ -1154,6 +1207,7 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
 
 void APolitikaPrototypePlayerController::ReturnToMenu()
 {
+    if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch()) ActiveMatch->BeginReturnToMenu();
     if (UPolitikaGameInstance* Game = GetGameInstance<UPolitikaGameInstance>()) Game->ReturnToMenu(this);
 }
 
