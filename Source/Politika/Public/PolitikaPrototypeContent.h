@@ -211,4 +211,10 @@ class POLITIKA_API FPolitikaPrototypeContentLoader final
 {
 public:
     static bool LoadAndValidate(UWorld* World, FName MapId, FPolitikaPrototypeContentSnapshot& OutSnapshot, TArray<FPolitikaContentDiagnostic>& OutDiagnostics);
+#if WITH_DEV_AUTOMATION_TESTS
+    // One-shot authored candidate override at the normal map-resolution boundary.
+    // The catalog and shared validators still run exactly as in production.
+    static void SetAutomationMapCandidate(UPolitikaPrototypeMapDefinition* Candidate);
+    static void ClearAutomationMapCandidate();
+#endif
 };

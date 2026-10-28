@@ -104,6 +104,12 @@ fn main() -> Result<(), String> {
     )
     .canonicalize()
     .map_err(|e| e.to_string())?;
+    let fixture = env::args().nth(2).unwrap_or_else(|| "InvalidMapSchema".into());
+    let (fixture_map, diagnostic, property, values, asset_name) = match fixture.as_str() {
+        "InvalidMapSchema" => ("map.test.invalid_schema", "CONTENT.SCHEMA.UNSUPPORTED", "SchemaVersion", "expected=1|actual=2", "DA_InvalidMapSchema"),
+        "InvalidParticipantFaction" => ("map.test.invalid_participant_faction", "CONTENT.FACTION.MISMATCH", "UnitPlacements[0].UnitArchetypeId", "expected=faction.player|actual=faction.opposition", "DA_InvalidParticipantFaction"),
+        other => return Err(format!("unknown acceptance fixture `{other}`")),
+    };
     let package = binary
         .parent()
         .and_then(Path::parent)
@@ -111,7 +117,7 @@ fn main() -> Result<(), String> {
         .and_then(Path::parent)
         .ok_or("could not determine package root from Binaries/Linux/ executable")?;
     let manifest = read(&package.join("Manifest_UFSFiles_Linux.txt"))?;
-    if !manifest.contains("Politika/Content/Politika/TestFixtures/DA_InvalidMapSchema.uasset") {
+    if !manifest.contains(&format!("Politika/Content/Politika/TestFixtures/{asset_name}.uasset")) {
         return Err("BLOCKED: cooked fixture is absent from this package manifest".into());
     }
     let epoch = SystemTime::now()
@@ -127,18 +133,13 @@ fn main() -> Result<(), String> {
         .ok_or("BuildIdentity.json has no git_revision")?
         .trim();
     let mut results = Vec::<(&str, &str, String)>::new();
-    let invalid_args = [
-        "/Game/Maps/RTSVerticalSlice",
-        "-PolitikaTestFixture=InvalidMapSchema",
-    ];
-    let negative_markers = [
-        "CONTENT.SCHEMA.UNSUPPORTED|error|map.test.invalid_schema|SchemaVersion|",
-        "expected=1|actual=2",
-        "MATCH_ADMISSION_REJECTED fixture=map.test.invalid_schema units=0 objective=0 simulation_started=0",
-        "MATCH_ADMISSION_STATE map=map.test.invalid_schema units=0 objectives=0 commands=0 simulation_steps=0 content_ready=0",
-        "MATCH_ADMISSION_RECOVERY map=map.test.invalid_schema route=main_menu",
-        "LoadMap: /Game/Maps/MainMenu",
-    ];
+    let selector_argument = format!("-PolitikaTestFixture={fixture}");
+    let invalid_args = ["/Game/Maps/RTSVerticalSlice", selector_argument.as_str()];
+    let diagnostic_marker = format!("{diagnostic}|error|{fixture_map}|{property}|");
+    let rejection_marker = format!("MATCH_ADMISSION_REJECTED fixture={fixture_map} units=0 objective=0 simulation_started=0");
+    let state_marker = format!("MATCH_ADMISSION_STATE map={fixture_map} participants=0 local_player=0 unaligned_system=0 units=0 objectives=0 selection=0 pending_commands=0 accepted_sequences=0 simulation_steps=0 content_ready=0 terminal_result=0");
+    let recovery_marker = format!("MATCH_ADMISSION_RECOVERY map={fixture_map} route=main_menu");
+    let negative_markers = [diagnostic_marker.as_str(), values, rejection_marker.as_str(), state_marker.as_str(), recovery_marker.as_str(), "LoadMap: /Game/Maps/MainMenu"];
     let first = launch_live(
         &binary,
         &evidence,
@@ -155,7 +156,7 @@ fn main() -> Result<(), String> {
     results.push(("PAC-07", "INCONCLUSIVE", "MainMenu loaded and process remained alive, but -nullrhi cannot establish rendered shell usability".into()));
     let stable_signature = first
         .lines()
-        .find(|line| line.contains("CONTENT.SCHEMA.UNSUPPORTED|error|map.test.invalid_schema"))
+        .find(|line| line.contains(&diagnostic_marker))
         .ok_or("missing structured rejection diagnostic")?
         .split("LogPolitikaStartup:")
         .last()
@@ -171,7 +172,7 @@ fn main() -> Result<(), String> {
     )?;
     let repeated_signature = second
         .lines()
-        .find(|line| line.contains("CONTENT.SCHEMA.UNSUPPORTED|error|map.test.invalid_schema"))
+        .find(|line| line.contains(&diagnostic_marker))
         .ok_or("missing repeated structured rejection diagnostic")?
         .split("LogPolitikaStartup:")
         .last()

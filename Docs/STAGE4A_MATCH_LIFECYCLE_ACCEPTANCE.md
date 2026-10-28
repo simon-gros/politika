@@ -127,12 +127,13 @@ Verification against final implementation source (`f3f0bde9609abb7aff0f41bc2677a
 |---|---|
 | Portable core quality | PASS; `cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- core` |
 | UE preflight / Editor build | PASS; `tools/unreal.sh doctor` and `tools/unreal.sh build` |
-| `Politika.RTS.MatchParticipants` | PASS with fixture teardown warnings; 1 discovered, 1 succeeded-with-warnings (5 teardown warnings), 0 failed/not-run; `build/diagnostics/stage4a-participants/final-focused3/report/index.json` |
-| `Politika.RTS` regressions | PASS with warnings; 6 discovered, 6 succeeded (3 warning-bearing), 0 failed/not-run; includes 4 CommandContract, 1 MatchLifecycle and 1 MatchParticipants test; `build/diagnostics/stage4a-participants/final-rts2/report/index.json` |
-| `Politika.Content` regressions | PASS; 7 discovered, 7 succeeded, 0 failed/not-run; `build/diagnostics/stage4a-participants/final-content2/report/index.json` |
-| Linux Development package | PASS for the bounded valid prototype path; UE 5.8.3 Linux Development `BuildCookRun`, normal authored content, archive `Saved/Packages/Stage4AParticipants/Linux`; rendered PAC-10 `rts_interaction` passed with startup roster/owner/faction evidence in `content-acceptance-interaction-1793205757/rts-interaction.log` |
+| `Politika.RTS.MatchParticipants.AuthoredStartupAdmission` | PASS; 1 discovered/executed, 0 failed/skipped/warning-bearing; `build/diagnostics/stage4a-authored-admission/focused-final/index.json` |
+| `Politika.RTS` regressions | PASS with existing teardown warnings; 7 discovered/executed, 4 succeeded and 3 succeeded-with-warnings, 0 failed/skipped; `build/diagnostics/stage4a-authored-admission/rts-final/index.json` |
+| `Politika.Content` regressions | PASS; 7 discovered/executed, 7 succeeded, 0 failed/skipped; `build/diagnostics/stage4a-authored-admission/content/index.json` |
+| Portable core quality | PASS; `build/diagnostics/core.json` |
+| Linux Development package | PASS for the bounded valid prototype path; final-source UE 5.8.3 Linux Development `BuildCookRun`, archive `Saved/Packages/Stage4AAuthoredAdmissionFinal/Linux`; rendered PAC-10 `rts_interaction` passed in `content-acceptance-interaction-1793206836/rts-interaction.log` |
 
-The focused test begins from the production catalog/map definition and exercises the same slot-to-roster conversion helper used during startup, duplicate slot/participant/faction and missing/duplicate-human rejection, invalid Unaligned playable mapping, coordinator rejection cleanup, unbound-input/system-owned command rejection, faction retention on a unit, and normal return cleanup. The packaged interaction replay exercises the real local PlayerController input path and confirms admitted owner/faction mapping from startup logs. It does **not** yet execute the entire `BuildScenario` authored-load/spawn path with fault-injected malformed definitions, nor the complete PA-01–PA-24 matrix. Specifically missing: actual local PlayerController spoofing an opponent's unit, a runtime spawned Unaligned entity, stale/destroyed selection and fresh-match authority replay, repeated Unaligned initialization fault injection, and per-case invalid-startup snapshots. These are not counted as passed.
+The focused authored-admission test and package results below supersede only the earlier source-path limitation; other uncovered participant behaviors remain unqualified.
 
 ### Participant acceptance matrix
 
@@ -149,21 +150,73 @@ The focused test begins from the production catalog/map definition and exercises
 | PA-09 | PASS | Existing command-contract suite and packaged PAC-10 valid-command interaction |
 | PA-10 | PARTIAL | Raw numeric-ID helpers are private and unbound sources reject; a local-controller attempt against an opposing unit is not directly replayed |
 | PA-11 | PARTIAL | Unbound/system owner command rejection is tested with an isolated fixture; no packaged Unaligned unit exists |
-| PA-12 | PARTIAL | Duplicate slot/participant setup rejected by conversion/validator, but not injected through full map startup |
-| PA-13 | PARTIAL | Duplicate faction and contradictory human assignments reject; full controller-binding conflict startup fixture absent |
-| PA-14 | PASS | Missing and duplicate local-human assignments fail candidate conversion atomically |
-| PA-15 | NOT_RUN | Unknown placement slot has existing diagnostic logic but no new focused fault fixture |
-| PA-16 | PASS | Existing content Automation asserts the slot/archetype faction mismatch diagnostic |
-| PA-17 | PARTIAL | Coordinator rejection cleanup asserts no roster/units/objective/selection/commands/simulation; startup fault injection across every state field is incomplete |
+| PA-12 | PASS | Duplicate slot and runtime participant IDs injected at loader resolution and rejected through `BuildScenario` |
+| PA-13 | PASS | Duplicate faction and zero/multiple local-human mappings rejected by shared validation through startup; authored schema has no separate controller-binding field |
+| PA-14 | PASS | Missing and duplicate local-human assignments fail through production startup validation |
+| PA-15 | PASS | Valid archetype/location with only an undeclared placement slot injected through production startup; `MAP.SLOT.REFERENCE_UNRESOLVED` asserted |
+| PA-16 | PASS | Authored archetype/slot faction mismatch now also rejects through `BuildScenario`; existing content Automation remains green |
+| PA-17 | PASS | Editor startup assertions and cooked Development rejection snapshot show empty authority/gameplay state after structural faction mismatch |
 | PA-18 | PASS | Existing active-only lifecycle and command regressions pass |
 | PA-19 | PASS | Return test clears participant/system authority, selection, units and objective |
-| PA-20 | NOT_RUN | Fresh participant roster generation/replay after return is not covered in this increment |
-| PA-21 | PASS | Portable core, six RTS Automation tests, and seven content Automation tests pass |
+| PA-20 | PASS (packaged process scope) | Editor transient-world retry remains blocked at `MAP.LEVEL.MISMATCH`; independently, rendered packaged recovery starts a fresh canonical Active match in the same PID after the one-shot faction fixture |
+| PA-21 | PASS | Portable core, seven RTS Automation tests (three warning-bearing successes), and seven content Automation tests pass |
 | PA-22 | PASS | Final-source editor build and focused participant Automation pass |
-| PA-23 | PARTIAL | Cooked/rendered valid prototype interaction passes; authority-spoof and full roster-state assertions are not in packaged harness |
+| PA-23 | PASS | Isolated cooked faction-mismatch package rejects through the shared validator, renders recovery, and retries canonically in-process; normal Development and Shipping manifests exclude fixtures |
 | PA-24 | PASS | Branch/HEAD, patch and source hashes, UE pin, report paths, package hashes, and canonical-asset hashes recorded |
 
-Overall bounded participant slice verdict: **INCOMPLETE** against the milestone completion criteria because PA-08/10–13/15/17/20/23 remain partial or not run, including required production-path fault injection and fresh-match isolation.
+Overall bounded authored-startup slice verdict: **PARTICIPANT RECOVERY QUALIFIED** for Linux UE 5.8.3 Development, with the Editor transient-world retry still accurately blocked and independently superseded by the packaged process proof below. PA-08/PA-10/PA-11 retain their prior partial spoof/stale-selection limits. The broader Stage 4A remains incomplete independently.
+
+### Authored participant startup admission and recovery increment — 2026-10-28
+
+**Production path exercised:** `APolitikaPrototypeMatch::BuildScenario` → `FPolitikaPrototypeContentLoader::LoadAndValidate` (Asset Manager production catalog resolution and shared `ValidateCatalog`/`ValidateMapStructure`) → admission rejection/`RecoverToShellAfterAdmissionFailure`. An Editor-only `WITH_DEV_AUTOMATION_TESTS` one-shot map candidate is substituted only at the loader's map-resolution boundary. Each candidate is a transient duplicate of the canonical authored map; catalog loading and validation are not bypassed. The override is consumed on that load and explicitly cleared after every case. It is unavailable to packaged Development and Shipping code. The suite does not use or modify the canonical content assets.
+
+`Politika.RTS.MatchParticipants.AuthoredStartupAdmission` covers these canonical-map mutations through actual `BuildScenario` startup:
+
+| Mutation | Primary diagnostic asserted | Startup/rejection result |
+|---|---|---|
+| Duplicate `PlayerSlots[].SlotId` | `MAP.SLOT.DUPLICATE`, `PlayerSlots.SlotId` | AdmissionRejected; no roster or gameplay state |
+| Duplicate `PlayerSlots[].RuntimePlayerId` | `MAP.PLAYER.DUPLICATE`, `PlayerSlots.RuntimePlayerId` | AdmissionRejected; no roster or gameplay state |
+| Duplicate playable faction | `MAP.FACTION.DUPLICATE`, `PlayerSlots.FactionId` | AdmissionRejected; secondary placement faction mismatch retained |
+| Zero local-human slots | `MAP.SLOTS.HUMAN_COUNT`, `PlayerSlots.bHumanControlled` | AdmissionRejected |
+| Two local-human slots | `MAP.SLOTS.HUMAN_COUNT`, `PlayerSlots.bHumanControlled` | AdmissionRejected |
+| Unaligned in ordinary playable slot | `MAP.FACTION.UNALIGNED_PLAYABLE`, `PlayerSlots[0].FactionId` | AdmissionRejected; secondary faction mismatch retained |
+| Authored unit archetype faction conflicts with its declared participant slot | `CONTENT.FACTION.MISMATCH`, `UnitPlacements[0].UnitArchetypeId` | AdmissionRejected through the startup loader/validator path |
+| Unknown placement slot | `MAP.SLOT.REFERENCE_UNRESOLVED`, `UnitPlacements[0].SlotId` | AdmissionRejected; the valid archetype/location remain unchanged |
+
+For each case, assertions cover diagnostic error severity, code, canonical map ID, property path and actual invalid relationship; lifecycle never reaches Active; runtime/local/system authority, units, objective, selection, queued orders, content-ready flag, step accumulator, simulation-step count, command generation, published/pending gameplay events and result are empty/inactive; and the world contains no live authoritative unit/objective actors. Expected Error-severity validator output is explicitly registered with Unreal Automation so it remains visible without misclassifying correct rejection as an Automation failure.
+
+A further same-process boundary case uses a structurally valid canonical map in a test world without the real level. It confirms the roster is committed, production spatial validation rejects at `MAP.LEVEL.MISMATCH`/missing ground/NavMesh, and recovery retires roster, local binding, Unaligned authority, units, objective and content-ready state. A fresh coordinator in that same process then resolves the canonical map after the one-shot malformed override was consumed. **This is not a successful retry:** the test world lacks the referenced map and navigation data, so the canonical attempt also correctly rejects before Active. Thus AA-15/16/17's complete successful-retry claim and PA-20 remain BLOCKED.
+
+#### AA-01–AA-26 verdicts for this increment
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| AA-01 | PASS | Call chain above; `BeginPlay` invokes `BuildScenario`, shared structural validation precedes roster commitment, spatial validation follows roster commitment, then unit/objective creation and Active transition |
+| AA-02 | PASS | Duplicate slot startup diagnostic and rejection asserted |
+| AA-03 | PASS | Duplicate runtime participant startup diagnostic and rejection asserted |
+| AA-04 | PASS | Duplicate faction startup diagnostic and rejection asserted |
+| AA-05 | PASS | Zero/multiple local-human startup diagnostics and rejection asserted |
+| AA-06 | PASS | Unknown placement slot startup diagnostic asserted with other placement fields unchanged |
+| AA-07 | PASS | Unaligned playable-slot startup diagnostic asserted |
+| AA-08 | PASS | Rejected structural candidates publish no roster; post-roster spatial rejection clears committed roster |
+| AA-09 | PASS | Local binding and Unaligned system authority absent after rejection |
+| AA-10 | PASS | Coordinator collections and live world actor iteration are empty after structural rejection; post-roster case also leaves no authoritative actors |
+| AA-11 | PASS | Selection and pending orders empty |
+| AA-12 | PASS | No content-ready match, accumulator or executed steps |
+| AA-13 | PASS | Structured diagnostic fields asserted and diagnostics retained on coordinator |
+| AA-14 | PASS | Candidate map identity asserted; test hook is consumed once; unknown IDs continue to fail closed in existing production selector |
+| AA-15 | BLOCKED (Editor world) / PASS (packaged process) | Editor transient world still cannot load the saved level/NavMesh; rendered package independently reaches canonical Active after rejection |
+| AA-16 | PASS (packaged process) | Fresh retry reports two playable participants, local player 1/faction.player, separate Unaligned system authority, canonical 3-unit owner/faction mapping and objective |
+| AA-17 | PASS (bounded gameplay step) | New canonical lifecycle traverses phases 1–4 and executes its first authoritative simulation step after the rejected lifecycle is retired |
+| AA-18 | PASS | RTS 7/7 and Content 7/7 Automation executed; 3 existing RTS warning-bearing successes; portable core quality passes |
+| AA-19 | PASS | UE 5.8.3 pinned Linux Development Editor build passes |
+| AA-20 | PASS | Final-source Linux Development normal package and rendered PAC-10 interaction pass |
+| AA-21 | PASS | `DA_InvalidParticipantFaction` is isolated under TestFixtures and appears in the fixture-enabled UFS manifest (with the existing schema fixture) |
+| AA-22 | PASS | Rendered PAC-07/PAC-09 recovery verifies faction rejection, menu action, same PID, canonical Active retry and MainMenu return |
+| AA-23 | PASS | Normal Development and Shipping manifests omit both negative fixtures; final-source Shipping build succeeds and selector strings are absent |
+| AA-24 | PASS | Canonical source asset hashes match before/after build, automation and packaging |
+| AA-25 | PASS | Source/worktree, engine, package and artifact identity recorded in `build/diagnostics/stage4a-authored-admission/source-identity.txt` |
+| AA-26 | PASS | This owning acceptance record updated without promoting unrelated PA rows or broad Stage 4A |
 
 ## Identity, asset safety, and limitations
 
@@ -172,4 +225,68 @@ Overall bounded participant slice verdict: **INCOMPLETE** against the milestone 
 - Final participant Linux Development package executable SHA-256: `b0b0df81f50abb0731146f3931da38439943451161794ac17ae2a59a7ef45af9`; `Politika-Linux.pak/.ucas/.utoc`: `b6178bee8cff3863e19f98a9de594b933dcb758d0e592e6d2c9095399106cd68`, `239d2da011e79d39145fa2bf351d3c97da77ba831371afa0ba11f57cb0924298`, `6b28dc6d0ee5c85ed5ebcb2c5b36f3fdf4d4437840f43b4b51e0165758d27056`.
 - Pre-task canonical `.umap`, catalog, map definition, and invalid fixture hashes are in `build/diagnostics/stage4a-lifecycle-closure/baseline.txt`; their final hashes are in `artifact-identity.txt` and match. Direct BuildCookRun did not modify source assets. No restoration or overwrite was necessary.
 - The acceptance result is an in-memory prototype result, not persistence. Qualification does not cover physical GPU/display/controller, Shipping rendering, non-Linux platforms, networked play, or a complete match framework.
-- Broader Stage 4A still needs standard two-to-four canonical playable-faction setup and autonomous Unaligned controller behavior, among other rules-complete match responsibilities. This increment only records the NPC/system authority; it does not implement its independent simulation. Economy/deployment selection (fixed base, mobile command, or hybrid) remains open. Stage 4B harvesting, conversion, production, construction, and reinforcement are not started. Visibility, strategic AI, full victory/defeat rules, persistence, and the complete single-player loop remain roadmap work.
+- Broader Stage 4A still needs standard two-to-four canonical playable-faction setup and autonomous Unaligned controller behavior, among other rules-complete match responsibilities. This increment only records the NPC/system authority; it does not implement its independent simulation. The first economy prototype now selects a fixed starting base as a bounded default; the broader fixed/mobile/hybrid strategic model remains open. Stage 4B harvesting, conversion, production, construction, and reinforcement are not started. Visibility, strategic AI, full victory/defeat rules, persistence, and the complete single-player loop remain roadmap work.
+
+### Roadmap reconciliation verification — 2026-10-28
+
+The authored-startup fixture matrix was refined to include a **valid catalog unit archetype assigned to a different declared slot faction**, not merely a duplicate faction ID or an Unaligned-slot error that also produces secondary placement diagnostics. The case is injected as a transient duplicate and reaches production `BuildScenario` → loader → shared validator. `Politika.RTS.MatchParticipants.AuthoredStartupAdmission` passes with the exact `CONTENT.FACTION.MISMATCH` diagnostic at `UnitPlacements[0].UnitArchetypeId` and the same no-partial-state assertions as the other startup cases.
+
+| Check | Command / report | Observed result |
+|---|---|---|
+| UE preflight | `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash tools/unreal.sh doctor` | PASS; UE 5.8.3 install and pinned source revision match |
+| Portable C++ rules | `cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- core` | PASS; warnings-as-errors rules tests |
+| Linux Development Editor build | `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash tools/unreal.sh build` | PASS; compiled the refined `PolitikaAuthoredStartupAdmissionTests.cpp` and linked `PolitikaEditor` |
+| Focused authored-startup suite | `Politika.RTS.MatchParticipants.AuthoredStartupAdmission`; `build/diagnostics/stage4a-authored-admission/reconciliation-focused-final/index.json` | PASS; 1 discovered/executed, 0 warning-bearing, 0 failed/skipped |
+| RTS regressions | `Politika.RTS`; `build/diagnostics/stage4a-authored-admission/reconciliation-rts-final/index.json` | PASS with existing teardown warnings; 7 executed (4 succeeded, 3 succeeded-with-warnings), 0 failed/skipped |
+| Content regressions | `Politika.Content`; `build/diagnostics/stage4a-authored-admission/reconciliation-content/index.json` | PASS; 7 executed, 0 warning-bearing, 0 failed/skipped |
+| Integrity checks | `git diff --check`; canonical asset SHA-256 comparison against the values above | PASS; no whitespace errors and the six recorded canonical map/catalog/fixture assets retain their recorded hashes |
+
+At the time of this earlier follow-up, successful malformed-authored rejection → valid Active rematch and cooked malformed-participant recovery were blocked. The focused Editor retry limitation remains; the packaged proof below supersedes only the packaged-recovery gap. The running source at that earlier point was `ede371bd083a42723d979a208671fe2c21a86e2b` plus a dirty worktree; that earlier Automation source hash is retained as historical evidence.
+
+### Cooked malformed-participant recovery qualification — 2026-10-28
+
+This bounded qualification increment uses the existing content loader, shared validator, `BuildScenario`, match coordinator and `UGameInstance` menu recovery. It does not reactivate a retired lifecycle, add a coordinator, or alter normal startup. The Editor test world still correctly reports `MAP.LEVEL.MISMATCH` for its canonical retry because it has no saved RTS level/NavMesh; that Editor retry remains **BLOCKED**. The independent packaged process test resolves the real saved level and navigation and proves the required case-3 recovery contract.
+
+**Fixture:** `/Game/Politika/TestFixtures/DA_InvalidParticipantFaction` (`map.test.invalid_participant_faction`, schema 1) is a genuine cooked Unreal asset copied from the canonical definition. Its only gameplay-field fault is `UnitPlacements[0].UnitArchetypeId = unit.opposing_patrol`; the expected player slot remains `faction.player`, while the valid catalog archetype is `faction.opposition`. The production catalog is unchanged. The dedicated `-CreateInvalidParticipantFactionFixture` commandlet path was inspected and run without `-CreateContent`; it writes only this fixture and does not load/save the canonical RTS level or regenerate navigation. Editor Automation resolves this asset through `LoadAndValidate` and asserts exactly one `CONTENT.FACTION.MISMATCH` diagnostic at the intended property.
+
+**Packaged Development evidence:**
+
+- Normal archive: `Saved/Packages/Stage4AParticipantRecoveryNormal/Linux`; UFS manifest excludes both negative fixtures. `smoke` passes 14/14 at `Saved/ShellChecks/smoke-1793208805604`; rendered PAC-10 passes at `content-acceptance-interaction-1793208816`.
+- Fixture archive: `Saved/Packages/Stage4AParticipantRecoveryFixture/Linux`; the manifest includes `DA_InvalidParticipantFaction.uasset` and the retained `DA_InvalidMapSchema.uasset`. It is not a single-fixture-only archive.
+- Headless participant acceptance: `content-acceptance-1793208770`; the exact structured mismatch, expected/actual factions, selected map ID, rejected lifecycle, zero roster/local binding/Unaligned authority/units/objectives/selection/pending commands/sequences/steps/content readiness/result, and MainMenu route are observed. Repeated diagnostic, unknown-selector fail-closed behavior, canonical startup controls, and default menu also pass.
+- Existing schema regression: `content-acceptance-1793208779` against the same fixture archive; `InvalidMapSchema` still rejects with its schema diagnostic and repeats consistently. The null-renderer run labels PAC-07 `INCONCLUSIVE`; it is not used as rendered evidence.
+- Rendered same-process recovery: `content-acceptance-recovery-1793208907`, report `results.tsv`, child PID `146843`. The same retained process handle remains live through invalid startup, MainMenu transition, actual click on the existing prototype action, canonical retry, and Escape return to MainMenu. The harness also verifies there was no `RTS_ORDER_ADMITTED` or simulation-step event before canonical retry. Screenshots `01-rejected-menu.png`, `02-valid-match-after-rejection.png`, and `03-menu-after-valid-retry.png` were inspected; the recovery notice is readable and both gameplay/menu states render at 1280×720.
+- The rejected attempt emits `CONTENT.FACTION.MISMATCH|error|map.test.invalid_participant_faction|UnitPlacements[0].UnitArchetypeId|...|expected=faction.player|actual=faction.opposition`, then phase 8 and a zero-state `MATCH_ADMISSION_STATE` record. The retry emits legal lifecycle phases 1, 2, 3, 4 (Active), then `MATCH_SIMULATION_STEP first=1`. It admits two playable participants (local player 1/faction.player and a distinct assigned opponent), a separate Unaligned NPC/system-authority record, canonical owner/faction mapping for three units (players 1/1/2), and `objective.central_control`. This proves a fresh active context and an authoritative simulation step; no command execution is claimed for this recovery harness.
+
+**Shipping isolation:** final-source Linux Shipping `BuildCookRun` succeeds at `Saved/Packages/Stage4AParticipantRecoveryShipping/Linux`. Its UFS manifest contains neither test asset; its binary contains no fixture selector/map ID, `MATCH_SIMULATION_STEP`, or expanded Development rejection-snapshot strings. The detailed snapshot and first-step marker are behind non-Shipping guards. This is a Shipping content/code-isolation result, not a Shipping rendering qualification.
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| PR-01 | PASS | Actual initial HEAD `ede371bd083a42723d979a208671fe2c21a86e2b`, `main`; intentionally dirty baseline, UE 5.8.3 pin and engine SHA verified |
+| PR-02 | PASS | Focused authored-startup report `build/diagnostics/stage4a-participant-recovery/editor-focused-final/index.json`, 1/1 |
+| PR-03 | PASS (qualified limitation) | Editor transient-world retry remains blocked at `MAP.LEVEL.MISMATCH`; independent packaged same-process proof below passes |
+| PR-04 | PASS | Genuine cooked `DA_InvalidParticipantFaction` in isolated fixture directory |
+| PR-05 | PASS | Authored fixture check verifies stable ID/schema/level and placement-only gameplay difference; canonical source hashes unchanged |
+| PR-06 | PASS | One-shot Development selector resolves the fixture by explicit ID; unknown ID fails closed |
+| PR-07 | PASS | Shared validator diagnostic/property and expected/actual factions observed in both headless and rendered package logs |
+| PR-08 | PASS | AdmissionRejected/phase 8 before any Active transition; no content-ready marker for invalid attempt |
+| PR-09 | PASS | Coordinator post-cleanup snapshot reports empty participants, local/system authority, world units/objectives, selection, pending commands, sequences, steps, readiness and result |
+| PR-10 | PASS | Existing `UGameInstance` route loads and completes MainMenu |
+| PR-11 | PASS | Rendered recovery notice inspected in `01-rejected-menu.png`; process/window responsive at verified 1280×720 |
+| PR-12 | PASS | Existing MainMenu prototype action clicked through xdotool; no test shortcut added |
+| PR-13 | PASS | One child handle/PID 146843 spans rejection and retry; process is checked alive before and after action |
+| PR-14 | PASS | Full retry phases 1–4, explicit Active log, plus first authoritative simulation-step marker |
+| PR-15 | PASS | Fresh local/opponent/Unaligned roster, unit owner/faction and objective records match canonical authored setup |
+| PR-16 | PASS (bounded) | New level/match context after rejected world; canonical identities and fresh unit IDs logged, with no second rejection or stale fixture selection |
+| PR-17 | PASS (bounded) | First legitimate authoritative simulation step executes; no command-operation claim |
+| PR-18 | PASS | Existing `InvalidMapSchema` path still passes the content acceptance harness |
+| PR-19 | PASS | `Politika.RTS` 7/7 (4 clean, 3 warning-bearing); `Politika.Content` 7/7 clean |
+| PR-20 | PASS | UE doctor/build, portable core and docs/content audit pass |
+| PR-21 | PASS | Normal Development UFS manifest excludes both negative fixtures |
+| PR-22 | PASS | Fixture Development manifest contains both the intended participant fixture and retained schema fixture |
+| PR-23 | PASS | Shipping package succeeds and excludes fixture assets/selector strings |
+| PR-24 | PASS | Canonical level, catalog, map, referenced unit/weapon and existing schema-fixture hashes match preflight |
+| PR-25 | PASS | Dirty source, file hashes, engine pin, three package manifests/binary/IoStore hashes, UAT logs and reports captured in `build/diagnostics/stage4a-participant-recovery/`; package identity records the final runtime source state |
+| PR-26 | PASS | Owning Stage 4A/content/engine/readme status reconciled without accepting full Stage 4A |
+
+**Bounded verdict:** cooked participant rejection and same-process rendered recovery are qualified for Linux UE 5.8.3 Development. This does **not** complete Stage 4A or First Playable Skirmish. PA-08, PA-10 and PA-11 remain partial; the transient-world Editor retry remains blocked; no gameplay command is exercised by this recovery harness. The smallest next Stage 4A dependency is to close the remaining participant-authority gaps (stale selection and controller spoof/Unaligned command attempts) with direct packaged or coordinator evidence, without introducing autonomous Unaligned behavior or beginning Stage 4B.

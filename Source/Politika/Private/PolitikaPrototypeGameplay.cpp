@@ -435,6 +435,7 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
 
 void APolitikaPrototypeMatch::BuildScenario()
 {
+    LastAdmissionDiagnostics.Reset();
     FName RequestedMapId = UPolitikaPrototypeContentValidator::PrototypeMapAssetId;
 #if !UE_BUILD_SHIPPING
     FString FixtureId;
@@ -442,6 +443,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     if (GameInstance && GameInstance->ConsumeDevelopmentTestFixture(FixtureId))
     {
         if (FixtureId == TEXT("InvalidMapSchema")) RequestedMapId = TEXT("map.test.invalid_schema");
+        else if (FixtureId == TEXT("InvalidParticipantFaction")) RequestedMapId = TEXT("map.test.invalid_participant_faction");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -455,6 +457,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     TArray<FPolitikaContentDiagnostic> Diagnostics;
     if (!FPolitikaPrototypeContentLoader::LoadAndValidate(GetWorld(), RequestedMapId, Snapshot, Diagnostics))
     {
+        LastAdmissionDiagnostics = Diagnostics;
         for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
             UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_VALIDATION %s"), *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
         UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED fixture=%s units=0 objective=0 simulation_started=0"), *RequestedMapId.ToString());
@@ -492,6 +495,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     Diagnostics.Reset();
     if (!UPolitikaPrototypeContentValidator::ValidateMapSpatial(GetWorld(), MapDefinition, Diagnostics))
     {
+        LastAdmissionDiagnostics = Diagnostics;
         for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
             UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_VALIDATION %s"), *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
         LastCommandFeedback = TEXT("Prototype setup failed: map traversal validation failed. See CONTENT_VALIDATION diagnostics.");
@@ -617,9 +621,19 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
     int32 WorldObjectiveCount = 0;
     for (TActorIterator<APolitikaPrototypeUnit> It(World); It; ++It) ++WorldUnitCount;
     for (TActorIterator<APolitikaPrototypeObjective> It(World); It; ++It) ++WorldObjectiveCount;
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MATCH_ADMISSION_STATE map=%s participants=%d local_player=%u unaligned_system=%d units=%d objectives=%d selection=%d pending_commands=%d accepted_sequences=%llu simulation_steps=%llu content_ready=%d terminal_result=%d"),
+        *MapId.ToString(), RuntimeParticipants.Num(), LocalRuntimePlayerId,
+        UnalignedSystemAuthority.bNpcSystemControlled ? 1 : 0, WorldUnitCount, WorldObjectiveCount,
+        SelectionByPlayer.Num(), PendingOrders.Num(), NextCommandSequence - 1, SimulationStepsExecuted,
+        bContentReady ? 1 : 0, CommittedResult.IsSet() ? 1 : 0);
+#else
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("MATCH_ADMISSION_STATE map=%s units=%d objectives=%d commands=%llu simulation_steps=%llu content_ready=%d"),
-        *MapId.ToString(), WorldUnitCount, WorldObjectiveCount, NextCommandSequence - 1, SimulationStepsExecuted, bContentReady ? 1 : 0);
+        *MapId.ToString(), WorldUnitCount, WorldObjectiveCount, NextCommandSequence - 1,
+        SimulationStepsExecuted, bContentReady ? 1 : 0);
+#endif
 
     World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]
     {
@@ -1186,6 +1200,10 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
 void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 {
     ++SimulationStepsExecuted;
+#if !UE_BUILD_SHIPPING
+    if (SimulationStepsExecuted == 1)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_SIMULATION_STEP first=1"));
+#endif
     // Explicit simulation phase order: movement → target/combat intent → damage
     // application → dead-entity cleanup → objective evaluation. UI only reads.
     for (APolitikaPrototypeUnit* Unit : Units)

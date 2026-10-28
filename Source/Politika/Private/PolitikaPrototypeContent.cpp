@@ -19,6 +19,9 @@ const FName UPolitikaPrototypeContentValidator::PrototypeMovementProfileId(TEXT(
 namespace
 {
 constexpr int32 MaxSupportedSchemaVersion = 1;
+#if WITH_DEV_AUTOMATION_TESTS
+UPolitikaPrototypeMapDefinition* GAutomationMapCandidate = nullptr;
+#endif
 
 bool IsFiniteVector(const FVector& Value)
 {
@@ -140,6 +143,18 @@ bool ProjectToNav(const UNavigationSystemV1* NavSystem, const ANavigationData* N
         && NavSystem->ProjectPointToNavigation(Input, Output, FVector(80.0, 80.0, 180.0), NavData);
 }
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+void FPolitikaPrototypeContentLoader::SetAutomationMapCandidate(UPolitikaPrototypeMapDefinition* Candidate)
+{
+    GAutomationMapCandidate = Candidate;
+}
+
+void FPolitikaPrototypeContentLoader::ClearAutomationMapCandidate()
+{
+    GAutomationMapCandidate = nullptr;
+}
+#endif
 
 FPrimaryAssetId UPolitikaWeaponDefinition::GetPrimaryAssetId() const
 {
@@ -590,16 +605,27 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
     if (!Catalog) return false;
 
     UPolitikaPrototypeMapDefinition* Map = nullptr;
-#if !UE_BUILD_SHIPPING
-    if (MapId == TEXT("map.test.invalid_schema"))
+#if WITH_DEV_AUTOMATION_TESTS
+    if (MapId == UPolitikaPrototypeContentValidator::PrototypeMapAssetId && GAutomationMapCandidate)
     {
-        Map = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
-            TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema.DA_InvalidMapSchema"));
+        Map = GAutomationMapCandidate;
+        GAutomationMapCandidate = nullptr; // A candidate can affect one startup attempt only.
+    }
+#endif
+#if !UE_BUILD_SHIPPING
+    const TCHAR* FixturePath = nullptr;
+    if (MapId == TEXT("map.test.invalid_schema"))
+        FixturePath = TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema.DA_InvalidMapSchema");
+    else if (MapId == TEXT("map.test.invalid_participant_faction"))
+        FixturePath = TEXT("/Game/Politika/TestFixtures/DA_InvalidParticipantFaction.DA_InvalidParticipantFaction");
+    if (!Map && FixturePath)
+    {
+        Map = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr, FixturePath);
         if (!Map)
         {
             AddDiagnostic(OutDiagnostics, TEXT("TEST_FIXTURE.ASSET.MISSING"), MapId, TEXT("FixtureAsset"),
                 TEXT("The explicitly requested cooked negative-test map asset could not be resolved."),
-                TEXT("/Game/Politika/TestFixtures/DA_InvalidMapSchema"), TEXT("missing"),
+                FixturePath, TEXT("missing"),
                 TEXT("Build the isolated Development negative-test package with the fixture cook directory."));
             return false;
         }

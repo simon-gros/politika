@@ -3,6 +3,16 @@
 Status: Core resource hierarchy and Meridian Pact starting-position advantage established; quantities, conversion ratios, map distribution, costs and numerical balance remain open.
 Related: [Concepts Outline](CONCEPTS_OUTLINE.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Story Outline](STORY_OUTLINE.md) · [Faction descriptions](../Factions/)
 
+## First Playable Skirmish economy slice (planned, not implemented)
+
+The [Engine Outline](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match) is the single implementation-sequence authority. The first economy increment intentionally does **not** implement this document's full strategic hierarchy. Use the smallest loop that makes an additional combat unit: one collectible resource category, one deposit/source, one collector, one delivery/conversion step, one spendable balance per runtime participant, one fixed production-capable starting structure and one priced reinforcement process.
+
+**Initial deployment decision:** use a fixed starting-base configuration for the prototype. It avoids making mobile command vehicles, construction placement and deploy/undeploy state dependencies of the first economic loop. Preserve the content/rules seam for later fixed, mobile or hybrid deployment profiles, but do not build the alternatives now. The fixed base is an implementation default for the first playable slice, not a revision to faction canon or a final economy decision.
+
+The resource account, collector eligibility, delivered quantity, affordability check, reservation/spend, cancellation/refund policy, production progress/completion and resulting unit ownership are authoritative match state. UI, animations and feedback only report transactions. The minimum positive path is gather → deliver/convert → spend → produce → command reinforcement in combat. Reject insufficient funds and invalid owners/transactions without partial mutation; verify participant isolation and deterministic initial balances. Clear balances, reservations, queues and in-flight processes on match termination/return, then initialize them from scenario-authored starting values on rematch.
+
+Define cancellation semantics before enabling cancellation; if interruption is initially unsupported, explicitly reject/report it rather than implying a queue action succeeded. Keep definition fields versioned and authored only when designers need to tune them. Do not add general inventory abstractions, multiple commodities, supply chains, electricity/power, refineries, markets, technology trees or faction-specific economic asymmetry until a playable mechanic demonstrates that need. These are exclusions from the prototype milestone, not deletions from the design below.
+
 ## 1. Resource hierarchy
 
 POLITIKA's economy assigns the greatest strategic value to nuclear-weapons materials, followed by fossil fuels. Electricity and other industrial or logistical resources also matter, but their detailed rankings and economies remain to be defined. The ranking is a gameplay design principle, not a real-world commodity price comparison.

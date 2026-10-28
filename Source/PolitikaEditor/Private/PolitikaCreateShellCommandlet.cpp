@@ -90,6 +90,41 @@ bool CreateInvalidMapSchemaFixture()
     return SaveDefinitionAsset(Fixture);
 }
 
+bool CreateInvalidParticipantFactionFixture()
+{
+    const UPolitikaPrototypeMapDefinition* ValidMap = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    if (!ValidMap || ValidMap->UnitPlacements.IsEmpty()) return false;
+    UPolitikaPrototypeMapDefinition* Fixture = CreateDefinitionAsset<UPolitikaPrototypeMapDefinition>(
+        TEXT("/Game/Politika/TestFixtures/DA_InvalidParticipantFaction"), TEXT("DA_InvalidParticipantFaction"));
+    if (!Fixture) return false;
+    Fixture->StableId = TEXT("map.test.invalid_participant_faction");
+    Fixture->SchemaVersion = ValidMap->SchemaVersion;
+    Fixture->Profile = ValidMap->Profile;
+    Fixture->LevelAsset = ValidMap->LevelAsset;
+    Fixture->CoordinateSpace = ValidMap->CoordinateSpace;
+    Fixture->PlayableMin = ValidMap->PlayableMin;
+    Fixture->PlayableMax = ValidMap->PlayableMax;
+    Fixture->MovementProfileId = ValidMap->MovementProfileId;
+    Fixture->GroundActorTag = ValidMap->GroundActorTag;
+    Fixture->PlayerSlots = ValidMap->PlayerSlots;
+    Fixture->UnitPlacements = ValidMap->UnitPlacements;
+    Fixture->Objective = ValidMap->Objective;
+    Fixture->CameraOffset = ValidMap->CameraOffset;
+    Fixture->CameraFieldOfView = ValidMap->CameraFieldOfView;
+    Fixture->CameraPanMin = ValidMap->CameraPanMin;
+    Fixture->CameraPanMax = ValidMap->CameraPanMax;
+    Fixture->Lighting = ValidMap->Lighting;
+    // Keep all canonical references and placements except this single field:
+    // the opposition archetype is assigned to the player's faction slot.
+    Fixture->UnitPlacements[0].UnitArchetypeId = TEXT("unit.opposing_patrol");
+    Fixture->MarkPackageDirty();
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("TEST_FIXTURE_CREATED map=%s source=%s fault=UnitPlacements[0].UnitArchetypeId value=%s"),
+        *Fixture->StableId.ToString(), *ValidMap->GetPathName(), *Fixture->UnitPlacements[0].UnitArchetypeId.ToString());
+    return SaveDefinitionAsset(Fixture);
+}
+
 bool CreatePrototypeDefinitions()
 {
     UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -240,6 +275,10 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
         UE_LOG(LogPolitikaStartup, Error, TEXT("An editor build is required for shell authoring or content validation."));
         return 1;
     }
+    // Isolated fixture authoring must not load/save or regenerate canonical maps,
+    // navigation, catalog entries, or the existing schema fixture.
+    if (FParse::Param(*Params, TEXT("CreateInvalidParticipantFactionFixture")))
+        return CreateInvalidParticipantFactionFixture() ? 0 : 12;
     if (FParse::Param(*Params, TEXT("ValidateBlockedRoute")))
     {
         UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(FPackageName::LongPackageNameToFilename(

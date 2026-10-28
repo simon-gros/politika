@@ -5,7 +5,13 @@ Related: [README](../README.md) · [Concepts Outline](CONCEPTS_OUTLINE.md) · [E
 
 ## Implemented prototype boundary
 
-The current UE prototype uses a narrower authored test profile than the standard match rules below. Its `faction.player` / `faction.opposition` identities are test identities, not assignments to the four canonical playable factions. Runtime startup preserves the authored slot, participant, controller-kind, and faction mapping and creates a separate Unaligned NPC/system authority record, but creates no Unaligned world units or autonomous behavior. This prototype does not qualify standard 2–4 faction match setup.
+The current UE prototype uses a narrower authored test profile than the standard match rules below. Its `faction.player` / `faction.opposition` identities are test identities, not assignments to the four canonical playable factions. Runtime startup preserves authored slot, participant, controller-kind, and faction mapping and creates a separate Unaligned NPC/system authority record, but creates no Unaligned world units or autonomous behavior. The 2026-10-28 Editor Automation exercises malformed authored participant/placement rejection through `BuildScenario`; successful valid retry after such a failure and cooked malformed-participant recovery remain unproven. This prototype does not qualify standard 2–4 faction match setup or functioning AI.
+
+### First Playable Skirmish profile (planned)
+
+The initial integrated match is one human-controlled canonical playable faction versus one AI-controlled canonical playable faction, plus a separately initialized Unaligned neutral/system authority. This is a two-participant match; the Unaligned is not a third selectable army or a proxy for AI behavior. The first scenario uses a compact authored map, two legal starting areas, one resource source, one fixed production base per playable participant, a contestable objective and routes that support gathering and combat. Select actual factions and author historical/map content through the owning scenario/content process; the present test identities are not silently promoted to canon.
+
+The final acceptance requires validated setup and runtime ownership mappings, initial entities, legitimate human and AI command authority, normal terminal outcomes, result presentation, return to menu and a clean same-process rematch. It does not require all four factions, the complete always-simulated Unaligned society, 3–4 participant setup, campaign rules or multiplayer. The general 2–4-plus-Unaligned design above remains the target model, while this first profile is deliberately two playable slots.
 
 ## 1. Fixed rule: 2–4 players plus the Unaligned
 

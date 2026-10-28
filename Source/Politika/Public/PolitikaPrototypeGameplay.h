@@ -7,6 +7,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Rules.h"
+#include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
 struct FPolitikaPrototypeContentSnapshot;
@@ -181,6 +182,7 @@ private:
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
 #endif
     struct FPendingOrder
     {
@@ -194,6 +196,7 @@ private:
     UPROPERTY() TObjectPtr<APolitikaPrototypeObjective> Objective;
     UPROPERTY() TMap<uint32, TWeakObjectPtr<APolitikaPrototypeUnit>> SelectionByPlayer;
     UPROPERTY() FString LastCommandFeedback = TEXT("Select a friendly unit; right-click ground or an enemy to issue an order.");
+    TArray<FPolitikaContentDiagnostic> LastAdmissionDiagnostics;
     UPROPERTY() float SimulationStepSeconds = 0.05f;
     UPROPERTY() FVector2D PlayableMin = FVector2D::ZeroVector;
     UPROPERTY() FVector2D PlayableMax = FVector2D::ZeroVector;
