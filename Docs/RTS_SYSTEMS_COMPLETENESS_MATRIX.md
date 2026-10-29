@@ -31,12 +31,14 @@ A real-time strategy game needs: (1) authoritative, progressing world state; (2)
 | Scenario/missions, normal win and loss | Objective-driven terminal path; ordinary full skirmish not qualified | [Engine Outline](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match), [Story](STORY_OUTLINE.md) | 4E–4F; campaign 5 |
 | Diplomacy/markets/espionage/nuclear | Significant conceptual specs only | [Concepts](CONCEPTS_OUTLINE.md), [Specialized systems](DOCUMENTATION_INDEX.md#game-design-and-canon) | Post-4F |
 | Persistence, saves, replays, desync evidence | Profile SaveGame exists; authoritative **match save/replay not implemented** | [Match Persistence and Replay](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) | Deferred beyond 4F |
-| UI/map overlay/minimap/accessibility | Bounded HUD + extensive UI design; complete adaptive profile not verified | [UI Overview](POLITIKA_UI_OVERVIEW.md), [Input](RTS_SELECTION_AND_GROUP_ORDERS.md) | 4C baseline, later |
+| Tactical HUD and adaptive map/overlays/accessibility | Canvas tactical HUD is source-evidenced; responsive interactive UMG card, multi-select inspector, global production, formation, intel minimap and device profiles **not qualified** | [HUD Architecture](RTS_HUD_ARCHITECTURE.md) (widget semantics and HUD gates), [UI Overview](POLITIKA_UI_OVERVIEW.md) (visual/product), [Settings and Keymap](RTS_UI_SETTINGS_AND_KEYMAP.md) (bindings/settings) | HUD-01/02 alongside 4C; 4C-G and later system-specific HUD gates; not a new 4F requirement |
 | Authoring/validation and provenance | Data-driven assets and validation qualified in scoped Stage 3; archive/prototypes separate | [Gameplay Content](GAMEPLAY_CONTENT.md), [Production Standards](PRODUCTION_STANDARDS.md) | Continuous |
 | Performance, density and platforms | Repeatability fixtures; no representative scale/device qualification | [Performance](PERFORMANCE_AND_RELEASE_GATES.md), [Platforms](PLATFORM_SUPPORT.md) | 4F baseline, 6 release |
 | Multiplayer, replication, spectators, reconnect | No supported multiplayer release contract | [Engine Outline](ENGINE_OUTLINE.md#6-performance-determinism-and-networking-posture) | Optional future, not 4F |
 
 ## 3. High-impact conceptual omissions closed by accompanying specifications
+
+The [RTS HUD Architecture](RTS_HUD_ARCHITECTURE.md) closes the *design-documentation* gap for a cross-system HUD ontology and implementation plan: the existing UI is still a bounded prototype, and none of its proposed minimap, formations, research, talents or intelligence presentations are thereby declared implemented.
 
 The adjacent specifications provide *implementation-ready boundaries and negative tests*, while remaining proposed:
 
