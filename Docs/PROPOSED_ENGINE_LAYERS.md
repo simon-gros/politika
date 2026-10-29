@@ -65,7 +65,7 @@ Acceptance criteria: selection changes update the HUD promptly; mouse and hotkey
 
 POLITIKA responsibility: start, configure, run, and end a campaign mission or skirmish. Own teams, player slots, mission rules, objective state, pause policy, victory/defeat, result summaries, and transition to the next local screen. Keep campaign progression separate from per-match state so local saves and mission restarts are predictable.
 
-UE direction: use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Treat online replication as a future adapter only if multiplayer is selected; do not make it a prerequisite for local game lifecycle.
+UE direction: use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Multiplayer is now a **planned future capability** (not a tested/shipped one): maintain server-authoritative gameplay and observer-specific projection boundaries for **all existing and new code** now, and add replication/session transport only at the independently accepted multiplayer milestones. Follow the [mandatory existing-code retrofit audit](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1); do not make networking a prerequisite for local game lifecycle or duplicate the authoritative match.
 
 Acceptance criteria: missions can start, pause where permitted, complete, fail and restart without stale state. Objectives and result summaries follow match rules, and local campaign progress is saved independently of a running match.
 
