@@ -113,4 +113,8 @@ See the [Stage 3 acceptance record](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) for t
 
 ## AC-INF-01 — optional textured infantry visual playtest (2026-10-28)
 
+### Current local rifle-infantry playtest (2026-10-29)
+
+The current default Linux playtest uses the separate skeletal `RifleInfantry` reference profile, not the optional static AC-INF-01 source below. Its neutral-name import, restored runtime dependencies, 108 MP3/SoundWave sources, 15 randomized sound cues and scoped packaged acceptance are owned by [Rifle-infantry import and audio recovery](CNC3_RIFLEMEN_IMPORT.md). This does not promote squad mechanics, source balance values, other platforms or production-art readiness. Historical AC-INF-01 source-only status remains unchanged.
+
 The original, single-mesh, colored static infantry [GLB and asset-specific import/acceptance instructions](../Art/Prototypes/Infantry/AC-INF-01/README.md) are versioned under `Art/Prototypes/Infantry/AC-INF-01/`. `UPolitikaUnitArchetypeDefinition::bUseAuthoredMeshMaterials` defaults to `false`: current basic-shape color tint and gameplay behaviour remain unchanged. For a controlled test, import the GLB as a native Unreal `UStaticMesh`, author collision, set a selected fixture archetype's `VisualMesh`, verify `VisualScale`, and opt in to its original material before saving and cooking. **Source GLB in Git is not a cooked asset.** Neither Unreal Editor import, updated fixture asset, nor player-facing packaged validation has been run as part of this source-art registration. See the asset README for explicit next steps, acceptance and scope.
