@@ -19,6 +19,9 @@ use std::{
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 720;
+/// Order hotkeys from Config/DefaultInput.ini; W/A/S/D are camera-only.
+const STOP_KEY: &str = "x";
+const ATTACK_MOVE_KEY: &str = "q";
 
 fn run_output(command: &mut Command) -> Result<String, String> {
     let result = command
@@ -1061,7 +1064,7 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
         let since_host = host.offset();
         select_entity(&mut client, "MP_CLIENT_SAMPLE", client_unit)?;
         let mut client_orders = Vec::new();
-        for (key, order) in [("f", 7u32), ("s", 3), ("g", 4)] {
+        for (key, order) in [("f", 7u32), (STOP_KEY, 3), ("g", 4)] {
             let mark = client.offset();
             client.key(key)?;
             let outcome = client.wait_line(
@@ -1123,7 +1126,7 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
         // objective after zooming out, then unit B attack-moves to the objective.
         let since_host = host.offset();
         select_entity(&mut host, "MP_SERVER_SAMPLE", host_unit_b)?;
-        for (key, order) in [("s", "Stop"), ("g", "Guard")] {
+        for (key, order) in [(STOP_KEY, "Stop"), ("g", "Guard")] {
             let mark = host.offset();
             host.key(key)?;
             host.wait_line(
@@ -1158,7 +1161,7 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
         host.hover(objective.0 + 18.0, objective.1 + 10.0)?;
         thread::sleep(Duration::from_millis(150));
         let mark = host.offset();
-        host.key("a")?;
+        host.key(ATTACK_MOVE_KEY)?;
         let host_attack_move = host.wait_line(
             &[
                 "RTS_ORDER_ADMITTED order=AttackMove",
@@ -1987,7 +1990,7 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         let since = server.offset();
         select_entity(&mut client_b, "MP_CLIENT_SAMPLE", unit_b1)?;
         let mut b_orders = Vec::new();
-        for (key, order) in [("f", 7u32), ("s", 3), ("g", 4)] {
+        for (key, order) in [("f", 7u32), (STOP_KEY, 3), ("g", 4)] {
             let mark = client_b.offset();
             client_b.key(key)?;
             let outcome = client_b.wait_line(
@@ -2053,7 +2056,7 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         // objective, unit 2 Attack-move to the objective.
         let since = server.offset();
         select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit_a2)?;
-        for (key, order) in [("s", "Stop"), ("g", "Guard")] {
+        for (key, order) in [(STOP_KEY, "Stop"), ("g", "Guard")] {
             let mark = server.offset();
             client_a.key(key)?;
             server.wait_line(
@@ -2088,7 +2091,7 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         client_a.hover(objective_a.0 + 18.0, objective_a.1 + 10.0)?;
         thread::sleep(Duration::from_millis(150));
         let mark = server.offset();
-        client_a.key("a")?;
+        client_a.key(ATTACK_MOVE_KEY)?;
         let a_attack_move = server.wait_line(
             &[
                 "RTS_ORDER_ADMITTED order=AttackMove",
@@ -3905,7 +3908,7 @@ fn layout_session(
                 sample,
                 unit,
             )?;
-            for (key, order) in [("s", "Stop"), ("g", "Guard")] {
+            for (key, order) in [(STOP_KEY, "Stop"), ("g", "Guard")] {
                 let mark = server.offset();
                 seat_game(&mut server, &mut clients, listen, index).key(key)?;
                 let admitted = server.wait_line(
@@ -3982,13 +3985,13 @@ fn layout_session(
                     select_entity(client, sample, support)?;
                     client.hover(objective.0 - 18.0, objective.1 + 10.0)?;
                     thread::sleep(Duration::from_millis(150));
-                    client.key("a")?;
+                    client.key(ATTACK_MOVE_KEY)?;
                 }
             } else {
                 select_entity(client, sample, unit)?;
                 client.hover(objective.0 + 18.0, objective.1 + 10.0)?;
                 thread::sleep(Duration::from_millis(150));
-                client.key("a")?;
+                client.key(ATTACK_MOVE_KEY)?;
             }
             thread::sleep(Duration::from_millis(400));
         }

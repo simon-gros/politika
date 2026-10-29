@@ -14,6 +14,10 @@ use std::{
 #[path = "../navigation_obstacle.rs"]
 mod navigation_obstacle;
 
+/// Order hotkeys from Config/DefaultInput.ini; W/A/S/D are camera-only.
+const STOP_KEY: &str = "x";
+const ATTACK_MOVE_KEY: &str = "q";
+
 fn output(command: &mut Command) -> Result<String, String> {
     let result = command
         .output()
@@ -255,9 +259,9 @@ fn camera_position(line: &str) -> Option<(f32, f32)> {
     Some((field("x=")?, field("y=")?))
 }
 
-/// The S (Stop) and A (AttackMove) command keys share the W/S and A/D pan axes, so the
-/// earlier hotkey taps can displace the camera by a frame before this check. The first
-/// logged forward state is therefore the baseline: PanForward changes only world Y, so the
+/// Packages built before the Q/X order rebinding shared the S (Stop) and A (AttackMove) keys
+/// with the pan axes, so earlier hotkey taps could displace the camera before this check.
+/// The first logged forward state is therefore the baseline, not the origin: PanForward changes only world Y, so the
 /// X change up to the first right state is PanRight's own movement. The fixture camera
 /// looks along +Y (CameraOffset has no X), making its ground-projected right vector -X.
 fn require_right_pan_moved(log: &str) -> Result<(), String> {
@@ -602,7 +606,7 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
             sprint_log_start,
         )?;
-        input(&window, &["key", "s"])?;
+        input(&window, &["key", STOP_KEY])?;
         wait_for(
             &mut child,
             &log,
@@ -623,7 +627,10 @@ fn main() -> Result<(), String> {
         // legitimate case AttackMove acquires and fires rather than producing a movement
         // position event, so prove the authoritative order then accept either runtime path.
         let attack_move_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
-        input(&window, &["mousemove", "--sync", "650", "430", "key", "a"])?;
+        input(
+            &window,
+            &["mousemove", "--sync", "650", "430", "key", ATTACK_MOVE_KEY],
+        )?;
         wait_for(
             &mut child,
             &log,

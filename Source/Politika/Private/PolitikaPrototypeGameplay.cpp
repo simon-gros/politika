@@ -2571,12 +2571,14 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     Super::SetupInputComponent();
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::SelectUnderCursor);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
-    InputComponent->BindKey(EKeys::S, IE_Pressed, this, &APolitikaPrototypePlayerController::StopSelected);
-    InputComponent->BindKey(EKeys::G, IE_Pressed, this, &APolitikaPrototypePlayerController::GuardSelected);
-    InputComponent->BindKey(EKeys::E, IE_Pressed, this, &APolitikaPrototypePlayerController::GrenadeSelected);
-    InputComponent->BindKey(EKeys::R, IE_Pressed, this, &APolitikaPrototypePlayerController::ReloadSelected);
-    InputComponent->BindKey(EKeys::F, IE_Pressed, this, &APolitikaPrototypePlayerController::SprintSelected);
-    InputComponent->BindKey(EKeys::A, IE_Pressed, this, &APolitikaPrototypePlayerController::AttackMoveSelected);
+    // Order keys live in DefaultInput.ini and must not share a key with the W/A/S/D pan axes,
+    // or every order press would also move the camera by a frame of pan speed.
+    InputComponent->BindAction(TEXT("PrototypeStop"), IE_Pressed, this, &APolitikaPrototypePlayerController::StopSelected);
+    InputComponent->BindAction(TEXT("PrototypeGuard"), IE_Pressed, this, &APolitikaPrototypePlayerController::GuardSelected);
+    InputComponent->BindAction(TEXT("PrototypeGrenade"), IE_Pressed, this, &APolitikaPrototypePlayerController::GrenadeSelected);
+    InputComponent->BindAction(TEXT("PrototypeReload"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReloadSelected);
+    InputComponent->BindAction(TEXT("PrototypeSprint"), IE_Pressed, this, &APolitikaPrototypePlayerController::SprintSelected);
+    InputComponent->BindAction(TEXT("PrototypeAttackMove"), IE_Pressed, this, &APolitikaPrototypePlayerController::AttackMoveSelected);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
     InputComponent->BindAxis(TEXT("PrototypePanRight"), this, &APolitikaPrototypePlayerController::PanRight);
@@ -2933,7 +2935,7 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(Outcome, FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale); Y += 32.0f * UiScale;
         }
     }
-    DrawText(TEXT("LMB select  ·  RMB move / attack  ·  A attack-move  ·  G guard  ·  S stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    DrawText(TEXT("LMB select  ·  RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     {
         APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
         if (Selected)
@@ -2987,7 +2989,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     const float PanelTop = Canvas->ClipY - (RowHeight * 5.0f) - (36.0f * UiScale);
     DrawText(TEXT("COMMANDS"), Ink, PanelLeft, PanelTop, nullptr, 0.9f * UiScale);
     const TCHAR* Labels[] = { TEXT("MOVE"), TEXT("ATTACK"), TEXT("ATTACK-MOVE"), TEXT("STOP"), TEXT("GUARD") };
-    const TCHAR* Hints[] = { TEXT("RMB ground"), TEXT("RMB hostile"), TEXT("A + ground"), TEXT("S"), TEXT("G · provisional") };
+    const TCHAR* Hints[] = { TEXT("RMB ground"), TEXT("RMB hostile"), TEXT("Q + ground"), TEXT("X"), TEXT("G · provisional") };
     const TCHAR* Marks[] = { TEXT("M"), TEXT("!"), TEXT("A+"), TEXT("X"), TEXT("G") };
     const EPolitikaPrototypeOrder Orders[] = {
         EPolitikaPrototypeOrder::Move, EPolitikaPrototypeOrder::Attack,

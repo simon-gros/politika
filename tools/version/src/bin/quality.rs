@@ -274,6 +274,109 @@ fn read_pin(root: &Path) -> Result<EnginePin, String> {
     parse_engine_pin(&source)
 }
 
+/// Keys bound to a continuous camera axis must not also issue an order: the axis still
+/// fires on the order press and moves the camera by a frame of pan speed.
+fn check_input_bindings(input_ini: &str, sources: &[(String, String)]) -> Check {
+    let mapping_key = |line: &str, prefix: &str| -> Option<String> {
+        let body = line.trim().strip_prefix(prefix)?;
+        let start = body.find("Key=")? + "Key=".len();
+        let key = body[start..].split([',', ')']).next()?.trim();
+        (!key.is_empty()).then(|| key.to_owned())
+    };
+    let axis_keys: BTreeSet<String> = input_ini
+        .lines()
+        .filter_map(|line| mapping_key(line, "+AxisMappings="))
+        .collect();
+    let mut orders: Vec<(String, String)> = input_ini
+        .lines()
+        .filter_map(|line| {
+            let key = mapping_key(line, "+ActionMappings=")?;
+            Some((key, "Config/DefaultInput.ini ActionMappings".to_owned()))
+        })
+        .collect();
+    for (path, text) in sources {
+        for chunk in text.split("BindKey(EKeys::").skip(1) {
+            let key: String = chunk
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            orders.push((key, format!("{path} BindKey")));
+        }
+    }
+    if axis_keys.is_empty() {
+        return Check::new(
+            "input.bindings",
+            Verdict::Fail,
+            "Config/DefaultInput.ini declares no axis mappings",
+        );
+    }
+    let conflicts: Vec<String> = orders
+        .iter()
+        .filter(|(key, _)| axis_keys.contains(key))
+        .map(|(key, origin)| format!("{key} ({origin})"))
+        .collect();
+    if conflicts.is_empty() {
+        Check::new(
+            "input.bindings",
+            Verdict::Pass,
+            format!(
+                "{} order bindings share no key with {} axis keys",
+                orders.len(),
+                axis_keys.len()
+            ),
+        )
+    } else {
+        Check::new(
+            "input.bindings",
+            Verdict::Fail,
+            format!(
+                "order bindings reuse camera axis keys: {}",
+                conflicts.join(", ")
+            ),
+        )
+    }
+}
+
+fn read_input_bindings(root: &Path) -> Check {
+    let input_ini = match fs::read_to_string(root.join("Config/DefaultInput.ini")) {
+        Ok(text) => text,
+        Err(error) => {
+            return Check::new(
+                "input.bindings",
+                Verdict::Fail,
+                format!("cannot read Config/DefaultInput.ini: {error}"),
+            );
+        }
+    };
+    let source_dir = root.join("Source/Politika/Private");
+    let mut sources = Vec::new();
+    let entries = match fs::read_dir(&source_dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return Check::new(
+                "input.bindings",
+                Verdict::Fail,
+                format!("cannot read {}: {error}", source_dir.display()),
+            );
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "cpp") {
+            if let Ok(text) = fs::read_to_string(&path) {
+                let name = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string();
+                sources.push((name, text));
+            }
+        }
+    }
+    sources.sort();
+    check_input_bindings(&input_ini, &sources)
+}
+
 fn audit(root: &Path) -> Vec<Check> {
     let mut checks = Vec::new();
     match load_manifest(root) {
@@ -303,6 +406,7 @@ fn audit(root: &Path) -> Vec<Check> {
         )),
         Err(error) => checks.push(Check::new("engine.version_pin", Verdict::Fail, error)),
     }
+    checks.push(read_input_bindings(root));
     checks.extend(production::production_audit(root));
     checks
 }
@@ -626,6 +730,29 @@ mod tests {
         assert_eq!(parse_engine_pin(VALID_PIN).unwrap().version, "5.8.3");
         assert!(parse_engine_pin(&VALID_PIN.replace("5.8.3", "5.8.2")).is_err());
         assert!(parse_engine_pin(&(VALID_PIN.to_owned() + "UNREAL_TAG=bad\n")).is_err());
+    }
+
+    #[test]
+    fn input_bindings_reject_order_keys_on_pan_axes() {
+        let axes = "+AxisMappings=(AxisName=\"PrototypePanForward\",Scale=-1.000000,Key=S)\n\
+                    +AxisMappings=(AxisName=\"PrototypePanRight\",Scale=-1.000000,Key=A)\n";
+        let action = "+ActionMappings=(ActionName=\"PrototypeStop\",bShift=False,Key=X)\n";
+        assert_eq!(
+            check_input_bindings(&(axes.to_owned() + action), &[]).verdict,
+            Verdict::Pass
+        );
+        let shared_action = action.replace("Key=X", "Key=S");
+        let failed = check_input_bindings(&(axes.to_owned() + &shared_action), &[]);
+        assert_eq!(failed.verdict, Verdict::Fail);
+        assert!(failed.detail.contains("S (Config/DefaultInput.ini"));
+        let source = (
+            "Gameplay.cpp".to_owned(),
+            "InputComponent->BindKey(EKeys::A, IE_Pressed, this, &Self::AttackMove);".to_owned(),
+        );
+        let failed = check_input_bindings(axes, &[source]);
+        assert_eq!(failed.verdict, Verdict::Fail);
+        assert!(failed.detail.contains("A (Gameplay.cpp BindKey)"));
+        assert_eq!(check_input_bindings(action, &[]).verdict, Verdict::Fail);
     }
 
     #[test]
