@@ -98,7 +98,7 @@ The planned campaign presents faction-specific missions within a shared 1984–1
 
 Skirmish is intended to provide self-contained battles against AI opponents, independent of the campaign's fixed ending. Matches include a persistent Unaligned world authority alongside the selected playable factions. Match composition and faction-slot rules are covered in [Match Structure](Docs/MATCH_STRUCTURE.md).
 
-Multiplayer is a **planned future extension**, with up to four human players joining a player-hosted or independent dedicated server; it is **not yet implemented, verified or promised for the first release**. Existing and future gameplay code must be audited and adapted for server authority before network implementation (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. The immediate aim is offline-first single-player campaign and skirmish without mandatory internet access, external accounts, or sign-in.
+**Multiplayer is an immediate development priority**: the team will audit and adapt existing RTS code for server authority, build an early two-client networked vertical slice, and then support up to four humans through player-hosted and dedicated-server modes. Multiplayer is **not yet implemented, verified or promised for a particular release**. The audit is the first required implementation task, with a playable two-client proof targeted before the complete skirmish/campaign (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. Offline-first campaign and skirmish must remain available without mandatory internet access, external accounts, or sign-in. This constraint does not postpone the parallel networking work.
 
 ## Technology and interface
 
@@ -106,7 +106,7 @@ POLITIKA's proposed technical foundation is Unreal Engine 5.8.3, with primarily 
 
 The desktop interface is being designed for readable tactical control at 4K (3840 × 2160), with device-appropriate layouts and interaction models for handheld and Android screens. Its visual direction takes cues from 1980s Yugoslav topographic maps, field reports, military documentation, and civil-administration materials, without sacrificing clarity, accessibility, or command responsiveness.
 
-These are architecture and product targets, not evidence that the corresponding engine systems already exist. The exact economy, multiplayer scope, performance targets, and several simulation decisions remain under design.
+These are architecture and product targets, not evidence that the corresponding engine systems already exist. The exact economy, final multiplayer feature set and release timing, performance targets, and several simulation decisions remain under design; the priority, authority model, two-client proof and four-human ceiling are defined.
 
 ## Documentation and repository guide
 
