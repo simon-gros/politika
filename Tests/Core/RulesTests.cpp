@@ -117,6 +117,13 @@ int main() {
     assert(AdmitOrder(own, 2, {100, 100}, Order{AttackOrder{10}}, &unattackable).rejection == OrderRejection::TargetNotAttackable);
     assert(AdmitOrder(own, 2, {100, 100}, Order{StopOrder{}}));
     assert(AdmitOrder(own, 2, {100, 100}, Order{GuardOrder{}}));
+    assert(KindOf(Order{GrenadeOrder{9}}) == OrderKind::Grenade);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{GrenadeOrder{9}}, &hostile));
+    assert(AdmitOrder(own, 2, {100, 100}, Order{GrenadeOrder{1}}, &own).rejection == OrderRejection::FriendlyTarget);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{GrenadeOrder{9}}).rejection == OrderRejection::MissingTarget);
+    assert(AdmitOrder(own, 3, {100, 100}, Order{ReloadOrder{}}).rejection == OrderRejection::NotOwned);
+    assert(AdmitOrder(own, 2, {100, 100}, Order{ReloadOrder{}}));
+    assert(AdmitOrder(own, 2, {100, 100}, Order{SprintOrder{}}));
     // Shared request metadata separates participant, match, runtime entity and
     // correlation identities; failed admission is a result, not a mutation.
     const CommandRequest request{7, 3, 2, 1, 99, MoveOrder{{40, 70}}};

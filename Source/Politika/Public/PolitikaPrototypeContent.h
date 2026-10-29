@@ -6,6 +6,8 @@
 
 class UStaticMesh;
 class UWorld;
+class UPolitikaInfantryPresentationDefinition;
+class UPolitikaInfantryBehaviorDefinition;
 
 UENUM(BlueprintType)
 enum class EPolitikaPrototypeMapProfile : uint8
@@ -76,6 +78,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(Units="cm/s", ClampMin="0")) float MovementSpeedCmPerSecond = 0.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") FName WeaponId;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") TObjectPtr<UStaticMesh> VisualMesh;
+    // Optional, additive presentation profile. Existing static-mesh archetypes remain valid.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") TObjectPtr<UPolitikaInfantryPresentationDefinition> InfantryPresentation;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") TObjectPtr<UPolitikaInfantryBehaviorDefinition> InfantryBehavior;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") FVector VisualScale = FVector::OneVector;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") FLinearColor FactionTint = FLinearColor::White;
     // Opt-in for imported textured presentation meshes; existing primitive art remains tinted.

@@ -95,7 +95,10 @@ struct AttackOrder { std::uint64_t target_id = 0; };
 struct AttackMoveOrder { Position destination; };
 struct StopOrder {};
 struct GuardOrder {};
-using Order = std::variant<MoveOrder, AttackOrder, AttackMoveOrder, StopOrder, GuardOrder>;
+struct GrenadeOrder { std::uint64_t target_id = 0; };
+struct ReloadOrder {};
+struct SprintOrder {};
+using Order = std::variant<MoveOrder, AttackOrder, AttackMoveOrder, StopOrder, GuardOrder, GrenadeOrder, ReloadOrder, SprintOrder>;
 
 // Runtime identities are match-local. Definition IDs, participant IDs and
 // correlation IDs occupy separate fields and must not be substituted for one another.
@@ -108,7 +111,7 @@ struct CommandRequest {
     Order intent = StopOrder{};
 };
 
-enum class OrderKind : std::uint8_t { Move, Attack, AttackMove, Stop, Guard };
+enum class OrderKind : std::uint8_t { Move, Attack, AttackMove, Stop, Guard, Grenade, Reload, Sprint };
 enum class ExecutionOrder : std::uint8_t { Idle, Move, Attack, AttackMove, Stop, Guard };
 
 [[nodiscard]] constexpr OrderKind KindOf(const Order& order) noexcept {
@@ -142,6 +145,7 @@ enum class OrderRejection : std::uint8_t {
     Unauthorized,
     MatchInactive,
     StaleMatch,
+    AbilityUnavailable,
 };
 
 struct OrderResult {
@@ -215,6 +219,12 @@ struct MapBounds {
             return {OrderRejection::MissingTarget};
         if (!target->attackable) return {OrderRejection::TargetNotAttackable};
         if (target->owner_player == requesting_player) return {OrderRejection::FriendlyTarget};
+    } else if (const auto* grenade = std::get_if<GrenadeOrder>(&order)) {
+        return AdmitOrder(issuer, requesting_player, bounds, AttackOrder{grenade->target_id}, target);
+    } else if (std::holds_alternative<ReloadOrder>(order)) {
+        if (!issuer.can_attack) return {OrderRejection::CannotAttack};
+    } else if (std::holds_alternative<SprintOrder>(order)) {
+        if (!issuer.movable) return {OrderRejection::CannotMove};
     }
     return {};
 }

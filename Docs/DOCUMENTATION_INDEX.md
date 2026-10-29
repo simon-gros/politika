@@ -18,6 +18,7 @@
 
 - [Engine Outline](ENGINE_OUTLINE.md) — **the single authoritative implementation sequence**, including incomplete Stage 4A closure and the dependency-ordered First Playable Skirmish milestone; owns implementation order and promotion boundaries.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
+- [Rifle-infantry reference import](CNC3_RIFLEMEN_IMPORT.md) — neutral-named mesh/animation/MP3 import, source provenance, interrupted-package recovery and scoped local audio playtest evidence.
 - [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) — scoped ST3-01–ST3-18 verdicts, exact evidence identities, and remaining acceptance gaps.
 - [First RTS Vertical Slice Milestone](RTS_VERTICAL_SLICE_MILESTONE.md) — accepted scoped Linux Development prototype, validation evidence, remaining platform gaps and follow-on content/model work; not a finished RTS or release.
 - [RTS Command and Simulation Contract — Milestone Record](RTS_COMMAND_SIMULATION_CONTRACT.md) — accepted scoped Linux command/admission/simulation contract with test matrices, packaged interaction/recovery, Shipping isolation and known platform limits.

@@ -4,6 +4,9 @@
   "Category": "Games",
   "Description": "POLITIKA offline-first RTS",
   "DisableEnginePluginsByDefault": true,
+  "Plugins": [
+    { "Name": "InterchangeEditor", "Enabled": true }
+  ],
   "Modules": [
     { "Name": "PolitikaBootstrap", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
     { "Name": "Politika", "Type": "Runtime", "LoadingPhase": "Default" },

@@ -1,4 +1,6 @@
 #include "PolitikaPrototypeContent.h"
+#include "PolitikaInfantryPresentation.h"
+#include "PolitikaInfantryBehavior.h"
 
 #include "Engine/AssetManager.h"
 #include "Engine/World.h"
@@ -271,6 +273,18 @@ void UPolitikaPrototypeContentValidator::ValidateCatalog(
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.REFERENCE.UNRESOLVED"), Unit->StableId, TEXT("WeaponId"), TEXT("The unit weapon reference does not resolve in the catalog."), TEXT("ID of a catalog weapon"), Unit->WeaponId.ToString(), TEXT("Add the weapon to the catalog or correct the stable ID."));
         if (!Unit->VisualMesh)
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.REFERENCE.MISSING_MESH"), Unit->StableId, TEXT("VisualMesh"), TEXT("A prototype unit requires a cooked presentation mesh."), TEXT("loaded UStaticMesh"), TEXT("null"), TEXT("Assign a mesh; runtime does not substitute a hidden default."));
+        if (Unit->InfantryPresentation)
+        {
+            FString Error;
+            if (!Unit->InfantryPresentation->Validate(Error))
+                AddDiagnostic(OutDiagnostics, TEXT("CONTENT.INFANTRY.INVALID_PRESENTATION"), Unit->StableId,
+                    TEXT("InfantryPresentation"), Error, TEXT("complete compatible skeletal presentation"),
+                    Unit->InfantryPresentation->GetPathName(), TEXT("Correct the imported profile before spawning."));
+        }
+        if (Unit->InfantryBehavior && !Unit->InfantryBehavior->Validate())
+            AddDiagnostic(OutDiagnostics, TEXT("CONTENT.INFANTRY.INVALID_BEHAVIOR"), Unit->StableId,
+                TEXT("InfantryBehavior"), TEXT("Invalid infantry combat or movement parameters."),
+                TEXT("finite positive bounded behavior"), TEXT("invalid"), TEXT("Repair the infantry behavior asset."));
         if (!IsPositiveScale(Unit->VisualScale))
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.VALUE.RANGE"), Unit->StableId, TEXT("VisualScale"), TEXT("Visual scale components must be finite and positive."), TEXT("finite XYZ > 0"), Unit->VisualScale.ToString(), TEXT("Correct the scale."));
         if (!IsFiniteColor(Unit->FactionTint))
@@ -582,6 +596,17 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
     TArray<FPolitikaContentDiagnostic>& OutDiagnostics)
 {
     OutSnapshot = {};
+    UPolitikaPrototypeContentCatalog* Catalog = nullptr;
+#if !UE_BUILD_SHIPPING
+    if (MapId == FName(TEXT("map.test.rifle_infantry")))
+    {
+        // Explicit development fixture; never register its catalog under the production primary ID.
+        Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+            TEXT("/Game/Politika/Prototypes/Infantry/RifleInfantry/DA_InfantryCatalog.DA_InfantryCatalog"));
+    }
+    else
+#endif
+    {
     UAssetManager& AssetManager = UAssetManager::Get();
     const FPrimaryAssetId CatalogId(FPrimaryAssetType(TEXT("PolitikaPrototypeContentCatalog")), UPolitikaPrototypeContentCatalog::CatalogAssetId);
     AssetManager.ScanPathsForPrimaryAssets(CatalogId.PrimaryAssetType, {TEXT("/Game/Politika/Definitions")},
@@ -591,7 +616,7 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
         const TSharedPtr<FStreamableHandle> Handle = AssetManager.LoadPrimaryAsset(CatalogId);
         if (Handle.IsValid()) Handle->WaitUntilComplete();
     }
-    UPolitikaPrototypeContentCatalog* Catalog = Cast<UPolitikaPrototypeContentCatalog>(AssetManager.GetPrimaryAssetObject(CatalogId));
+    Catalog = Cast<UPolitikaPrototypeContentCatalog>(AssetManager.GetPrimaryAssetObject(CatalogId));
     if (!Catalog)
     {
         // A fixed bootstrap path is the only path-based lookup. All gameplay cross-references
@@ -600,6 +625,7 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
             TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
         if (Catalog && Catalog->GetPrimaryAssetId() == CatalogId)
             AssetManager.AddDynamicAsset(CatalogId, FSoftObjectPath(Catalog), FAssetBundleData());
+    }
     }
     UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, OutDiagnostics);
     if (!Catalog) return false;

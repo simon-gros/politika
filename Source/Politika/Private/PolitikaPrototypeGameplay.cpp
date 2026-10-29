@@ -1,4 +1,6 @@
 #include "PolitikaPrototypeGameplay.h"
+#include "PolitikaInfantryPresentation.h"
+#include "PolitikaInfantryBehavior.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
@@ -11,6 +13,8 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "NavigationSystem.h"
+#include "NavigationData.h"
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
 #include "InputCoreTypes.h"
@@ -18,13 +22,11 @@
 #include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "HAL/PlatformTime.h"
 #include "UObject/ConstructorHelpers.h"
 #include "PolitikaGameInstance.h"
 #include "PolitikaPrototypeContent.h"
 #include "Rules.h"
-#include "NavigationSystem.h"
-#include "NavigationData.h"
-#include "HAL/PlatformTime.h"
 #if !UE_BUILD_SHIPPING
 #include "PolitikaNavigationObstacleFixture.h"
 #include "PolitikaNavigationFailureFixture.h"
@@ -71,6 +73,9 @@ politika::rules::ExecutionOrder ToExecutionOrder(EPolitikaPrototypeOrder Order)
         case EPolitikaPrototypeOrder::Guard: return politika::rules::ExecutionOrder::Guard;
         case EPolitikaPrototypeOrder::Idle: return politika::rules::ExecutionOrder::Idle;
         case EPolitikaPrototypeOrder::Stop: return politika::rules::ExecutionOrder::Stop;
+        case EPolitikaPrototypeOrder::Grenade:
+        case EPolitikaPrototypeOrder::Reload:
+        case EPolitikaPrototypeOrder::Sprint: return politika::rules::ExecutionOrder::Idle;
     }
     return politika::rules::ExecutionOrder::Idle;
 }
@@ -82,6 +87,7 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
     PrimaryActorTick.bCanEverTick = false;
+    InfantryPresentation = CreateDefaultSubobject<UPolitikaInfantryPresentationComponent>(TEXT("InfantryPresentation"));
     Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
     SetRootComponent(Body);
     Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -141,10 +147,32 @@ void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const 
     NavigationReplanAttempts = 0;
 }
 
+void APolitikaPrototypeUnit::ConfigureInfantryPresentation(UPolitikaInfantryPresentationDefinition* Definition)
+{
+    if (!Definition) return;
+    InfantryPresentation->Initialize(Definition);
+    // Retain the simple body's query/blocking geometry, but do not render it.
+    Body->SetVisibility(false, false);
+    const FVector Scale = GetActorScale3D();
+    SelectionIndicator->SetRelativeScale3D(FVector(1.1f / Scale.X, 1.1f / Scale.Y, 0.02f / Scale.Z));
+}
+
+void APolitikaPrototypeUnit::BeginDeathPresentation()
+{
+    if (!InfantryPresentation->GetVisual()) { Destroy(); return; }
+    SetActorEnableCollision(false);
+    SelectionIndicator->SetVisibility(false);
+    InfantryPresentation->Die(bBlastDeath);
+}
+
 void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination,
     const FVector& ResolvedDestination, TArray<FVector>&& Route)
 {
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
     CurrentOrder = Kind;
+    InfantryPresentation->Acknowledge(TEXT("move"));
     OrderDestination = Destination;
     ResolvedNavigationDestination = ResolvedDestination;
     NavigationWaypoints = MoveTemp(Route);
@@ -159,6 +187,10 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
 
 void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
 {
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
+    InfantryPresentation->Acknowledge(TEXT("attack"));
     NavigationWaypoints.Reset();
     NavigationWaypointIndex = 0;
     NavigationMatchGeneration = 0;
@@ -174,6 +206,9 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
 
 void APolitikaPrototypeUnit::SetGuardOrder()
 {
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
     NavigationWaypoints.Reset();
     NavigationWaypointIndex = 0;
     NavigationMatchGeneration = 0;
@@ -189,6 +224,9 @@ void APolitikaPrototypeUnit::SetGuardOrder()
 
 void APolitikaPrototypeUnit::StopOrder()
 {
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
     CurrentOrder = EPolitikaPrototypeOrder::Stop;
     NavigationWaypoints.Reset();
     NavigationWaypointIndex = 0;
@@ -202,12 +240,25 @@ void APolitikaPrototypeUnit::StopOrder()
 
 void APolitikaPrototypeUnit::SetSelectedVisual(bool bSelected)
 {
+    InfantryPresentation->SetSelected(bSelected);
+    if (bSelected) InfantryPresentation->Acknowledge(TEXT("select"));
     SelectionIndicator->SetVisibility(bSelected, true);
 }
 
 politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float DeltaSeconds)
 {
+    StepStartPosition = GetActorLocation();
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
+    if (InfantryBehavior && SprintRemaining <= 0 && CurrentOrder == EPolitikaPrototypeOrder::AttackMove)
+    {
+        if (!OrderTarget.IsValid()) AutoAcquireForAttackMove();
+        const auto* Candidate = OrderTarget.Get();
+        if (Candidate && Candidate->IsAlive() && Candidate->IsAttackable()
+            && Candidate->GetOwnerPlayer() != OwnerPlayer
+            && FlatDistance(GetActorLocation(), Candidate->GetActorLocation()) <= WeaponRange
+            && HasLineOfFire(Candidate))
+            return politika::rules::OrderEndReason::None;
+    }
     const bool bCanAdvance = CurrentOrder == EPolitikaPrototypeOrder::Move
         || CurrentOrder == EPolitikaPrototypeOrder::AttackMove
         || ((CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
@@ -316,7 +367,7 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
         return politika::rules::OrderEndReason::NavigationFailed;
     }
 
-    float RemainingDistance = MoveSpeed * DeltaSeconds;
+    float RemainingDistance = MoveSpeed * (SprintRemaining > 0 && InfantryBehavior ? InfantryBehavior->SprintMultiplier : 1) * DeltaSeconds;
     int32 WaypointsConsumed = 0;
     const FVector PreviousLocation = GetActorLocation();
     while (RemainingDistance > KINDA_SMALL_NUMBER && NavigationWaypointIndex < NavigationWaypoints.Num()
@@ -379,7 +430,7 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
 void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
 {
     APolitikaPrototypeUnit* Nearest = nullptr;
-    float NearestDistance = 800.0f;
+    float NearestDistance = InfantryBehavior ? InfantryBehavior->AcquisitionRangeCm : 800.0f;
     for (TActorIterator<APolitikaPrototypeUnit> It(GetWorld()); It; ++It)
     {
         APolitikaPrototypeUnit* Candidate = *It;
@@ -398,8 +449,51 @@ void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
 void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
 {
     if (!IsAlive()) return;
+    if (InfantryBehavior)
+    {
+        bMovedThisStep = FVector::DistSquared2D(StepStartPosition, GetActorLocation()) > 0.01;
+        SprintRemaining = FMath::Max(0.0f, SprintRemaining - DeltaSeconds);
+        SprintCooldown = FMath::Max(0.0f, SprintCooldown - DeltaSeconds);
+        GrenadeCooldown = FMath::Max(0.0f, GrenadeCooldown - DeltaSeconds);
+        if (ReloadRemaining > 0)
+        {
+            ReloadRemaining = FMath::Max(0.0f, ReloadRemaining - DeltaSeconds);
+            if (ReloadRemaining <= KINDA_SMALL_NUMBER)
+            {
+                ReloadRemaining = 0;
+                Ammo = InfantryBehavior->MagazineCapacity;
+                UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_COMPLETE unit=%llu ammo=%d"), StableId, Ammo);
+            }
+            return;
+        }
+        if (GrenadeWindup > 0)
+        {
+            auto* Victim = GrenadeTarget.Get();
+            if (!Victim || !Victim->IsAlive() || !Victim->IsAttackable() || Victim->OwnerPlayer == OwnerPlayer
+                || FlatDistance(GetActorLocation(), Victim->GetActorLocation()) > InfantryBehavior->GrenadeRangeCm || bMovedThisStep)
+            { GrenadeWindup = 0; GrenadeTarget.Reset(); return; }
+            GrenadeWindup = FMath::Max(0.0f, GrenadeWindup - DeltaSeconds);
+            if (GrenadeWindup <= KINDA_SMALL_NUMBER)
+            {
+                GrenadeWindup = 0;
+                for (TActorIterator<APolitikaPrototypeMatch> It(GetWorld()); It; ++It)
+                    if (It->GetMatchPhase() == politika::rules::MatchPhase::Active)
+                    { It->LaunchGrenade(this, Victim->GetActorLocation()); break; }
+                GrenadeCooldown = InfantryBehavior->GrenadeReloadSeconds;
+                GrenadeTarget.Reset();
+            }
+            return;
+        }
+        if (SprintRemaining > 0) return;
+        if (Ammo == 0) { BeginReload(); return; }
+    }
     CooldownRemaining = FMath::Max(0.0f, CooldownRemaining - DeltaSeconds);
-    if (CurrentOrder == EPolitikaPrototypeOrder::AttackMove && !OrderTarget.IsValid())
+    // Decimal authored intervals such as 0.2 s must not acquire an extra 0.05 s
+    // step from a positive floating-point residue after four simulation steps.
+    if (CooldownRemaining <= KINDA_SMALL_NUMBER) CooldownRemaining = 0;
+    if ((CurrentOrder == EPolitikaPrototypeOrder::AttackMove
+        || (InfantryBehavior && InfantryBehavior->bAutoAcquireWhenIdle && CurrentOrder == EPolitikaPrototypeOrder::Idle))
+        && !OrderTarget.IsValid())
     {
         AutoAcquireForAttackMove();
     }
@@ -415,10 +509,20 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         OrderTarget.Reset();
         return;
     }
-    if (FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= WeaponRange && CooldownRemaining <= 0.0f)
+    if (InfantryBehavior)
+    {
+        const FRotator Aim = (Target->GetActorLocation() - GetActorLocation()).Rotation();
+        SetActorRotation(FMath::RInterpConstantTo(GetActorRotation(), FRotator(0, Aim.Yaw, 0), DeltaSeconds,
+            InfantryBehavior->TurnDegreesPerSecond));
+        if (bMovedThisStep || FMath::Abs(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, Aim.Yaw))
+            > InfantryBehavior->AcceptableAimDegrees || !HasLineOfFire(Target)) return;
+    }
+    if (Target->IsAttackable() && FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= WeaponRange && CooldownRemaining <= 0.0f)
     {
         Target->PendingDamage += WeaponDamage;
         CooldownRemaining = WeaponCooldown;
+        if (InfantryBehavior) --Ammo;
+        InfantryPresentation->Shot(Target->GetActorLocation(), WeaponCooldown);
     }
 }
 
@@ -434,7 +538,8 @@ int32 APolitikaPrototypeUnit::ApplyPendingDamage()
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_HEALTH_CHANGED unit=%llu before=%d after=%d"),
             StableId, HealthBefore, Health);
 #endif
-    if (Health == 0) StopOrder();
+    if (Health == 0) { bBlastDeath = bPendingBlastDamage; StopOrder(); }
+    bPendingBlastDamage = false;
     return AppliedDamage;
 }
 
@@ -591,6 +696,7 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
         // A queued request belongs to the phase in which it was submitted. Never
         // let terminal handling, teardown, or recovery carry it into later work.
         PendingOrders.Reset();
+        InfantryProjectiles.Reset();
         StepAccumulator = 0.0f;
         if (Previous == politika::rules::MatchPhase::Active)
             for (APolitikaPrototypeUnit* Unit : Units)
@@ -615,6 +721,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         else if (FixtureId == TEXT("DisconnectedNavigation")) RequestedMapId = TEXT("map.test.disconnected_navigation");
         else if (FixtureId == TEXT("UnprojectableDestination")) RequestedMapId = TEXT("map.test.unprojectable_destination");
         else if (FixtureId == TEXT("ProjectionDisplacement")) RequestedMapId = TEXT("map.test.projection_displacement");
+        else if (FixtureId == TEXT("RifleInfantry")) RequestedMapId = TEXT("map.test.rifle_infantry");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -710,6 +817,8 @@ void APolitikaPrototypeMatch::BuildScenario()
             Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
             Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint,
             Slot->FactionId, Definition->bUseAuthoredMeshMaterials);
+        Unit->ConfigureInfantryPresentation(Definition->InfantryPresentation);
+        Unit->ConfigureInfantryBehavior(Definition->InfantryBehavior);
         Units.Add(Unit);
     };
 
@@ -781,6 +890,7 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
     SelectionByPlayer.Reset();
     bContentReady = false;
     PendingOrders.Reset();
+    InfantryProjectiles.Reset();
     if (Lifecycle.phase != politika::rules::MatchPhase::AdmissionRejected)
         TransitionLifecycle(politika::rules::MatchPhase::AdmissionRejected);
     UWorld* World = GetWorld();
@@ -1262,6 +1372,9 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
     }
     else if (std::holds_alternative<politika::rules::AttackOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Attack;
     else if (std::holds_alternative<politika::rules::GuardOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Guard;
+    else if (std::holds_alternative<politika::rules::GrenadeOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Grenade;
+    else if (std::holds_alternative<politika::rules::ReloadOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Reload;
+    else if (std::holds_alternative<politika::rules::SprintOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Sprint;
     else Pending.Kind = EPolitikaPrototypeOrder::Stop;
     PendingOrders.Add(MoveTemp(Pending));
 }
@@ -1283,10 +1396,16 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
         TargetRules.attackable = Target->IsAttackable();
         TargetRules.alive = Target->IsAlive();
     }
-    return politika::rules::AdmitCommand(Pending.Request, MatchGeneration,
+    const auto Admission = politika::rules::AdmitCommand(Pending.Request, MatchGeneration,
         bContentReady && Lifecycle.IsActive(),
         Issuer ? &IssuerRules : nullptr,
         {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y}, Target ? &TargetRules : nullptr);
+    if (!Admission) return Admission;
+    if ((Pending.Kind == EPolitikaPrototypeOrder::Grenade && !Issuer->CanUseGrenade(Target))
+        || (Pending.Kind == EPolitikaPrototypeOrder::Reload && !Issuer->CanReload())
+        || (Pending.Kind == EPolitikaPrototypeOrder::Sprint && !Issuer->CanSprint()))
+        return {politika::rules::OrderRejection::AbilityUnavailable};
+    return Admission;
 }
 
 static FString DescribeRejection(politika::rules::OrderRejection Rejection)
@@ -1306,6 +1425,7 @@ static FString DescribeRejection(politika::rules::OrderRejection Rejection)
         case politika::rules::OrderRejection::Unauthorized: return TEXT("You cannot command that unit.");
         case politika::rules::OrderRejection::MatchInactive: return TEXT("The match is not accepting commands.");
         case politika::rules::OrderRejection::StaleMatch: return TEXT("That command belongs to an earlier match.");
+        case politika::rules::OrderRejection::AbilityUnavailable: return TEXT("Ability unavailable: check range, ammunition or cooldown.");
         case politika::rules::OrderRejection::None: return TEXT("Order rejected.");
     }
     return TEXT("Order rejected.");
@@ -1602,6 +1722,16 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
                 LastCommandFeedback = TEXT("Guard order accepted.");
                 break;
             case EPolitikaPrototypeOrder::Stop: Unit->StopOrder(); LastCommandFeedback = TEXT("Unit stopped."); break;
+            case EPolitikaPrototypeOrder::Grenade:
+                Unit->BeginGrenade(Pending.Target.Get()); LastCommandFeedback = TEXT("Grenade launcher preparing."); break;
+            case EPolitikaPrototypeOrder::Reload:
+                Unit->BeginReload(); LastCommandFeedback = TEXT("Reloading magazine."); break;
+            case EPolitikaPrototypeOrder::Sprint:
+                Unit->SprintRemaining = Unit->InfantryBehavior->SprintSeconds;
+                Unit->SprintCooldown = Unit->InfantryBehavior->SprintCooldownSeconds;
+                UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_SPRINT_BEGIN unit=%llu seconds=%.2f multiplier=%.2f"),
+                    Unit->GetStableId(), Unit->SprintRemaining, Unit->InfantryBehavior->SprintMultiplier);
+                LastCommandFeedback = TEXT("Sprint active; firing suspended."); break;
             case EPolitikaPrototypeOrder::Idle: break;
         }
         QueueGameplayEvent(politika::rules::CommandOutcomeEvent{
@@ -1619,8 +1749,10 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
                 ToExecutionOrder(Unit->GetCurrentOrder()), politika::rules::OrderEndReason::NavigationFailed});
             continue;
         }
-        const bool bOrderTransitioned = PreviousOrder != Unit->GetCurrentOrder()
-            || (PreviousOrder != EPolitikaPrototypeOrder::Idle && Pending.Kind != EPolitikaPrototypeOrder::Stop);
+        const bool bOrderTransitioned = Pending.Kind != EPolitikaPrototypeOrder::Reload
+            && Pending.Kind != EPolitikaPrototypeOrder::Sprint
+            && (PreviousOrder != Unit->GetCurrentOrder()
+            || (PreviousOrder != EPolitikaPrototypeOrder::Idle && Pending.Kind != EPolitikaPrototypeOrder::Stop));
         if (bOrderTransitioned)
         {
             const auto EndReason = PreviousOrder == EPolitikaPrototypeOrder::Idle
@@ -1634,7 +1766,7 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
 #if !UE_BUILD_SHIPPING
         const APolitikaPrototypeUnit* AdmittedUnit = Pending.Unit.Get();
         const APolitikaPrototypeUnit* AdmittedTarget = Pending.Target.Get();
-        static const TCHAR* OrderNames[] = { TEXT("Idle"), TEXT("Move"), TEXT("Attack"), TEXT("AttackMove"), TEXT("Stop"), TEXT("Guard") };
+        static const TCHAR* OrderNames[] = { TEXT("Idle"), TEXT("Move"), TEXT("Attack"), TEXT("AttackMove"), TEXT("Stop"), TEXT("Guard"), TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint") };
         const int32 OrderIndex = static_cast<int32>(Pending.Kind);
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_ADMITTED order=%s unit=%llu target=%llu sequence=%llu"),
             OrderNames[OrderIndex], AdmittedUnit ? AdmittedUnit->GetStableId() : 0,
@@ -1685,6 +1817,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
                 Unit->GetStableId(), ToExecutionOrder(PreviousOrder), ToExecutionOrder(Unit->GetCurrentOrder()), EndReason});
     }
     for (APolitikaPrototypeUnit* Unit : Units) if (Unit) Unit->ResolveCombat(DeltaSeconds);
+    AdvanceGrenades(DeltaSeconds);
     for (APolitikaPrototypeUnit* Unit : Units)
     {
         if (!Unit) continue;
@@ -1722,7 +1855,9 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 #if !UE_BUILD_SHIPPING
             UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_UNIT_DESTROYED unit=%llu"), Unit->GetStableId());
 #endif
-            Unit->Destroy();
+            for (auto& Selection : SelectionByPlayer)
+                if (Selection.Value.Get() == Unit) Selection.Value.Reset();
+            Unit->BeginDeathPresentation();
         }
     }
     Units.RemoveAll([](const TObjectPtr<APolitikaPrototypeUnit>& Unit) { return !Unit || !Unit->IsAlive(); });
@@ -1831,6 +1966,9 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
     InputComponent->BindKey(EKeys::S, IE_Pressed, this, &APolitikaPrototypePlayerController::StopSelected);
     InputComponent->BindKey(EKeys::G, IE_Pressed, this, &APolitikaPrototypePlayerController::GuardSelected);
+    InputComponent->BindKey(EKeys::E, IE_Pressed, this, &APolitikaPrototypePlayerController::GrenadeSelected);
+    InputComponent->BindKey(EKeys::R, IE_Pressed, this, &APolitikaPrototypePlayerController::ReloadSelected);
+    InputComponent->BindKey(EKeys::F, IE_Pressed, this, &APolitikaPrototypePlayerController::SprintSelected);
     InputComponent->BindKey(EKeys::A, IE_Pressed, this, &APolitikaPrototypePlayerController::AttackMoveSelected);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
@@ -2016,7 +2154,8 @@ void APolitikaPrototypeHUD::HandleGameplayEvent(const politika::rules::GameplayE
     if (!Outcome) return;
 
     static const TCHAR* OrderNames[] = {
-        TEXT("Move"), TEXT("Attack"), TEXT("Attack-move"), TEXT("Stop"), TEXT("Guard")
+        TEXT("Move"), TEXT("Attack"), TEXT("Attack-move"), TEXT("Stop"), TEXT("Guard"),
+        TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint")
     };
     const uint8 OrderIndex = static_cast<uint8>(Outcome->order);
     const TCHAR* OrderName = OrderIndex < UE_ARRAY_COUNT(OrderNames) ? OrderNames[OrderIndex] : TEXT("Command");
@@ -2033,7 +2172,8 @@ void APolitikaPrototypeHUD::HandleGameplayEvent(const politika::rules::GameplayE
         TEXT("That target cannot be attacked."), TEXT("Orders cannot target friendly units."),
         TEXT("The selected unit no longer exists."), TEXT("That unit is unavailable."),
         TEXT("You cannot command that unit."), TEXT("The match is not accepting commands."),
-        TEXT("That command belongs to an earlier match.")
+        TEXT("That command belongs to an earlier match."),
+        TEXT("Ability unavailable: check range, ammunition or cooldown.")
     };
     const uint8 RejectionIndex = static_cast<uint8>(Outcome->rejection);
     const TCHAR* Reason = RejectionIndex < UE_ARRAY_COUNT(RejectionNames)
@@ -2055,6 +2195,25 @@ void APolitikaPrototypeHUD::DrawHUD()
     float Y = 38.0f * UiScale;
     const float Left = 40.0f * UiScale;
     const FLinearColor Ink(0.91f, 0.93f, 0.84f);
+    // Identical placeholder skins must not hide allegiance or target health
+    // from human playtesters. These are read-only views of admitted unit state.
+    if (APlayerController* Controller = GetOwningPlayerController())
+    {
+        for (const APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
+        {
+            if (!Unit || !Unit->IsAlive()) continue;
+            FVector2D Screen;
+            if (!Controller->ProjectWorldLocationToScreen(Unit->GetActorLocation() + FVector(0,0,100), Screen, true)) continue;
+            const bool bFriendly = Unit->GetOwnerPlayer() == ActiveMatch->GetLocalRuntimePlayerId();
+            const FLinearColor TeamColor = bFriendly ? FLinearColor(0.35f,0.9f,0.65f) : FLinearColor(1,0.4f,0.3f);
+            const float LabelX = Screen.X - 65 * UiScale;
+            const float LabelY = Screen.Y - 18 * UiScale;
+            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, 135*UiScale, 22*UiScale);
+            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d"), bFriendly ? TEXT("ALLY") : TEXT("TARGET"),
+                Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth()), TeamColor,
+                LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
+        }
+    }
     DrawText(TEXT("POLITIKA  /  RTS DEVELOPMENT SLICE"), Ink, Left, Y, nullptr, 1.5f * UiScale); Y += 34.0f * UiScale;
     DrawText(TEXT("LMB select  ·  RMB move / attack  ·  A attack-move  ·  G guard  ·  S stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     {
@@ -2069,11 +2228,21 @@ void APolitikaPrototypeHUD::DrawHUD()
                 case EPolitikaPrototypeOrder::AttackMove: Order = TEXT("Attack-move"); break;
                 case EPolitikaPrototypeOrder::Stop: Order = TEXT("Stopped"); break;
                 case EPolitikaPrototypeOrder::Guard: Order = TEXT("Guarding"); break;
+                case EPolitikaPrototypeOrder::Grenade:
+                case EPolitikaPrototypeOrder::Reload:
+                case EPolitikaPrototypeOrder::Sprint:
                 case EPolitikaPrototypeOrder::Idle: break;
             }
             DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s"), *Selected->GetUnitName().ToString(),
                 Selected->GetHealth(), Selected->GetMaxHealth(), Order), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
+            if (Selected->HasInfantryBehavior())
+            {
+                DrawText(FString::Printf(TEXT("Ammo %d  %s  |  R reload  E grenade at cursor  F sprint"),
+                    Selected->GetAmmo(), Selected->IsReloading() ? TEXT("RELOADING") : TEXT("")),
+                    Ink, Left, Y, nullptr, UiScale);
+                Y += 26.0f * UiScale;
+            }
         }
         else
         {

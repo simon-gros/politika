@@ -17,6 +17,7 @@ class UCameraComponent;
 class UStaticMeshComponent;
 class APolitikaPrototypeUnit;
 class APolitikaPrototypeObjective;
+class UPolitikaInfantryPresentationComponent;
 
 // Native observers receive immutable, authoritative simulation events after
 // the complete fixed-step update. Subscribers must copy the payload if they
@@ -47,7 +48,7 @@ struct FPolitikaPrototypeSystemFactionAuthority
 };
 
 UENUM(BlueprintType)
-enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard };
+enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard, Grenade, Reload, Sprint };
 
 UCLASS()
 class POLITIKA_API APolitikaPrototypeUnit final : public AActor
@@ -65,6 +66,15 @@ public:
     void SetGuardOrder();
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
+    void ConfigureInfantryPresentation(UPolitikaInfantryPresentationDefinition* Definition);
+    void BeginDeathPresentation();
+    void ConfigureInfantryBehavior(UPolitikaInfantryBehaviorDefinition* Definition);
+    int32 GetAmmo() const { return Ammo; }
+    bool IsReloading() const { return ReloadRemaining > 0; }
+    bool HasInfantryBehavior() const { return InfantryBehavior != nullptr; }
+    bool CanUseGrenade(const APolitikaPrototypeUnit* Target) const;
+    bool CanReload() const;
+    bool CanSprint() const;
     // Development-only acceptance fixtures; never used by the normal scenario.
 #if !UE_BUILD_SHIPPING
     void SetAcceptanceHealth(int32 InHealth) { Health = FMath::Clamp(InHealth, 1, MaxHealth); }
@@ -86,6 +96,29 @@ public:
     FText GetUnitName() const { return UnitName; }
     APolitikaPrototypeUnit* GetOrderTarget() const { return OrderTarget.Get(); }
 private:
+    friend class APolitikaPrototypeMatch;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaInfantryMechanicsTest;
+#endif
+    UPROPERTY(Transient) TObjectPtr<UPolitikaInfantryBehaviorDefinition> InfantryBehavior;
+    int32 Ammo = 0;
+    float ReloadRemaining = 0;
+    float GrenadeCooldown = 0;
+    float GrenadeWindup = 0;
+    float SprintRemaining = 0;
+    float SprintCooldown = 0;
+    bool bBlastDeath = false;
+    bool bPendingBlastDamage = false;
+    bool bMovedThisStep = false;
+    TWeakObjectPtr<APolitikaPrototypeUnit> GrenadeTarget;
+    FVector StepStartPosition = FVector::ZeroVector;
+    void BeginReload();
+    void BeginGrenade(APolitikaPrototypeUnit* Target);
+    bool HasLineOfFire(const APolitikaPrototypeUnit* Target) const;
+#if !UE_BUILD_SHIPPING
+    bool bTraceNavigationTraversal = false;
+    TArray<FVector> NavigationStepTraversal;
+#endif
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
     friend class FPolitikaCommandRepeatabilityAutomationTest;
@@ -98,13 +131,10 @@ private:
     friend class FPolitikaProjectionDisplacementAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
-#endif
-    friend class APolitikaPrototypeMatch;
-#if !UE_BUILD_SHIPPING
-    bool bTraceNavigationTraversal = false;
-    TArray<FVector> NavigationStepTraversal;
+    friend class FPolitikaDefaultInfantryAutomationTest;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UPolitikaInfantryPresentationComponent> InfantryPresentation;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionIndicator;
     UPROPERTY() FText UnitName;
     UPROPERTY() int32 Health = 0;
@@ -206,12 +236,28 @@ public:
     const TOptional<FPolitikaPrototypeMatchResult>& GetCommittedResult() const { return CommittedResult; }
     void BeginReturnToMenu();
 private:
+    friend class APolitikaPrototypeUnit;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaInfantryMechanicsTest;
+#endif
+    struct FInfantryProjectile
+    {
+        FVector Start, End, Previous;
+        uint32 Owner = 0;
+        float Elapsed = 0, Duration = 0, Height = 0, Damage = 0, Radius = 0;
+        uint64 Generation = 0;
+    };
+    TArray<FInfantryProjectile> InfantryProjectiles;
+    void LaunchGrenade(APolitikaPrototypeUnit* Unit, const FVector& Destination);
+    void AdvanceGrenades(float DeltaSeconds);
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaGameplayEventPublicationAutomationTest;
+    friend class FPolitikaDefaultInfantryAutomationTest;
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
     friend class FPolitikaNavigationUnavailableAutomationTest;
     friend class FPolitikaNavigationObstacleAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
@@ -361,9 +407,9 @@ private:
     bool bAcceptanceAttackerOrderCleared = false;
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceAttacker;
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceDefender;
-    void SetAcceptanceMove(APolitikaPrototypeUnit* Unit, const FVector& Destination);
     void BeginAcceptanceHarness();
     void TickAcceptanceHarness(float DeltaSeconds);
+    void SetAcceptanceMove(APolitikaPrototypeUnit* Unit, const FVector& Destination);
     void StartAttackerDeathFixture();
 #endif
 };
@@ -402,6 +448,9 @@ private:
     void StopSelected();
     void GuardSelected();
     void AttackMoveSelected();
+    void GrenadeSelected();
+    void ReloadSelected();
+    void SprintSelected();
     void ReturnToMenu();
     void PanForward(float Value);
     void PanRight(float Value);
