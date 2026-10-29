@@ -53,7 +53,19 @@ A **formation** is a *persistent, match-owned tactical relationship* among eligi
 
 One unit can occur in several *local* control groups; initially it may belong to at most **one active peer-level formation**. Hierarchical subformations are deferred; later nesting needs acyclic membership and no double-counted supporter bonuses. Formation IDs and runtime entity IDs must be different namespaces; a definition ID never equals a spawned instance.
 
-### 3.1. Proposed formation lifecycle
+### 3.1. Interoperability with numbered and dynamic control groups (core 4C-G)
+
+[Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) defines proposed **ten-slot** local control groups and set operations: Ctrl+number Replace, Shift+number Union, Alt+number ExclusiveTransfer, number Recall, double-tap Focus and Tab subgroup cycling. [Comparative Input Research](RTS_CONTROL_GROUP_INPUT_RESEARCH.md) grounds those player-facing conventions. **These operations do not implicitly Form, Reform, move, change stance, assign slots, or change a unit's canonical `UnitResolve`.** They are an addressing layer that can overlap arbitrarily; a unit normally has only one active *peer-level* match-owned formation assignment.
+
+When a selection contains parts of multiple formations, the UI must distinguish: (a) `Selected IDs`, (b) `Control-group slot memberships`, (c) `formation IDs and their current member/slot counts`, and (d) `individually order-eligible members`. A formation control should never automatically extend to unselected members unless its command explicitly targets the entire validated formation and previews that scope. An individual order can override one member while the rest retain formation identity. Returning to group 1 does not cancel group 2's earlier instructions or force a formation regroup.
+
+**Ordering boundary:** once explicit formation operations exist, changes to formation membership and persistent stance require their own admitted authoritative transition; later formation destinations resolve to legal per-member requests through the existing coordinator. In contrast, control-group assignment/retrieval and type-filtering remain local. A player can issue Move to a selected set drawn from several formations, but this is an ordinary non-atomic batch, **not** an implicit mass formation. Members may end up outside formation geometry, degrading *derived* Cohesion according to real state.
+
+**Discipline exploit test:** assign a distant rifle unit to all ten numbered slots and repeatedly add it to other groups. Its physical participation counts **once**, and neither its Discipline nor the Cohesion of any formation improves from these assignments. In particular, the Directorate/Ascendancy massive-cohesive-army exception is computed from qualified actual supporting entities, never from shortcut group size. Invalid/mismatched-generation or ownership-lost members cannot be recalled into a formation through stale IDs.
+
+**Staging:** 4C baseline multi-selection → **4C-G** core user-facing control groups (separately qualified, not retroactive 4F requirement) → FORM-F2+ formation mechanics. A formation prototype may use explicit manually selected IDs without presupposing arbitrary auto-grouping; however, player-facing large-force usability should not be considered production-ready without 4C-G.
+
+### 3.2. Proposed formation lifecycle
 
 `Requested → Validated/Admitted → Assembling → Moving / Deployed → Degraded / Fragmented → Regrouping → Moving / Deployed → Dissolved`
 
