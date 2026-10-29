@@ -9,6 +9,8 @@ Planned primary target platforms: Linux, Windows, SteamOS/Steam Deck, and Androi
 
 ## 1. Goal and boundary
 
+**Primary contemporary RTS reference:** [Tempest Rising — Engine Architecture Reference](TEMPEST_RISING_ENGINE_REFERENCE.md) records source-verified public Unreal Editor/API patterns, their limitations and optional POLITIKA translations. It is research guidance, **not** an alternative implementation roadmap or evidence that POLITIKA has implemented those systems. Follow this outline and the owning acceptance contracts when developing features.
+
 The goal is a complete, polished real-time strategy game, not a reproduction of a proprietary engine. POLITIKA should use UE as its rendering, platform, editor, asset, and packaging foundation, with a game-specific RTS layer implemented primarily in C++ and UE authoring/configuration assets. C# remains suitable for external content/build tools where it earns its keep; it is not required in the runtime.
 
 The game-specific layer needs to support faction/unit content, squad/vehicle combat, tactical objectives, campaign missions, skirmish and possible multiplayer rules, AI, maps, in-game briefings and dialogue, audio, save/replay, and localization. The economy, production, deployment, reinforcement and objective-control rules remain POLITIKA design decisions; this outline establishes systems capable of supporting those choices.
