@@ -168,6 +168,8 @@ Unreal Engine 5.8 provides NavMesh and avoidance technologies (RVO and Detour Cr
 
 ## 9. Input, HUD and feedback
 
+The [HUD Architecture](RTS_HUD_ARCHITECTURE.md#52-formation-stance-adherence-and-resolve) owns panel composition and interactive visual feedback. This document retains authority over the match-owned formation, shape, facing, stance, adherence, member admission, derived Cohesion and per-unit Discipline; selection and 0–9 control groups never become formations through UI presentation alone.
+
 A selected group should offer explicit **Form, Reinforce, Detach, Reform, Regroup, Disband** once each operation is implemented. Formation controls expose shape, facing, combat stance and geometric adherence as distinct axes. Saved control hotkeys only select/recall IDs; they should never create formations implicitly.
 
 World previews show intended member slots and orientation, but must be labeled advisory until match-authoritative projection and route admission. Inspection should show member count, owner, formation state, visible failures/partial acceptance, role and individual Discipline; display Cohesion as a **derived group condition**, not a second morale gauge. UI/AI are restricted to participant-accessible observation, including when facing a fake report.
