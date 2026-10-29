@@ -71,6 +71,10 @@ These documents supplement (and link to) the existing ontology, UI, economy, roa
 
 **Research date:** 2026-10-29. All links are public technical references; none is evidence a UE plugin is enabled or a POLITIKA implementation exists.
 
+## 5A. Further UI and economic design specialization (29 October 2026)
+
+The [Practical UI, Settings and Keymap](RTS_UI_SETTINGS_AND_KEYMAP.md) source audit identifies the immediately actionable double-assignment of **A** (camera left/Attack-Move) and **S** (camera backward/Stop), absent user-facing settings and remapping controls, and a development shell that does not yet implement the proposed UI menu hierarchy. The [Operational Economy and Power](RTS_OPERATIONAL_ECONOMY_AND_POWER.md) note defines a **candidate** spendable budget and generator load contract to reduce resource-farming micromanagement. The [Overlooked Mechanics Review](RTS_OVERLOOKED_MECHANICS_REVIEW.md) records conditional mechanics for onboarding, battle alerts, territory logistics, rules of engagement, infrastructure outages and civilian/legitimacy effects. No runtime or schema qualification is implied; preserve existing 4A/4B–4F acceptance scope and military/faction canon.
+
 ## 6. Documentation portability and validation findings
 
 At this documentation-only change, an automated check enumerated the **11 newly added/updated Markdown documents** and resolved their repository-relative link destinations against the staged complete Git tree. **All relative links in those 11 documents resolve to tracked files/directories.** The same check identified **26 pre-existing absolute `/mnt/data/...` Markdown links in `Docs/ENGINE_OUTLINE.md`**, pointing outside the repository to local C&C reference/extraction material. These are not public or portable GitHub links; no linked file was available here for source verification. Keep this as a **separate provenance-preserving cleanup**: replace those links with stable/public references when available, or explicitly mark them as local-only evidence with an accessible bibliography; do not invent external URLs, import unlicensed content or erase technical context.

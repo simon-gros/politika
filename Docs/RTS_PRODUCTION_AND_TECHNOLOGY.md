@@ -2,6 +2,8 @@
 
 **Status: PROPOSED system architecture, 29 October 2026.** Owns the gameplay mechanics for producing/placing RTS entities and gating recipes. [Resource Economy](RESOURCE_ECONOMY.md) owns commodity hierarchy and conversion/economic balance; [Faction Rosters](POLITIKA_FIVE_FACTION_ROSTERS.md) own candidate content; [Gameplay Content](GAMEPLAY_CONTENT.md) owns existing typed assets and schema validation; [Engine Outline](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match) owns implementation stage. Existing `TrySpend` in `Source/PolitikaCore/Rules.h` is a portable resource helper, **not** a complete production or construction implementation.
 
+**Economic scope clarification (29 October 2026):** [Non-Farming Operational Economy and Power](RTS_OPERATIONAL_ECONOMY_AND_POWER.md) proposes an eventual spendable Operational Budget and power-capacity/shortage system. Existing narrow 4B source→collector/delivery→balance→queue→reinforcement sequencing remains unchanged until its owning roadmap is explicitly revised. Avoid adding a second ledger for electricity or silently making conventional troops require nuclear/fuel feedstock.
+
 ## 1. Minimal 4B loop and typed responsibility
 
 Implement **one resource**, one source/deposit, one eligible collector/delivery, one participant-owned balance, one fixed starting production structure, one priced unit recipe, one queue slot, one completed reinforcement and an ordinary command against it. The starting structure is authored and does not require building placement. This narrow implementation proves an RTS economy without introducing all documented oil/gas/nuclear/power/market systems.

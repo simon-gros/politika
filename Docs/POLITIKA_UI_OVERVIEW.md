@@ -7,6 +7,8 @@ Product constraints: no cinematics; no mandatory internet connection or online-a
 Display target: desktop 4K (3840×2160) plus readable, adaptive handheld/mobile resolutions
 Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; console/Apple platforms are possible later expansions
 
+**Detailed settings/input implementation guide (29 October 2026):** [Practical RTS UI, Settings and Keymap](RTS_UI_SETTINGS_AND_KEYMAP.md) records the exact source-backed current controls (including the current A/S camera-and-order collisions), suggested conflict-free default profile, real video preview/revert transactions, UI versus render scale, audio bus categories, input mapping/help, menu hierarchy, and staged tests. This document remains the authority for overall UI product design and faction presentation; the linked guide is a proposed engineering contract, **not a working settings screen or remappable keymap**.
+
 **Cross-system boundary (29 October 2026):** The [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) specification owns authoritative selection membership, per-unit group submission and rejected-order semantics. [Visibility and Intelligence](RTS_VISIBILITY_AND_INTELLIGENCE.md) owns per-participant observable state; this UI must render that view rather than unfiltered simulation truth. [RTS Systems Completeness Matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) records which behaviors remain design-only. These links do not qualify a new UI feature or plugin.
 
 ## 1. Product direction

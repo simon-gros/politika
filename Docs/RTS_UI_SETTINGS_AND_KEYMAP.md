@@ -1,0 +1,179 @@
+# POLITIKA — Practical RTS UI, Settings, Menus and Input Specification
+
+**Status: DESIGN/PROPOSED, 29 October 2026; source-grounded inventory below, not an implementation or accepted build.** This is a normative *implementation contract* for settings and inputs, supplementing the extensive [UI product overview](POLITIKA_UI_OVERVIEW.md), which remains the owner of overall visual hierarchy, faction-specific presentation and accessibility. [Engine Outline](ENGINE_OUTLINE.md) owns sequence; [Selection/Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) owns authoritative selection; [Shell](SHELL_SKELETON.md) owns currently verified shell/recovery behavior; [Match Persistence](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) owns future save/replay. Do not change gameplay authority or native assets merely because a specification is written.
+
+## 1. Code-grounded audit: what actually exists
+
+Examined at source Git SHA \`8eca9a35d58298559f51500c9e04bbdae6a85dd4\`:
+
+| Area | Actual source/config | Implemented versus missing |
+| --- | --- | --- |
+| Display defaults | \`Config/DefaultGameUserSettings.ini\` | 1280×720, \`FullscreenMode=2\` (windowed), VSync enabled, 60 FPS cap, basic quality scalability. This is a **default**, not a selectable settings screen. |
+| UI scale | \`Config/DefaultEngine.ini\` | Shortest-side \`UIScaleCurve\`: 480→0.667, 720→1, 1080→1.5, 2160→3. The shell correctly warns against inserting a second DPI scaler. **No adjustable user preference** implemented. |
+| Display persistence | \`PolitikaUserSettings.cpp\`, bootstrap module | UE \`UGameUserSettings\` subclass; temporary safe 1280×720 windowed reset and session-only apply; settings file backup/recovery exists. **No end-user video preview/Keep/Revert flow** implemented. |
+| Menus | \`PolitikaShellPlayerController.cpp\` | Slate main-menu/sandbox recovery panel, prototype launch, reset safe settings, diagnostics, exit; **not** the proposed campaign/skirmish/settings/help suite. Some sandbox introduction copy is historical shell wording. |
+| Tactical UI | \`PolitikaPrototypeGameplay.cpp\` | Immediate-mode Canvas HUD: unit health/order, control objective, command status, five command rows; no interactive production/minimap/notification history. |
+| Audio | \`Art/Audio/Prototypes\` / audio documents | Audio prototypes and concepts exist; **no end-user mixer, volume-bus settings or tested audio routing** implemented. |
+| Input | \`Config/DefaultInput.ini\`, \`APolitikaPrototypePlayerController::SetupInputComponent\` | Legacy axis mappings and direct \`BindKey\`; no player-mappable Enhanced Input bindings, no built hotkey settings/help menu. |
+| Default route | \`Config/DefaultEngine.ini\` | Tracked \`GameDefaultMap=/Game/Maps/RTSVerticalSlice\`; separately qualified MainMenu packages used controlled config overlays. Do **not** assume every clean checkout boots the main menu. |
+
+### 1.1 **All currently evidenced mouse/keyboard inputs**
+
+These are current source bindings, **not** the intended final default profile. An action bound to a key may be inapplicable without an eligible selected unit.
+
+| Input | Current actual behavior | Evidence and caveat |
+| --- | --- | --- |
+| Left mouse | Single owned live-unit selection; empty/other click clears selection | \`SelectUnderCursor\` |
+| Right mouse, ground | Issue normal Move to world-hit map position | \`OrderUnderCursor\`; admission/nav can reject |
+| Right mouse, hostile unit | Attempt Attack on hit target | \`OrderUnderCursor\`; shared order admission |
+| A | Attack-Move to the point currently under the cursor | \`AttackMoveSelected\` on press, no separate confirm cursor state; **also pan left** |
+| S | Stop selected unit | \`StopSelected\` on press; **also pan backward** |
+| G | Guard selected unit (provisional prototype semantics) | \`GuardSelected\` |
+| Escape | Exit current prototype match to main menu | \`ReturnToMenu\`; **not** a pause/options popup |
+| W / S | Camera forward / backward | Legacy \`PrototypePanForward\` axis |
+| A / D | Camera left / right | Legacy \`PrototypePanRight\` axis |
+| Mouse wheel | Zoom camera | Legacy \`PrototypeZoom\` axis |
+
+**Blocking interaction collision:** A and S are each both a camera axis and a tactical single-press order. With a selected unit, ordinary camera navigation can generate unintended orders; remapping must separate them. A correct acceptance must press/hold every camera key with a selection and prove no order was enqueued. This is **source-detected**, not a new runtime reproduction. The HUD currently labels Attack-Move "A + ground", but its source invokes an immediate cursor-ray action when A is pressed, so documentation/tooltip must not imply a two-step target-confirm workflow exists. The Canvas rows are drawn, not buttons: accessibility and click behavior are not yet supported.
+
+## 2. Recommended interaction layout (desktop baseline)
+
+Use a **battlefield-first, relatively low-occlusion** layout combining C&C's immediately discoverable sidebar/production grammar and StarCraft's selected-unit command/selection clarity, without borrowing protected artwork, textures or branding.
+
+~~~text
+┌────────────────────────────────────────────────────────────────────┐
+│ Objective + event ticker       Operational Budget  Power  Fuel    │
+├─────────────┬─────────────────────────────────────────┬────────────┤
+│ Minimap     │                                         │ Intel /    │
+│ camera box  │       PLAYFIELD / ORDERS / ROUTES        │ diplomacy  │
+│ territory   │                                         │ drawer     │
+│ overlays    │                                         │ (optional) │
+├─────────────┴───────────────┬─────────────────────────┴────────────┤
+│ Selected unit/group         │ Orders + contextual production       │
+│ owner / HP / status / queue │ eligibility / bound key / why locked │
+└─────────────────────────────┴──────────────────────────────────────┘
+~~~
+
+Proportions are conceptual, not fixed pixel measurements. On 16:9 desktop, avoid a permanently expanded intel panel. Objective and alert state must be readable while battles continue. The top rail shows **spendable operational budget**, derived budget income and power capacity; fuel/nuclear remain conditional drilldowns. Do not render a greyed-out sprawling resource bar full of unused icon slots. The minimap is a projection of player knowledge, not a radar that reveals hidden truth. Selected unit/group count, owner, health, active order, selection eligibility, producer queue and confirmation/rejection feedback get a stable region. Allow player-controlled panel density and at least one compact preset; test at 1280×720, 1920×1080 and 3840×2160; add Deck/mobile safe-area layouts later.
+
+UI must consume authorized match snapshots and typed gameplay outcomes. An unavailable command should display the *reason*, with a location hint and current keybinding where meaningful. Distinguish **command accepted**, **executed**, **completed**, **rejected**, and **navigation failed**; "command accepted" does not imply arrival or damage. Never reveal enemy resources/production/orders through HUD convenience.
+
+## 3. Full menu and modal architecture
+
+~~~text
+Boot / recovery (offline, no account requirement)
+  Main Menu
+    Continue [enabled only for a compatible real save; future]
+    Campaign [locked/unimplemented until mission content exists]
+      Mission selection → briefing/intelligence dossier → mission → debrief
+    Skirmish [locked until 4F; prototype launch remains Development-labelled]
+      Scenario/map → human/opponent slots → faction → options → loading
+    Prototype [Development-only entry while in development]
+    Settings
+      Video & Display | Graphics | Audio | Controls | Gameplay/UI | Accessibility/Language
+    How to Play
+      Controls list | command semantics | economy/power | political/intel concepts
+    Credits / Licences / Quit
+In-match (when implemented)
+  Battlefield HUD
+    Context inspect / production / intel dossier / diplomacy overlays
+    Help and keymap (read-only)
+    Pause / Options / Restart or Surrender / Return / Quit [modal confirmation]
+  Results
+    Outcome/reason, timeline, losses/objectives, optional statistics
+    Rematch / Main Menu (save replay only if implemented)
+~~~
+
+Do not display nonfunctional buttons as operational features. Either hide unavailable branches in a prototype menu, or label them as unavailable with an explanation. Preserve the existing reliable recovery path even if normal settings widgets fail to create. Every modal defines focus owner, Escape/back behavior, input consumption, selection/targeting cancellation, and return focus. Pause must freeze the **offline authoritative coordinator** (no accumulated catch-up on resume); menu-driven settings can remain responsive. A later multiplayer mode must define independent pause rules.
+
+## 4. Video, resolution and scaling settings — precise ownership
+
+| Setting | Recommended UI policy | Technical boundary |
+| --- | --- | --- |
+| Display/monitor | Enumerate live monitor identity when platform supports it; distinguish stable ID from transient index; safe fallback for unplugged monitor | Use UE/platform display adapter, not an inferred per-monitor guarantee from global resolution enumeration |
+| Window mode | Windowed, Borderless Windowed (UE \`WindowedFullscreen\`), Fullscreen where supported; disable/explain unsupported exclusive modes | \`UGameUserSettings::Get/SetFullscreenMode\`; platform compositor constraints |
+| Resolution | Choose from **current supported modes** for selected display/mode; 1280×720 safe recovery | \`SetScreenResolution\`; validate actual framebuffer/window result |
+| Windowed size | Expose actual logical client window size separately from desktop mode where needed | Clamped to usable desktop area; remember placement safely |
+| Rendering resolution scale | Scene 3D rendering resolution/quality, independently of menu text | \`GetResolutionScaleInformationEx\`, scalability; avoid attaching readability to GPU resolution |
+| UI scale | Suggested player preference 75–200% with a 100% default; **candidate tuning values** | Effective layout scale = project DPI rule × user preference **once**, not double-transform via nested scalers |
+| Text scale | Separate 100–150% text preference and min readability; tune with real fonts and locales | Do not assume it is the same parameter as viewport DPI or scene resolution |
+| Presets | Low/Medium/High/Custom, independent toggles for VSync, FPS cap, effects/texture/shadows, reduced motion | Treat displayed changes as transactions, not immediately permanent writes |
+| Accessibility | Contrast, subtitles and captions, UI opacity, screen-edge hints, reduced flashes, color-independent relations | Preserve text / icon feedback even if animations, VFX, or SFX disabled |
+
+**Safe video change state machine (normative):** \`StoredConfirmed → Draft → PreviewApplied → [Keep/Cancel/Timeout/DisplayLost] → StoredConfirmed\`. Snapshot *both* stored values and live confirmed window tuple (mode, resolution, monitor ID/index, position where valid). Preview changes the visible window **without saving** and shows a 15-second Keep/Revert modal that remains accessible by keyboard/controller. On Keep: confirm and persist only after actual mode verification. On Cancel, timeout, focus/display loss or failed apply: restore prior confirmed tuple *and explicitly reapply it* to the live window, preserving saved bytes. UE \`RevertVideoMode\` restores settings values but **does not by itself guarantee reconfiguration of the actual platform window**; \`ApplySettings\` persists settings, so it is unsuitable for a no-save preview. Test both \`ApplyResolutionSettings\` and actual viewport/framebuffer readings on the pinned UE 5.8.3 checkout. Startup command-line \`-ResX\`/\`-ResY\`/\`-Windowed\` overrides are session-only and must not overwrite confirmed preferences.
+
+On bad/unsupported mode, implement fallback to last confirmed mode or safe 1280×720 windowed without deleting other profile/settings files. Do not misreport a rejected settings write as saved. Use the shell's existing bootstrap backup and version guard instead of creating a second settings persistence service.
+
+UE references: [UGameUserSettings (5.8)](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UGameUserSettings?application_version=5.8); [DPI Scaling (5.8)](https://dev.epicgames.com/documentation/unreal-engine/dpi-scaling-in-unreal-engine?application_version=5.8); [UI Project Settings (5.8)](https://dev.epicgames.com/documentation/unreal-engine/user-interface-settings-in-the-unreal-engine-project-settings?application_version=5.8).
+
+## 5. Audio and subtitle settings
+
+Implement one user master gain plus separate **Music**, **Combat/SFX**, **Units/Voice Acknowledgements**, **Dialogue/Radio**, **UI**, and optional **Ambience** levels, each with immediate audition, Mute and safe persisted value. A simple first slice may combine Combat/UI and Dialogue/Voice if there are not yet distinct audio routes; do not present sliders that have no actual routed sources. A critical tactical alert requires optional ducking of music/ambience during voice/radio, not an additional spendable resource. Subtitles/transcripts must remain available when voice is muted; include sound-event direction/category for important alerts if useful. Avoid clipping by designing test signals and a documented gain conversion; UI "0–100" percent is a **presentation value**, not necessarily a linear amplitude.
+
+Prefer Unreal **Sound Classes** to group assets, with **Audio Modulation Control Buses/Mixes** where actual category routing is needed. Epic's quick start explicitly recommends attaching buses to Sound Classes instead of individual sound assets. Audio Modulation is an optional plugin; verify enablement/build/cook on UE 5.8.3 rather than silently adding it. Preserve a no-plugin basic class-mix fallback if just master/SFX/music controls are needed. When in-game volume changes, apply to live audio and verify across a clean restart; on save failure retain documented in-memory behavior and report it.
+
+References: [Audio Modulation Quick Start](https://dev.epicgames.com/documentation/unreal-engine/audio-modulation-quick-start-guide?application_version=5.8), [Sound Classes](https://dev.epicgames.com/documentation/unreal-engine/sound-classes-in-unreal-engine?application_version=5.8). [Audio events](../Data/audio_events.json) remains an authored registry, not proof of routed/bus audio playback.
+
+## 6. Keymap: unique semantic actions, discoverable controls
+
+**Implementation choice:** introduce one stable **action ID** per intent (e.g. \`rts.order.stop\`, \`camera.pan_left\`, \`ui.menu.cancel\`), with localized action name, purpose/tooltip, category, context, device and default binding. The Controls menu must be generated from the same bound action registry used by input dispatch: never hand-maintain a second contradictory "list of keys." Backward-compatible legacy bindings may remain temporarily, but the transition must not cause both old and new listeners to execute the same intent.
+
+**Conflict resolution first:** reserve mutually distinct default keys for overlapping gameplay contexts. Recommended first desktop preset: keep W/A/S/D for camera *or* switch camera to arrow keys/middle-mouse drag and preserve A/S tactical standards—**choose, implement and test exactly one consistent baseline**. Candidate default: **camera via arrow keys + middle-mouse drag**, **A Attack-Move**, **S Stop**, **G Guard**, wheel Zoom, LMB Select, RMB Context Order, Esc Pause/Back. This uses common RTS conventions without disabling flexible custom pan mappings. **Do not silently change defaults in a documentation-only change.** If the player binds a camera axis and an order to the same physical key in the same active context, block and explain collision (or require an explicitly distinguishable modifier/chord); resolve by rebind, swap or cancel.
+
+### 6.1 Recommended complete categories — **proposal, not enabled key bindings**
+
+| Action family | Suggested initial binding | What the help UI must explain |
+| --- | --- | --- |
+| Select / inspect / contextual move or attack | LMB, RMB, modifiers | Owner/visibility requirements; what happens when no valid target or order |
+| Camera pan, zoom, focus selected | Arrows, MMB-drag, wheel, F | No implicit combat order; separate edge-scroll setting |
+| Tactical commands | A Attack-Move, S Stop, G Guard, optional H Hold | Target confirmation/command state; what differs from Move or Guard |
+| Select group | Drag LMB; Shift add/toggle; Ctrl same type (later) | Exclude hostile/neutral/dead and show selection count |
+| Control groups | Ctrl+1…9 assign, 1…9 recall, double-tap focus (later) | Invalidation, empty group, stale match, binding conflicts |
+| Queue waypoints | Shift+RMB (later) | Append vs replace and queue limit; not present in existing prototype |
+| Alert history / base focus | Space latest alert; Backspace base focus (later) | Camera only, no new sensor/omniscient intel |
+| Diplomacy/intelligence/map overlay | Candidate D, I, M (later) | These are **screen-navigation intents**, never privileged gameplay actions |
+| Production/build | Contextual command card or selected producer menu (later) | Bound recipe/unlock/price/power restrictions and queue state |
+| Pause/back/help | Esc contextual Pause/Back; F1 help (later) | Esc in prototype currently **returns to main menu** |
+| Screenshot and system shortcuts | Platform/Steam capture handled externally unless adopted | Do not hijack Alt+Tab, OS window switching or accessibility shortcuts |
+
+Rebinding: support alternative bindings, modifier chords, deliberate duplicate detection, keyboard-layout display names, gamepad/touch separate profiles, Reset Category/Reset All with confirmation, accessibility alternatives to held keys, and changes visible instantly in HUD/tooltips/help. Respect system-level key capture and input-method-editor/text-entry focus. Distinguish rebind **failure** from a saved key profile. Avoid requiring keyboard shortcuts to access key settings.
+
+UE 5.8 [Enhanced Input](https://dev.epicgames.com/documentation/unreal-engine/enhanced-input-in-unreal-engine?application_version=5.8) supports Input Actions/Mapping Contexts and platform redirects. [UEnhancedInputUserSettings](https://dev.epicgames.com/documentation/unreal-engine/API/Plugins/EnhancedInput/UEnhancedInputUserSettings?application_version=5.8) and [Map Player Key](https://dev.epicgames.com/documentation/unreal-engine/BlueprintAPI/EnhancedInput/UserSettings/MapPlayerKey?application_version=5.8) provide player-mappable binding interfaces. They do not automatically create POLITIKA's complete help, permissions or persistence semantics. [CommonUI guidance](https://dev.epicgames.com/documentation/unreal-engine/design-guidelines-for-using-commonui-in-unreal-engine?application_version=5.8) specifically notes a PC RTS need not use CommonUI for its basic HUD; consider it only if layered menus and controller navigation justify it.
+
+## 7. Other RTS interface evidence and what to borrow
+
+| Source title | Source-supported feature | Adaptation, not asset imitation |
+| --- | --- | --- |
+| Command & Conquer Remastered | EA documents a sidebar for structure production, power shortage, campaign/skirmish options and user-accessible resolution/audio/key bindings. | Fast accessible producer/action panel, conspicuous power state, functional global Settings |
+| StarCraft II | Blizzard documents tooltips revealing hotkeys, control-group/Shift queue, notification recenter and selection modes. | Complete dynamically bound action help; consistent group command grammar, notification history |
+| Age of Empires IV | Official guide emphasizes villager/resource rally and workers managing several commodity loops. | Useful negative comparison: avoid routine four-resource villager micromanagement |
+| Company of Heroes series | Sector control and connected territory generate manpower/fuel/munition income without dedicated gatherer farming. | Political/infrastructure nodes and cut routes, with optional limited logistics, as POLITIKA's primary operating economy |
+
+Primary refs: [EA C&C Remastered guide](https://help.ea.com/articles/command-and-conquer/command-and-conquer-remastered/how-to-play/), [Blizzard StarCraft special controls](https://news.blizzard.com/en-us/article/4552955/game-guide-special-control), [Blizzard simplified controls](https://news.blizzard.com/en-us/article/6640645/game-guide-simplified-controls), [Age of Empires IV beginner guide](https://www.ageofempires.com/news/age-of-empires-iv-tips-to-help-you-get-started/), and [Company of Heroes territory supply explanation](https://www.coh2.org/guides/1987/introduction-to-coh-franchise). These are precedent sources, not a claim of POLITIKA compatibility, licensed art or identical mechanics.
+
+## 8. Implementation phases and acceptance
+
+**UI-A — immediate correction:** record current keys and conflicts, establish common semantic registry/proposed defaults and native text help; test W/A/S/D held with a selected unit for **zero accidental commands**; keep current controller/command authority and packaged prototype. This is a gameplay-code change and requires Unreal Automation + rendered regression.
+
+**UI-B — safe settings foundation:** Video/Display modal with 15 s Keep/Cancel/Timeout and actual window/monitor restore; independent UI/text scale, safe initial resolution, no data-loss; use existing bootstrap and \`UGameUserSettings\`. Include tests for unavailable monitor, unsupported mode, launch override, failed writes, safe mode, bad profile, windowed and fullscreen on supported host.
+
+**UI-C — functional Controls + Audio:** Enhanced Input contexts, profile key rebinding and dynamic help, conflict resolution; routed sound class groups/master/categories, subtitle/caption policy. Verify the audio mix actually changes sound output, not merely slider text.
+
+**UI-D — production-era RTS HUD:** command card (clickable where appropriate), group selection, minimap based on authorized observations, objectives, alerts, power/budget/production, political dossier and accessibility. Verify that video/audio settings persist and render across device profiles. Test HUD at 720p/1080p/4K, ultrawide and a handheld safe-area target; qualify Android separately.
+
+| Gate | What must be **actually** observed |
+| --- | --- |
+| UI-01 | Every documented **current** binding matches source; no double bound gameplay/camera action under selected-unit state |
+| UI-02 | A saved rebind changes actual input and HUD/help hint; no old listener fires |
+| UI-03 | Conflict, reserved key, missing required Cancel/Select binding and invalid profile fail with explanation |
+| UI-04 | Windowed/Borderless/Fullscreen behave as supported; exact stored/live tuple; 15 s timeout reverts **live** mode |
+| UI-05 | UI scale and text scale independent of 3D resolution; usable and unclipped at 1280×720 through 4K |
+| UI-06 | Lost monitor, unsupported resolution, failed save and restart preserve original preference bytes or safe fallback |
+| UI-07 | Each audio slider affects real routed test tone; categories isolated and persisted; mute leaves subtitles available |
+| UI-08 | Pause/modal blocks world commands and clears held-target state; no simulation catch-up on resume |
+| UI-09 | Every visible HUD/menu action has a working or explicitly disabled target and an accessible help description |
+| UI-10 | Same-process match return/retry leaves clean focus, bindings, viewport and menu state |
+| UI-11 | Rendered Linux Development packaged test + real window observation and input replay; headless alone is insufficient |
+| UI-12 | Accessibility: keyboard-only traversal, screen-reader-related text surfaces where platform supports them, non-color status, reduced effects, captions and controller/touch profile tests |
+
+**Not yet qualified:** no settings or keymap code was changed by this document; no enabled Audio Modulation, CommonUI, MVVM, Enhanced Input or arbitrary full-screen/monitor support is claimed. In UE 5.8, MVVM is explicitly a Beta feature; prefer small native event-driven presentation updates unless an actual UI scope warrants that plugin. References: [UMG Viewmodel](https://dev.epicgames.com/documentation/unreal-engine/umg-viewmodel-for-unreal-engine?application_version=5.8), [Localization using FText](https://dev.epicgames.com/documentation/unreal-engine/text-localization-in-unreal-engine?application_version=5.8).
