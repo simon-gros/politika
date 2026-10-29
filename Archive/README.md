@@ -35,7 +35,7 @@ Give particular attention to RTS production uses: terrain and map design; archit
 
 ## Populated archive — first research seed
 
-**Research updated: 29 October 2026.** The archive now contains **247 documented historical, political and cartographic references** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
+**Research updated: 29 October 2026.** The archive now contains **247 indexed historical, political and cartographic reference records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
 
 Start with the [Master Catalogue](CATALOG.csv), then use the [Reference-only Index](media/reference-only/INDEX.md) for human browsing. The most concrete period-visual seed currently includes four individually dated Sarajevo tram/urban photographs from 1982 under file-specific CC BY-SA 4.0 licences; museum and periodical records of Sarajevo's 1984 Olympics, its visual identity, the 1987 Day of Youth material, and 1984–1988 press; an early-1980 Belgrade street negative; and a collection of independently sourced economic, political and diplomatic contextual studies.
 
@@ -50,6 +50,8 @@ The October 2026 political-history expansion adds **69 source-linked political d
 | [`CATALOG.csv`](CATALOG.csv) | Master index with **247** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
 | [`MAPS_1980_1989.md`](MAPS_1980_1989.md) | Source-based political, physical, topographic, city and road mapping guide with chronology and asset-use rules. |
 | [`MAP_CATALOG.csv`](MAP_CATALOG.csv) | 147 cartographic source records: contemporary originals, historical baselines, modern licensed reconstructions, institutional collections and 80 named M709 quadrangles. |
+| [`MAP_RELATIONSHIPS.csv`](MAP_RELATIONSHIPS.csv) | Relationships among related map editions, mirror hosts, translations and genuinely separate originals, preventing misleading duplicate source counts. |
+| [`tools/validate_catalogues.py`](tools/validate_catalogues.py) | Dependency-free archival CSV and index cross-reference integrity check; run with `python3 Archive/tools/validate_catalogues.py`. |
 | [`REGIONAL_CARTOGRAPHIC_ATLAS.md`](REGIONAL_CARTOGRAPHIC_ATLAS.md) | Research-oriented regional map design for the six republics, Kosovo and Vojvodina, with dated evidence and playable-RTS hypotheses. |
 | [`MAP_ACQUISITION_GUIDE.md`](MAP_ACQUISITION_GUIDE.md) | Map-by-map access, original publication proof, reuse permissions, provenance, georeferencing and proposed RTS map-production workflow. |
 | [`media/reference-only/maps/INDEX.md`](media/reference-only/maps/INDEX.md) | Browsable map-source links with no unauthorized copies. |
