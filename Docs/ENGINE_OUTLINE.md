@@ -538,6 +538,10 @@ Use the existing case-safe offline index and category/relationship crosswalk und
 
 **Shared stage gate:** *(a)* the stage-specific positive and negative tests pass, *(b)* the previously accepted shell and gameplay fixtures remain operable, *(c)* diagnostics are reproducible and distinguish content defects from missing tooling, *(d)* a real cooked/packaged path is exercised when the stage promises packaged behavior, and *(e)* remaining non-goals and unqualified platforms are recorded. Passing the shared gate does not imply a release candidate.
 
+### Cross-genre quality benchmarking — linked research, not a new implementation stage
+
+The [Cross-Genre RTS Comparative Study](RTS_CROSS_GENRE_COMPARATIVE_STUDY.md) maps mature game families and the current versus proposed POLITIKA system boundaries; the [Competitive Benchmark Register](RTS_COMPETITIVE_BENCHMARK_REGISTER.md) specifies proposed CMP-01–17 reference comparisons, candidate metrics, evidence identities and future integrated scenario tests. Use those documents to identify **which decision or player-facing outcome a feature actually improves**, and to guide later playtests, performance traces and balance. **This does not expand 4A–4F**, replace the existing command/simulation, authority or navigation contracts, or claim feature implementation, achieved frame rates, large-unit capacity or competitive superiority. One owned milestone and its existing acceptance matrix remain decisive. The register may be refreshed after verified milestone changes or comparator game releases.
+
 ### 7.2 Stage 1 — project foundation and continuing infrastructure
 
 **Purpose:** establish a reliable place in which RTS functionality can be authored, compiled, reviewed, launched and diagnosed without letting build infrastructure dictate gameplay architecture.
