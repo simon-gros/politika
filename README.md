@@ -134,7 +134,7 @@ The main README introduces the project; concrete gameplay concepts and system-le
 | [Development Foundations](Docs/DEVELOPMENT_FOUNDATIONS.md) | Rust/C++20 regression tests, RTS content audit, UE 5.8.3 preflight, diagnostic verdicts, and staged automation without hosted workflows. |
 | [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Controls, interface, accessibility, and presentation. |
 | [Faction files](Factions/) | In-depth faction descriptions, logos, and banners. |
-| [Historical Reference Archive](Archive/README.md) | 194 sourced research records: 69 political developments, 94 cartographic references and 31 foundational historical/media sources, with source-rights and alternate-history safeguards. [Map atlas](Archive/MAPS_1980_1989.md) · [Map acquisition workflow](Archive/MAP_ACQUISITION_GUIDE.md). |
+| [Historical Reference Archive](Archive/README.md) | **247 verified source references**, comprising 31 initial history/media sources, 69 political developments and **147 cartographic records**. Includes [regional cartographic research](Archive/REGIONAL_CARTOGRAPHIC_ATLAS.md), map-source provenance and a rights-aware acquisition workflow. |
 
 ## Development and contributions
 
