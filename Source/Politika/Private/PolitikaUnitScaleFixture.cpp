@@ -77,6 +77,7 @@ bool APolitikaPrototypeMatch::ResolveUnitScale(TArray<FPolitikaPrototypeUnitPlac
     using namespace politika::unitscale;
     UnitScalePerSeat = 0;
     UnitScalePhase = EUnitScalePhase::Off;
+    bUnitScaleHold = false;
     FString Value;
     if (!FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPUnitScale="), Value)) return true;
     // Measurement fixture only: a networked session on the multiplayer skirmish map.
@@ -183,9 +184,10 @@ bool APolitikaPrototypeMatch::ResolveUnitScale(TArray<FPolitikaPrototypeUnitPlac
             if (Spawned[A].Key != Spawned[B].Key)
                 MinOpposingGap = FMath::Min(MinOpposingGap, FVector2D::Distance(Spawned[A].Value, Spawned[B].Value));
     UnitScalePerSeat = static_cast<int32>(PerSeat);
+    bUnitScaleHold = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPUnitScaleHold"));
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("MP_UNIT_SCALE_FIXTURE per_seat=%d seats=%d seat_units=%d added=%d spacing_cm=%.0f max_radius_cm=%.1f min_opposing_gap_cm=%.1f"),
-        UnitScalePerSeat, Seats.Num(), UnitScalePerSeat * Seats.Num(), Added.Num(), kSpacingCm, MaxRadius,
+        TEXT("MP_UNIT_SCALE_FIXTURE per_seat=%d hold=%d seats=%d seat_units=%d added=%d spacing_cm=%.0f max_radius_cm=%.1f min_opposing_gap_cm=%.1f"),
+        UnitScalePerSeat, bUnitScaleHold ? 1 : 0, Seats.Num(), UnitScalePerSeat * Seats.Num(), Added.Num(), kSpacingCm, MaxRadius,
         MinOpposingGap == TNumericLimits<double>::Max() ? -1.0 : MinOpposingGap);
     // Fail closed rather than measure a fight that started during the idle window (F46).
     if (MinOpposingGap < kMinOpposingGapCm)
@@ -217,7 +219,7 @@ void APolitikaPrototypeMatch::BeginUnitScaleMeasurement()
 
 void APolitikaPrototypeMatch::TickUnitScaleDriver()
 {
-    if (UnitScalePhase == EUnitScalePhase::Off || !Lifecycle.IsActive()) return;
+    if (UnitScalePhase == EUnitScalePhase::Off || !Lifecycle.IsActive() || bUnitScaleHold) return;
     if (UnitScalePhase == EUnitScalePhase::Idle && SimulationStepsExecuted >= UnitScaleActivationStep + UnitScaleIdleSteps)
     {
         // Each unit keeps its offset from its seat start around the objective, so seats meet

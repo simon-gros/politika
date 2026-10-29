@@ -6024,6 +6024,421 @@ fn run_unit_scale() -> ! {
     std::process::exit(if report.failed() { 1 } else { 0 });
 }
 
+// ---------------------------------------------------------------------------------------
+// GRP 4C baseline (RTS_SELECTION_AND_GROUP_ORDERS.md): `--group-orders SERVER CLIENT
+// [--evidence DIR] [--port N]`.
+//
+// A dedicated 1v1 skirmish holds 20 units per seat (the test map cap) with the unit-scale
+// fixture kept idle. Seat 1's client renders on Xvfb and is driven with real X input: a box
+// drag selects its army, Shift+click toggles one unit out, Esc cancels a drag, a right-click
+// orders the selection, and a click on empty ground clears it. Client selection logs are
+// checked against the server's authoritative ownership and admitted commands.
+// ---------------------------------------------------------------------------------------
+
+const GROUP_UNITS_PER_SEAT: usize = 20;
+
+fn selection_ids(line: &str) -> Vec<u64> {
+    let mut ids: Vec<u64> = field(line, "ids")
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|v| v.parse().ok())
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+impl Game {
+    fn xdo_here(&self, args: &[&str]) -> Result<(), String> {
+        let display = self.display.as_deref().ok_or("no display")?;
+        xdo(display, args).map(|_| ())
+    }
+
+    fn pointer_to(&self, x: f64, y: f64) -> Result<(), String> {
+        let window = self.window.as_deref().ok_or("no window")?;
+        self.xdo_here(&[
+            "mousemove",
+            "--window",
+            window,
+            "--sync",
+            &format!("{}", x.round()),
+            &format!("{}", y.round()),
+        ])
+    }
+
+    /// Presses at `from`, moves to `to` in steps the game sees across several frames, and
+    /// returns with the button still held.
+    fn drag_hold(&self, from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+        self.pointer_to(from.0, from.1)?;
+        thread::sleep(Duration::from_millis(150));
+        self.xdo_here(&["mousedown", "1"])?;
+        thread::sleep(Duration::from_millis(150));
+        for step in 1..=8 {
+            let t = f64::from(step) / 8.0;
+            self.pointer_to(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t)?;
+            thread::sleep(Duration::from_millis(60));
+        }
+        thread::sleep(Duration::from_millis(250));
+        Ok(())
+    }
+
+    fn release(&self) -> Result<(), String> {
+        self.xdo_here(&["mouseup", "1"])?;
+        thread::sleep(Duration::from_millis(250));
+        Ok(())
+    }
+
+    fn modified_click(&self, x: f64, y: f64, modifier: &str) -> Result<(), String> {
+        self.pointer_to(x, y)?;
+        thread::sleep(Duration::from_millis(150));
+        self.xdo_here(&["keydown", modifier])?;
+        thread::sleep(Duration::from_millis(120));
+        let clicked = self.xdo_here(&["click", "1"]);
+        thread::sleep(Duration::from_millis(120));
+        self.xdo_here(&["keyup", modifier])?;
+        clicked
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn group_orders_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &client_args(client_options, true, false, false),
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    // Replication of both armies and the camera settling on seat 1's start.
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        let foreign: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o != 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "GRP-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT
+                && field(&fixture, "hold") == Some("1")
+                && field(&fixture, "per_seat") == Some("20"),
+            format!(
+                "participant 1 units={} other units={}; {}",
+                own.len(),
+                foreign.len(),
+                fixture.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(evidence, "01-start")?,
+        );
+
+        // GRP-02/03: a box drag over the whole view selects exactly the 20 own units.
+        let before_box = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        report.artifact(
+            "client_a_dragging_png",
+            &client_a.screenshot(evidence, "02-dragging")?,
+        );
+        client_a.release()?;
+        let boxed = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            before_box,
+        )?;
+        let boxed_ids = selection_ids(&boxed);
+        report.verdict(
+            "GRP-02-BOX-SELECTS-OWN-UNITS",
+            boxed_ids == own && field(&boxed, "count") == Some("20"),
+            format!(
+                "selected {} ids; own {} ids; foreign selected={}; {}",
+                boxed_ids.len(),
+                own.len(),
+                boxed_ids.iter().filter(|id| foreign.contains(id)).count(),
+                boxed.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_box_selected_png",
+            &client_a.screenshot(evidence, "03-box-selected")?,
+        );
+
+        // Shift+click toggles one selected unit out. Pick the unit farthest from its
+        // nearest neighbour on screen so the click cannot land on another unit.
+        let screens: Vec<(u64, f64, f64)> = client_a.text()[before_box..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SCREEN"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "unit")?.parse().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .filter(|(_, x, y)| {
+                *x > 40.0
+                    && *y > 200.0
+                    && *x < f64::from(WIDTH) - 40.0
+                    && *y < f64::from(HEIGHT) - 40.0
+            })
+            .collect();
+        let toggle = screens
+            .iter()
+            .map(|a| {
+                let nearest = screens
+                    .iter()
+                    .filter(|b| b.0 != a.0)
+                    .map(|b| (a.1 - b.1).hypot(a.2 - b.2))
+                    .fold(f64::MAX, f64::min);
+                (a, nearest)
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(a, _)| *a)
+            .ok_or("no on-screen position for any selected unit")?;
+        report.fact(
+            "toggle_unit",
+            format!("entity={} x={:.0} y={:.0}", toggle.0, toggle.1, toggle.2),
+        );
+        let before_toggle = client_a.offset();
+        client_a.modified_click(toggle.1, toggle.2, "shift")?;
+        let toggled = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=click", "op=toggle"],
+            Duration::from_secs(5),
+            before_toggle,
+        )?;
+        let selected: Vec<u64> = selection_ids(&toggled);
+        let expected: Vec<u64> = own.iter().copied().filter(|id| *id != toggle.0).collect();
+        report.verdict(
+            "GRP-TOGGLE-REMOVES-ONE",
+            selected == expected,
+            format!(
+                "{} selected after Shift+click; {}",
+                selected.len(),
+                toggled.trim()
+            ),
+        );
+
+        // GRP-11: Esc during a drag cancels it; no selection change and the match continues.
+        let before_cancel = client_a.offset();
+        client_a.drag_hold((60.0, 640.0), (360.0, 690.0))?;
+        client_a.key("Escape")?;
+        thread::sleep(Duration::from_millis(300));
+        client_a.release()?;
+        thread::sleep(Duration::from_millis(500));
+        let cancel_text = client_a.text()[before_cancel..].to_owned();
+        let cancelled = cancel_text.lines().any(|l| {
+            l.contains("RTS_SELECTION_CANCELLED")
+                && l.contains("reason=Escape")
+                && l.contains("box=1")
+        });
+        let changed = cancel_text.lines().any(|l| l.contains("RTS_SELECTION_SET"));
+        let left = cancel_text.contains("LoadMap: /Game/Maps/MainMenu") || !client_a.alive();
+        report.verdict(
+            "GRP-11-ESC-CANCELS-DRAG",
+            cancelled && !changed && !left,
+            format!("cancelled={cancelled} selection_changed={changed} left_match={left}"),
+        );
+
+        // GRP-04: a right-click on ground orders every selected unit; each request is
+        // admitted on its own, and the 19-unit batch fits the pending bound.
+        let order_point = (f64::from(WIDTH) * 0.78, f64::from(HEIGHT) * 0.52);
+        let before_order_client = client_a.offset();
+        let before_order_server = server.offset();
+        client_a.click(order_point.0, order_point.1, "3")?;
+        let sent = client_a.wait_line(
+            &["RTS_GROUP_ORDER_SENT", "order=0"],
+            Duration::from_secs(5),
+            before_order_client,
+        )?;
+        let outcome = client_a.wait_line(
+            &["RTS_GROUP_ORDER_OUTCOME", "order=0"],
+            Duration::from_secs(15),
+            before_order_client,
+        )?;
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_group_order_png",
+            &client_a.screenshot(evidence, "04-group-order")?,
+        );
+        let server_text = server.text()[before_order_server..].to_owned();
+        let mut received: Vec<u64> = server_text
+            .lines()
+            .filter(|l| {
+                l.contains("MP_COMMAND_RECEIVED")
+                    && l.contains(" participant=1 ")
+                    && l.contains(" order=0 ")
+            })
+            .filter_map(|l| field(l, "issuer")?.parse().ok())
+            .collect();
+        received.sort_unstable();
+        let intake_rejected = server_text
+            .lines()
+            .filter(|l| l.contains("MP_COMMAND_REJECTED_AT_INTAKE") && l.contains("participant=1 "))
+            .count();
+        report.verdict(
+            "GRP-04-GROUP-ORDER-ADMITTED",
+            field(&sent, "issuers") == Some("19")
+                && received == expected
+                && intake_rejected == 0
+                && field(&outcome, "expected") == Some("19")
+                && field(&outcome, "accepted") == Some("19")
+                && field(&outcome, "rejected") == Some("0"),
+            format!(
+                "server received {} move intents (intake rejections {intake_rejected}); {}; {}",
+                received.len(),
+                sent.trim(),
+                outcome.trim()
+            ),
+        );
+        report.verdict(
+            "GRP-08-UNSELECTED-UNIT-UNTOUCHED",
+            !received.contains(&toggle.0),
+            format!("toggled-out unit {} received no order", toggle.0),
+        );
+
+        // Every ordered unit starts moving; arrivals are recorded as facts (one shared
+        // destination point, no formation spacing in this slice).
+        thread::sleep(Duration::from_secs(10));
+        report.artifact(
+            "client_a_moved_png",
+            &client_a.screenshot(evidence, "05-moved")?,
+        );
+        let server_text = server.text()[before_order_server..].to_owned();
+        let changes: Vec<(u64, String, String, String)> = server_text
+            .lines()
+            .filter(|l| l.contains("RTS_GAMEPLAY_EVENT kind=OrderChanged"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "entity")?.parse().ok()?,
+                    field(l, "previous")?.to_owned(),
+                    field(l, "current")?.to_owned(),
+                    field(l, "reason")?.to_owned(),
+                ))
+            })
+            .collect();
+        let started = expected
+            .iter()
+            .filter(|id| changes.iter().any(|c| c.0 == **id && c.2 == "1"))
+            .count();
+        let ended = |reason: &str| {
+            expected
+                .iter()
+                .filter(|id| {
+                    changes
+                        .iter()
+                        .any(|c| c.0 == **id && c.1 == "1" && c.3 == reason)
+                })
+                .count()
+        };
+        report.fact(
+            "move_end_reasons",
+            format!(
+                "arrived={} obstructed={} navigation_failed={} still_moving_or_other={}",
+                ended("5"),
+                ended("6"),
+                ended("7"),
+                expected.len() - ended("5") - ended("6") - ended("7")
+            ),
+        );
+        report.verdict(
+            "GRP-04-EVERY-MEMBER-MOVES",
+            started == expected.len() && ended("7") == 0,
+            format!(
+                "{started}/{} entered Move; navigation failures {}",
+                expected.len(),
+                ended("7")
+            ),
+        );
+
+        // A click on empty ground clears the selection; Stop with nothing selected sends nothing.
+        let before_clear = client_a.offset();
+        client_a.click(f64::from(WIDTH) * 0.12, f64::from(HEIGHT) * 0.80, "1")?;
+        let cleared = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=click", "op=replace"],
+            Duration::from_secs(5),
+            before_clear,
+        )?;
+        client_a.key("x")?;
+        thread::sleep(Duration::from_secs(2));
+        let sent_after_clear = client_a.text()[before_clear..]
+            .lines()
+            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
+            .count();
+        report.verdict(
+            "GRP-EMPTY-SELECTION-SENDS-NOTHING",
+            field(&cleared, "count") == Some("0") && sent_after_clear == 0,
+            format!("{}; intents after clear={sent_after_clear}", cleared.trim()),
+        );
+        report.artifact(
+            "client_a_cleared_png",
+            &client_a.screenshot(evidence, "06-cleared")?,
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -6105,6 +6520,14 @@ fn main() {
             "politika.mp2.unaligned-engagement-evidence.v1",
             "engagement",
             engagement_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--group-orders") {
+        run_dedicated_session(
+            "--group-orders",
+            "politika.grp.group-orders-evidence.v1",
+            "group-orders",
+            group_orders_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

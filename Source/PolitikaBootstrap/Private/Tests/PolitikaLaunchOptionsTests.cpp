@@ -25,6 +25,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaTestFixture=MultiplayerSkirmish"),
         TEXT("-PolitikaMPGroundProbe=300:1300/-700:-950"),
         TEXT("-PolitikaMPUnitScale=50"),
+        TEXT("-PolitikaMPUnitScaleHold"),
     };
     for (const TCHAR* Switch : DevelopmentSwitches)
     {
@@ -54,6 +55,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaMPRematchTypo=3"),
         TEXT("-PolitikaMPGroundProbe="),
         TEXT("-PolitikaMPUnitScale="),
+        TEXT("-PolitikaMPUnitScaleHold=1"),
         TEXT("-PolitikaTestFixture="),
         TEXT("-PolitikaOffline=invalid"),
         TEXT("-PolitikaSafeMode=1"),

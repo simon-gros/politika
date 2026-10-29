@@ -38,6 +38,7 @@ namespace
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),
+        TEXT("-PolitikaMPUnitScaleHold"),
     };
 
     bool IsDevelopmentSwitch(const FString& Token)

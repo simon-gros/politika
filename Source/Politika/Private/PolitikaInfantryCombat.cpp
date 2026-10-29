@@ -136,6 +136,7 @@ void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
 
 void APolitikaPrototypePlayerController::GrenadeSelected()
 {
+    // One press throws one grenade: only the primary selected unit, never the whole group.
     auto* ActiveMatch = ResolveMatch();
     APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch);
     if (!Unit) return;
@@ -148,13 +149,11 @@ void APolitikaPrototypePlayerController::GrenadeSelected()
 void APolitikaPrototypePlayerController::ReloadSelected()
 {
     auto* ActiveMatch = ResolveMatch();
-    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::ReloadOrder{});
+    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::ReloadOrder{});
 }
 
 void APolitikaPrototypePlayerController::SprintSelected()
 {
     auto* ActiveMatch = ResolveMatch();
-    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::SprintOrder{});
+    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::SprintOrder{});
 }

@@ -125,9 +125,25 @@ void UPolitikaInfantryPresentationComponent::Sound(USoundBase* Cue, FName Event)
         *GetOwner()->GetName(), *Event.ToString(), *Cue->GetPathName(), Cue->GetDuration());
 }
 
+namespace
+{
+// One acknowledgement voice per world at a time: a box selection or group order would
+// otherwise play every member's line at once.
+bool ClaimAcknowledgementVoice(const UWorld* World)
+{
+    static TWeakObjectPtr<const UWorld> LastWorld;
+    static double LastSeconds = 0.0;
+    const double Now = World ? World->GetRealTimeSeconds() : 0.0;
+    if (LastWorld.Get() == World && Now - LastSeconds < 0.4) return false;
+    LastWorld = World;
+    LastSeconds = Now;
+    return true;
+}
+}
+
 void UPolitikaInfantryPresentationComponent::Acknowledge(FName Event)
 {
-    if (!Definition || bDead || VoiceCooldown > 0) return;
+    if (!Definition || bDead || VoiceCooldown > 0 || !ClaimAcknowledgementVoice(GetWorld())) return;
     USoundBase* Cue = Event == TEXT("select") ? Definition->SelectSound.Get()
         : Event == TEXT("move") ? Definition->MoveSound.Get() : Definition->AttackSound.Get();
     Sound(Cue, Event);

@@ -4,6 +4,7 @@
 // The first Unreal vertical slice consumes the typed orders; this is not a
 // production content schema or a complete economy/AI/fog/combat rules model.
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -103,6 +104,9 @@ inline constexpr std::uint8_t kTeamA = 1;
 inline constexpr std::uint8_t kTeamB = 2;
 inline constexpr std::uint8_t kUnalignedTeam = 3;
 inline constexpr std::uint8_t kMaxPlayableSeats = 4;
+// U-12 owner decision: the absolute game-wide unit limit per participant, for the largest
+// maps. Individual maps set lower caps (the multiplayer skirmish test map holds 20).
+inline constexpr std::int32_t kMaxUnitsPerParticipant = 300;
 
 [[nodiscard]] constexpr std::uint8_t SeatCount(TeamLayout layout) noexcept {
     switch (layout) {
@@ -306,6 +310,8 @@ enum class OrderRejection : std::uint8_t {
     // returned for unknown IDs while fog is enforced, so it is not an existence oracle.
     TargetNotVisible,
 };
+
+inline constexpr std::size_t kOrderRejectionCount = static_cast<std::size_t>(OrderRejection::TargetNotVisible) + 1;
 
 struct OrderResult {
     OrderRejection rejection = OrderRejection::None;

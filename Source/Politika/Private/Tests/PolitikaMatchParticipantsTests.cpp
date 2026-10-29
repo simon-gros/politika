@@ -176,7 +176,7 @@ bool FPolitikaMatchParticipantsAutomationTest::RunTest(const FString& Parameters
     RejectedMatch->Objective = PartialObjective;
     RejectedMatch->bContentReady = true;
     RejectedMatch->PendingOrders.AddDefaulted();
-    RejectedMatch->SelectionByPlayer.Add(HumanId, PartialUnit);
+    RejectedMatch->SelectionByPlayer.FindOrAdd(HumanId).Units.Add(PartialUnit);
     RejectedMatch->RecoverToShellAfterAdmissionFailure(AuthoredMap->StableId);
     TestTrue(TEXT("Rejected participant setup enters the existing AdmissionRejected lifecycle"),
         RejectedMatch->GetMatchPhase() == MatchPhase::AdmissionRejected);
@@ -351,20 +351,23 @@ bool FPolitikaMatchParticipantsAuthorityAutomationTest::RunTest(const FString& P
     const int32 BeforeDeadInputEvents = Match->PublishedEvents.Num();
     Controller->GuardSelected();
     TestNull(TEXT("Dead selected unit is lazily removed from match selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
-    TestFalse(TEXT("Dead selected unit is no longer cached by PlayerController"), Controller->SelectedUnit.IsValid());
+    TestFalse(TEXT("Dead selected unit leaves no stored selection reference"), Match->SelectionByPlayer.Contains(LocalPlayerId));
     TestEqual(TEXT("Ordinary input cannot submit against dead cached selection"), Match->PublishedEvents.Num(), BeforeDeadInputEvents);
     const int32 BeforeDeadAbilityInput = Match->PublishedEvents.Num();
-    Controller->SelectedUnit = DeadUnit;
+    // A stale stored reference, as if the unit died between reads.
+    Match->SelectionByPlayer.FindOrAdd(LocalPlayerId).Units = {DeadUnit};
     Controller->GrenadeSelected();
-    TestTrue(TEXT("Grenade input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestFalse(TEXT("Grenade input retires dead stored selection before submission"), Match->SelectionByPlayer.Contains(LocalPlayerId));
     TestTrue(TEXT("Grenade input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
-    Controller->SelectedUnit = DeadUnit;
+    // A stale stored reference, as if the unit died between reads.
+    Match->SelectionByPlayer.FindOrAdd(LocalPlayerId).Units = {DeadUnit};
     Controller->ReloadSelected();
-    TestTrue(TEXT("Reload input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestFalse(TEXT("Reload input retires dead stored selection before submission"), Match->SelectionByPlayer.Contains(LocalPlayerId));
     TestTrue(TEXT("Reload input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
-    Controller->SelectedUnit = DeadUnit;
+    // A stale stored reference, as if the unit died between reads.
+    Match->SelectionByPlayer.FindOrAdd(LocalPlayerId).Units = {DeadUnit};
     Controller->SprintSelected();
-    TestTrue(TEXT("Sprint input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestFalse(TEXT("Sprint input retires dead stored selection before submission"), Match->SelectionByPlayer.Contains(LocalPlayerId));
     TestTrue(TEXT("Sprint input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
     TestEqual(TEXT("Stale ability inputs publish no command outcomes"), Match->PublishedEvents.Num(), BeforeDeadAbilityInput);
     TestTrue(TEXT("Explicit queued dead-issuer request enters typed admission"),
@@ -380,7 +383,7 @@ bool FPolitikaMatchParticipantsAuthorityAutomationTest::RunTest(const FString& P
     TestEqual(TEXT("Dead issuer produces exactly one command outcome"), DeadIssuerOutcomes, 1);
 
     Controller->SelectUnitForInput(QueuedUnit);
-    TestTrue(TEXT("Local unit is selected before invalidating its queued issuer"), Controller->SelectedUnit.Get() == QueuedUnit);
+    TestTrue(TEXT("Local unit is selected before invalidating its queued issuer"), Match->GetSelectedUnitForPlayer(LocalPlayerId) == QueuedUnit);
     QueuedUnit->SetGuardOrder();
     const int32 BeforePending = Match->PublishedEvents.Num();
     TestTrue(TEXT("Command queues before issuer destruction"),
@@ -398,8 +401,9 @@ bool FPolitikaMatchParticipantsAuthorityAutomationTest::RunTest(const FString& P
         }
     TestEqual(TEXT("Destroyed pending issuer produces exactly one command outcome"), MissingIssuerOutcomes, 1);
     TestEqual(TEXT("Destroyed pending request is retired"), Match->PendingOrders.Num(), 0);
-    TestFalse(TEXT("Destroyed issuer leaves no controller selection"), Controller->SelectedUnit.IsValid());
     TestNull(TEXT("Destroyed issuer leaves no match selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
+    // The first read retires the destroyed reference; nothing of it is stored afterwards.
+    TestFalse(TEXT("Destroyed issuer leaves no stored selection"), Match->SelectionByPlayer.Contains(LocalPlayerId));
 
     APolitikaPrototypeUnit* OrphanUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(500, 0, 42), FRotator::ZeroRotator);
     Configure(OrphanUnit, 506, LocalPlayerId, LocalParticipant->FactionId);

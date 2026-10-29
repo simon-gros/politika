@@ -385,13 +385,22 @@ bool FPolitikaMultiplayerCommandIntakeTest::RunTest(const FString& Parameters)
     FPolitikaNetCommandIntent Stale = F.Intent(P2, OrderKind::Guard, Enemy->GetStableId());
     Stale.MatchGeneration -= 1;
     ExpectRejected(TEXT("MP1-09 earlier match generation"), F.Submit(P2, Stale), OrderRejection::StaleMatch);
+    // The bound is one pending command per living unit plus a fixed allowance (group orders).
+    int32 P2LivingUnits = 0;
+    for (const APolitikaPrototypeUnit* Unit : F.Match->GetUnits())
+        P2LivingUnits += IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() == Enemy->GetOwnerPlayer() ? 1 : 0;
+    const int32 FloodLimit = politika::selection::PendingCommandLimit(P2LivingUnits);
+    TestEqual(TEXT("Queue bound covers every living unit"), FloodLimit, 16 + P2LivingUnits);
+    uint32 LastAdmittedFloodCorrelation = 0;
     uint32 LastFloodCorrelation = 0;
-    for (int32 Index = 0; Index < 17; ++Index)
+    for (int32 Index = 0; Index <= FloodLimit; ++Index)
     {
         const FPolitikaNetCommandIntent Flood = F.Intent(P2, OrderKind::Guard, Enemy->GetStableId());
+        if (Index < FloodLimit) LastAdmittedFloodCorrelation = Flood.CorrelationId;
         LastFloodCorrelation = Flood.CorrelationId;
         F.Match->SubmitControllerIntent(P2, Flood);
     }
+    TestNull(TEXT("MP1-09 commands within the bound are queued"), F.Outcome(LastAdmittedFloodCorrelation));
     ExpectRejected(TEXT("MP1-09 per-participant queue bound"), F.Outcome(LastFloodCorrelation), OrderRejection::RateLimited);
     F.Step();
 
@@ -1044,6 +1053,135 @@ bool FPolitikaMultiplayerFogMemoryTest::RunTest(const FString& Parameters)
     FPolitikaMultiplayerFixture Offline(*this);
     if (!Offline.Create(TEXT("1v1"), false)) return false;
     TestFalse(TEXT("Standalone play has no fog presentation"), Offline.Match->IsLocalFogPresentationActive());
+    return true;
+}
+
+// GRP-02..09 (RTS_SELECTION_AND_GROUP_ORDERS.md): a local selection holds only the host's own
+// living units, normalized once; a group order is a batch of ordinary single-issuer intents
+// that are admitted independently and tallied without group atomicity.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerGroupOrdersTest,
+    "Politika.RTS.Multiplayer.GroupSelectionAndOrders",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerGroupOrdersTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("2v2"), true) || !TestTrue(TEXT("Every 2v2 seat binds"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    uint32 AllyId = 0;
+    uint32 EnemyId = 0;
+    for (APolitikaPrototypePlayerController* Remote : F.Remotes)
+    {
+        const uint32 Id = F.Match->GetBoundParticipantId(Remote);
+        if (F.Match->GetTeamForParticipant(Id) == F.Match->GetTeamForParticipant(HostId)) AllyId = Id;
+        else if (EnemyId == 0) EnemyId = Id;
+    }
+    if (!TestTrue(TEXT("2v2 has an ally and an enemy of the host"), HostId != 0 && AllyId != 0 && EnemyId != 0)) return false;
+
+    // The skirmish map cap: 20 units for the host, plus one unit of every other kind.
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 20; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 5) * 120.0, -1500.0 + (Index / 5) * 120.0}));
+    APolitikaPrototypeUnit* AllyUnit = F.AddUnit(AllyId, {-900, -1500});
+    APolitikaPrototypeUnit* EnemyUnit = F.AddUnit(EnemyId, {1500, 1500});
+    APolitikaPrototypeUnit* UnalignedUnit = F.AddUnit(0, {0, 1500});
+    APolitikaPrototypeUnit* DeadOwn = F.AddUnit(HostId, {-1500, -800});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !AllyUnit || !EnemyUnit || !UnalignedUnit || !DeadOwn))
+        return false;
+    DeadOwn->PendingDamage = static_cast<float>(DeadOwn->GetHealth());
+    DeadOwn->ApplyPendingDamage();
+    auto SelectedIds = [&]()
+    {
+        TArray<uint64> Ids;
+        for (const APolitikaPrototypeUnit* Unit : F.Match->GetSelectedUnitsForPlayer(HostId)) Ids.Add(Unit->GetStableId());
+        return Ids;
+    };
+    TArray<uint64> OwnIds;
+    for (const APolitikaPrototypeUnit* Unit : Own) OwnIds.Add(Unit->GetStableId());
+    OwnIds.Sort();
+
+    // GRP-02/03: every valid own unit, once, in stable-ID order; ally, enemy, Unaligned and dead excluded.
+    TArray<APolitikaPrototypeUnit*> Candidates = {EnemyUnit, Own[3], AllyUnit, UnalignedUnit, DeadOwn, Own[3]};
+    for (int32 Index = Own.Num() - 1; Index >= 0; --Index) Candidates.Add(Own[Index]);
+    Host->ApplySelection(Candidates, SelectionOp::Replace, TEXT("automation"));
+    TestTrue(TEXT("GRP-02/03 selection is exactly the 20 living own units, sorted"), SelectedIds() == OwnIds);
+    TestEqual(TEXT("Primary selected unit is the lowest stable ID"), F.Match->GetSelectedUnitForPlayer(HostId), Own[0]);
+    Host->ApplySelection({Own[4]}, SelectionOp::Toggle, TEXT("automation"));
+    TestEqual(TEXT("Toggle removes a selected unit"), SelectedIds().Num(), 19);
+    Host->ApplySelection({Own[4]}, SelectionOp::Toggle, TEXT("automation"));
+    TestTrue(TEXT("Toggle restores it"), SelectedIds() == OwnIds);
+    Host->ApplySelection({Own[0], Own[1], Own[2], EnemyUnit}, SelectionOp::Subtract, TEXT("automation"));
+    TestEqual(TEXT("Subtract removes only the named own units"), SelectedIds().Num(), 17);
+    Host->ApplySelection({Own[0], Own[1], Own[2], AllyUnit}, SelectionOp::Union, TEXT("automation"));
+    TestTrue(TEXT("Union adds own units and never an ally's"), SelectedIds() == OwnIds);
+    Host->ApplySelection({EnemyUnit, AllyUnit}, SelectionOp::Replace, TEXT("automation"));
+    TestEqual(TEXT("Replacing with only foreign units clears the selection"), SelectedIds().Num(), 0);
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+
+    // GRP-04 and the pending bound: a 20-unit group order is 20 distinct correlated intents,
+    // all queued (16 + 20 living units) and admitted on the next step.
+    F.Outcomes.Reset();
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, GuardOrder{});
+    TestEqual(TEXT("Group order queues one request per selected unit"), F.Match->PendingOrders.Num(), 20);
+    F.Step();
+    const APolitikaPrototypePlayerController::FCommandBatch* Batch = Host->CommandBatches.IsEmpty() ? nullptr : &Host->CommandBatches.Last();
+    if (!TestNotNull(TEXT("Group order recorded a batch"), Batch)) return false;
+    TSet<uint32> Correlations;
+    TSet<uint64> Issuers;
+    for (const CommandOutcomeEvent& Outcome : F.Outcomes)
+    {
+        TestTrue(TEXT("GRP-04 every member accepted"), Outcome.accepted);
+        Correlations.Add(static_cast<uint32>(Outcome.correlation_id));
+        Issuers.Add(Outcome.issuer_id);
+    }
+    TestEqual(TEXT("GRP-04 twenty outcomes"), F.Outcomes.Num(), 20);
+    TestEqual(TEXT("GRP-04 distinct correlations"), Correlations.Num(), 20);
+    TestEqual(TEXT("GRP-04 distinct issuers"), Issuers.Num(), 20);
+    TestTrue(TEXT("Batch tally complete: 20 of 20 accepted"),
+        Batch->Tally.Complete() && Batch->Tally.accepted == 20 && Batch->Tally.rejected == 0);
+    for (const APolitikaPrototypeUnit* Unit : Own)
+        TestTrue(TEXT("Each member carries its own Guard order"), Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Guard);
+
+    // GRP-05: a foreign issuer in the batch is rejected alone; the valid members still apply.
+    F.Outcomes.Reset();
+    TArray<APolitikaPrototypeUnit*> Mixed = {Own[0], Own[1], AllyUnit, Own[2]};
+    Host->SubmitGroupIntent(F.Match, Mixed, nullptr, StopOrder{});
+    F.Step();
+    Batch = &Host->CommandBatches.Last();
+    TestTrue(TEXT("GRP-05 three accepted, one rejected"),
+        Batch->Tally.Complete() && Batch->Tally.accepted == 3 && Batch->Tally.rejected == 1);
+    for (const CommandOutcomeEvent& Outcome : F.Outcomes)
+        if (Outcome.issuer_id == AllyUnit->GetStableId())
+            TestFalse(TEXT("GRP-05 the ally's unit is not commandable by the host"), Outcome.accepted);
+    TestTrue(TEXT("GRP-05 ally unit keeps its own order"), AllyUnit->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle);
+    TestTrue(TEXT("GRP-08 an unlisted member keeps its Guard order"), Own[3]->GetCurrentOrder() == EPolitikaPrototypeOrder::Guard);
+    TestTrue(TEXT("GRP-08 a listed member was stopped"), Own[0]->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop);
+
+    // GRP-07: a selected unit that dies is retired once and never returns.
+    Own[5]->PendingDamage = static_cast<float>(Own[5]->GetHealth());
+    Own[5]->ApplyPendingDamage();
+    TestEqual(TEXT("GRP-07 dead member leaves the selection"), SelectedIds().Num(), 19);
+    TestFalse(TEXT("GRP-07 dead member is not in the stored set"),
+        F.Match->SelectionByPlayer.FindChecked(HostId).Units.Contains(Own[5]));
+    Host->ApplySelection({Own[5]}, SelectionOp::Union, TEXT("automation"));
+    TestEqual(TEXT("GRP-07 a dead unit cannot be added back"), SelectedIds().Num(), 19);
+
+    // GRP-06: an unbound controller selects nothing and submits nothing.
+    APolitikaPrototypePlayerController* Unbound = F.World->SpawnActor<APolitikaPrototypePlayerController>();
+    if (!TestNotNull(TEXT("Unbound controller spawned"), Unbound)) return false;
+    Unbound->MarkLocalControllerForTest();
+    const int32 PendingBefore = F.Match->PendingOrders.Num();
+    TestEqual(TEXT("GRP-06 unbound controller has no commandable selection"),
+        Unbound->GetCommandableSelectedUnits(F.Match).Num(), 0);
+    Unbound->StopSelected();
+    TestEqual(TEXT("GRP-06 unbound controller queues nothing"), F.Match->PendingOrders.Num(), PendingBefore);
+
+    // GRP-09: return/rematch cleanup clears the selection and every pending batch.
+    Host->ClearSelectionState();
+    TestEqual(TEXT("GRP-09 selection cleared"), SelectedIds().Num(), 0);
+    TestEqual(TEXT("GRP-09 batches cleared"), Host->CommandBatches.Num(), 0);
     return true;
 }
 

@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Rules.h"
 #include "Fog.h"
+#include "GroupSelection.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -96,6 +97,15 @@ struct POLITIKA_API FPolitikaNetCommandOutcome
     UPROPERTY() uint8 OrderKind = 0;
     UPROPERTY() uint8 Rejection = 0;
     UPROPERTY() bool bAccepted = false;
+};
+
+// One participant's local selection (RTS_SELECTION_AND_GROUP_ORDERS.md §1): presentation
+// state only, sorted by stable ID and revalidated on every read. Never command authority.
+USTRUCT()
+struct POLITIKA_API FPolitikaSelectionSet
+{
+    GENERATED_BODY()
+    UPROPERTY() TArray<TWeakObjectPtr<APolitikaPrototypeUnit>> Units;
 };
 
 // Public roster entry (slot, participant, faction, controller kind) for observers.
@@ -199,6 +209,7 @@ private:
     friend class FPolitikaMultiplayerFogOfWarTest;
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
+    friend class FPolitikaMultiplayerGroupOrdersTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -360,7 +371,12 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     const TArray<TObjectPtr<APolitikaPrototypeUnit>>& GetUnits() const { return Units; }
     APolitikaPrototypeObjective* GetObjective() const { return Objective; }
+    // Local selection (§1-2): revalidated on every read, so dead, foreign and unbound units
+    // drop out once. The first member (lowest stable ID) is the primary unit the HUD details.
+    TArray<APolitikaPrototypeUnit*> GetSelectedUnitsForPlayer(uint32 PlayerId);
     APolitikaPrototypeUnit* GetSelectedUnitForPlayer(uint32 PlayerId);
+    // Replaces the selection with the commandable members of Candidates, normalized once.
+    void SetSelectionSet(uint32 PlayerId, TConstArrayView<APolitikaPrototypeUnit*> Candidates);
     void SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
     // Pointer adapter for the local controller and trusted test fixtures; it builds
     // the same versioned intent and calls SubmitControllerIntent.
@@ -574,6 +590,9 @@ private:
     // PolitikaUnitScaleFixture.cpp.
     enum class EUnitScalePhase : uint8 { Off, Idle, Engage };
     int32 UnitScalePerSeat = 0;
+    // -PolitikaMPUnitScaleHold: keep the fixture idle (no engagement order), so packaged
+    // interaction checks can command the scaled armies themselves.
+    bool bUnitScaleHold = false;
     EUnitScalePhase UnitScalePhase = EUnitScalePhase::Off;
     uint64 UnitScaleActivationStep = 0;
     int32 UnitScaleEngageIndex = INDEX_NONE;
@@ -603,6 +622,7 @@ private:
     friend class FPolitikaMultiplayerShotCueRedactionTest;
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
+    friend class FPolitikaMultiplayerGroupOrdersTest;
     // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
     bool bTestDedicatedHosting = false;
     // Automation-only: record each shot cue decision instead of sending the client RPC
@@ -641,7 +661,7 @@ private:
     // so the array size cannot reveal hidden enemy counts.
     UPROPERTY() TArray<TObjectPtr<APolitikaPrototypeUnit>> Units;
     UPROPERTY(ReplicatedUsing=OnRep_Objective) TObjectPtr<APolitikaPrototypeObjective> Objective;
-    UPROPERTY() TMap<uint32, TWeakObjectPtr<APolitikaPrototypeUnit>> SelectionByPlayer;
+    UPROPERTY() TMap<uint32, FPolitikaSelectionSet> SelectionByPlayer;
     UPROPERTY() FString LastCommandFeedback = TEXT("Select a friendly unit; right-click ground or an enemy to issue an order.");
     TArray<FPolitikaContentDiagnostic> LastAdmissionDiagnostics;
     UPROPERTY() float SimulationStepSeconds = 0.05f;
@@ -832,6 +852,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFogOfWarTest;
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
+    friend class FPolitikaMultiplayerGroupOrdersTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -864,7 +885,6 @@ protected:
     virtual void SetupInputComponent() override;
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
-    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> SelectedUnit;
     UPROPERTY(ReplicatedUsing=OnRep_Assignment) uint32 AssignedRuntimePlayerId = 0;
     UPROPERTY(Replicated) int32 AssignedSlotId = 0;
     UPROPERTY(Replicated) FName AssignedFactionId;
@@ -875,6 +895,10 @@ private:
     bool SubmitIntent(APolitikaPrototypeMatch* ActiveMatch, APolitikaPrototypeUnit* Unit,
         APolitikaPrototypeUnit* Target, const politika::rules::Order& Order);
     void ShowLocalFeedback(const FString& Feedback);
+public:
+    // HUD read-only view of an in-progress box selection, in viewport pixels.
+    bool GetSelectionBox(FVector2D& OutMin, FVector2D& OutMax) const;
+private:
 #if !UE_BUILD_SHIPPING
     // Development-only hostile-input probe: sends forged intents through the real RPC.
     bool bHostileProbeEnabled = false;
@@ -889,9 +913,40 @@ private:
     bool bAcceptancePanForwardLogged = false;
     bool bAcceptancePanRightLogged = false;
 #endif
-    void SelectUnderCursor();
+    // Pointer selection (§2C): Idle -> PendingClick -> ClickRelease | BoxSelecting | Cancelled.
+    // One stroke applies one normalized selection operation; nothing here issues an order.
+    bool bSelectPressed = false;
+    bool bBoxSelecting = false;
+    FVector2D SelectPressPosition = FVector2D::ZeroVector;
+    FVector2D SelectDragPosition = FVector2D::ZeroVector;
+    void BeginSelectPress();
+    void EndSelectPress();
+    void CancelSelectPress(const TCHAR* Reason);
+    void UpdateSelectDrag();
+    politika::selection::SelectionOp ModifierSelectionOp(bool bBox) const;
+    void SelectUnderCursor(politika::selection::SelectionOp Op);
+    void BoxSelect(const FVector2D& CornerA, const FVector2D& CornerB, politika::selection::SelectionOp Op);
+    void ApplySelection(TConstArrayView<APolitikaPrototypeUnit*> Hits, politika::selection::SelectionOp Op, const TCHAR* Source);
     void SelectUnitForInput(APolitikaPrototypeUnit* Unit);
+    // The revalidated selection; empty unless this controller is bound.
+    TArray<APolitikaPrototypeUnit*> GetCommandableSelectedUnits(APolitikaPrototypeMatch* ActiveMatch);
     APolitikaPrototypeUnit* GetCommandableSelectedUnit(APolitikaPrototypeMatch* ActiveMatch);
+    // Group order (§3): one ordinary single-issuer intent per unit, admitted independently;
+    // the batch only tallies outcomes for feedback. No group atomicity.
+    struct FCommandBatch
+    {
+        uint32 Id = 0;
+        uint8 OrderKind = 0;
+        uint32 FirstCorrelation = 0;
+        uint32 LastCorrelation = 0;
+        politika::selection::BatchTally<politika::rules::kOrderRejectionCount> Tally;
+    };
+    TArray<FCommandBatch> CommandBatches;
+    uint32 NextBatchId = 1;
+    void SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Issuers,
+        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order);
+    bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    void ClearSelectionState();
     void OrderUnderCursor();
     void StopSelected();
     void GuardSelected();
@@ -922,6 +977,8 @@ public:
     // Only the owning controller's own correlated outcomes reach this HUD.
     void ShowCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     void ShowLocalFeedback(const FString& Feedback) { CommandFeedback = Feedback; }
+    // Player-facing text for an OrderRejection code.
+    static FString RejectionText(uint8 Rejection);
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     FString CommandFeedback;

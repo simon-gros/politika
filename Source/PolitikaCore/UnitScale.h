@@ -11,13 +11,15 @@
 #include <span>
 #include <vector>
 
+#include "Rules.h"
+
 namespace politika::unitscale {
 
 // The fixture keeps each seat's two authored placements, so a seat never has fewer.
 inline constexpr long long kMinUnitsPerSeat = 2;
 // U-12 owner decision: the absolute game-wide limit per participant, for the largest maps.
 // No fixture map may exceed it.
-inline constexpr long long kGameMaxUnitsPerParticipant = 300;
+inline constexpr long long kGameMaxUnitsPerParticipant = rules::kMaxUnitsPerParticipant;
 // U-12 owner decision: the small multiplayer skirmish test map holds at most 20 units per
 // participant. The fixture only runs on that map, so this is its limit.
 inline constexpr long long kMaxUnitsPerSeat = 20;

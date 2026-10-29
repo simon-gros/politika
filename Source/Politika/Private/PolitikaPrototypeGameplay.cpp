@@ -1162,7 +1162,7 @@ void APolitikaPrototypeMatch::BeginReturnToMenu()
         if (APlayerController* Player = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
             if (APolitikaPrototypePlayerController* PrototypePlayer = Cast<APolitikaPrototypePlayerController>(Player))
             {
-                PrototypePlayer->SelectedUnit.Reset();
+                PrototypePlayer->ClearSelectionState();
                 PrototypePlayer->bMapCameraApplied = false;
             }
         // Revoke every connection binding and outstanding outcome route so nothing
@@ -1406,14 +1406,12 @@ void APolitikaPrototypeMatch::ContinueParticipantAuthorityAcceptance()
     Acceptance.StartStep = SimulationStepsExecuted;
 
     Controller->SelectUnitForInput(LocalUnit);
-    const bool bLocalSelectionAccepted = Controller->SelectedUnit.Get() == LocalUnit
-        && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == LocalUnit;
+    const bool bLocalSelectionAccepted = GetSelectedUnitForPlayer(LocalRuntimePlayerId) == LocalUnit;
     Acceptance.LocalSequence = NextCommandSequence;
     const bool bLocalForwarded = SubmitLocalControllerCommand(
         Controller, LocalUnit, nullptr, politika::rules::GuardOrder{});
     Controller->SelectUnitForInput(ForeignUnit);
-    const bool bForeignSelectionRejected = Controller->SelectedUnit.Get() != ForeignUnit
-        && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr;
+    const bool bForeignSelectionRejected = GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr;
     Controller->SelectUnitForInput(LocalUnit);
     Acceptance.ForeignSequence = NextCommandSequence;
     const bool bForeignForwarded = SubmitLocalControllerCommand(
@@ -1455,8 +1453,7 @@ void APolitikaPrototypeMatch::ContinueParticipantAuthorityAcceptance()
 
     Acceptance.SystemSequence = NextCommandSequence;
     Controller->SelectUnitForInput(SystemUnit);
-    const bool bSystemSelectionRejected = Controller->SelectedUnit.Get() != SystemUnit
-        && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr;
+    const bool bSystemSelectionRejected = GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr;
     Controller->SelectUnitForInput(LocalUnit);
     const bool bSystemForwarded = SubmitLocalControllerCommand(
         Controller, SystemUnit, nullptr, politika::rules::GuardOrder{});
@@ -1473,7 +1470,7 @@ void APolitikaPrototypeMatch::ContinueParticipantAuthorityAcceptance()
     const uint64 BeforeStaleInputSequence = NextCommandSequence;
     Controller->GuardSelected();
     const bool bDeadSelectionRetired = DeadDamage == 100 && !DeadUnit->IsAlive()
-        && !Controller->SelectedUnit.IsValid() && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr
+        && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr
         && NextCommandSequence == BeforeStaleInputSequence;
     Acceptance.DeadSequence = NextCommandSequence;
     const bool bDeadForwarded = SubmitLocalControllerCommand(
@@ -1595,7 +1592,7 @@ void APolitikaPrototypeMatch::TickAcceptanceHarness(float DeltaSeconds)
                 && SystemUnit && SystemUnit->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle
                 && !ParticipantAuthorityAcceptance.DeadUnit.IsValid()
                 && !ParticipantAuthorityAcceptance.DestroyedUnit.IsValid()
-                && PendingOrders.IsEmpty() && Controller && !Controller->SelectedUnit.IsValid()
+                && PendingOrders.IsEmpty() && Controller
                 && GetSelectedUnitForPlayer(LocalRuntimePlayerId) == nullptr;
             UE_LOG(LogPolitikaStartup, Display,
                 TEXT("RTS_ACCEPTANCE_PARTICIPANT_AUTHORITY result=%s steps=%llu local=%d foreign=%d system=%d unassigned=%d dead=%d destroyed=%d foreign_order_changes=%d pending=%d unaligned_record=%d system_owner=%u system_faction=%s"),
@@ -1733,22 +1730,74 @@ bool APolitikaPrototypeMatch::IsCommandableUnit(const APolitikaPrototypeUnit* Un
         && Participant->FactionId == Unit->GetFactionId();
 }
 
+TArray<APolitikaPrototypeUnit*> APolitikaPrototypeMatch::GetSelectedUnitsForPlayer(uint32 PlayerId)
+{
+    TArray<APolitikaPrototypeUnit*> Selected;
+    FPolitikaSelectionSet* Found = SelectionByPlayer.Find(PlayerId);
+    if (!Found) return Selected;
+    const int32 Before = Found->Units.Num();
+    for (int32 Index = Found->Units.Num() - 1; Index >= 0; --Index)
+    {
+        APolitikaPrototypeUnit* Unit = Found->Units[Index].Get();
+        if (Unit && IsCommandableUnit(Unit, PlayerId)) continue;
+        // Retired exactly once: the reference and its visual leave together.
+        if (Unit) Unit->SetSelectedVisual(false);
+        Found->Units.RemoveAt(Index);
+    }
+    for (const TWeakObjectPtr<APolitikaPrototypeUnit>& Unit : Found->Units) Selected.Add(Unit.Get());
+#if !UE_BUILD_SHIPPING
+    if (Found->Units.Num() != Before)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_RETIRED player=%u retired=%d count=%d"), PlayerId,
+            Before - Found->Units.Num(), Found->Units.Num());
+#endif
+    if (Found->Units.IsEmpty()) SelectionByPlayer.Remove(PlayerId);
+    return Selected;
+}
+
 APolitikaPrototypeUnit* APolitikaPrototypeMatch::GetSelectedUnitForPlayer(uint32 PlayerId)
 {
-    const TWeakObjectPtr<APolitikaPrototypeUnit>* Found = SelectionByPlayer.Find(PlayerId);
-    APolitikaPrototypeUnit* Unit = Found ? Found->Get() : nullptr;
-    if (!Unit || !IsCommandableUnit(Unit, PlayerId))
+    const TArray<APolitikaPrototypeUnit*> Selected = GetSelectedUnitsForPlayer(PlayerId);
+    return Selected.IsEmpty() ? nullptr : Selected[0];
+}
+
+void APolitikaPrototypeMatch::SetSelectionSet(uint32 PlayerId, TConstArrayView<APolitikaPrototypeUnit*> Candidates)
+{
+    const TArray<APolitikaPrototypeUnit*> Previous = GetSelectedUnitsForPlayer(PlayerId);
+    TArray<APolitikaPrototypeUnit*> Next;
+    bool bHumanSeat = true;
+    if (!RuntimeParticipants.IsEmpty())
     {
-        if (Unit) Unit->SetSelectedVisual(false);
-        SelectionByPlayer.Remove(PlayerId);
-        if (PlayerId == LocalRuntimePlayerId)
-            if (APolitikaPrototypePlayerController* Player = GetWorld()
-                ? Cast<APolitikaPrototypePlayerController>(GetWorld()->GetFirstPlayerController()) : nullptr)
-                if (!Player->SelectedUnit.IsValid() || Player->SelectedUnit.Get() == Unit)
-                    Player->SelectedUnit.Reset();
-        return nullptr;
+        const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+            [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == PlayerId; });
+        bHumanSeat = Participant && (Participant->ControllerKind == EPolitikaPrototypeControllerKind::LocalHuman
+            || Participant->ControllerKind == EPolitikaPrototypeControllerKind::RemoteHuman);
     }
-    return Unit;
+    if (bHumanSeat)
+        for (APolitikaPrototypeUnit* Unit : Candidates)
+            if (IsCommandableUnit(Unit, PlayerId)) Next.AddUnique(Unit);
+    Next.Sort([](const APolitikaPrototypeUnit& A, const APolitikaPrototypeUnit& B) { return A.GetStableId() < B.GetStableId(); });
+    for (APolitikaPrototypeUnit* Unit : Previous)
+        if (!Next.Contains(Unit)) Unit->SetSelectedVisual(false);
+    for (APolitikaPrototypeUnit* Unit : Next)
+        if (!Previous.Contains(Unit)) Unit->SetSelectedVisual(true);
+    if (Next.IsEmpty())
+    {
+        SelectionByPlayer.Remove(PlayerId);
+        return;
+    }
+    FPolitikaSelectionSet& Set = SelectionByPlayer.FindOrAdd(PlayerId);
+    Set.Units.Reset(Next.Num());
+    for (APolitikaPrototypeUnit* Unit : Next) Set.Units.Add(Unit);
+}
+
+void APolitikaPrototypeMatch::SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit)
+{
+    if (Unit) SetSelectionSet(PlayerId, MakeArrayView(&Unit, 1));
+    else SetSelectionSet(PlayerId, {});
+#if !UE_BUILD_SHIPPING
+    if (Unit && GetSelectedUnitForPlayer(PlayerId) == Unit)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION player=%u unit=%llu"), PlayerId, Unit->GetStableId());
+#endif
 }
 
 FVector2D APolitikaPrototypeMatch::GetCameraPanMin() const
@@ -1761,33 +1810,6 @@ FVector2D APolitikaPrototypeMatch::GetCameraPanMax() const
     return MapDefinition ? MapDefinition->CameraPanMax : PlayableMax;
 }
 
-void APolitikaPrototypeMatch::SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit)
-{
-    if (!RuntimeParticipants.IsEmpty())
-    {
-        const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
-            [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == PlayerId; });
-        if (!Participant || (Participant->ControllerKind != EPolitikaPrototypeControllerKind::LocalHuman
-            && Participant->ControllerKind != EPolitikaPrototypeControllerKind::RemoteHuman))
-        {
-            if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId)) Previous->SetSelectedVisual(false);
-            SelectionByPlayer.Remove(PlayerId);
-            return;
-        }
-    }
-    if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId))
-        Previous->SetSelectedVisual(false);
-    SelectionByPlayer.Remove(PlayerId);
-    if (!IsCommandableUnit(Unit, PlayerId))
-    {
-        return;
-    }
-    SelectionByPlayer.Add(PlayerId, Unit);
-    Unit->SetSelectedVisual(true);
-#if !UE_BUILD_SHIPPING
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION player=%u unit=%llu"), PlayerId, Unit->GetStableId());
-#endif
-}
 
 void APolitikaPrototypeMatch::SubmitMove(uint32 PlayerId, APolitikaPrototypeUnit* Unit, const FVector& Destination, bool bAttackMove)
 {
@@ -2446,8 +2468,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 #if !UE_BUILD_SHIPPING
             UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_UNIT_DESTROYED unit=%llu"), Unit->GetStableId());
 #endif
-            for (auto& Selection : SelectionByPlayer)
-                if (Selection.Value.Get() == Unit) Selection.Value.Reset();
+            for (auto& Selection : SelectionByPlayer) Selection.Value.Units.Remove(Unit);
             Unit->BeginDeathPresentation();
         }
     }
@@ -2529,6 +2550,7 @@ void APolitikaPrototypePlayerController::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     if (!bMapCameraApplied) ResolveMatch();
+    UpdateSelectDrag();
 #if !UE_BUILD_SHIPPING
     if (bHostileProbeEnabled && IsLocalController()) TickHostileProbe();
 #endif
@@ -2586,7 +2608,8 @@ void APolitikaPrototypePlayerController::ApplyMapCameraIfReady()
 void APolitikaPrototypePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
-    InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::SelectUnderCursor);
+    InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
+    InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
     // Order keys live in DefaultInput.ini and must not share a key with the W/A/S/D pan axes,
     // or every order press would also move the camera by a frame of pan speed.
@@ -2602,94 +2625,306 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAxis(TEXT("PrototypeZoom"), this, &APolitikaPrototypePlayerController::Zoom);
 }
 
-void APolitikaPrototypePlayerController::SelectUnderCursor()
+politika::selection::SelectionOp APolitikaPrototypePlayerController::ModifierSelectionOp(bool bBox) const
+{
+    using politika::selection::SelectionOp;
+    const bool bShift = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+    const bool bCtrl = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
+    // Shift adds (box) or toggles (click); Ctrl+drag removes. Ctrl+click is reserved for
+    // same-archetype selection (4C-G) and is a plain click until then.
+    if (bShift) return bBox ? SelectionOp::Union : SelectionOp::Toggle;
+    if (bCtrl && bBox) return SelectionOp::Subtract;
+    return SelectionOp::Replace;
+}
+
+void APolitikaPrototypePlayerController::BeginSelectPress()
+{
+    FVector2D Cursor;
+    if (!ResolveMatch() || !GetMousePosition(Cursor.X, Cursor.Y)) return;
+    bSelectPressed = true;
+    bBoxSelecting = false;
+    SelectPressPosition = Cursor;
+    SelectDragPosition = Cursor;
+}
+
+void APolitikaPrototypePlayerController::UpdateSelectDrag()
+{
+    if (!bSelectPressed) return;
+    // A release this controller never received (focus loss, modal capture) cancels the
+    // stroke; it never turns into a click.
+    if (!IsInputKeyDown(EKeys::LeftMouseButton))
+    {
+        CancelSelectPress(TEXT("ReleaseLost"));
+        return;
+    }
+    FVector2D Cursor;
+    if (!GetMousePosition(Cursor.X, Cursor.Y)) return;
+    SelectDragPosition = Cursor;
+    if (!bBoxSelecting)
+    {
+        const float DpiScale = GEngine && GEngine->GameViewport ? GEngine->GameViewport->GetDPIScale() : 1.0f;
+        bBoxSelecting = politika::selection::ExceedsDragThreshold({SelectPressPosition.X, SelectPressPosition.Y},
+            {Cursor.X, Cursor.Y}, DpiScale);
+    }
+}
+
+void APolitikaPrototypePlayerController::EndSelectPress()
+{
+    if (!bSelectPressed) return;
+    UpdateSelectDrag();
+    if (!bSelectPressed) return;
+    const bool bBox = bBoxSelecting;
+    bSelectPressed = false;
+    bBoxSelecting = false;
+    if (bBox) BoxSelect(SelectPressPosition, SelectDragPosition, ModifierSelectionOp(true));
+    else SelectUnderCursor(ModifierSelectionOp(false));
+}
+
+void APolitikaPrototypePlayerController::CancelSelectPress(const TCHAR* Reason)
+{
+    if (!bSelectPressed) return;
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_CANCELLED participant=%u box=%d reason=%s"),
+        GetCommandPlayerId(), bBoxSelecting ? 1 : 0, Reason);
+#endif
+    bSelectPressed = false;
+    bBoxSelecting = false;
+}
+
+bool APolitikaPrototypePlayerController::GetSelectionBox(FVector2D& OutMin, FVector2D& OutMax) const
+{
+    if (!bSelectPressed || !bBoxSelecting) return false;
+    OutMin = FVector2D(FMath::Min(SelectPressPosition.X, SelectDragPosition.X), FMath::Min(SelectPressPosition.Y, SelectDragPosition.Y));
+    OutMax = FVector2D(FMath::Max(SelectPressPosition.X, SelectDragPosition.X), FMath::Max(SelectPressPosition.Y, SelectDragPosition.Y));
+    return true;
+}
+
+void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::SelectionOp Op)
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
     FHitResult Hit;
-    if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
+    APolitikaPrototypeUnit* Unit = GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)
+        ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
+    if (Op == politika::selection::SelectionOp::Replace)
     {
-        SelectUnitForInput(Cast<APolitikaPrototypeUnit>(Hit.GetActor()));
+        SelectUnitForInput(Unit);
         return;
     }
-    SelectUnitForInput(nullptr);
+    // Shift+click on empty ground or a unit this participant cannot command changes nothing.
+    if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetOwnerPlayer() != GetCommandPlayerId()) return;
+    ApplySelection(MakeArrayView(&Unit, 1), Op, TEXT("click"));
+}
+
+void APolitikaPrototypePlayerController::BoxSelect(const FVector2D& CornerA, const FVector2D& CornerB,
+    politika::selection::SelectionOp Op)
+{
+    using namespace politika::selection;
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    const uint32 PlayerId = GetCommandPlayerId();
+    const ScreenRect Box = RectFromCorners({CornerA.X, CornerA.Y}, {CornerB.X, CornerB.Y});
+    TArray<APolitikaPrototypeUnit*> Hits;
+    for (APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
+    {
+        // Only this participant's own living, presented units are candidates; hostile,
+        // allied, Unaligned and fog-hidden units never enter the commandable set.
+        if (!IsValid(Unit) || !Unit->IsAlive() || PlayerId == 0 || Unit->GetOwnerPlayer() != PlayerId
+            || Unit->IsLocalFogHidden() || !Unit->GetRootComponent())
+            continue;
+        // Selection proxy: the projected clickable body, so a partially boxed unit counts.
+        const FBox Bounds = Unit->GetRootComponent()->Bounds.GetBox();
+        bool bProjected = false;
+        ScreenRect Proxy{{TNumericLimits<double>::Max(), TNumericLimits<double>::Max()},
+            {TNumericLimits<double>::Lowest(), TNumericLimits<double>::Lowest()}};
+        for (int32 Corner = 0; Corner < 8; ++Corner)
+        {
+            const FVector Point((Corner & 1) ? Bounds.Max.X : Bounds.Min.X, (Corner & 2) ? Bounds.Max.Y : Bounds.Min.Y,
+                (Corner & 4) ? Bounds.Max.Z : Bounds.Min.Z);
+            FVector2D Screen;
+            if (!ProjectWorldLocationToScreen(Point, Screen, true)) continue;
+            bProjected = true;
+            Proxy.min = {FMath::Min(Proxy.min.x, Screen.X), FMath::Min(Proxy.min.y, Screen.Y)};
+            Proxy.max = {FMath::Max(Proxy.max.x, Screen.X), FMath::Max(Proxy.max.y, Screen.Y)};
+        }
+        if (bProjected && Intersects(Box, Proxy)) Hits.Add(Unit);
+    }
+    ApplySelection(Hits, Op, TEXT("box"));
+}
+
+void APolitikaPrototypePlayerController::ApplySelection(TConstArrayView<APolitikaPrototypeUnit*> Hits,
+    politika::selection::SelectionOp Op, const TCHAR* Source)
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    if (!ActiveMatch->IsLocalControllerBound(this))
+    {
+        ClearSelectionState();
+        return;
+    }
+    const uint32 PlayerId = GetCommandPlayerId();
+    const TArray<APolitikaPrototypeUnit*> Current = ActiveMatch->GetSelectedUnitsForPlayer(PlayerId);
+    std::vector<politika::selection::EntityId> CurrentIds;
+    std::vector<politika::selection::EntityId> HitIds;
+    for (const APolitikaPrototypeUnit* Unit : Current) CurrentIds.push_back(Unit->GetStableId());
+    for (const APolitikaPrototypeUnit* Unit : Hits)
+        if (IsValid(Unit)) HitIds.push_back(Unit->GetStableId());
+    const std::vector<politika::selection::EntityId> NextIds = politika::selection::Apply(CurrentIds, HitIds, Op);
+    // Resolve the normalized IDs back to the units they came from; nothing is looked up
+    // beyond the current selection and this stroke's own candidates.
+    TArray<APolitikaPrototypeUnit*> Next;
+    for (const politika::selection::EntityId Id : NextIds)
+    {
+        APolitikaPrototypeUnit* const* Found = Hits.FindByPredicate(
+            [Id](const APolitikaPrototypeUnit* Unit) { return IsValid(Unit) && Unit->GetStableId() == Id; });
+        if (!Found) Found = Current.FindByPredicate([Id](const APolitikaPrototypeUnit* Unit) { return Unit->GetStableId() == Id; });
+        if (Found) Next.Add(*Found);
+    }
+    ActiveMatch->SetSelectionSet(PlayerId, Next);
+    const TArray<APolitikaPrototypeUnit*> Selected = ActiveMatch->GetSelectedUnitsForPlayer(PlayerId);
+#if !UE_BUILD_SHIPPING
+    static const TCHAR* OpNames[] = {TEXT("replace"), TEXT("union"), TEXT("toggle"), TEXT("subtract")};
+    FString Ids;
+    for (const APolitikaPrototypeUnit* Unit : Selected)
+        Ids += FString::Printf(TEXT("%s%llu"), Ids.IsEmpty() ? TEXT("") : TEXT(","), Unit->GetStableId());
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SET player=%u source=%s op=%s hits=%d count=%d ids=%s"),
+        PlayerId, Source, OpNames[static_cast<uint8>(Op)], Hits.Num(), Selected.Num(), *Ids);
+    // Screen positions let the packaged harness click a specific selected unit.
+    for (const APolitikaPrototypeUnit* Unit : Selected)
+    {
+        FVector2D Screen;
+        if (ProjectWorldLocationToScreen(Unit->GetActorLocation(), Screen, true))
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SCREEN unit=%llu x=%.0f y=%.0f"),
+                Unit->GetStableId(), Screen.X, Screen.Y);
+    }
+#endif
 }
 
 void APolitikaPrototypePlayerController::SelectUnitForInput(APolitikaPrototypeUnit* Unit)
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
-    if (!ActiveMatch)
-    {
-        SelectedUnit.Reset();
-        return;
-    }
+    if (!ActiveMatch) return;
     if (!ActiveMatch->IsLocalControllerBound(this))
     {
-        SelectedUnit.Reset();
-        const uint32 LocalPlayerId = ActiveMatch->GetLocalRuntimePlayerId();
-        if (LocalPlayerId != 0) ActiveMatch->SetSelection(LocalPlayerId, nullptr);
+        ClearSelectionState();
         return;
     }
     const uint32 PlayerId = GetCommandPlayerId();
     if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetOwnerPlayer() != PlayerId)
     {
-        SelectedUnit.Reset();
         ActiveMatch->SetSelection(PlayerId, nullptr);
 #if !UE_BUILD_SHIPPING
         if (Unit)
             UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_REJECTED player=%u unit=%llu reason=NotOwned"),
                 PlayerId, Unit->GetStableId());
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SET player=%u source=click op=replace hits=0 count=0 ids="),
+            PlayerId);
 #endif
         return;
     }
     ActiveMatch->SetSelection(PlayerId, Unit);
     if (ActiveMatch->GetSelectedUnitForPlayer(PlayerId) != Unit)
     {
-        SelectedUnit.Reset();
 #if !UE_BUILD_SHIPPING
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_REJECTED player=%u unit=%llu reason=Unavailable"),
             PlayerId, Unit->GetStableId());
 #endif
         return;
     }
-    SelectedUnit = Unit;
 #if !UE_BUILD_SHIPPING
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION player=%u unit=%llu"), PlayerId, Unit->GetStableId());
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SET player=%u source=click op=replace hits=1 count=1 ids=%llu"),
+        PlayerId, Unit->GetStableId());
 #endif
+}
+
+void APolitikaPrototypePlayerController::ClearSelectionState()
+{
+    bSelectPressed = false;
+    bBoxSelecting = false;
+    CommandBatches.Reset();
+    if (APolitikaPrototypeMatch* ActiveMatch = Match.Get())
+    {
+        const uint32 LocalPlayerId = ActiveMatch->GetLocalRuntimePlayerId();
+        if (LocalPlayerId != 0) ActiveMatch->SetSelection(LocalPlayerId, nullptr);
+    }
+}
+
+TArray<APolitikaPrototypeUnit*> APolitikaPrototypePlayerController::GetCommandableSelectedUnits(
+    APolitikaPrototypeMatch* ActiveMatch)
+{
+    if (!ActiveMatch) return {};
+    if (!ActiveMatch->IsLocalControllerBound(this))
+    {
+        ClearSelectionState();
+        return {};
+    }
+    return ActiveMatch->GetSelectedUnitsForPlayer(GetCommandPlayerId());
 }
 
 APolitikaPrototypeUnit* APolitikaPrototypePlayerController::GetCommandableSelectedUnit(
     APolitikaPrototypeMatch* ActiveMatch)
 {
-    if (!ActiveMatch)
-    {
-        SelectedUnit.Reset();
-        return nullptr;
-    }
-    if (!ActiveMatch->IsLocalControllerBound(this))
-    {
-        SelectedUnit.Reset();
-        const uint32 LocalPlayerId = ActiveMatch->GetLocalRuntimePlayerId();
-        if (LocalPlayerId != 0) ActiveMatch->SetSelection(LocalPlayerId, nullptr);
-        return nullptr;
-    }
-    APolitikaPrototypeUnit* Unit = SelectedUnit.Get();
-    const uint32 PlayerId = GetCommandPlayerId();
-    if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetOwnerPlayer() != PlayerId
-        || ActiveMatch->GetSelectedUnitForPlayer(PlayerId) != Unit)
-    {
-        SelectedUnit.Reset();
-        ActiveMatch->SetSelection(PlayerId, nullptr);
-        return nullptr;
-    }
-    return Unit;
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    return Selected.IsEmpty() ? nullptr : Selected[0];
+}
+
+void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Issuers, APolitikaPrototypeUnit* Target, const politika::rules::Order& Order)
+{
+    if (!ActiveMatch || Issuers.IsEmpty()) return;
+    FCommandBatch Batch;
+    Batch.Id = NextBatchId++;
+    Batch.OrderKind = static_cast<uint8>(Order.index());
+    Batch.FirstCorrelation = NextCorrelationId;
+    Batch.LastCorrelation = NextCorrelationId + static_cast<uint32>(Issuers.Num()) - 1;
+    Batch.Tally.expected = static_cast<uint32>(Issuers.Num());
+    // Bounded history: outcomes for older batches only fall back to per-command feedback.
+    if (CommandBatches.Num() >= 8) CommandBatches.RemoveAt(0);
+    CommandBatches.Add(Batch);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_GROUP_ORDER_SENT participant=%u batch=%u order=%u issuers=%d first_correlation=%u last_correlation=%u"),
+        GetCommandPlayerId(), Batch.Id, Batch.OrderKind, Issuers.Num(), Batch.FirstCorrelation, Batch.LastCorrelation);
+#endif
+    // The same requested point for every issuer (§3 step 4); spacing is a later feature.
+    for (APolitikaPrototypeUnit* Issuer : Issuers) SubmitIntent(ActiveMatch, Issuer, Target, Order);
+}
+
+bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome)
+{
+    FCommandBatch* Batch = CommandBatches.FindByPredicate([&Outcome](const FCommandBatch& Candidate)
+        { return Outcome.CorrelationId >= Candidate.FirstCorrelation && Outcome.CorrelationId <= Candidate.LastCorrelation; });
+    if (!Batch || Batch->Tally.expected <= 1) return false;
+    if (!Batch->Tally.Record(Outcome.bAccepted, Outcome.Rejection)) return true;
+    static const TCHAR* OrderNames[] = {
+        TEXT("Move"), TEXT("Attack"), TEXT("Attack-move"), TEXT("Stop"), TEXT("Guard"),
+        TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint")
+    };
+    const TCHAR* OrderName = Batch->OrderKind < UE_ARRAY_COUNT(OrderNames) ? OrderNames[Batch->OrderKind] : TEXT("Order");
+    const auto& Tally = Batch->Tally;
+    FString Feedback = FString::Printf(TEXT("%s: %u of %u units accepted"), OrderName, Tally.accepted, Tally.expected);
+    if (Tally.rejected > 0)
+        Feedback += FString::Printf(TEXT("  ·  %u rejected (%s)"), Tally.rejected,
+            *APolitikaPrototypeHUD::RejectionText(static_cast<uint8>(Tally.DominantRejection())));
+    if (!Tally.Complete()) Feedback += FString::Printf(TEXT("  ·  %u pending"), Tally.expected - Tally.accepted - Tally.rejected);
+    if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD())) PrototypeHUD->ShowLocalFeedback(Feedback);
+#if !UE_BUILD_SHIPPING
+    if (Tally.Complete())
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_GROUP_ORDER_OUTCOME participant=%u batch=%u order=%u expected=%u accepted=%u rejected=%u dominant_rejection=%u"),
+            GetCommandPlayerId(), Batch->Id, Batch->OrderKind, Tally.expected, Tally.accepted, Tally.rejected,
+            Tally.rejected > 0 ? static_cast<uint32>(Tally.DominantRejection()) : 0u);
+#endif
+    return true;
 }
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()
 {
+    // A held selection stroke never turns into an order.
+    if (bSelectPressed) return;
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
-    APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch);
-    if (!Unit) return;
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    if (Selected.IsEmpty()) return;
     FHitResult Hit;
     if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
@@ -2698,41 +2933,39 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
     }
     if (APolitikaPrototypeUnit* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor()))
     {
-        SubmitIntent(ActiveMatch, Unit, Target, politika::rules::AttackOrder{Target->GetStableId()});
+        SubmitGroupIntent(ActiveMatch, Selected, Target, politika::rules::AttackOrder{Target->GetStableId()});
     }
     else
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
     }
 }
 
 void APolitikaPrototypePlayerController::StopSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
-    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::StopOrder{});
+    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::StopOrder{});
 }
 
 void APolitikaPrototypePlayerController::GuardSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
-    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::GuardOrder{});
+    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::GuardOrder{});
 }
 
 void APolitikaPrototypePlayerController::AttackMoveSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
-    APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch);
-    if (!Unit) return;
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    if (Selected.IsEmpty()) return;
     FHitResult Hit;
     if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
     }
     else
         ShowLocalFeedback(TEXT("Attack-move rejected: click valid map ground."));
@@ -2740,6 +2973,12 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
 
 void APolitikaPrototypePlayerController::ReturnToMenu()
 {
+    // Esc first cancels a held selection stroke; it leaves the match only when idle.
+    if (bSelectPressed)
+    {
+        CancelSelectPress(TEXT("Escape"));
+        return;
+    }
     // The host/standalone authority ends its match; a remote client only leaves.
     // The server observes that departure through Logout.
     if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch(); ActiveMatch && ActiveMatch->HasAuthority())
@@ -2854,7 +3093,12 @@ void APolitikaPrototypeHUD::ShowCommandOutcome(const FPolitikaNetCommandOutcome&
         CommandFeedback = FString::Printf(TEXT("%s order accepted  ·  #%u"), OrderName, Outcome.CorrelationId);
         return;
     }
+    CommandFeedback = FString::Printf(TEXT("%s rejected: %s  ·  #%u"),
+        OrderName, *RejectionText(Outcome.Rejection), Outcome.CorrelationId);
+}
 
+FString APolitikaPrototypeHUD::RejectionText(uint8 Rejection)
+{
     static const TCHAR* RejectionNames[] = {
         TEXT("No rejection"), TEXT("You cannot command that unit."), TEXT("That unit cannot move."),
         TEXT("That unit cannot attack."), TEXT("The map bounds are invalid."),
@@ -2869,11 +3113,8 @@ void APolitikaPrototypeHUD::ShowCommandOutcome(const FPolitikaNetCommandOutcome&
         TEXT("Too many pending commands; try again."),
         TEXT("That target is not visible to your team.")
     };
-    const uint8 RejectionIndex = Outcome.Rejection;
-    const TCHAR* Reason = RejectionIndex < UE_ARRAY_COUNT(RejectionNames)
-        ? RejectionNames[RejectionIndex] : TEXT("Order rejected.");
-    CommandFeedback = FString::Printf(TEXT("%s rejected: %s  ·  #%u"),
-        OrderName, Reason, Outcome.CorrelationId);
+    static_assert(UE_ARRAY_COUNT(RejectionNames) == politika::rules::kOrderRejectionCount);
+    return Rejection < UE_ARRAY_COUNT(RejectionNames) ? RejectionNames[Rejection] : TEXT("Order rejected.");
 }
 
 void APolitikaPrototypeHUD::DrawHUD()
@@ -2952,10 +3193,28 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(Outcome, FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale); Y += 32.0f * UiScale;
         }
     }
-    DrawText(TEXT("LMB select  ·  RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
-        APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
-        if (Selected)
+        APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];
+        if (SelectedUnits.Num() > 1)
+        {
+            // Group summary: count, combined health and how many are moving.
+            int32 Health = 0;
+            int32 MaxHealth = 0;
+            int32 Moving = 0;
+            for (const APolitikaPrototypeUnit* Unit : SelectedUnits)
+            {
+                Health += Unit->GetHealth();
+                MaxHealth += Unit->GetMaxHealth();
+                const EPolitikaPrototypeOrder Order = Unit->GetCurrentOrder();
+                Moving += Order == EPolitikaPrototypeOrder::Move || Order == EPolitikaPrototypeOrder::AttackMove ? 1 : 0;
+            }
+            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving"), SelectedUnits.Num(), Health, MaxHealth,
+                Moving), Ink, Left, Y, nullptr, 1.25f * UiScale);
+            Y += 30.0f * UiScale;
+        }
+        else if (Selected)
         {
             const TCHAR* Order = TEXT("Idle");
             switch (Selected->GetCurrentOrder())
@@ -3013,13 +3272,13 @@ void APolitikaPrototypeHUD::DrawHUD()
         EPolitikaPrototypeOrder::AttackMove, EPolitikaPrototypeOrder::Stop,
         EPolitikaPrototypeOrder::Guard
     };
-    const APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
+    const APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];
     for (int32 Index = 0; Index < UE_ARRAY_COUNT(Labels); ++Index)
     {
         const float RowY = PanelTop + (18.0f * UiScale) + (Index * RowHeight);
-        const bool bEnabled = Selected && Selected->IsAlive()
-            && ((Index == 0 || Index == 2) ? Selected->CanMove()
-                : Index == 1 ? Selected->CanAttack() : true);
+        // A row is enabled when any selected unit can carry it out; others get per-unit rejections.
+        const bool bEnabled = SelectedUnits.ContainsByPredicate([Index](const APolitikaPrototypeUnit* Unit)
+            { return Unit->IsAlive() && ((Index == 0 || Index == 2) ? Unit->CanMove() : Index == 1 ? Unit->CanAttack() : true); });
         const FLinearColor RowColor = bEnabled
             ? FLinearColor(0.10f, 0.14f, 0.15f, 0.88f)
             : FLinearColor(0.06f, 0.08f, 0.09f, 0.78f);
@@ -3033,6 +3292,22 @@ void APolitikaPrototypeHUD::DrawHUD()
             : FString(Hints[Index]);
         DrawText(Hint, bActive ? FLinearColor(0.94f, 0.78f, 0.31f) : TextColor,
             PanelLeft + (230.0f * UiScale), RowY + (6.0f * UiScale), nullptr, 0.82f * UiScale);
+    }
+    // In-progress box selection, drawn last so it stays visible over every panel.
+    if (const APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
+    {
+        FVector2D BoxMin;
+        FVector2D BoxMax;
+        if (Controller->GetSelectionBox(BoxMin, BoxMax))
+        {
+            DrawRect(FLinearColor(0.35f, 0.9f, 0.65f, 0.12f), BoxMin.X, BoxMin.Y, BoxMax.X - BoxMin.X, BoxMax.Y - BoxMin.Y);
+            const FLinearColor Edge(0.35f, 0.9f, 0.65f, 0.95f);
+            const float Thickness = FMath::Max(1.0f, UiScale);
+            DrawLine(BoxMin.X, BoxMin.Y, BoxMax.X, BoxMin.Y, Edge, Thickness);
+            DrawLine(BoxMax.X, BoxMin.Y, BoxMax.X, BoxMax.Y, Edge, Thickness);
+            DrawLine(BoxMax.X, BoxMax.Y, BoxMin.X, BoxMax.Y, Edge, Thickness);
+            DrawLine(BoxMin.X, BoxMax.Y, BoxMin.X, BoxMin.Y, Edge, Thickness);
+        }
     }
 }
 

@@ -28,8 +28,6 @@
 
 namespace
 {
-// Bounded per-participant queue; a flood cannot grow authoritative work without limit.
-constexpr int32 MaxPendingCommandsPerParticipant = 16;
 // After a remote participant disconnects, the host shows the reason, then returns.
 constexpr float ParticipantDisconnectReturnSeconds = 3.0f;
 // A dedicated server keeps a finished match's results available to its clients this long,
@@ -364,8 +362,7 @@ void APolitikaPrototypeMatch::UnregisterObservedUnit(APolitikaPrototypeUnit* Uni
 {
     if (HasAuthority()) return;
     Units.Remove(Unit);
-    for (auto It = SelectionByPlayer.CreateIterator(); It; ++It)
-        if (It->Value.Get() == Unit) It.RemoveCurrent();
+    for (auto& Selection : SelectionByPlayer) Selection.Value.Units.Remove(Unit);
 }
 
 bool APolitikaPrototypeUnit::IsHostileTo(const APolitikaPrototypeUnit* Other) const
@@ -851,7 +848,12 @@ bool APolitikaPrototypeMatch::SubmitControllerIntent(APlayerController* Source, 
     int32 PendingForParticipant = 0;
     for (const FPendingOrder& Pending : PendingOrders)
         PendingForParticipant += Pending.Request.participant_id == ParticipantId ? 1 : 0;
-    if (PendingForParticipant >= MaxPendingCommandsPerParticipant)
+    // Bounded per-participant queue: one command per living unit plus a fixed allowance, so a
+    // whole-selection order fits but a flood cannot grow authoritative work without limit.
+    int32 LivingUnits = 0;
+    for (const APolitikaPrototypeUnit* Unit : Units)
+        LivingUnits += IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() == ParticipantId ? 1 : 0;
+    if (PendingForParticipant >= politika::selection::PendingCommandLimit(LivingUnits))
     {
         RejectIntentAtIntake(Source, Intent, ParticipantId, OrderRejection::RateLimited);
         return true;
@@ -913,7 +915,8 @@ void APolitikaPrototypeMatch::SetLocalViewerParticipant(uint32 PlayerId)
     if (HasAuthority() || LocalRuntimePlayerId == PlayerId) return;
     LocalRuntimePlayerId = PlayerId;
     for (auto& Selection : SelectionByPlayer)
-        if (APolitikaPrototypeUnit* Unit = Selection.Value.Get()) Unit->SetSelectedVisual(false);
+        for (const TWeakObjectPtr<APolitikaPrototypeUnit>& Unit : Selection.Value.Units)
+            if (Unit.IsValid()) Unit->SetSelectedVisual(false);
     SelectionByPlayer.Reset();
 }
 
@@ -1184,7 +1187,7 @@ void APolitikaPrototypePlayerController::ClearServerAssignment()
     AssignedSlotId = 0;
     AssignedFactionId = NAME_None;
     AssignedMatchGeneration = 0;
-    SelectedUnit.Reset();
+    ClearSelectionState();
 }
 
 void APolitikaPrototypePlayerController::OnRep_Assignment()
@@ -1193,7 +1196,7 @@ void APolitikaPrototypePlayerController::OnRep_Assignment()
         AssignedRuntimePlayerId, AssignedSlotId, *AssignedFactionId.ToString(), AssignedMatchGeneration);
     if (APolitikaPrototypeMatch* ActiveMatch = FindMatch(GetWorld()))
         ActiveMatch->SetLocalViewerParticipant(AssignedRuntimePlayerId);
-    if (AssignedRuntimePlayerId == 0) SelectedUnit.Reset();
+    if (AssignedRuntimePlayerId == 0) ClearSelectionState();
 }
 
 uint32 APolitikaPrototypePlayerController::GetCommandPlayerId() const
@@ -1243,8 +1246,10 @@ void APolitikaPrototypePlayerController::ClientReceiveCommandOutcome_Implementat
         GetCommandPlayerId(), Outcome.CorrelationId, Outcome.ClientSequence, Outcome.OrderKind, Outcome.IssuerEntityId,
         Outcome.bAccepted ? 1 : 0, Outcome.Rejection, Outcome.MatchGeneration, Outcome.Step, HasAuthority() ? 1 : 0);
 #endif
-    if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD()))
-        PrototypeHUD->ShowCommandOutcome(Outcome);
+    // A group order's outcomes aggregate into one count line; single orders keep their own.
+    if (!RecordBatchOutcome(Outcome))
+        if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD()))
+            PrototypeHUD->ShowCommandOutcome(Outcome);
     // A remote participant hears its own unit acknowledge; authority already played it.
     if (!HasAuthority() && Outcome.bAccepted)
         if (APolitikaPrototypeMatch* ActiveMatch = FindMatch(GetWorld()))

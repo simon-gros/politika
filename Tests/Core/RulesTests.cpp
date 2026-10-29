@@ -2,6 +2,7 @@
 #include "Metrics.h"
 #include "Fog.h"
 #include "UnitScale.h"
+#include "GroupSelection.h"
 
 #include <cassert>
 #include <iterator>
@@ -324,6 +325,47 @@ int main() {
     TeamLayout Unparsed = TeamLayout::TwoVsOne;
     assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)
         && !ParseTeamLayout("3v2", Unparsed) && Unparsed == TeamLayout::TwoVsOne);
+
+    // Selection sets and group-order tallies (RTS_SELECTION_AND_GROUP_ORDERS.md, GRP-02/03/05).
+    {
+        using namespace politika::selection;
+        using Ids = std::vector<EntityId>;
+        // GRP-03: the same unit from several hit sources stays one ID, in stable order; 0 is never an entity.
+        assert((Normalize({7, 3, 7, 0, 3, 12}) == Ids{3, 7, 12}));
+        assert(Normalize({}).empty() && Normalize({0, 0}).empty());
+        const Ids Current{2, 4, 6};
+        assert((Apply(Current, {9, 1, 9}, SelectionOp::Replace) == Ids{1, 9}));
+        assert((Apply(Current, {}, SelectionOp::Replace).empty()));
+        assert((Apply(Current, {4, 8}, SelectionOp::Union) == Ids{2, 4, 6, 8}));
+        assert((Apply(Current, {4, 8}, SelectionOp::Toggle) == Ids{2, 6, 8}));
+        assert((Apply(Current, {4, 8, 4}, SelectionOp::Subtract) == Ids{2, 6}));
+        // Unnormalized input is normalized first; repeated operations are stable.
+        assert((Apply({6, 2, 6}, {2}, SelectionOp::Toggle) == Ids{6}));
+        assert((Apply(Apply(Current, {8}, SelectionOp::Union), {8}, SelectionOp::Union) == Ids{2, 4, 6, 8}));
+        assert((Apply(Apply(Current, {8}, SelectionOp::Toggle), {8}, SelectionOp::Toggle) == Current));
+        // DPI-aware drag threshold: 6 logical px, scaled; a non-positive scale counts as 1.
+        static_assert(!ExceedsDragThreshold({100, 100}, {105, 100}, 1.0) && ExceedsDragThreshold({100, 100}, {106, 100}, 1.0));
+        static_assert(!ExceedsDragThreshold({100, 100}, {110, 100}, 2.0) && ExceedsDragThreshold({100, 100}, {100, 112}, 2.0));
+        static_assert(ExceedsDragThreshold({0, 0}, {4, 5}, 1.0) && !ExceedsDragThreshold({0, 0}, {3, 4}, 0.0));
+        // Any drag direction spans the same rectangle; partial overlap and touching edges intersect.
+        static_assert(RectFromCorners({50, 10}, {10, 40}).min.x == 10 && RectFromCorners({50, 10}, {10, 40}).max.y == 40);
+        constexpr ScreenRect Box{{10, 10}, {50, 50}};
+        static_assert(Intersects(Box, {{45, 45}, {80, 80}}) && Intersects(Box, {{50, 0}, {60, 10}}));
+        static_assert(!Intersects(Box, {{51, 10}, {60, 20}}) && !Intersects(Box, {{10, 50.5}, {20, 60}}));
+        // Pending-command bound: a fixed allowance plus one per living unit, capped by the game limit.
+        static_assert(PendingCommandLimit(0) == 16 && PendingCommandLimit(20) == 36 && PendingCommandLimit(-3) == 16);
+        static_assert(PendingCommandLimit(10000) == 16 + kMaxUnitsPerParticipant && kMaxUnitsPerParticipant == 300);
+        // GRP-05: each issuer counts on its own; nothing past the expected count is recorded.
+        BatchTally<4> Tally{3};
+        assert(!Tally.Complete() && Tally.DominantRejection() == 4);
+        assert(Tally.Record(true, 0) && Tally.Record(false, 2) && !Tally.Complete());
+        assert(Tally.Record(false, 9) && Tally.Complete() && !Tally.Record(true, 0));
+        assert(Tally.accepted == 1 && Tally.rejected == 2 && Tally.byRejection[2] == 1 && Tally.DominantRejection() == 2);
+        BatchTally<4> Tie{4};
+        Tie.Record(false, 3); Tie.Record(false, 1); Tie.Record(false, 3); Tie.Record(false, 1);
+        assert(Tie.DominantRejection() == 1 && Tie.rejected == 4);
+        static_assert(BatchTally<2>{0}.Complete());
+    }
 
     // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.
     static_assert(AreAllied(1, kTeamA, 1, kTeamA) && AreAllied(1, kTeamA, 3, kTeamA));
