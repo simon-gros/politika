@@ -12,6 +12,8 @@
 
 A **recorded command log is not necessarily a replay**. Rendering can vary by GPU, and UE physics/Recast/AI behavior may change across engine builds. A replay is validated only if re-simulation reaches specified normalized authoritative checkpoints with matching outcomes. Otherwise retain it as an *event trace for diagnostics*.
 
+**Future snapshot dependency:** a restored economy must preserve in-game **USD cents**, owned/reserved gold and fossil commodities, each functional building's positive minimum electricity load and current eligible supply, and staffed-force food stocks plus pending purchases/upkeep counters. Recompute power allocation and evaluate overdue food only at a documented authoritative restore boundary; do not double-charge elapsed intervals, repeat a gold/fuel sale or duplicate a fulfilled food purchase. This is a proposed save-format requirement, **not** a claim match saving exists. See [USD economy and upkeep](RTS_OPERATIONAL_ECONOMY_AND_POWER.md).
+
 ## 2. Snapshot boundaries and integrity
 
 Write only at a documented quiescent authoritative step, after command admission and publication, not halfway through combat/death cleanup. Never serialize a raw `AActor*`, `TWeakObjectPtr`, transient UAsset location string as a live ID, or stale controller association. Use stable definition IDs with schema/content hash, participant and entity numeric IDs scoped to match generation, and an explicit unit of measure for fixed-point time/currency.

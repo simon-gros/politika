@@ -42,7 +42,7 @@ Use a **battlefield-first, relatively low-occlusion** layout combining C&C's imm
 
 ~~~text
 ┌────────────────────────────────────────────────────────────────────┐
-│ Objective + event ticker       Operational Budget  Power  Fuel    │
+│ Objective + event ticker       $ Treasury  Power  Food         │
 ├─────────────┬─────────────────────────────────────────┬────────────┤
 │ Minimap     │                                         │ Intel /    │
 │ camera box  │       PLAYFIELD / ORDERS / ROUTES        │ diplomacy  │
@@ -54,7 +54,7 @@ Use a **battlefield-first, relatively low-occlusion** layout combining C&C's imm
 └─────────────────────────────┴──────────────────────────────────────┘
 ~~~
 
-Proportions are conceptual, not fixed pixel measurements. On 16:9 desktop, avoid a permanently expanded intel panel. Objective and alert state must be readable while battles continue. The top rail shows **spendable operational budget**, derived budget income and power capacity; fuel/nuclear remain conditional drilldowns. Do not render a greyed-out sprawling resource bar full of unused icon slots. The minimap is a projection of player knowledge, not a radar that reveals hidden truth. Selected unit/group count, owner, health, active order, selection eligibility, producer queue and confirmation/rejection feedback get a stable region. Allow player-controlled panel density and at least one compact preset; test at 1280×720, 1920×1080 and 3840×2160; add Deck/mobile safe-area layouts later.
+Proportions are conceptual, not fixed pixel measurements. On 16:9 desktop, avoid a permanently expanded intel panel. Objective and alert state must be readable while battles continue. The top rail shows **spendable US dollars ($)**, dollar income, minimum-building electricity capacity/load and food reserves/runway; gold, fuel and nuclear materials remain conditional drilldowns. Do not render a greyed-out sprawling resource bar full of unused icon slots. The minimap is a projection of player knowledge, not a radar that reveals hidden truth. Selected unit/group count, owner, health, active order, selection eligibility, producer queue and confirmation/rejection feedback get a stable region. Allow player-controlled panel density and at least one compact preset; test at 1280×720, 1920×1080 and 3840×2160; add Deck/mobile safe-area layouts later.
 
 UI must consume authorized match snapshots and typed gameplay outcomes. An unavailable command should display the *reason*, with a location hint and current keybinding where meaningful. Distinguish **command accepted**, **executed**, **completed**, **rejected**, and **navigation failed**; "command accepted" does not imply arrival or damage. Never reveal enemy resources/production/orders through HUD convenience.
 
@@ -151,6 +151,12 @@ UE 5.8 [Enhanced Input](https://dev.epicgames.com/documentation/unreal-engine/en
 
 Primary refs: [EA C&C Remastered guide](https://help.ea.com/articles/command-and-conquer/command-and-conquer-remastered/how-to-play/), [Blizzard StarCraft special controls](https://news.blizzard.com/en-us/article/4552955/game-guide-special-control), [Blizzard simplified controls](https://news.blizzard.com/en-us/article/6640645/game-guide-simplified-controls), [Age of Empires IV beginner guide](https://www.ageofempires.com/news/age-of-empires-iv-tips-to-help-you-get-started/), and [Company of Heroes territory supply explanation](https://www.coh2.org/guides/1987/introduction-to-coh-franchise). These are precedent sources, not a claim of POLITIKA compatibility, licensed art or identical mechanics.
 
+### 7A. Currency, upkeep and exchange controls (design adopted 29 October 2026)
+
+The economy HUD must show **in-game USD ($)** as the single ordinary purchasing balance, plus dollar income; **electricity supply / required load** for operational buildings; and **food reserves / staffed-force upkeep** with runway. Each production card quotes dollar cost and distinguishes lacking funds from missing power or insufficient military provisions. A dedicated trade/commodities drawer shows acquired **gold, raw oil, natural gas and refined fuels** as physical inventory with available/reserved quantity, an eligible USD sale quote, applicable fees and confirmation. It must not offer ordinary nuclear-material sales or claim a rumor is a transferable stock.
+
+The food procurement drawer shows actual dollar price, food quantity and optional player-limited auto-replenishment; no generic agricultural-worker harvesting interface. Low power, paused production and inadequate food must appear in concise, accessible alerts with a concrete recovery action. These are **design targets**, not working menus. The [dollar and upkeep contract](RTS_OPERATIONAL_ECONOMY_AND_POWER.md) owns transaction, cadence and shortage rules; this document owns information layout and device interactions.
+
 ## 8. Implementation phases and acceptance
 
 **UI-A — immediate correction:** record current keys and conflicts, establish common semantic registry/proposed defaults and native text help; test W/A/S/D held with a selected unit for **zero accidental commands**; keep current controller/command authority and packaged prototype. This is a gameplay-code change and requires Unreal Automation + rendered regression.
@@ -159,7 +165,7 @@ Primary refs: [EA C&C Remastered guide](https://help.ea.com/articles/command-and
 
 **UI-C — functional Controls + Audio:** Enhanced Input contexts, profile key rebinding and dynamic help, conflict resolution; routed sound class groups/master/categories, subtitle/caption policy. Verify the audio mix actually changes sound output, not merely slider text.
 
-**UI-D — production-era RTS HUD:** command card (clickable where appropriate), group selection, minimap based on authorized observations, objectives, alerts, power/budget/production, political dossier and accessibility. Verify that video/audio settings persist and render across device profiles. Test HUD at 720p/1080p/4K, ultrawide and a handheld safe-area target; qualify Android separately.
+**UI-D — production-era RTS HUD:** command card (clickable where appropriate), group selection, minimap based on authorized observations, objectives, alerts, power/food/$ purchasing/production, political dossier and accessibility. Verify that video/audio settings persist and render across device profiles. Test HUD at 720p/1080p/4K, ultrawide and a handheld safe-area target; qualify Android separately.
 
 | Gate | What must be **actually** observed |
 | --- | --- |

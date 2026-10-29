@@ -251,6 +251,9 @@ Legal placement and legal starts may also depend on occupation, buildable terrai
 
 ### 8.4 Resources and production are general capabilities
 
+**POLITIKA-specific economy instantiation (approved direction, not coded):** The game has **USD ($)** as its primary currency for ordinary purchases, **gold and eligible fossil commodities** as saleable physical inventory, **electricity** as mandatory minimum building service capacity, and **food** as dollar-purchased, periodically consumed staffed-force upkeep. Nuclear goods remain special gated strategic stock. In the ontology these are respectively monetary **account**, physical **stock/transfer**, capacity/demand **constraint**, and per-interval consumable **flow**. Do not infer that gold is a second everyday wallet or power/food are interchangeable spendable currencies. See [dollar economy and upkeep](RTS_OPERATIONAL_ECONOMY_AND_POWER.md).
+
+
 Credits, fuels, energy, supply, procurement rights, construction permissions, and production slots can all behave as strategic constraints. Particular goods or rules should not be introduced solely because they exist in another RTS.
 
 The Meridian Pact's trading and mercenary role demonstrates why **producing, purchasing, contracting, transferring, and deploying** should be representable as distinct operations sharing some underlying concepts (cost, owner, eligibility, time, capacity, completion).

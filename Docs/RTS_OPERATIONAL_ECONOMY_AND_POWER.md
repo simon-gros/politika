@@ -1,136 +1,100 @@
-# POLITIKA — Non-Farming Operational Economy, Electricity and Infrastructure
+# POLITIKA — Dollar Economy, Commodity Sales, Building Power and Military Food
 
-**Status: PROPOSED DESIGN DECISION RECORD, 29 October 2026. No newly authored resources, UE classes or gameplay values are implemented.** This adds a *primary purchasing/accounting concept* and *power capacity contract* to the [Resource Economy](RESOURCE_ECONOMY.md), which owns existing fuel/nuclear hierarchy and faction rules. [Production](RTS_PRODUCTION_AND_TECHNOLOGY.md) owns spend/queue/producer authority; [Engine Outline](ENGINE_OUTLINE.md) owns Stage 4B sequencing; [Concepts](CONCEPTS_OUTLINE.md) owns faction and narrative themes; [Visibility](RTS_VISIBILITY_AND_INTELLIGENCE.md) owns hidden information. This document does not alter established nuclear victory conditions, oil/gas refinery rules, faction permissions or historical claims.
+**Design decision adopted 29 October 2026; implementation NOT RUN.** POLITIKA's primary purchasing resource is **in-game US dollars ($, USD)**, not a separate Operational Budget currency. Acquired gold and eligible fossil fuels can be sold in exchange for dollars. **Operational buildings must meet positive minimum electricity demand; staffed military forces must maintain food reserves, which players can purchase with dollars.** Acquisition, exchange, generation and upkeep values remain unspecified authoring/balance parameters. These rules supplement the [Resource Economy](RESOURCE_ECONOMY.md), [Production](RTS_PRODUCTION_AND_TECHNOLOGY.md), [Engine Outline](ENGINE_OUTLINE.md), [UI](RTS_UI_SETTINGS_AND_KEYMAP.md), and [Visibility](RTS_VISIBILITY_AND_INTELLIGENCE.md). No new code/Unreal assets are implied.
 
-## 1. Central design choice
+## 1. Resource taxonomy and strategy
 
-POLITIKA is a **combat, diplomacy and intelligence** RTS in an alternate-history 1980s Yugoslavia. To avoid turning it into economic-farming simulation, recommend **Operational Budget** (working name; also called operations funding or command funds) as the **one universal, directly spendable purchasing balance** for ordinary troops, construction, repairs, reconnaissance and selected covert/diplomatic actions. It accrues at bounded authoritative intervals from admissible institutions, infrastructure/industry, territory and negotiated contracts. It is **not gold in a mine**, a peasant food/water mechanic or a separate convoy of endless worker trips.
-
-The existing statements "*nuclear materials highest strategic value; fossil fuels second*" remain intact: that is a **strategic scarcity/value hierarchy**, whereas Operational Budget is the **ordinary unit of account** used to pay for common actions. Exceptional units/abilities may require both budget **and** eligible fuel/refined material, intelligence clearance, time and infrastructure. Never reinterpret nuclear material as a purchasable generic currency.
-
-| Layer | Gameplay character | Suggested basic cost/constraint |
+| Resource | Model | Acquisition and expenditure |
 | --- | --- | --- |
-| Operational Budget (new candidate) | Primary liquid purchasing currency; start allowance + controlled recurring flows | Units, buildings, repairs, conventional research, mission actions, diplomatic/intelligence expenses |
-| Fuel (existing fossil resource) | Scarce strategic feedstock; oil/gas production and refining according to existing canonical rules | Vehicles, aircraft, advanced production/refining, logistics operations, air sorties; not routine per-step vehicle "fuel hunger" by default |
-| Nuclear raw/refined material (existing) | Exceptional, finite, high-value late-game input | Nuclear capabilities under strict faction/narrative permissions; not exchanged freely for baseline units |
-| Electricity (new operational model) | Continuous **capacity vs load**, not stored farmable currency | Production throughput, sensors, communication, advanced research, powered defenses, refining; shortage degrades services |
-| Optional logistics access (later) | Connectivity/route capacity, not a new wallet | Territory-generated income and reinforcements, supply vulnerability and transport |
-| Political legitimacy/influence (existing concepts) | Scenario/policy variables; **not** automatic second basic wallet | Diplomacy permissions, Unaligned reactions, counterintelligence consequences, civilian attitudes |
+| **US dollars ($)** | One liquid **purchasing currency**, stored as nonnegative integer cents | Initial treasury, baseline and eligible industry/territory revenue, contracts, missions, authorized commodity sales; spent on units, structures, food, repairs, technology and eligible covert/political actions |
+| **Gold** | Physical, non-currency saleable inventory | Gold deposits, bank vaults, shipments, negotiated stock or legitimate captured reserves; sell held eligible quantity for USD or reserve for an authored contract |
+| **Crude oil / natural gas** | Separately accounted raw fossil commodities | Existing oil/gas sources, delivered supplies and trade; sell directly if sale is allowed, or reserve/refine for strategic capability |
+| **Petroleum fuel / kerosene** | Distinct **refined** fossil commodities | Only authorized refinery output/valid external acquisition; may sell for USD or use for transport, production and special abilities |
+| **Crude / refined nuclear materials** | Highest-value special strategic resources, not ordinary USD exchange stock | Restricted existing refined-material, faction, intelligence and victory rules; no generic nuclear goods-to-dollar sale route |
+| **Electricity** | **Generated capacity versus allocated load**, not spendable money, not stockpiled | Each operational building must have positive minimum load satisfied to function normally; conventional and authorized nuclear generation, imported grids and infrastructure can supply |
+| **Food reserves** | Purchased, consumable **military upkeep stock**, not a second general currency | Bought for dollars through an eligible supply channel; periodic upkeep of deployed staffed forces |
 
-**Avoid:** four mandatory resource bars, dedicated "farm food" workers, incessant collectors, invisible passive mana bonuses, multiple simultaneous currencies for every ordinary command, perpetual negative upkeep that prevents any recovery, or universal power requirements on every foot soldier.
+"Nuclear materials highest, fossil fuels second" remains the existing **strategic rarity/importance** ordering. USD is the universal price/payment unit, not a competing item in that rarity ranking. Gold is a trade good and does not displace the special fuel/nuclear hierarchy. The display is **USD-denominated fictional game accounting**; it does not assert actual Yugoslav 1980s transactions were conducted in USD or follow real historical commodity/FX rates.
 
-## 2. Comparative reasoning
+## 2. Primary USD acquisition without farming
 
-**Age of Empires IV** visibly emphasizes worker-gathering of food, wood, gold and stone and repeated villager assignment. That creates a different strategic genre rhythm. [Official Age IV guide](https://www.ageofempires.com/news/age-of-empires-iv-tips-to-help-you-get-started/).
+A normal player starts with an authorized initial **$ treasury** and can accrue a limited nonzero base income from the initial faction infrastructure. Further inflows derive from controlled eligible industrial facilities, ports/rail junctions, contractual supply payments, mission rewards and the sale of acquired commodities. These are **strategic objectives**, not repeated food/wood/gold worker micromanagement. Author ownership, control, operational status, supply access and contract permissions separately. A unit near a civilian hospital or Unaligned municipal building does not acquire its income or change jurisdiction automatically.
 
-**Company of Heroes** centers manpower/fuel/munition flows on captured/connected sectors, making battlefield position economically meaningful. Some versions also have headquarters income; this reduces worker micromanagement while preserving denial and expansion. [Company of Heroes guide](https://www.coh2.org/guides/1987/introduction-to-coh-franchise).
+Budget sources use finite integer USD cents per specified authoritative interval or one-time authoritatively logged event. A disconnected/contested/inoperative node may cease generating **future** income, not confiscate prior balances. Include an ordinary-skirmish recovery baseline so one lost power plant or income node does not immediately cause irreversible economic softlock. An idle player does not need to issue a collection order every few seconds.
 
-**Command & Conquer Remastered** uses harvested economic material and a separate base power system; EA describes low power and attacks on power plants as tactical disruption. [EA gameplay guide](https://help.ea.com/articles/command-and-conquer/command-and-conquer-remastered/how-to-play/).
+The first 4B fixture can still demonstrate the **existing source → collector/delivery → balance** boundary by delivering one legitimate finite shipment and selling it for USD. Ordinary subsequent income may be automatic. Changing the exact 4B positive fixture requires coordinated owner-document and test updates, but **the spendable balance is now definitively dollars**.
 
-**POLITIKA synthesis:** primary budget from **political/economic control and logistics**, persistent baseline so losers can recover, energy as a readily understood facility constraint, and the established scarce fuel/nuclear chains for faction asymmetry. Do not imitate opponent asset graphics or force one game's exact resource numbers onto the Yugoslav world.
+## 3. Commodity-to-dollar exchange
 
-## 3. Budget generation — strategic locations without farming
+**Eligible sale goods:** gold, crude oil, natural gas, petroleum fuel and kerosene, subject to participant ownership, available unreserved quantity, sale permissions, valid source/depot, counterparty capacity and an eligible market/contract. Raw and refined oil must never share one undifferentiated stock. A refinery remains obligatory to **produce** finished petroleum/kerosene from crude; selling crude for USD does not transform it into refined fuel. Selling nuclear materials, restricted weapons or missing/stolen-by-claim inventory is forbidden unless an explicitly separate canon rule is approved; this document approves **no nuclear dollar sale**.
 
-Candidate sources, subject to the map's historically reviewed fiction and participants' knowledge:
+**Single authoritative sale transaction:**
 
-1. **Baseline allocation:** each admitted playable participant has an authored initial budget and a small guaranteed periodic allocation from its initial political/military network. Even cut off from every contested sector, it can attempt a modest comeback rather than entering an unrecoverable zero-income loop.
-2. **Industrial, municipal and transport nodes:** controlling a factory complex, rail interchange, municipal supply depot, distribution/communications center, customs crossing or port contributes automatic budget flow while operational and properly connected. No manual worker unit is required. This location is also a combat objective and target for spying/sabotage.
-3. **Diplomatic contracts:** an authorized, finite-term agreement or negotiated supply grant increases a budget inflow or gives a one-shot payment in return for political obligations/exposure. Do not create an unconstrained passive diplomatic clicker.
-4. **Limited mission decisions:** escorting a freight convoy, defending administration, stealing documents, supplying local allies or maintaining a public service can produce a bounded one-off reward or temporary change to flow. These are **discrete missions**, not a busywork collecting loop.
-5. **Trade/black market (later):** when the existing special system becomes implemented, allow authored budget conversions or purchases subject to faction, rights, intelligence and market rules. Never permit forbidden nuclear-material sale simply because Operational Budget exists.
+1. Verify the actual admitted participant, match generation, commodity stable ID, seller inventory and sale permission. Require a positive quantity and a new transaction ID; do not act on a rumor or a UI quote alone.
+2. Author a quote as a nonnegative rational or integer rate **USD cents per commodity unit**, fixed-point precision, nonnegative fee, quote expiry and quantity/counterparty caps. Explicitly specify rounding, not floating-point cash arithmetic.
+3. Reserve exact uncommitted inventory; do not permit simultaneous refining, another sale or transfer to reuse these units.
+4. At a documented simulation-step boundary, atomically **debit the commodity quantity once and credit net USD cents once**. On rejection, cancellation or timeout, release the reservation with **no value mutation**.
+5. Publish accepted/rejected/completed feedback with quantity, price, fee, net yield and owner-authorized visibility. Reject underflow, overflow, duplicate-ID replay, missing counterparty, expired quote and unavailable capacity.
+6. Disallow free sale/buy-back or refinery-sale conversion cycles with positive arbitrage caused solely by inconsistent rounding or undocumented fees. Author different values for gold/raw/refined goods as balancing choices; no live real-world market feed.
 
-A controlled node may be **owned, occupied, influenced, administratively controlled, active or connected** as separate flags. Do not assume a soldier standing on a village immediately transfers its entire economy. A temporary contested capture point may suspend only incremental income, not erase reserves. Administrative/Unaligned structures are a distinct NPC authority; damage to civilian infrastructure can reduce productivity and political legitimacy rather than automatically convert it to a spendable factory.
+When the counterparty is an NPC market, commodity stock leaves the player's inventory and the market supplies a USD grant according to an **explicit trade action**. A player-to-player trade, if ever supported, must conserve both parties' funds/goods under distinct authorization. Purchased supplies or acquired commodities cannot bypass Black Market faction restrictions.
 
-### 3.1 Candidate authoritative budget formula
+## 4. Mandatory electricity upkeep for buildings
 
-At each fixed budget accounting boundary (e.g. every **20 simulation steps = 1.0 second** for the existing 0.05 s coordinator; this interval is **provisional**, not a committed gameplay balance):
+**Every deployed operational building has a strictly positive authored minimum power requirement.** A generator has its own declared auxiliary load, and may satisfy it from self-generation during startup; it is not secretly exempt. Maps with a functional base must provide an eligible starting power source (conventional plant, self-powered starting generator, grid agreement or equivalent) sufficient for essential buildings. No impossible "need electricity to start the only electricity producer" cycle is permitted.
 
-\`\`\`text
-Income[player, tick] =
-    BaseAllocation[player]
-  + Σ EnabledConnectedNodeYield[player, node]
-  + Σ AuthorizedContractYield[player, contract]
-  + EventGrant[player, tick]
-  - ExplicitDocumentedPeriodicCosts[player, tick]
+At each planned authoritative power update, determine eligible owned/net generation and permitted supply connections, sum positive building loads, allocate deterministically by a declared priority + stable building ID and record whether each facility receives its minimum. A facility below minimum is **Unpowered**: it keeps ownership/health but cannot operate normal powered functions. Production/refining/research queues **pause** (do not finish or re-charge), powered radar/communications/defense functions disable as authored, and the HUD reports the cause and affected buildings. An optional Brownout state can be added after binary on/off is tested. Do not equate zero USD with zero power; purchasing power capacity is separate from satisfying the electrical load.
 
-NewBalance = clamp_nonnegative_and_check_overflow(OldBalance + Income - ApprovedSpends)
-\`\`\`
+A generator damaged or cut off by sabotage should create a counterable outage. A legal emergency/auxiliary/self-starting path must allow restoration even when the primary grid is down. The player can still issue basic commands, return to menus and reach an ordinary match result. Only Atlantic Concord and Red Directorate may **construct nuclear power plants**, as already established. Iron Ascendancy and Meridian Pact may use authorized **conventional** or imported power without gaining nuclear construction/refinement privileges. Unaligned grid assets remain under their own ownership/capture rules.
 
-Use integer/fixed-point amounts, deterministic sorted node/transaction IDs and separate *pending*, *reserved* and *available* funds. Spending must never execute twice after retry, corrupt a neighboring participant's account or drop to a negative balance. Caps, rounding, reservation and affordability remain scenario-authored. Do not disguise a forced fee or unit upkeep as a "resource sink" without clear UI notice. If there is a supply cut, a formerly connected node's future income can stop after a documented grace period; previously collected funds remain owned unless a separately authorized theft/seizure transaction occurs.
+Electricity is **capacity and service**, not another accumulating inventory bar, a currency or a per-frame dollar debit. A fossil-fueled generator can later have an explicitly authored fuel rule, but do not silently consume all crude oil every electricity interval or invent a mandatory refueling chore.
 
-In later versions, link regions to a home/base or eligible allied supply through a simple **typed adjacency graph** of authored connected road/rail/port hubs—not expensive continuous per-unit transport simulation. An enemy cutting a bridge or rail chokepoint changes graph connectivity at a defined authoritative step; recompute affected regions only when control/edge state changes. Preserve distinct traversability versus income connectivity; NavMesh path existence does not itself prove an institution has authorized supply access.
+## 5. Mandatory food reserves for staffed forces
 
-## 4. Electricity — capacity/shortage rather than harvesting
+A military player's participating force maintains an **owned provisions reserve** (FoodStock). A deployed **staffed** unit or formation has an authored nonnegative food-consumption rate for a fixed upkeep interval, including infantry and crewed vehicles. A deliberately unmanned unit may have zero; every ordinary staffed force therefore generates **positive minimum food upkeep**. Food is *not* an extra general-purpose purchase currency, not civilian welfare, and not a mandatory farm/labor simulation.
 
-Recommend one **per-participant aggregate electric capacity/load** in the first *powered infrastructure* increment, then optional **regional sectors** when sabotage and local outages are being developed. A full transmission-line load-flow solver would be disproportionate for the first skirmish.
+At each due authoritative interval, total eligible **alive, staffed, current-owner** unit requirements in stable ID order; debit stocked food units **exactly once** if sufficiently stocked. The initial scenario must supply enough food for a meaningful opening battle, plus an **eligible USD food-purchase path**. Newly produced units enter the upkeep set on the next specified accounting step; destroyed/transferred units stop counting for the old owner; idle, guarding or retreating staffed units still require food.
 
-**Candidate fields:**
+**Food purchase:** verify participant, $ balance, owned food account, available supply channel, purchase quantity, nonnegative USD-cent price, capacity and unique request ID. Atomically debit USD and credit the purchased food stock once. A future delayed delivery must remain pending/reserved until physically/contractually completed; no instant credit plus duplicated shipment. Optional **Auto-Buy Food** is a *player-controlled* threshold and maximum-budget preference using the **same** authorized transaction path, with a clear failure notification and no free supplies.
 
-| Power state | Rules |
+**Shortage response:** stock floors at zero; when a due upkeep debit is impossible, set a visible **FoodShortage** status and apply a single limited, specified gameplay penalty (e.g. reduced reinforcement/operational readiness) rather than instantaneous death or irreversible troop removal. The precise penalty is a design/balance variable, not yet adopted code. Food shortage must not block a player's ability to buy food, recover a node or protect their remaining force. On legitimate replenishment, remove the penalty at the next defined upkeep/recovery boundary. This makes logistics consequential without repetitive micromanagement.
+
+## 6. Accounting authority and safe ordering
+
+Maintain **one authoritative C++/Unreal ledger** scoped to participant and match generation. UI, AI and game-rule scripts submit typed requests; they cannot manufacture $ or supplies. Persist integer **USD cents (int64)**, food/commodity nonnegative fixed-point units with declared scale, and nonnegative bounded power capacity/load. Arithmetic, sums, rate multiplication, conversion, reservations and purchases require checked overflow/underflow and a deterministic rounding policy. All purchases/sales have a key **(match generation, participant, transaction ID)**; request retries are idempotent, and no rejected request can modify stock.
+
+Proposed economy step within the current **0.05-second fixed-step coordinator** (not a new Actor Tick/independent timer): admission of queued transactions → settled income and sale/food purchases → power allocation after damage/ownership changes → due food upkeep → eligible production progress → typed event publication. Reconcile precisely with the existing admit→movement→combat→damage→cleanup→objectives→events sequence at implementation time, and decide whether death and completed reinforcements affect this interval or the next. In-progress queues paused for power must resume without double spend. Stop all economic mutation after Terminal/Results/Return/AdmissionRejected; clear income cadence, supply accounts, transactions and reservations on fresh match.
+
+Epic [UPrimaryDataAsset](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UPrimaryDataAsset) supports existing stable-ID asset patterns; [Data Validation](https://dev.epicgames.com/documentation/unreal-engine/data-validation-in-unreal-engine) supports missing-ID, negative-cost, zero-power and invalid-reference authoring checks. [Gameplay Timers](https://dev.epicgames.com/documentation/unreal-engine/gameplay-timers-in-unreal-engine) are real UE facilities but should **not** become independent economic authority when the coordinator owns deterministic step timing.
+
+## 7. UI and AI contract
+
+**Persistent compact HUD:** **$ Available** (plus $ income/interval), **Electricity supplied / required** (surplus/deficit and affected buildings), and **Food reserve / upkeep per interval** (remaining runway/shortage). Gold, crude oil, gas, refined fuel and nuclear stock are expandable commodity details when relevant; do not crowd the combat HUD with every unused inventory type. A trade panel shows source, real stock, USD quote, fee/net, restricted quantity and confirmation. Food panel shows dollar purchase quantity/price and optional replenishment cap, with a clear shortage warning, recovery action and estimated runway. Tooltips distinguish insufficient **$**, insufficient **food**, insufficient **power**, reserved stock, ineligible sale and invalid participant; never imply accepted intent equals settled transaction.
+
+Computer opponents must buy food, trade goods and meet building power requirements under the **same ledger/permissions**; a difficulty setting must not invisibly grant unlimited supplies. Enemy economic truth is visible only under legitimate observation/intelligence permissions, not simply because a HUD can query Actors.
+
+## 8. Implementation stages and acceptance
+
+**Stage 4B first slice (refined design; still unimplemented):** One authored **$** treasury and income/delivery source; one valid source→delivery→conversion or authorized grant; one fixed **powered** base with positive minimum building load; one basic production queue and produced unit; authored starting food for its initial staffed force; one **USD→Food purchase**; one due food-upkeep interval and bounded power/food deficit-and-recovery fixtures. There is no requirement yet to build a full gold mine, multiple oil refiners or a commodity exchange UI. If this is too broad for one increment, split it into explicitly evidenced 4B sub-slices; finish core upkeep before claiming 4D AI / 4F complete skirmish.
+
+**Next economy slices:** actual gold/fossil sale from real inventories; captured node-based USD income, conventional generators and grid sabotage; optional auto-food procurement; specialized refining, regional electricity, diplomacy/espionage trade and Unaligned infrastructure only when their dependencies are ready.
+
+| Gate | Required evidence |
 | --- | --- |
-| Production | Authoritative \`power_available\` from eligible operational generators, plus independently authored imported/external grid capacity if map rules allow |
-| Consumption | Sum of enabled buildings' \`power_required\`; ordinary infantry doesn't draw a per-unit power tax |
-| Surplus/deficit | \`available - required\`; shortage classification from deterministic integer comparison |
-| Priority and emergency | Small essential shell/HQ/control functions remain operational in shortage; prioritization is authored, never a free invisible economic bonus |
-| Outages | Generator destruction, sabotage, deliberate cut, damaged substations, civilian grid failure or fuel shortage may decrease availability according to explicit feature-dependent rules |
-| Recovery | Repair, reconnection, generator restoration, alternate feed or policy action; deterministic transition, explicit UI feedback |
+| USD-01 | Single $-priced purchase settles once; invalid owner/stale generation/negative cost/overdraft rejected without mutation |
+| USD-02 | Actual gold, crude oil, gas and refined-fuel sale returns exactly quoted net $ and consumes the correct stock only once |
+| USD-03 | Trade fees, rational rounding, expiry, reserved quantity and overflow cannot duplicate money or sell nonexistent goods |
+| USD-04 | Nuclear materials/weapons remain excluded from ordinary dollar exchanges; faction restrictions preserved |
+| USD-05 | Authorized income/contract events and same-process rematch cannot double-credit prior USD |
+| PWR-01 | Every operational building has positive minimum power and legal source at startup, including a bootstrappable generator |
+| PWR-02 | Insufficient supply disables only authorized powered functions/queues and is visibly diagnosed |
+| PWR-03 | Damage, capture, repair and reconnection cause deterministic recovery without permanent power softlock |
+| FOOD-01 | Staffed initial force has positive upkeep, sufficient authored starting runway, and a real dollar-funded food supply route |
+| FOOD-02 | USD→Food purchase atomic, capacity-limited and idempotent; insufficient money/supply leaves accounts unchanged |
+| FOOD-03 | One due interval charges once; unit death, capture, rematch, idle status and multi-participant isolation handled |
+| FOOD-04 | Shortage gives an observable limited penalty; replenishment restores function without arbitrary unit loss |
+| ECO-INT-01 | Different render schedules produce matching qualified $/power/food outcomes at authoritative steps |
+| ECO-INT-02 | Rendered cooked Linux package and AI use identical permissions; UI does not leak enemy treasury/shortages |
+| ECO-INT-03 | Normal tactical match remains playable without routine gold/food harvesting micromanagement |
 
-Keep **power capacity** and **energy storage/fuel** distinct. No battery inventory or grid electricity stockpile is necessary in first implementation. Avoid automatically consuming crude oil/gas for every watt unless the particular authored generator has an explicit fuel-recipe contract; otherwise it would silently multiply farming loops.
-
-**Faction asymmetry already in canon:** Atlantic Concord and Red Directorate can construct nuclear power plants; Iron Ascendancy and Meridian Pact cannot. That restriction does **not** bar the latter factions from using conventional/captured grid capacity as allowed by scenario rules. A nuclear generator requires its own canonical permissions and strategic investment; do not equate a power station with the separate raw-to-refined nuclear weapons-resource chain. The Unaligned may administer existing civilian grid assets without becoming an ordinary playable power-plant builder.
-
-### 4.1 Shortage effects with recovery, not hard locks
-
-Proposed fixed order of budget/power resolution:
-
-1. Apply validated generator damage/repair and any authorized supply/contract updates.
-2. Calculate participant/region supply and requested demand.
-3. Allocate capacity in a **stable authored priority order** to operational facilities.
-4. Mark per-building effective status: \`Powered\`, \`Brownout\`, \`Unpowered\`, \`Disabled/Destroyed\`.
-5. Affect only explicit services next step: production speed or queue pause, radar/sensor availability, defensive system rate, refinery throughput, communications/espionage operations.
-6. Publish typed power-status and queue/ability-eligibility changes to authorized observers; no global hidden-enemy power reveal.
-
-**Essential functions must remain recoverable**: e.g., a basic repair unit, command-post interface and at least a minimal budget source should not require the very electricity that the player has lost, unless a separately accepted survival scenario intentionally uses that failure condition. Avoid a cascade where loss of one plant makes all rebuilding impossible. Reserve **partial brownout** for graded degradation if tests/UX justify it; simpler initial implementation can be binary power-on/off per nonessential structure.
-
-### 4.2 Prototype UI
-
-Top bar: \`Budget  860 (+12/interval) | Power  140 / 110 (surplus 30)\` as **illustrative values**, not actual game balance. On shortage: \`POWER SHORTAGE −25 — Barracks queue paused\`, with clickable list of affected owned structures and repair/alternate supply options. Separate "no power" from "no budget", "no refined fuel", and "producer damaged". Use icons/words alongside any red/yellow/green; only reveal opponent power statistics where intelligence explicitly authorizes it.
-
-## 5. Engagement over farming: incentive tuning
-
-**Strategic tension should come from competition over sites and relations**, not optimal micromanagement of workers. Suggested (uncommitted) design tests:
-
-- A player can issue the first combat order and understand a credible tactical objective within the first ~30 seconds of a normal 4F scenario; exact onboarding timing must be user-tested.
-- One typical battle group should require at most one or two *deliberate* economic choices (e.g., capture refinery, protect rail hub, negotiate a supply contract) during an ordinary short engagement.
-- Economic investment must be legible and counterable: budget rate, power deficiency, damaged link and contract expiration produce specific effects on possible orders, not hidden aggregate numerical multipliers.
-- Winning control should grant advantage **without snowballing irreversibly**: baseline allocation, capped sector yield, temporary contested suspension and alternate recovery routes are prototype levers.
-- Military, diplomatic and intelligence approaches must create meaningful tradeoffs: raid a fuel convoy vs seize a rail junction, sabotage a power station vs expose civilian harm, steal a budget transfer vs negotiate legitimacy.
-- Avoid a forced per-vehicle refueling/refilling loop during ordinary movement; include supply disruption only where it adds spatial decisions or authored mission objectives.
-- Never make civilian labor, food, water or homelessness generic exploitable "resource mines"; civilian welfare may affect legitimacy/mission failure and the Unaligned response under historically respectful authoring.
-
-## 6. Stage boundaries and consistency with the existing roadmap
-
-The existing **4B** gate stays narrower: one spendable resource, one source and collector/delivery, one balance, fixed base, one production queue and one reinforcement. To minimize *collecting* micromanagement while keeping the currently specified 4B positive path, the first source may be an **automated operational-budget delivery/procurement event with a bounded supply-run actor**; make the collection and deposit a single optional/automated demonstration rather than every unit requiring workers. **This is an alternative design proposal, not a silent rewrite of 4B's already committed gather→deliver acceptance**. If 4B is intentionally revised to eliminate the collector, update its owning roadmap, gameplay/content schema and positive/negative tests together *before implementation*. Keep current 4B contract authoritative until that decision is adopted.
-
-**Later economy/power increment** (after 4F unless a selected scenario requires it): validate faction/node control, periodic budget income, one simple generator, two facilities with nonzero demand, shortage effects, repair/reconnection and explicit power UI. Advanced fuel refining/nuclear economy, detailed regional supply, Unaligned institutions, covert manipulation and alliance-linked economic flows follow only when core mechanics are measured and gameplay justified.
-
-## 7. Engineering and acceptance matrix (proposal)
-
-| Gate | Positive and fail-closed checks |
-| --- | --- |
-| ECO-01 | Starting budget comes from versioned authored scenario, not HUD; exact participant isolation |
-| ECO-02 | One tick of baseline/node/contract income credited exactly once at a specified fixed-step boundary |
-| ECO-03 | Duplicate grant, lost node, disconnected supply, expired contract do not double-credit or leak funds |
-| ECO-04 | No negative/overflow/zero-cost exploit, mis-owned purchase, unauthorized transfer or repeated spend |
-| ECO-05 | Balance/status/production snapshots return to initial state on rejected match and same-process rematch |
-| ECO-06 | Owned node income stable across render schedules and different object iteration order |
-| PWR-01 | Generator ownership, operational status, capacity and load are validated from authored IDs |
-| PWR-02 | One generator powers eligible consumer; loss produces an observable, reproducible status transition |
-| PWR-03 | Outage degrades correct services, excludes unrelated units and **cannot create irrevocable softlock** in ordinary skirmish |
-| PWR-04 | Restored capacity/repaired link revives eligible production without illicit duplicate queue debit |
-| PWR-05 | Non-nuclear playable factions cannot construct a nuclear plant; allowed conventional grid remains usable |
-| PWR-06 | Per-participant observation prevents hidden enemy budget and power leakage |
-| PWR-07 | Typed diagnostics and one in-package rendered UI exposure match actual authoritative power state |
-| ECO-07 | Can win or lose a real match through combat/diplomacy-intelligence choices without repeatedly assigning a dedicated gatherer |
-
-**No arbitrary rates, unit prices or plant capacities are locked here.** Use scenario-authored tuning informed by gameplay measurements, not historical-economic claims. Integrate the selected version in [Resource Economy](RESOURCE_ECONOMY.md), [Production](RTS_PRODUCTION_AND_TECHNOLOGY.md), and [Engine Outline](ENGINE_OUTLINE.md) before implementing.
+**Non-claims:** No Unreal/cooked implementation or new schema exists; the current portable ResourcePool helper is not already a USD/food/power system. The existing Command & Conquer precedent of vulnerable base power is documented in [EA's guide](https://help.ea.com/articles/command-and-conquer/command-and-conquer-remastered/how-to-play/); this does not justify copying a harvester-intensive economy.

@@ -8,14 +8,16 @@ One AI brain is bound to one admitted non-human playable participant and one mat
 
 Proposed decision input: immutable `DecisionSnapshot{participant_id, match_generation, step, economy_summary, owned_entities, eligible_commands, own_objectives, observed_contacts, known_map_objectives, past_command_outcomes}`. In 4D, before full visibility is implemented, the scenario must explicitly designate which *prototype observations* the AI may see, and the game must not later claim those inputs were fog-limited. When visibility exists, obtain `observed_contacts` exclusively through the per-participant projection, never an all-actors world scan.
 
+**Resource fairness (adopted design):** The AI's economic observation must distinguish its own **US-dollar balance**, available gold/fossil stock, building electricity status, food reserves, due staffed-force upkeep and eligible USD-to-food procurement. It may sell eligible commodities or buy food only using the **same** authenticated transaction API and quote/capacity limits as a human. An opponent without sufficient power cannot use an unpowered producer; no hidden "free food", no automatic income outside authored rules, no privileged view of the player's treasury or food. The [USD/power/food contract](RTS_OPERATIONAL_ECONOMY_AND_POWER.md) owns this state and the AI only chooses requests.
+
 ## 2. Small deterministic policy sufficient for Stage 4D
 
 Adopt a bounded priority list/FSM rather than a new general AI framework:
 
 1. `Retired` if lifecycle not Active or participant/brain generation is invalid.
 2. `Recover` if last action failed (invalid issuer/resource/target/nav), on a bounded cooldown; do not spin every Tick.
-3. `Gather` when not enough resource for a reinforcement and a known, legal source/collector exists.
-4. `Produce` when resources and a functional producer allow one priced unit.
+3. `Provision` when due food reserve is below the chosen authored safety threshold: buy authorized food for USD if affordable, otherwise seek a lawful dollar income/trade action or recover.
+4. `Produce` when USD and a **powered** functional producer allow a dollar-priced unit; defer if its intended new staffed force cannot receive legal provisions.
 5. `Defend/Contest` when an eligible currently observed threat/objective needs response.
 6. `Attack/Advance` otherwise, using known legal objective/route and owned units.
 7. `Idle` when no legal step exists, with a diagnostic reason; do not fabricate an enemy or instant resource income.
@@ -44,7 +46,7 @@ Epic documents [StateTree](https://dev.epicgames.com/documentation/unreal-engine
 | AI-02 | Fixed fixture/seed/input step stream yields same decision IDs, order sequences and authoritative outcomes |
 | AI-03 | AI attempts an order only through shared admission, with valid owner/faction and match generation |
 | AI-04 | Unavailable/hidden/stale targets do not leak truth through the decision snapshot |
-| AI-05 | Insufficient funds, blocked producer or path failure lead to bounded retry/idle and no state spoofing |
+| AI-05 | Insufficient USD/food, unpowered producer, unauthorized commodity sale or path failure lead to bounded retry/idle and no state spoofing |
 | AI-06 | AI gathers, purchases and issues at least one accepted combat/objective command in ordinary 4D play |
 | AI-07 | Terminal/Results/Return suppress future decisions and pending requests |
 | AI-08 | Same-process rematch starts new identity, seed, memory, balances and orders |
