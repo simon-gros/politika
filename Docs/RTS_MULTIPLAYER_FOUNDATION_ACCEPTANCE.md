@@ -77,12 +77,34 @@ Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_R
 | G6-CLIENT-LOSS / HOST-LOSS | Client SIGKILL → host unbinds/ends once (10.0 s); host SIGKILL → client recovers with reason (10.0 s) | Packaged | PASS | |
 | OFFLINE-PAC10 | Existing rendered offline interaction replay | Packaged Development, Xvfb | PASS | |
 | OFFLINE-AUTHORITY | Existing participant-authority packaged replay | Same | PASS | |
-| SHIPPING | Linux Shipping package builds; fixture excluded; default offline MainMenu boot | Packaged Shipping | see §F | |
+| SHIPPING | Linux Shipping package builds; fixture excluded from the UFS manifest; no Development MP entry-point strings in the binary; default route renders in a network-less namespace; Escape returns to MainMenu | Packaged Shipping, Xvfb, `unshare --net` | PASS | `final-shipping/shipping-evidence.json` |
 | 2v1 / 3v1 / 2v2 packaged | 3–4 process runs | — | NOT_RUN (MP-2) | Automation covers binding/teams/fog |
 
 ## F. Package and evidence identity
 
-Filled from the final run on the committed tree; see the section appended below.
+All packaged verdicts in §E come from one final package pair built from commit `a1990bd`. The Development `BuildIdentity.json` records `git_dirty=false`. The Shipping identity was written later and records `a1990bdcd7df-dirty`. The only uncommitted change at that point was the Rust runner's `--shipping-boot` mode (`Tools/Shell/src/bin/rts_multiplayer.rs`, committed afterwards). That file is not part of either package.
+
+- **Archive:** `Saved/MultiplayerFoundation20261029/Final-a1990bd/{Development,Shipping}/Linux`. This is immutable and is not the stable player default. Earlier attempts `Development-1`, `Development-2` and `Shipping-1` are superseded. `Development-1` failed the manifest gate because the fixture was not cooked. The script now cooks the fixture from its physical `-CookDir`.
+- **Engine:** UE 5.8.3 `396c9f059903aed5fec78ecd3d437a40c6415368`. Linux, loopback 127.0.0.1:17790.
+
+| Artifact | SHA-256 |
+|---|---|
+| Development `Politika` | `e4c7f710e772b8fdc321510bd71b550c55e1a9df097a8594351adf6c2e1a5f1b` |
+| Development `Politika-Linux.utoc` | `e4131ee0cfbee0c9330f3c29ecf939dc316c16ba4476640c560555b510716bf7` |
+| Development `Politika-Linux.ucas` | `8a298de23a03578cd67b6e3d9a59980706969cd84647a90e7b8d1405cb6fbd01` |
+| Shipping `Politika-Linux-Shipping` | `af40342ca974c0fea55e9680b1c70f761e46e208909a1549032907a28118d66a` |
+| Shipping `Politika-Linux.utoc` | `ee813f745310acf413fed850a2788ce3f27d328cf3b6d5b464930a74dd44619c` |
+| Shipping `Politika-Linux.ucas` | `a156e04c7213172160a12c873168b51b1df222a115ea0984a82f8af0775abaf9` |
+| `Content/Maps/RTSVerticalSlice.umap` | `8e8b8bba057f076cdeb719488e2e846d70626a55fdb60dfb1c5ecc1d41ba8afc` |
+| `DA_PrototypeContentCatalog.uasset` | `26c1829ecfea93479751df1706d3bd973ea2c9ef0fbd4431bccf1fbd039ec7d7` |
+| `DA_MultiplayerSkirmish.uasset` | `20e9d37de88f964265d37cd6a20a663c7423410690eb66e2328357a34b1e752f` |
+| `DA_MultiplayerCatalog.uasset` | `42f3453197a4ebbf305a6bfd7b5afb1f1dde2b010e9b75fc6e3960daca3d4568` |
+
+- **Manifests:** the Development UFS manifest lists all six `TestFixtures/Multiplayer` assets. The Shipping manifest lists none.
+- **Two-process run** (`rts_multiplayer`, 17/17 PASS). The host was pid 909314 on `:121` and the client was pid 909418 on `:122`, with a third, refused process (pid 910087). Evidence: `build/diagnostics/mp1-listen-server/final-run/final-evidence.json`, with host/client logs, `host.mp4`/`client.mp4` and screenshots for the active match, orders, contact, results, menu, rematch and both loss cases.
+- **Shipping** (`rts_multiplayer --shipping-boot`, 3/3 PASS): `build/diagnostics/mp1-listen-server/final-shipping/`.
+- **Offline regressions** on the final Development binary: PAC-10 and PA-AUTHORITY PASS. Logs are in `build/diagnostics/mp1-listen-server/logs/final-offline-{pac10,authority}.log`.
+- **Automation** on the committed source: 32/32 Success (Content 7, Infantry 4, CommandContract 4, MatchLifecycle 1, MatchParticipants 3, Multiplayer 5, Navigation 8). Results: `build/diagnostics/mp1-listen-server/final-automation-all/index.json`.
 
 ## G. Limitations and next work
 

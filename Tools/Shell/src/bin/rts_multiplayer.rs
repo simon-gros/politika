@@ -1419,7 +1419,137 @@ fn session_host_loss(options: &Options, report: &mut Report) -> Result<(), Strin
     Ok(())
 }
 
+/// Shipping regression: default offline boot with no network namespace, rendered to Xvfb,
+/// and absence of Development-only multiplayer fixture/probe entry points in the binary.
+fn shipping_boot(binary: &Path, evidence: &Path) -> Result<Report, String> {
+    let mut report = Report::default();
+    fs::create_dir_all(evidence).map_err(|e| e.to_string())?;
+    report.fact("binary", binary.display().to_string());
+    report.fact("executable_sha256", sha256(binary)?);
+    let strings = run_output(Command::new("strings").args(["-el"]).arg(binary))?;
+    let forbidden = [
+        "MultiplayerSkirmish",
+        "map.test.multiplayer_skirmish",
+        "PolitikaMPProbe",
+        "MP_PROBE_SENT",
+        "PolitikaMPRematch",
+        "RTSAcceptance",
+    ];
+    let present: Vec<&str> = forbidden
+        .iter()
+        .copied()
+        .filter(|s| strings.contains(s))
+        .collect();
+    report.verdict(
+        "SHIP-NO-DEV-ENTRY-POINTS",
+        present.is_empty(),
+        format!("Development-only strings present: {present:?}"),
+    );
+    let display = Display::start(evidence, "shipping")?;
+    report.fact("display", display.name());
+    let user_dir = evidence.join("user-shipping");
+    fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+    // No network namespace: proves the default route needs no network or online service.
+    let mut child = Command::new("unshare")
+        .args(["--user", "--map-current-user", "--net", "--"])
+        .arg(binary)
+        .args([
+            "-windowed",
+            &format!("-ResX={WIDTH}"),
+            &format!("-ResY={HEIGHT}"),
+            "-unattended",
+            "-nosplash",
+        ])
+        .arg(format!("-UserDir={}/", user_dir.display()))
+        .env_remove("WAYLAND_DISPLAY")
+        .env("DISPLAY", display.name())
+        .env("SDL_VIDEODRIVER", "x11")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("launch Shipping in a network-less namespace: {e}"))?;
+    let mut window = None;
+    for _ in 0..300 {
+        if let Ok(found) = xdo(
+            &display.name(),
+            &["search", "--onlyvisible", "--name", "Politika"],
+        ) {
+            window = found.lines().next().map(str::to_owned);
+            if window.is_some() {
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    thread::sleep(Duration::from_secs(10));
+    let alive = matches!(child.try_wait(), Ok(None));
+    let shot = evidence.join("shipping-main-menu.png");
+    let captured = window.as_deref().is_some_and(|id| {
+        run_output(
+            Command::new("import")
+                .env("DISPLAY", display.name())
+                .args(["-window", id])
+                .arg(&shot),
+        )
+        .is_ok()
+    });
+    // The configured default route is the offline RTS test map; Escape must reach MainMenu.
+    let menu = evidence.join("shipping-main-menu-after-escape.png");
+    let menu_captured = window.as_deref().is_some_and(|id| {
+        xdo(
+            &display.name(),
+            &["mousemove", "--window", id, "--sync", "640", "360"],
+        )
+        .is_ok()
+            && xdo(&display.name(), &["key", "Escape"]).is_ok()
+            && {
+                thread::sleep(Duration::from_secs(6));
+                run_output(
+                    Command::new("import")
+                        .env("DISPLAY", display.name())
+                        .args(["-window", id])
+                        .arg(&menu),
+                )
+                .is_ok()
+            }
+    });
+    let alive_after_menu = matches!(child.try_wait(), Ok(None));
+    let _ = child.kill();
+    let _ = child.wait();
+    report.verdict("SHIP-OFFLINE-BOOT", alive && captured,
+        format!("Shipping default route rendered in a network-less namespace: alive={alive}; window captured={captured}"));
+    report.verdict("SHIP-MAIN-MENU", menu_captured && alive_after_menu,
+        format!("Escape returned to MainMenu in Shipping: captured={menu_captured}; alive={alive_after_menu} (inspect screenshot)"));
+    if captured {
+        report.artifact("shipping_default_route_png", &shot);
+    }
+    if menu_captured {
+        report.artifact("shipping_main_menu_png", &menu);
+    }
+    Ok(report)
+}
+
 fn main() {
+    if env::args().nth(1).as_deref() == Some("--shipping-boot") {
+        let (Some(binary), Some(evidence)) = (env::args().nth(2), env::args().nth(3)) else {
+            eprintln!("usage: rts_multiplayer --shipping-boot SHIPPING_BINARY EVIDENCE_DIR");
+            std::process::exit(2);
+        };
+        let evidence = PathBuf::from(evidence);
+        match shipping_boot(Path::new(&binary), &evidence) {
+            Ok(report) => {
+                let path = evidence.join("shipping-evidence.json");
+                let _ = report.write(&path);
+                println!("evidence: {}", path.display());
+                std::process::exit(if report.failed() { 1 } else { 0 });
+            }
+            Err(error) => {
+                eprintln!("FAIL shipping boot: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
     let options = match parse_options() {
         Ok(options) => options,
         Err(error) => {
