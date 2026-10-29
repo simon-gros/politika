@@ -118,7 +118,9 @@ The main README introduces the project; concrete gameplay concepts and system-le
 | [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) | Central gameplay concepts, faction asymmetry, proposed systems, and open decisions. |
 | [Resource Economy](Docs/RESOURCE_ECONOMY.md) | Resources, refining, power, and faction economies. |
 | [Propaganda and Morale](Docs/PROPAGANDA_AND_MORALE.md) | Political influence, media, population morale, and unit resolve. |
-| [Unaligned Counterintelligence](Docs/UNALIGNED_COUNTERINTELLIGENCE.md) | AI intelligence, deception, and faction-balance responses. |
+| [Unaligned Counterintelligence](Docs/UNALIGNED_COUNTERINTELLIGENCE.md) | Planned NPC intelligence, deception, and faction-balance responses. |
+| [RTS Artificial Intelligence Architecture](Docs/RTS_AI_ARCHITECTURE.md) | Comparative RTS research and proposed layered AI design for units, formations, strategic opponents and autonomous Yugoslav institutions (not implemented). |
+| [Bounded Skirmish Opponent AI](Docs/RTS_OPPONENT_AI.md) | Specific unimplemented Stage 4D first-opponent contract, fairness rules and acceptance tests. |
 | [Reconnaissance and Scouting](Docs/RECONNAISSANCE_AND_SCOUTING.md) | Reconnaissance-unit concepts and visibility rules. |
 | [Explosive Sabotage](Docs/SABOTAGE_SYSTEM.md) | Conventional sabotage and faction eligibility. |
 | [Espionage, Psy-Ops and Intimidation](Docs/ESPIONAGE_AND_INTIMIDATION.md) | Covert actions, infiltration, facility effects, and intimidation. |
