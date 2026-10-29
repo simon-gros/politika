@@ -43,7 +43,9 @@ The front end should prioritize direct play:
 - Options for display, audio, controls, accessibility and gameplay settings;
 - Credits and Quit.
 
-No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. If optional online or LAN features are later chosen, they must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. Future multiplayer (2–4 legal playable-faction slots, up to four human connections, player-hosted listen or dedicated-server hosting) is an adopted **design direction, not an implemented menu flow or first-release guarantee**. The [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) requires auditing all existing player-input/HUD/menu code for remote-client and server authority boundaries before networking; optional lobby/join/hosting UI remains deferred.
+No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. **Networking is an immediate engineering priority**; LAN/online session UI is staged after minimal MP-1/MP-3 transport, and it must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. **Multiplayer is an immediate development priority**, with 2–4 legal playable-faction slots, up to four human connections and player-hosted listen/dedicated-server architecture. It is not yet an implemented menu flow or a release guarantee. The [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) requires auditing all existing player-input/HUD/menu code for remote-client and server authority boundaries before networking; optional lobby/join/hosting UI remains deferred.
+
+**Immediate UI integration gate:** [MP-0](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1) must inspect existing controllers, selection, HUD, input routing, GameInstance/menu initialization and presentation callbacks for single-local-player assumptions. MP-1 needs only diagnostic join/leave and command feedback, not a finished multiplayer lobby. No UI may claim online availability until independently tested.
 
 ## 4. Campaign and narrative screens (no cinematics)
 
@@ -195,7 +197,7 @@ This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTL
 ## 10. Decisions still open
 
 - Final economy, production, reinforcement and unit-cap model.
-- Whether any multiplayer is planned (and if so, local/LAN/online scope); this overview only fixes offline single-player access as a requirement.
+- **Multiplayer is planned and prioritized now**; decide only the scope of first LAN/direct-address lobby and online/provider features when MP-1/MP-3 tests can support them. Preserve offline single-player access as a requirement.
 - Which unit categories are individually controlled versus grouped as squads.
 - The exact campaign briefing/debrief presentation and radio-dialogue cadence.
 - Supported display aspect ratios, per-platform minimum hardware, mobile/handheld orientation and the final accessibility/settings list.
