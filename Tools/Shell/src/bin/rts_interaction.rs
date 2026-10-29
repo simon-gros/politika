@@ -458,6 +458,21 @@ fn main() -> Result<(), String> {
             local_log_start,
         )?;
 
+        if participant_authority {
+            // The authority fixture seeds Guard on the opponent to prove order preservation.
+            // Its combat setup differs from canonical PAC-10; qualify that replay separately.
+            capture(&window, &evidence, "02-authority-local-reselected")?;
+            input(&window, &["key", "Escape"])?;
+            wait_for(
+                &mut child,
+                &log,
+                "LoadMap: /Game/Maps/MainMenu",
+                Duration::from_secs(10),
+            )?;
+            capture(&window, &evidence, "09-main-menu")?;
+            return Ok(());
+        }
+
         // Move to the occupied control point first, proving contested state is reached.
         input(
             &window,
@@ -696,17 +711,27 @@ fn main() -> Result<(), String> {
         ),
     )
     .map_err(|e| e.to_string())?;
-    let mut report = format!(
-        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised local selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4; desktop_copy={}\n",
-        revision,
-        desktop_copy.display()
-    );
-    if participant_authority {
-        report.push_str("PA-AUTHORITY\tPASS\tDevelopment-only participantauthority selector reported exact C++ boundary assertions; rendered bound controller foreign selection was rejected and local selection remained available\n");
-    }
+    let report = if participant_authority {
+        format!(
+            "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPA-AUTHORITY\tPASS\tDevelopment-only participantauthority selector reported exact C++ boundary assertions; rendered bound controller foreign selection was rejected, local selection remained available, and Escape returned to MainMenu at verified 1280x720; see take.mp4; desktop_copy={}\n",
+            revision,
+            desktop_copy.display()
+        )
+    } else {
+        format!(
+            "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised local selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4; desktop_copy={}\n",
+            revision,
+            desktop_copy.display()
+        )
+    };
     fs::write(evidence.join("results.tsv"), report).map_err(|e| e.to_string())?;
     println!(
-        "PASS PAC-10: packaged RTS interaction replay; evidence {}; Desktop video {}",
+        "PASS {}: packaged RTS interaction replay; evidence {}; Desktop video {}",
+        if participant_authority {
+            "PA-AUTHORITY"
+        } else {
+            "PAC-10"
+        },
         evidence.display(),
         desktop_copy.display()
     );
