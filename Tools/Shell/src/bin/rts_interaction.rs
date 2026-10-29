@@ -290,6 +290,18 @@ fn require_right_pan_moved(log: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn require_no_command_intent(log: &str) -> Result<(), String> {
+    match log
+        .lines()
+        .find(|line| line.contains("RTS_COMMAND_INTENT_SENT"))
+    {
+        Some(line) => Err(format!(
+            "holding the A/S pan keys with a selected unit sent a command: {line}"
+        )),
+        None => Ok(()),
+    }
+}
+
 fn wait_for(
     child: &mut Child,
     log: &Path,
@@ -773,6 +785,15 @@ fn main() -> Result<(), String> {
             &evidence.join("07-objective-uncontested.png"),
             &evidence.join("08-camera-pan.png"),
         )?;
+        // Unit 2 is still selected. Holding the remaining pan keys must only move the camera:
+        // A and S were once also the Attack-Move and Stop hotkeys.
+        let pan_only_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
+        input(&window, &["keydown", "a", "keydown", "s"])?;
+        thread::sleep(Duration::from_millis(400));
+        input(&window, &["keyup", "a", "keyup", "s"])?;
+        thread::sleep(Duration::from_millis(1000));
+        let pan_only_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        require_no_command_intent(&pan_only_log[pan_only_log_start..])?;
 
         input(&window, &["key", "Escape"])?;
         wait_for(
@@ -841,7 +862,7 @@ fn main() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::require_right_pan_moved;
+    use super::{require_no_command_intent, require_right_pan_moved};
 
     const PREFIX: &str = "LogPolitikaStartup: Display: RTS_CAMERA_INPUT";
 
@@ -855,6 +876,14 @@ mod tests {
     fn accepts_right_pan_from_the_origin() {
         // c14a6c4 passing replay: forward and right were logged two frames apart.
         assert!(require_right_pan_moved(&log("x=0.0 y=23.3", "x=-23.3 y=70.0")).is_ok());
+    }
+
+    #[test]
+    fn pan_keys_must_not_send_a_command_intent() {
+        let camera = "[2026.10.29-13.32.32:718][101]LogPolitikaStartup: Display: RTS_CAMERA_INPUT axis=right value=1.0 x=-30.3 y=30.3";
+        assert!(require_no_command_intent(camera).is_ok());
+        let intent = "[2026.10.29-13.31.46:975][317]LogPolitikaStartup: Display: RTS_COMMAND_INTENT_SENT participant=1 correlation=4 client_sequence=4 order=7 issuer=2 target=0 authority=1";
+        assert!(require_no_command_intent(&format!("{camera}\n{intent}")).is_err());
     }
 
     #[test]
