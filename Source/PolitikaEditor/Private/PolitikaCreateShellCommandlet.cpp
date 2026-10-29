@@ -95,15 +95,16 @@ bool CreateMultiplayerSkirmishFixture()
     };
     // Seats alternate teams (politika::rules::TeamForSeat): slot 1 team A west-south,
     // slot 2 team B east-north, slot 3 team A (2v1/3v1/2v2) west-north, slot 4 east-south
-    // (team B in 2v2, team A in 3v1). Distances exceed sight so sides begin fogged.
+    // (team B in 2v2, team A in 3v1). Slots 3 and 4 sit further out than 1 and 2 so slot 4
+    // clears slot 2's units in 3v1; the save is refused below if any layout starts in contact.
     const FSeatSpec Seats[] = {
         {nullptr, nullptr, nullptr, ValidMap->PlayerSlots[0].FactionId, FLinearColor::White, FVector(-1300, -700, 42)},
         {TEXT("DA_MultiplayerOppositionRifleInfantry"), TEXT("unit.test.multiplayer_opposition_rifle_infantry"),
             TEXT("Rifle Infantry [Seat 2 Test Fixture]"), ValidMap->PlayerSlots[1].FactionId, FLinearColor(0.8f, 0.1f, 0.07f), FVector(1300, 700, 42)},
         {TEXT("DA_MultiplayerThirdRifleInfantry"), TEXT("unit.test.multiplayer_third_rifle_infantry"),
-            TEXT("Rifle Infantry [Seat 3 Test Fixture]"), TEXT("faction.test_third"), FLinearColor(0.15f, 0.62f, 0.62f), FVector(-1300, 700, 42)},
+            TEXT("Rifle Infantry [Seat 3 Test Fixture]"), TEXT("faction.test_third"), FLinearColor(0.15f, 0.62f, 0.62f), FVector(-1500, 1150, 42)},
         {TEXT("DA_MultiplayerFourthRifleInfantry"), TEXT("unit.test.multiplayer_fourth_rifle_infantry"),
-            TEXT("Rifle Infantry [Seat 4 Test Fixture]"), TEXT("faction.test_fourth"), FLinearColor(0.9f, 0.55f, 0.1f), FVector(1300, -700, 42)},
+            TEXT("Rifle Infantry [Seat 4 Test Fixture]"), TEXT("faction.test_fourth"), FLinearColor(0.9f, 0.55f, 0.1f), FVector(1500, -1150, 42)},
     };
     auto* Map = CreateDefinitionAsset<UPolitikaPrototypeMapDefinition>(
         Root + TEXT("DA_MultiplayerSkirmish"), TEXT("DA_MultiplayerSkirmish"));
@@ -170,6 +171,38 @@ bool CreateMultiplayerSkirmishFixture()
     Catalog->Units.Add(Unaligned);
     Catalog->Maps = {Map};
     Catalog->MarkPackageDirty();
+
+    // Every layout must start fogged: no unit may begin inside an opposing side's sight
+    // (Unaligned included), judged by the runtime vision rule, which is inclusive.
+    using namespace politika::rules;
+    int32 InitialContacts = 0;
+    for (const TeamLayout Layout : {TeamLayout::OneVsOne, TeamLayout::TwoVsOne, TeamLayout::ThreeVsOne, TeamLayout::TwoVsTwo})
+    {
+        struct FStartUnit { std::uint8_t Team; FVector Location; float Sight; };
+        TArray<FStartUnit> Units;
+        auto Add = [&](const FPolitikaPrototypeUnitPlacement& Placement, std::uint8_t Team)
+        {
+            const UPolitikaUnitArchetypeDefinition* Unit = Catalog->FindUnit(Placement.UnitArchetypeId);
+            if (Team != kNoTeam) Units.Add({Team, Placement.Location, Unit ? Unit->SightRadiusCm : PolitikaDefaultSightRadiusCm});
+        };
+        for (const FPolitikaPrototypeUnitPlacement& Placement : Map->UnitPlacements)
+            Add(Placement, TeamForSeat(Layout, static_cast<std::uint8_t>(Placement.SlotId - 1)));
+        for (const FPolitikaPrototypeUnitPlacement& Placement : Map->UnalignedPlacements) Add(Placement, kUnalignedTeam);
+        for (const FStartUnit& Observer : Units)
+            for (const FStartUnit& Target : Units)
+            {
+                const VisionSource Vision{Observer.Team, {Observer.Location.X, Observer.Location.Y}, Observer.Sight};
+                if (Observer.Team == Target.Team
+                    || !IsObservedBy(Observer.Team, {Target.Location.X, Target.Location.Y}, std::span(&Vision, 1)))
+                    continue;
+                ++InitialContacts;
+                UE_LOG(LogPolitikaStartup, Error,
+                    TEXT("TEST_FIXTURE_INITIAL_CONTACT layout=%hs observer_team=%d observer=%s target_team=%d target=%s distance=%.1f sight=%.1f"),
+                    LayoutName(Layout).data(), Observer.Team, *Observer.Location.ToString(), Target.Team,
+                    *Target.Location.ToString(), FVector::Dist2D(Observer.Location, Target.Location), Observer.Sight);
+            }
+    }
+    if (InitialContacts > 0) return false;
 
     TArray<FPolitikaContentDiagnostic> Diagnostics;
     UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
