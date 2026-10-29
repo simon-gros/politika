@@ -3596,6 +3596,13 @@ fn dedicated_layout(
                 .find(|(_, owner, _)| *owner == participant)
                 .map(|(e, _, _)| *e)
         };
+        let second_unit = |participant: u32| -> Option<u64> {
+            samples
+                .iter()
+                .filter(|(_, owner, _)| *owner == participant)
+                .nth(1)
+                .map(|(e, _, _)| *e)
+        };
 
         // Every client: real-input Stop and Guard on its own first unit.
         let mut order_detail = Vec::new();
@@ -3666,6 +3673,16 @@ fn dedicated_layout(
             } else if participant == 1 {
                 select_entity(client, "MP_CLIENT_SAMPLE", unit)?;
                 client.click(objective.0, objective.1, "3")?;
+                // 1v1 has no team-A ally to support the capture; a lone unit can lose the
+                // duel at the point and leave the match uncapturable. Its second unit
+                // attack-moves in support, as the allied seats do in larger layouts.
+                if let Some(support) = (seats == 2).then(|| second_unit(1)).flatten() {
+                    thread::sleep(Duration::from_millis(400));
+                    select_entity(client, "MP_CLIENT_SAMPLE", support)?;
+                    client.hover(objective.0 - 18.0, objective.1 + 10.0)?;
+                    thread::sleep(Duration::from_millis(150));
+                    client.key("a")?;
+                }
             } else {
                 select_entity(client, "MP_CLIENT_SAMPLE", unit)?;
                 client.hover(objective.0 + 18.0, objective.1 + 10.0)?;
@@ -3698,9 +3715,27 @@ fn dedicated_layout(
                     .to_owned(),
             );
         }
+        let mut expected_advance = seats;
+        if let Some(support) = (seats == 2).then(|| second_unit(1)).flatten() {
+            expected_advance += 1;
+            advance.push(
+                server
+                    .wait_line(
+                        &[
+                            "RTS_ORDER_ADMITTED order=AttackMove ",
+                            &format!("unit={support} "),
+                            "participant=1 ",
+                        ],
+                        Duration::from_secs(5),
+                        since,
+                    )?
+                    .trim()
+                    .to_owned(),
+            );
+        }
         report.verdict(
             &id("ADVANCE-ORDERS"),
-            advance.len() == seats,
+            advance.len() == expected_advance,
             format!("{advance:?}"),
         );
         for client in &clients {
