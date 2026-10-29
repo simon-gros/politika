@@ -5455,9 +5455,9 @@ fn parse_unit_scale_options() -> Result<UnitScaleOptions, String> {
                     .split(',')
                     .map(|v| v.parse::<u32>().map_err(|e| format!("--units {v}: {e}")))
                     .collect::<Result<_, _>>()?;
-                if let Some(bad) = units.iter().find(|n| !(2..=200).contains(*n)) {
+                if let Some(bad) = units.iter().find(|n| !(2..=300).contains(*n)) {
                     return Err(format!(
-                        "--units {bad}: the fixture accepts 2..=200 per seat"
+                        "--units {bad}: the fixture accepts 2..=300 per seat"
                     ));
                 }
             }
@@ -5915,10 +5915,10 @@ fn unit_scale_run(
 
 /// An out-of-range per-seat count must fail admission closed (exit 3, no session).
 fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result<(), String> {
-    let evidence = options.evidence.join("invalid-201");
+    let evidence = options.evidence.join("invalid-301");
     fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
     let mut args = server_args(options.port + 2, "1v1");
-    args.push("-PolitikaMPUnitScale=201".into());
+    args.push("-PolitikaMPUnitScale=301".into());
     let mut server =
         Game::launch_server(&options.server, "server-invalid-scale", &evidence, &args)?;
     let start = Instant::now();
@@ -5936,7 +5936,7 @@ fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result
     report.verdict(
         "UNITSCALE-INVALID-REFUSED",
         status.and_then(|s| s.code()) == Some(3)
-            && text.contains("MP_UNIT_SCALE_INVALID value=201")
+            && text.contains("MP_UNIT_SCALE_INVALID value=301")
             && text.contains("reason=MP.UNIT_SCALE.INVALID")
             && text.contains("MP_DEDICATED_ADMISSION_FAILED")
             && no_session,

@@ -298,7 +298,7 @@ int main() {
     // Development unit-scale fixture: per-seat counts and candidate placement around a start.
     {
         using namespace politika::unitscale;
-        static_assert(!ValidUnitsPerSeat(1) && ValidUnitsPerSeat(2) && ValidUnitsPerSeat(200) && !ValidUnitsPerSeat(201));
+        static_assert(!ValidUnitsPerSeat(1) && ValidUnitsPerSeat(2) && ValidUnitsPerSeat(300) && !ValidUnitsPerSeat(301));
         static_assert(!ValidUnitsPerSeat(0) && !ValidUnitsPerSeat(-5));
         const Bounds Map{{-2000.0, -2000.0}, {2000.0, 2000.0}};
         const Point Own{0.0, 0.0};

@@ -15,8 +15,8 @@ namespace politika::unitscale {
 
 // The fixture keeps each seat's two authored placements, so a seat never has fewer.
 inline constexpr long long kMinUnitsPerSeat = 2;
-// Four seats at this count stay apart on the multiplayer skirmish map (see PlanSeatCandidates).
-inline constexpr long long kMaxUnitsPerSeat = 200;
+// The U-12 owner decision (300 per participant); seats never interleave (see PlanSeatCandidates).
+inline constexpr long long kMaxUnitsPerSeat = 300;
 inline constexpr double kSpacingCm = 100.0;
 // Candidates closer than this to an authored placement are skipped.
 inline constexpr double kClearanceCm = 60.0;
