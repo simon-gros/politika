@@ -326,6 +326,11 @@ Selection is local player intent over currently visible/eligible entities, not a
 
 Selection presentation should preserve map readability: clear rings/shape outlines, a subtle group bounding cue, category/ownership symbol and hover feedback. Selection effect animation is not confirmation of an admitted gameplay order.
 
+### 14.1a. Tactical formation controls (future behavior)
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) specifies explicitly created tactical formations, separate from local multi-select or control-group hotkeys. For an eligible group, present a contextual **Form** operation and shape, facing, stance and adherence as separate settings; an existing formation may remain intact while only some members are selected. Show role/slot overrides, reinforcement/detach, valid destination previews, partial member rejection, route failure and organizational status (Assembling/Deployed/Degraded/Fragmented/Dissolved). Inspect individual combat Discipline using the canonical resolve value; never imply a second Morale meter from derived Cohesion. UI cannot teleport units or reveal hidden enemies and must not claim formation capability is currently shipped.
+
+
 ### 14.2 Order families and targeting states
 
 | Family | Typical target | Required UI behavior | Failure/interrupt distinction |

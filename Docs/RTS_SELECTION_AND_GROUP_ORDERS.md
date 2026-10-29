@@ -34,6 +34,11 @@ Invalidated selection is retired, its visual indicator removed and selection-cha
 
 **Queueing is deferred.** Shift-queued waypoints and build queues are different processes and must have distinct semantics. For future per-unit order chains, lock bounded capacity, valid command kinds, queue append/replace behavior, cancellation/stop, path failure, target loss, death and item-level feedback before writing code; never reinterpret current single active `Order` as an implicit FIFO.
 
+## 3A. Explicit tactical formations (separate later capability)
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) defines authoritative formation identities, membership, shapes, facing, slots/roles, combat stance, adherence and derived Cohesion. **A local control group or a drag-selected roster is not a formation.** The 4C baseline remains a batch of individually admitted and correlated existing `CommandRequest` orders, with partial success/rejection. A later explicit Form/Reform/Detach/Disband operation can establish organizational state and compute distinct slot endpoints, but those must be legal for each member's movement class and must preserve independent route replacement, Stop, death and generation cleanup. Do not reinterpret the current `Order` variant to implement a new stance or assume group atomicity.
+
+
 ## 4. Input and accessibility grammar
 
 Desktop pointer: click-select; box-select only after movement threshold from tactical-world start; cancel box on Esc, modal input capture, focus loss and active targeting mode. Explicitly distinguish pan from box and avoid drag issuing a move order. Controller: semantic select/confirm/cancel and inspect/command context (consider focus/cursor hybrid only after usability tests). Touch: start with tap-select and explicit action/target mode, long-press inspected separately; multi-selection must not conflict with map pan/pinch. Each device maps to identical semantic orders, not identical gestures.

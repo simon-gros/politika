@@ -36,6 +36,13 @@ These are current source bindings, **not** the intended final default profile. A
 
 **Blocking interaction collision:** A and S are each both a camera axis and a tactical single-press order. With a selected unit, ordinary camera navigation can generate unintended orders; remapping must separate them. A correct acceptance must press/hold every camera key with a selection and prove no order was enqueued. This is **source-detected**, not a new runtime reproduction. The HUD currently labels Attack-Move "A + ground", but its source invokes an immediate cursor-ray action when A is pressed, so documentation/tooltip must not imply a two-step target-confirm workflow exists. The Canvas rows are drawn, not buttons: accessibility and click behavior are not yet supported.
 
+### Future formation and stance controls (design only)
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) proposes explicit **Form / Reinforce / Detach / Disband** actions, with independent **shape/facing**, **combat stance** (Aggressive, Guard, Hold Ground, Hold Fire; Withdraw deferred) and **formation adherence** (Maintain, Flexible, Free). Distinguish local selected/control-group state from persistent organization, show per-member admission/slot/navigation outcomes, and display derived Cohesion alongside the *same* per-unit Discipline resolve. A facing/slot preview is advisory, not gameplay authority.
+
+Solve the current `A`/`S` camera/order binding collision before choosing formation shortcuts. Keyboard/mouse, controller/Steam Deck and Android touch may use different gestures mapped to identical semantic intents; preserve cancel/focus, accessibility and hidden-information constraints. This UI is **not implemented**.
+
+
 ## 2. Recommended interaction layout (desktop baseline)
 
 Use a **battlefield-first, relatively low-occlusion** layout combining C&C's immediately discoverable sidebar/production grammar and StarCraft's selected-unit command/selection clarity, without borrowing protected artwork, textures or branding.

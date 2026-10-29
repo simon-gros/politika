@@ -38,6 +38,11 @@ Epic documents [StateTree](https://dev.epicgames.com/documentation/unreal-engine
 
 [Mass Gameplay](https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-mass-gameplay-in-unreal-engine) may offer entity-density/LOD advantages later, but choosing it now would introduce a second scheduler and endanger existing route/authority acceptance. Do not infer suitability from general RTS unit count without a benchmark.
 
+## 4A. Formation-aware doctrine after the ordinary opponent milestone
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) defines the future organization contract. After Stage 4D AI and FORM gates, an opponent can choose shapes, stances, adherence and legal regrouping using **the same** match-authorized requests and participant-scoped observations as the human. It must not receive mass Discipline from distant units or privileged enemy positions for tactical facing. Partial path failure requires bounded cooldown/recovery without per-frame queries. The NPC-only Unaligned continues under separate system authority. This is an optional later AI expansion, not a 4D completion claim.
+
+
 ## 5. Candidate test ladder
 
 | ID | Evidence to produce |

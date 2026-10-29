@@ -241,6 +241,13 @@ A **squad** may group individual units under shared orders or may have a differe
 
 Do not require speculative game-specific abstractions to become engine classes before a concrete behavior or test needs them.
 
+### 8.2a Organized formations and derived Cohesion
+
+A **selection set** is local controller input state; a **control group** is a validated local shortcut; a **military formation** is a persistent, match-owned organization of eligible combat instances. Shape/facing describes desired geometry; combat stance governs autonomous engagement; adherence governs permissible deviation; **Cohesion** derives from actual positions and member operability. Each unit retains its individually admitted order, navigation, health and one `UnitResolve` (displayed as Discipline for combatants). Selecting multiple distant units never confers mutual support.
+
+An explicit formation operation establishes the organizational relation; it cannot implicitly grant another unit's command authority. Formation geometry must resolve to legal unit-specific destinations, not directly mutate world positions. See [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) for a bounded ontology, lifecycle, interaction contract and tests.
+
+
 ### 8.3 Space and movement classes
 
 Terrain should never be reduced to one universal passable/impassable value. A river, slope, bridge, urban obstacle, or road has different properties for wheeled vehicles, tracked vehicles, foot infantry, amphibious units, and aircraft.

@@ -57,6 +57,13 @@ Atlantic Concord exception: its soldiers suffer no Discipline penalty just for o
 
 These military Discipline modifiers do not apply to civilian/non-combat Morale. Non-combat units retain the same underlying resolve meter but receive context-appropriate modifiers. Breaking formation, reinforcement and losses should update eligible military support bonuses deterministically.
 
+### Tactical Cohesion and formation support — proposed integration
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns spatial formation organization and **derived** Cohesion. This is not a new individual resolve gauge: combatants continue to display the one `UnitResolve` as **Discipline**, civilians/non-combatants as **Morale**. Coherent combat support must be based on actual nearby eligible operational units, not local selection, control group IDs, or an army total regardless of distance. Recompute and cap effects on death, detach, capture, fragmentation, regrouping and rematch; never stack the same supporter multiple times through nested or overlapping groups.
+
+Retain all locked faction rules: normal coherent-group Discipline support for Red Directorate, Iron Ascendancy, Meridian Pact and NPC Unaligned; additional very-massive coherent bonus **only** Directorate/Ascendancy; Concord incurs no penalty solely for working solo/very-small; civilians receive none. Ordinary Cohesion loss or low resolve must **not automatically invoke** faction-exclusive Psy-Ops elimination or Intimidation ownership transfer: those require their own exact authorization, isolation, broken-threshold and effect checks.
+
+
 ### Atlantic Concord Psy-Ops and the shared resolve meter
 
 Atlantic Concord Psy-Ops is a separate espionage subdivision, not the radio/newspaper/television propaganda campaign system. It acts on an eligible individual enemy unit, using the exact same `UnitResolve` meter as all other morale/discipline effects. It can either:
