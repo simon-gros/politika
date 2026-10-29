@@ -546,6 +546,22 @@ fn main() -> Result<(), String> {
             "RTS_POSITION_UPDATED order=Move",
             Duration::from_secs(5),
         )?;
+        let sprint_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
+        input(&window, &["key", "f"])?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Sprint unit=2",
+            Duration::from_secs(5),
+            sprint_log_start,
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "INFANTRY_SPRINT_BEGIN unit=2",
+            Duration::from_secs(5),
+            sprint_log_start,
+        )?;
         input(&window, &["key", "s"])?;
         wait_for(
             &mut child,
@@ -584,6 +600,45 @@ fn main() -> Result<(), String> {
                 attack_move_log_start,
             )?;
         }
+        let grenade_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
+        input(&window, &["mousemove", "--sync", "577", "323", "key", "e"])?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Grenade unit=2",
+            Duration::from_secs(5),
+            grenade_log_start,
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "INFANTRY_GRENADE_LAUNCHED unit=2",
+            Duration::from_secs(5),
+            grenade_log_start,
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "INFANTRY_GRENADE_IMPACT",
+            Duration::from_secs(5),
+            grenade_log_start,
+        )?;
+        let reload_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
+        input(&window, &["key", "r"])?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Reload unit=2",
+            Duration::from_secs(5),
+            reload_log_start,
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "INFANTRY_RELOAD_BEGIN unit=2",
+            Duration::from_secs(5),
+            reload_log_start,
+        )?;
         input(
             &window,
             &["mousemove", "--sync", "577", "323", "click", "3"],

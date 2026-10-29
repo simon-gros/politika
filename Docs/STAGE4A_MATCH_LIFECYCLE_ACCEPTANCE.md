@@ -1,6 +1,6 @@
 # Stage 4A — Match Lifecycle Qualification
 
-**Status: ACCEPTED for the bounded prototype lifecycle foundation, Linux UE 5.8.3 Development only.** This does not accept the broader Stage 4A match framework, a complete single-player match, Shipping rendering, or another platform.
+**Status: ACCEPTED for the bounded prototype lifecycle foundation and the integrated participant-authority/implemented-infantry contract, Linux UE 5.8.3 Development only.** This does not accept the broader Stage 4A match framework, a complete single-player match, Shipping rendering, or another platform. The combined participant/infantry evidence is recorded in the 29 October integration section below; its exact final source/package identity and reports are in `build/diagnostics/stage4a-integration/final-evidence.json` for the isolated qualification worktree.
 
 ## Contract and implementation
 
@@ -164,7 +164,7 @@ The focused authored-admission test and package results below supersede only the
 | PA-23 | PASS | Isolated cooked faction-mismatch package rejects through the shared validator, renders recovery, and retries canonically in-process; normal Development and Shipping manifests exclude fixtures |
 | PA-24 | PASS | Branch/HEAD, patch and source hashes, UE pin, report paths, package hashes, and canonical-asset hashes recorded |
 
-Overall bounded authored-startup slice verdict: **PARTICIPANT RECOVERY QUALIFIED** for Linux UE 5.8.3 Development, with the Editor transient-world retry still accurately blocked and independently superseded by the packaged process proof below. PA-08/PA-10/PA-11 retain their prior partial spoof/stale-selection limits. The broader Stage 4A remains incomplete independently.
+Overall bounded authored-startup slice verdict: **PARTICIPANT RECOVERY QUALIFIED** for Linux UE 5.8.3 Development, with the Editor transient-world retry still accurately blocked and independently superseded by the packaged process proof below. At this historical 28 October checkpoint, PA-08/PA-10/PA-11 retained partial spoof/stale-selection limits; the later combined-source qualification below supersedes those specific bounded verdicts without erasing this checkpoint. The broader Stage 4A remains incomplete independently.
 
 ### Authored participant startup admission and recovery increment — 2026-10-28
 
@@ -289,4 +289,47 @@ This bounded qualification increment uses the existing content loader, shared va
 | PR-25 | PASS | Dirty source, file hashes, engine pin, three package manifests/binary/IoStore hashes, UAT logs and reports captured in `build/diagnostics/stage4a-participant-recovery/`; package identity records the final runtime source state |
 | PR-26 | PASS | Owning Stage 4A/content/engine/readme status reconciled without accepting full Stage 4A |
 
-**Bounded verdict:** cooked participant rejection and same-process rendered recovery are qualified for Linux UE 5.8.3 Development. This does **not** complete Stage 4A or First Playable Skirmish. PA-08, PA-10 and PA-11 remain partial; the transient-world Editor retry remains blocked; no gameplay command is exercised by this recovery harness. The smallest next Stage 4A dependency is to close the remaining participant-authority gaps (stale selection and controller spoof/Unaligned command attempts) with direct packaged or coordinator evidence, without introducing autonomous Unaligned behavior or beginning Stage 4B.
+**Bounded verdict at this historical recovery checkpoint:** cooked participant rejection and same-process rendered recovery are qualified for Linux UE 5.8.3 Development. This did **not** complete Stage 4A or First Playable Skirmish. PA-08, PA-10 and PA-11 were then partial; the transient-world Editor retry remained blocked; no gameplay command was exercised by that recovery harness. The 29 October integration below supersedes the PA gaps only for its stated combined-source Development scope. The transient-world Editor retry and broader Stage 4A limitations remain.
+
+## Participant-authority and infantry integration — 2026-10-29
+
+This bounded integration reconciles the qualified participant-authority implementation with the latest rifle-infantry line on GitHub main. It is an integration/regression increment only: no additional infantry mechanics, autonomous Unaligned behavior, Stage 4B economy, multiplayer or broader skirmish systems are claimed.
+
+### Source reconciliation
+
+| Item | Verified identity/result |
+|---|---|
+| Current remote-main baseline at preflight | `1dcaf03288e2a3bbb5df40fa6a398b3f456e6433` |
+| Qualified authority branch/tip | `codex/stage4a-participant-authority-20261029` / `71e4e3a225f95539593fb74a1b29da371f3a9c3e` |
+| Actual merge base | `83ec26703886a32d857291f4380e2bc2524f6c7c` |
+| Pinned Unreal source revision | `396c9f059903aed5fec78ecd3d437a40c6415368` (UE 5.8.3; clean at preflight) |
+| Isolated worktree | `/mnt/data/politika-stage4a-authority-infantry-integration-20261029` |
+| Gameplay/test integration commit | `2cd27ce559b9af7ade0ffad96587e0424dba770b` |
+| Scoped replay-harness refinements | Exact commit chain is recorded in `build/diagnostics/stage4a-integration/final-evidence.json` |
+| Final docs/integration commit and package identity | See `build/diagnostics/stage4a-integration/final-evidence.json`; this generated evidence file is outside Git and names the exact source and runtime identity |
+
+The divergent histories shared changes in `PolitikaPrototypeGameplay.cpp` and `.h`. The gameplay source was reconciled manually: authority commandability/selection revalidation, stale queued-issuer rejection and death-selection cleanup are retained alongside current infantry grenade simulation, typed Grenade/Reload/Sprint variants, combat, movement and presentation. The header retains authority test access and the latest rifleman state/API. Four scoped authority/harness/bootstrap commits were selected; unrelated history and binary assets were not imported. The Git-worktree-aware bootstrap dependency fix is retained.
+
+The current player-controller ability inputs now resolve `GetCommandableSelectedUnit` before forwarding Grenade, Reload or Sprint. Ability availability remains an additional check after participant/issuer/ownership/faction admission. Combined assertions exercise foreign-owned Grenade/Reload/Sprint and local attempts against system-owned infantry, verifying `NotOwned`, unchanged order/ammunition/cooldowns/health and an empty pending queue. Stale dead cached selection is retired before each ability input. Existing death presentation keeps the actor available for presentation while removing it from commandable membership and selection.
+
+### Qualification evidence
+
+The committed gameplay integration source passed Linux UE 5.8.3 Development Editor and Game builds; portable core and repository audit; Rust Shell tests (6 executed, 6 passed) and formatting; and Unreal Automation: focused participant authority, full `Politika.RTS` (16 warning-bearing successes, 0 failures), `Politika.Content` (7/7), and `Politika.Infantry` (4/4). The warning-bearing Automation successes include the headless SDL Wayland-before-initialization warning; test assertions reported zero errors. Exact report files and final-source reruns are enumerated in `build/diagnostics/stage4a-integration/final-evidence.json`.
+
+A fresh Linux Development UAT package from the final integration source includes the current RifleInfantry archetype/behavior/presentation, mesh/material, animation and audio dependencies; the normal package contains no separately authored authority fixture. The manifest explicitly verifies these cooked dependencies. The package sidecar, generated runtime identity and actual startup `git_revision` must all match; archive hash verification and executable/content hashes are in the external final evidence manifest.
+
+Two separate fresh rendered package runs are required and recorded there: participant-authority mode (`--participant-authority`) and canonical PAC-10 mode (no authority selector). Each uses a separate process, fresh `-UserDir`, isolated runtime log and 1280×720 rendered capture. The authority replay asserts authorized local interaction, foreign/system/unassigned/dead/destroyed rejection, stale-selection retirement and preservation of legitimate opposing state. The canonical replay validates selection, Move, Sprint, Guard, AttackMove's valid movement-or-in-range-combat path, targeted Grenade launch/impact, Reload admission/execution, friendly-target rejection, rifle damage/death, objective state, camera/render change and return to MainMenu. Historical package runs are not substitutes for the exact final identity recorded in the evidence manifest.
+
+### Current bounded verdict and limits
+
+| Requirement | Verdict |
+|---|---|
+| PA-08 — invalid/dead/destroyed/non-member selections and issuers | PASS for the tested Linux Development scope |
+| PA-10 — opposing playable participant selection/command rejection | PASS for the tested Linux Development scope |
+| PA-11 — unassigned/system/Unaligned authority is not ordinary player authority | PASS for the tested Linux Development scope; no autonomous Unaligned behavior is implied |
+| Existing implemented infantry prototype and typed orders | PASS for the tested combined scope; only currently supported rifleman features are claimed |
+| Integrated-source package identity and rendered replays | See exact final-source verdicts in `build/diagnostics/stage4a-integration/final-evidence.json` |
+| Broad Stage 4A / full skirmish / Shipping / other platform | NOT ACCEPTED |
+| NAV-A15 | INCONCLUSIVE; unchanged |
+
+Stage 4A remains incomplete: standard participant/faction orchestration, full match rules, economy/production, autonomous playable opponent, broader recovery cases, Shipping rendering and other platform qualification remain outside this increment. The transient-world Editor retry remains blocked by its missing authored level/NavMesh precondition.
