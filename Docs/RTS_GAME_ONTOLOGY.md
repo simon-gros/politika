@@ -795,6 +795,8 @@ This fits the hierarchy described by Ontañón et al. [2]: strategic, tactical, 
 
 ## 24. Player interaction is a control interface, not a world ontology
 
+**HUD specialization (29 October 2026):** [RTS HUD Ontology and Architecture](RTS_HUD_ARCHITECTURE.md) refines this distinction into view entities (entity, attribute, relation, capability, constraint, intent, outcome, observation, claim, event, objective), a participant-scoped projection, selectable HUD regions and independently gated implementation/tests. This is a derived presentation contract, not an additional simulation ontology or a claim of working UMG/minimap systems.
+
 Classic C&C's sidebar, StarCraft's command card, and controller/touch-oriented interfaces can expose overlapping game operations without defining the underlying simulated effects. Separate:
 
 1. **Input gesture:** click, tap, button press, radial menu selection, hotkey.
