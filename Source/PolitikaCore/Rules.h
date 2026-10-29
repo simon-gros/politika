@@ -220,6 +220,28 @@ struct VisionSource {
     return false;
 }
 
+// What one viewer may learn from a shot. A shot cue carries a target point, so it must
+// follow the same team-vision rule as replication: a viewer that cannot see the shooter
+// gets nothing, and one that sees the shooter but not its target gets only the shooter's
+// facing (already public through its replicated rotation), never the target position.
+enum class ShotCue : std::uint8_t { None, FacingOnly, Exact };
+
+[[nodiscard]] constexpr ShotCue ShotCueFor(bool fog_of_war, bool viewer_observes_shooter,
+    bool viewer_observes_target) noexcept {
+    if (!fog_of_war) return ShotCue::Exact;
+    if (!viewer_observes_shooter) return ShotCue::None;
+    return viewer_observes_target ? ShotCue::Exact : ShotCue::FacingOnly;
+}
+
+[[nodiscard]] constexpr std::string_view ShotCueName(ShotCue cue) noexcept {
+    switch (cue) {
+        case ShotCue::None: return "none";
+        case ShotCue::FacingOnly: return "facing";
+        case ShotCue::Exact: return "exact";
+    }
+    return "invalid";
+}
+
 struct MoveOrder { Position destination; };
 struct AttackOrder { std::uint64_t target_id = 0; };
 struct AttackMoveOrder { Position destination; };

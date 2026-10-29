@@ -600,8 +600,9 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         Target->PendingDamage += WeaponDamage;
         CooldownRemaining = WeaponCooldown;
         if (InfantryBehavior) --Ammo;
-        InfantryPresentation->Shot(Target->GetActorLocation(), WeaponCooldown);
-        MulticastShotPresentation(Target->GetActorLocation(), WeaponCooldown);
+        if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get())
+            Match->DistributeShotPresentation(this, Target, WeaponCooldown);
+        else InfantryPresentation->Shot(Target->GetActorLocation(), WeaponCooldown);
     }
 }
 

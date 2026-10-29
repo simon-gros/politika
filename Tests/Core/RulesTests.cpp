@@ -268,6 +268,14 @@ int main() {
     assert(RemoteSeatCount(static_cast<TeamLayout>(9), HostingMode::Dedicated) == 0);
     assert(!SessionSeatsComplete(static_cast<TeamLayout>(9), HostingMode::Dedicated, 0, 0));
     static_assert(HostingModeName(HostingMode::Dedicated) == "dedicated" && HostingModeName(HostingMode::Listen) == "listen");
+
+    // Shot cues never carry an unseen target point; offline play keeps full presentation.
+    static_assert(ShotCueFor(false, false, false) == ShotCue::Exact);
+    static_assert(ShotCueFor(true, false, true) == ShotCue::None);
+    static_assert(ShotCueFor(true, false, false) == ShotCue::None);
+    static_assert(ShotCueFor(true, true, false) == ShotCue::FacingOnly);
+    static_assert(ShotCueFor(true, true, true) == ShotCue::Exact);
+    static_assert(ShotCueName(ShotCue::FacingOnly) == "facing" && ShotCueName(static_cast<ShotCue>(7)) == "invalid");
     TeamLayout Unparsed = TeamLayout::TwoVsOne;
     assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)
         && !ParseTeamLayout("3v2", Unparsed) && Unparsed == TeamLayout::TwoVsOne);

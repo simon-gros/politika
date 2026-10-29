@@ -979,10 +979,82 @@ void APolitikaPrototypeUnit::OnRep_Health()
     }
 }
 
-void APolitikaPrototypeUnit::MulticastShotPresentation_Implementation(FVector_NetQuantize Target, float Cooldown)
+politika::rules::ShotCue APolitikaPrototypeMatch::ResolveShotCue(const APolitikaPrototypeUnit* Shooter,
+    const APolitikaPrototypeUnit* Target, uint32 ViewerParticipant, FVector& OutPoint) const
 {
-    if (HasAuthority()) return;
-    InfantryPresentation->Shot(Target, Cooldown);
+    using politika::rules::ShotCue;
+    OutPoint = FVector::ZeroVector;
+    if (!Shooter || !Target) return ShotCue::None;
+    // Owner-0 (Unaligned) units would otherwise count as "owned" by participant 0.
+    const bool bViewer = ViewerParticipant != 0;
+    const ShotCue Cue = politika::rules::ShotCueFor(bFogOfWar,
+        bViewer && IsUnitObservedByParticipant(Shooter, ViewerParticipant),
+        bViewer && IsUnitObservedByParticipant(Target, ViewerParticipant));
+    if (Cue == ShotCue::Exact) OutPoint = Target->GetActorLocation();
+    // Facing is already public through the shooter's replicated rotation; the distance
+    // is fixed so the cue says nothing about where (or whether) the target is.
+    else if (Cue == ShotCue::FacingOnly)
+        OutPoint = Shooter->GetActorLocation() + Shooter->GetActorForwardVector().GetSafeNormal2D() * ShotFacingCueDistanceCm;
+    return Cue;
+}
+
+void APolitikaPrototypeMatch::DistributeShotPresentation(APolitikaPrototypeUnit* Shooter,
+    const APolitikaPrototypeUnit* Target, float Cooldown)
+{
+    using politika::rules::ShotCue;
+    if (!HasAuthority() || !Shooter || !Target) return;
+    const uint32 Sequence = ++ShotCueSequence;
+    // This process's own view: the listen host sees through its seat's team; standalone
+    // play has full vision; a dedicated server has no viewer and keeps the exact point.
+    FVector LocalPoint;
+    const bool bListen = GetHostingMode() == politika::rules::HostingMode::Listen;
+    const ShotCue LocalCue = bListen ? ResolveShotCue(Shooter, Target, LocalRuntimePlayerId, LocalPoint)
+        : (LocalPoint = Target->GetActorLocation(), ShotCue::Exact);
+    if (LocalCue != ShotCue::None) Shooter->InfantryPresentation->Shot(LocalPoint, Cooldown);
+#if WITH_DEV_AUTOMATION_TESTS
+    if (bTestCaptureShotCues) TestShotCues.Add({0, LocalCue, LocalPoint});
+#endif
+    if (!IsNetworkSession()) return;
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(It->Get());
+        if (!Controller || Controller->IsLocalSeatController()) continue;
+        const uint32 Participant = GetBoundParticipantId(Controller);
+        if (Participant == 0) continue;
+        FVector Point;
+        const ShotCue Cue = ResolveShotCue(Shooter, Target, Participant, Point);
+#if !UE_BUILD_SHIPPING
+        const FVector TargetLocation = Target->GetActorLocation();
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_SHOT_CUE_SENT sequence=%u participant=%u shooter=%llu target=%llu cue=%s target_x=%.1f target_y=%.1f point_x=%.1f point_y=%.1f generation=%llu"),
+            Sequence, Participant, Shooter->GetStableId(), Target->GetStableId(),
+            *FString(politika::rules::ShotCueName(Cue).data()), TargetLocation.X, TargetLocation.Y, Point.X, Point.Y,
+            MatchGeneration);
+#endif
+#if WITH_DEV_AUTOMATION_TESTS
+        if (bTestCaptureShotCues) { TestShotCues.Add({Participant, Cue, Point}); continue; }
+#endif
+        if (Cue == ShotCue::None) continue;
+        Controller->ClientShotPresentation(Shooter, Point, Cue == ShotCue::Exact, Cooldown, Sequence);
+    }
+}
+
+void APolitikaPrototypePlayerController::ClientShotPresentation_Implementation(APolitikaPrototypeUnit* Shooter,
+    FVector_NetQuantize Point, bool bTargetObserved, float Cooldown, uint32 Sequence)
+{
+    // The shooter may have left this connection's relevancy since the server sent the cue.
+    if (!IsValid(Shooter) || Shooter->HasAuthority()) return;
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_CLIENT_SHOT_CUE sequence=%u participant=%u shooter=%llu exact=%d point_x=%.1f point_y=%.1f"),
+        Sequence, GetCommandPlayerId(), Shooter->GetStableId(), bTargetObserved ? 1 : 0, Point.X, Point.Y);
+#endif
+    Shooter->PresentObservedShot(Point, Cooldown);
+}
+
+void APolitikaPrototypeUnit::PresentObservedShot(const FVector& Point, float Cooldown)
+{
+    if (!HasAuthority()) InfantryPresentation->Shot(Point, Cooldown);
 }
 
 void APolitikaPrototypeUnit::MulticastAbilityPresentation_Implementation(uint8 Cue, float Seconds)
@@ -1279,15 +1351,23 @@ void APolitikaPrototypePlayerController::TickHostileProbe()
         if (Now < HostileProbeArmedSeconds + 3.0) return;
         const APolitikaPrototypeUnit* Own = nullptr;
         const APolitikaPrototypeUnit* Foreign = nullptr;
+        const APolitikaPrototypeUnit* Ally = nullptr;
         const APolitikaPrototypeUnit* System = nullptr;
         for (const APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
         {
             if (!Unit || !Unit->IsAlive()) continue;
             if (Unit->GetOwnerPlayer() == Self && !Own) Own = Unit;
             else if (Unit->GetOwnerPlayer() == 0 && !System) System = Unit;
-            else if (Unit->GetOwnerPlayer() != Self && Unit->GetOwnerPlayer() != 0 && !Foreign) Foreign = Unit;
         }
         if (!Own) return;
+        // Another participant's unit is either a hostile one or, in team layouts, an ally's;
+        // an ally's unit is visible through shared vision but never commandable.
+        for (const APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
+        {
+            if (!Unit || !Unit->IsAlive() || Unit->GetOwnerPlayer() == Self || Unit->GetOwnerPlayer() == 0) continue;
+            if (Own->IsHostileTo(Unit)) { if (!Foreign) Foreign = Unit; }
+            else if (!Ally) Ally = Unit;
+        }
         // Under fog an enemy may not be replicated to this client at all. A hostile client
         // can still guess IDs (they are small integers), so probe with the lowest ID that
         // is neither its own nor currently visible: a hidden unit, an ally or nothing.
@@ -1309,9 +1389,17 @@ void APolitikaPrototypePlayerController::TickHostileProbe()
             return Intent;
         };
         UE_LOG(LogPolitikaStartup, Display,
-            TEXT("MP_PROBE_BEGIN participant=%u own=%llu foreign=%llu foreign_visible=%d hidden_guess=%llu system=%llu generation=%llu"),
-            Self, Own->GetStableId(), ForeignId, Foreign ? 1 : 0, HiddenGuess, System ? System->GetStableId() : 0, Generation);
+            TEXT("MP_PROBE_BEGIN participant=%u own=%llu foreign=%llu foreign_visible=%d ally=%llu hidden_guess=%llu system=%llu generation=%llu"),
+            Self, Own->GetStableId(), ForeignId, Foreign ? 1 : 0, Ally ? Ally->GetStableId() : 0, HiddenGuess,
+            System ? System->GetStableId() : 0, Generation);
         SendProbeIntent(TEXT("foreign_issuer"), Make(OrderKind::Guard, ForeignId));
+        if (Ally)
+        {
+            SendProbeIntent(TEXT("allied_issuer"), Make(OrderKind::Guard, Ally->GetStableId()));
+            FPolitikaNetCommandIntent AlliedTarget = Make(OrderKind::Attack, Own->GetStableId());
+            AlliedTarget.TargetEntityId = Ally->GetStableId();
+            SendProbeIntent(TEXT("allied_target"), AlliedTarget);
+        }
         // Sweep every small ID this client cannot see (hidden enemies, allies, the Unaligned
         // side or nothing): none of them may accept this connection's command.
         for (uint64 Candidate = 1; Candidate <= 12; ++Candidate)

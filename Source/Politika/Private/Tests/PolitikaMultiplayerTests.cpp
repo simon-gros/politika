@@ -796,4 +796,138 @@ bool FPolitikaMultiplayerDedicatedHostingTest::RunTest(const FString& Parameters
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerShotCueRedactionTest,
+    "Politika.RTS.Multiplayer.ShotCueRedaction",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerShotCueRedactionTest::RunTest(const FString& Parameters)
+{
+    // MP-0 audit F27: a shot cue carries a point. Each connection must receive the target
+    // point only when its team observes the target, a facing-only point when it sees just
+    // the shooter, and nothing when it cannot see the shooter at all.
+    using FCue = APolitikaPrototypeMatch::FTestShotCue;
+    auto Fire = [](FPolitikaMultiplayerFixture& F, APolitikaPrototypeUnit* Shooter, APolitikaPrototypeUnit* Target)
+    {
+        F.Match->TestShotCues.Reset();
+        F.Match->DistributeShotPresentation(Shooter, Target, 0.5f);
+        TMap<uint32, FCue> ByViewer;
+        for (const FCue& Cue : F.Match->TestShotCues) ByViewer.Add(Cue.Participant, Cue);
+        return ByViewer;
+    };
+    auto Expect = [this](const TMap<uint32, FCue>& Cues, uint32 Viewer, ShotCue Expected, const FString& What)
+    {
+        const FCue* Cue = Cues.Find(Viewer);
+        return TestNotNull(What + TEXT(" has a decision"), Cue)
+            && TestEqual(What, static_cast<int32>(Cue->Cue), static_cast<int32>(Expected));
+    };
+
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("2v2"), true) || !TestTrue(TEXT("All 2v2 seats bound"), F.BindAll())) return false;
+        for (APolitikaPrototypePlayerController* Remote : F.Remotes) F.World->AddController(Remote);
+        APolitikaPrototypePlayerController* Unbound = F.AddRemote();
+        F.World->AddController(Unbound);
+        F.Match->bTestCaptureShotCues = true;
+        // Host = participant 1 (team A, local view = 0); remotes 2 (B), 3 (A), 4 (B).
+        APolitikaPrototypeUnit* H = F.AddUnit(1, {-1500, 0});
+        APolitikaPrototypeUnit* A3 = F.AddUnit(3, {0, 1500});
+        APolitikaPrototypeUnit* E2 = F.AddUnit(2, {1500, 0});
+        APolitikaPrototypeUnit* E4 = F.AddUnit(4, {800, 1500});
+        APolitikaPrototypeUnit* U = F.AddUnit(0, {1700, 1500});
+        if (!H || !A3 || !E2 || !E4 || !U) return false;
+        F.RefreshVision();
+        TestTrue(TEXT("Team B sees the Unaligned unit through E4"), U->IsObservedByTeam(kTeamB));
+        TestFalse(TEXT("Team A does not see the Unaligned unit"), U->IsObservedByTeam(kTeamA));
+        TestTrue(TEXT("Team A sees E4 through its ally"), E4->IsObservedByTeam(kTeamA));
+        TestFalse(TEXT("Team A does not see E2"), E2->IsObservedByTeam(kTeamA));
+        TestFalse(TEXT("Team B does not see the host"), H->IsObservedByTeam(kTeamB));
+
+        // Everyone sees both units: every viewer receives the exact target point.
+        const TMap<uint32, FCue> Open = Fire(F, A3, E4);
+        TestEqual(TEXT("One decision for the host view and each bound remote; none for the unbound one"), Open.Num(), 4);
+        for (const uint32 Viewer : {0u, 2u, 3u, 4u})
+            if (Expect(Open, Viewer, ShotCue::Exact, FString::Printf(TEXT("Mutually observed shot, viewer %u"), Viewer)))
+                TestTrue(TEXT("Exact cue carries the target location"), Open[Viewer].Point.Equals(E4->GetActorLocation()));
+
+        // Team A sees the shooter but not its Unaligned target: facing only, never the target.
+        const TMap<uint32, FCue> Hidden = Fire(F, E4, U);
+        const FVector Facing = E4->GetActorLocation()
+            + E4->GetActorForwardVector().GetSafeNormal2D() * APolitikaPrototypeMatch::ShotFacingCueDistanceCm;
+        for (const uint32 Viewer : {0u, 3u})
+            if (Expect(Hidden, Viewer, ShotCue::FacingOnly, FString::Printf(TEXT("Unseen target, team A viewer %u"), Viewer)))
+            {
+                const FVector Point = Hidden[Viewer].Point;
+                TestTrue(TEXT("Facing cue lies along the shooter's replicated facing"), Point.Equals(Facing, 0.1f));
+                TestTrue(TEXT("Facing cue does not reveal the target position"),
+                    FVector::Dist2D(Point, U->GetActorLocation()) > 250.0f);
+            }
+        for (const uint32 Viewer : {2u, 4u})
+            if (Expect(Hidden, Viewer, ShotCue::Exact, FString::Printf(TEXT("Team B viewer %u sees the target"), Viewer)))
+                TestTrue(TEXT("Team B receives the exact target"), Hidden[Viewer].Point.Equals(U->GetActorLocation()));
+        // The facing distance is fixed: moving the hidden target changes nothing team A receives.
+        U->SetActorLocation(FVector(1900, 1500, 42));
+        F.RefreshVision();
+        TestFalse(TEXT("Moved Unaligned unit is still unseen by team A"), U->IsObservedByTeam(kTeamA));
+        const TMap<uint32, FCue> Moved = Fire(F, E4, U);
+        TestTrue(TEXT("Team A cue is independent of the hidden target's distance"),
+            Moved.Contains(3) && Moved[3].Point.Equals(Hidden[3].Point, 0.1f));
+
+        // A shooter the viewer cannot see produces no cue at all for that viewer.
+        const TMap<uint32, FCue> Unseen = Fire(F, E2, E4);
+        Expect(Unseen, 0, ShotCue::None, TEXT("Host view of an unseen shooter"));
+        Expect(Unseen, 3, ShotCue::None, TEXT("Allied viewer of an unseen shooter"));
+        Expect(Unseen, 2, ShotCue::Exact, TEXT("Shooter's own team"));
+
+        // The Unaligned side as shooter: team B sees it but not its team-A target.
+        const TMap<uint32, FCue> Neutral = Fire(F, U, A3);
+        A3->SetActorLocation(FVector(-600, 1500, 42));
+        Expect(Neutral, 2, ShotCue::Exact, TEXT("Team B sees the Unaligned shooter and A3 through E4"));
+        F.RefreshVision();
+        TestFalse(TEXT("A3 moved out of team B vision"), A3->IsObservedByTeam(kTeamB));
+        const TMap<uint32, FCue> NeutralHidden = Fire(F, U, A3);
+        Expect(NeutralHidden, 4, ShotCue::FacingOnly, TEXT("Team B sees the Unaligned shooter but not its target"));
+        Expect(NeutralHidden, 3, ShotCue::None, TEXT("Team A cannot see the Unaligned shooter"));
+    }
+
+    {
+        // A dedicated server has no viewer of its own: its log keeps the exact point while
+        // every remote seat still gets its own fog-filtered cue.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, TEXT("map.test.multiplayer_skirmish"), true)) return false;
+        FName Failure;
+        for (int32 Seat = 0; Seat < 2; ++Seat)
+        {
+            APolitikaPrototypePlayerController* Remote = F.AddRemote();
+            F.World->AddController(Remote);
+            F.Match->BindController(Remote, Failure);
+        }
+        F.Match->bTestCaptureShotCues = true;
+        APolitikaPrototypeUnit* A = F.AddUnit(1, {-1500, 0});
+        APolitikaPrototypeUnit* B = F.AddUnit(2, {-700, 0});
+        APolitikaPrototypeUnit* U = F.AddUnit(0, {-1500, 1100});
+        F.RefreshVision();
+        TestFalse(TEXT("Team B does not see the Unaligned unit near A"), U->IsObservedByTeam(kTeamB));
+        const TMap<uint32, FCue> Cues = Fire(F, A, U);
+        Expect(Cues, 0, ShotCue::Exact, TEXT("Dedicated server's own record"));
+        Expect(Cues, 1, ShotCue::Exact, TEXT("Seat 0 (remote) sees its target"));
+        Expect(Cues, 2, ShotCue::FacingOnly, TEXT("Seat 1 sees the shooter, not the target"));
+        TestNotNull(TEXT("B exists"), B);
+    }
+
+    {
+        // Offline play keeps the original full presentation and sends nothing.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), false)) return false;
+        F.Match->bTestCaptureShotCues = true;
+        APolitikaPrototypeUnit* Near = F.AddUnit(1, {-1500, 0});
+        APolitikaPrototypeUnit* Far = F.AddUnit(2, {1500, 0});
+        F.RefreshVision();
+        const TMap<uint32, FCue> Cues = Fire(F, Near, Far);
+        TestEqual(TEXT("Offline: only the local presentation"), Cues.Num(), 1);
+        if (Expect(Cues, 0, ShotCue::Exact, TEXT("Offline local presentation")))
+            TestTrue(TEXT("Offline cue is the exact target"), Cues[0].Point.Equals(Far->GetActorLocation()));
+    }
+    return true;
+}
+
 #endif

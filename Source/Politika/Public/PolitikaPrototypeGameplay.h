@@ -131,6 +131,8 @@ public:
     bool IsObservedByTeam(uint8 Team) const { return Team < 8 && (ObservedByTeams & (1u << Team)) != 0; }
     // Local presentation only (listen-server host view of fog); never replicated.
     void SetLocalFogHidden(bool bHidden);
+    // Observer-side cosmetic shot (a fog-filtered cue from the server); no rules state.
+    void PresentObservedShot(const FVector& Point, float Cooldown);
     bool IsLocalFogHidden() const { return bLocalFogHidden; }
     void Configure(uint64 InStableId, uint32 InOwner, const FText& InName, int32 InHealth,
         float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
@@ -202,7 +204,8 @@ private:
     UPROPERTY(Replicated) uint8 TeamId = 0;
     // Cosmetic fan-out of authoritative events. Authority already presented them
     // locally; remote observers only animate/play audio and never change rules state.
-    UFUNCTION(NetMulticast, Unreliable) void MulticastShotPresentation(FVector_NetQuantize Target, float Cooldown);
+    // Shots carry a target point and are sent per connection under fog
+    // (APolitikaPrototypeMatch::DistributeShotPresentation); ability cues carry none.
     UFUNCTION(NetMulticast, Unreliable) void MulticastAbilityPresentation(uint8 Cue, float Seconds);
     void TryApplyObservedPresentation();
     UPROPERTY(Transient) TObjectPtr<UPolitikaInfantryBehaviorDefinition> InfantryBehavior;
@@ -381,6 +384,15 @@ public:
     // replication, target admission and acquisition. Offline play keeps full vision.
     bool IsFogOfWarEnabled() const { return bFogOfWar; }
     bool IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
+    // Shot presentation for one viewer participant: the exact target point only when the
+    // viewer observes the target, otherwise a point along the shooter's facing, or nothing
+    // when the shooter is unseen. Under fog, participant 0 (unbound) sees nothing.
+    politika::rules::ShotCue ResolveShotCue(const APolitikaPrototypeUnit* Shooter, const APolitikaPrototypeUnit* Target,
+        uint32 ViewerParticipant, FVector& OutPoint) const;
+    // Server only: presents a shot locally (if this process has a viewer) and sends each
+    // bound remote connection its own fog-filtered cue.
+    void DistributeShotPresentation(APolitikaPrototypeUnit* Shooter, const APolitikaPrototypeUnit* Target, float Cooldown);
+    static constexpr float ShotFacingCueDistanceCm = 600.0f;
     // Relevancy query used by APolitikaPrototypeUnit::IsNetRelevantFor (server only).
     bool IsUnitRelevantToViewer(const APolitikaPrototypeUnit* Unit, const AActor* RealViewer) const;
     // Observer-side unit registry: clients only hold units their team currently observes.
@@ -478,6 +490,7 @@ private:
     politika::rules::TeamLayout SessionLayout = politika::rules::TeamLayout::OneVsOne;
     int32 SessionSeatCount = 0;
     bool bFogOfWar = false;
+    uint32 ShotCueSequence = 0;
     bool bAwaitingNetworkParticipants = false;
     bool bObservedContentReady = false;
     bool bMapPresentationApplied = false;
@@ -502,9 +515,15 @@ private:
     friend class FPolitikaMultiplayerResultAndCleanupTest;
     friend class FPolitikaMultiplayerFogOfWarTest;
     friend class FPolitikaMultiplayerDedicatedHostingTest;
+    friend class FPolitikaMultiplayerShotCueRedactionTest;
     friend struct FPolitikaMultiplayerFixture;
     // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
     bool bTestDedicatedHosting = false;
+    // Automation-only: record each shot cue decision instead of sending the client RPC
+    // (fixture controllers have no connection). Participant 0 marks this process's view.
+    struct FTestShotCue { uint32 Participant = 0; politika::rules::ShotCue Cue = politika::rules::ShotCue::None; FVector Point; };
+    bool bTestCaptureShotCues = false;
+    TArray<FTestShotCue> TestShotCues;
     friend class FPolitikaGameplayEventPublicationAutomationTest;
     friend class FPolitikaDefaultInfantryAutomationTest;
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
@@ -739,6 +758,10 @@ public:
     // The only network command ingress. Host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    // Fog-filtered cosmetic shot cue for this connection only. Point is the target when
+    // this participant's team observes it, otherwise a point along the shooter's facing.
+    UFUNCTION(Client, Unreliable) void ClientShotPresentation(APolitikaPrototypeUnit* Shooter, FVector_NetQuantize Point,
+        bool bTargetObserved, float Cooldown, uint32 Sequence);
     virtual void ClientWasKicked_Implementation(const FText& KickReason) override;
     // The host/standalone seat controller (has a ULocalPlayer on this process).
     bool IsLocalSeatController() const;

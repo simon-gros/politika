@@ -1,4 +1,5 @@
-//! Packaged two-process multiplayer acceptance (MP-1).
+//! Packaged multiplayer acceptance: two-process listen (MP-1), dedicated 1v1 (MP-3,
+//! `--dedicated`) and dedicated 3-4 client layouts (MP-2, `--dedicated-layouts`).
 //!
 //! cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_multiplayer -- \
 //!     ARCHIVE/Linux/Politika/Binaries/Linux/Politika [--layout 1v1] [--evidence DIR] [--port N]
@@ -758,7 +759,8 @@ fn expected_probe_rejection(name: &str) -> Option<&'static [u32]> {
         "invalid_kind" | "nonfinite_destination" | "shape_mismatch" | "protocol_mismatch" => &[15],
         "out_of_bounds" => &[5],
         "stale_generation" => &[13],
-        "friendly_target" => &[8],
+        "friendly_target" | "allied_target" => &[8],
+        "allied_issuer" => &[1],
         "duplicate_replay" | "reordered_older" => &[16],
         "after_termination" => &[12],
         name if name.starts_with("hidden_issuer_") => &[1, 9],
@@ -767,6 +769,12 @@ fn expected_probe_rejection(name: &str) -> Option<&'static [u32]> {
 }
 
 fn check_probes(report: &mut Report, id: &str, client: &Game, host: &Game) {
+    check_probes_for(report, id, client, host, &[1, 2]);
+}
+
+/// Probe verdicts for one probing client; `remote` lists every participant a remote
+/// command may legitimately be attributed to on the server.
+fn check_probes_for(report: &mut Report, id: &str, client: &Game, host: &Game, remote: &[u32]) {
     let client_text = client.text();
     let host_text = host.text();
     let mut checked = 0;
@@ -805,16 +813,23 @@ fn check_probes(report: &mut Report, id: &str, client: &Game, host: &Game) {
             None => problems.push(format!("{name}: unclassified probe")),
         }
     }
-    // The server attributes every probe to the connection-bound participant, never another.
+    // The server attributes every remote command to a connection-bound participant, never
+    // to another (in the two-process listen run the host itself is participant 1).
     let server_attributed = host_text
         .lines()
         .filter(|l| {
-            l.contains("MP_COMMAND_RECEIVED") || l.contains("MP_COMMAND_REJECTED_AT_INTAKE")
+            (l.contains("MP_COMMAND_RECEIVED") || l.contains("MP_COMMAND_REJECTED_AT_INTAKE"))
+                && field(l, "remote") != Some("0")
         })
-        .filter(|l| field(l, "participant") != Some("1"))
-        .all(|l| field(l, "participant") == Some("2"));
+        .all(|l| {
+            field(l, "participant")
+                .and_then(|v| v.parse::<u32>().ok())
+                .is_some_and(|p| remote.contains(&p))
+        });
     if !server_attributed {
-        problems.push("server attributed a remote command to a participant other than 2".into());
+        problems.push(format!(
+            "server attributed a remote command to a participant outside {remote:?}"
+        ));
     }
     report.verdict(id, checked >= 14 && problems.is_empty(),
         format!("{checked} correlated hostile/edge probes over the real ServerSubmitCommandIntent RPC; problems={problems:?}"));
@@ -959,7 +974,8 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
     );
     report.verdict(
         "MP1-G4-CONNECTED",
-        prelogin.contains("protocol=1") && client.pid() != host.pid(),
+        prelogin.contains(&format!("protocol={}", network_protocol()))
+            && client.pid() != host.pid(),
         format!(
             "two independent packaged processes (pids {} / {}) connected; {}",
             host.pid(),
@@ -2162,7 +2178,7 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
             Duration::from_secs(10),
         )?;
         thread::sleep(Duration::from_secs(1));
-        check_probes(report, "MP3-NEG-PROBES", &client_b, &server);
+        check_probes_for(report, "MP3-NEG-PROBES", &client_b, &server, &[1, 2]);
 
         // Both clients leave the finished match; the server resets for a new generation.
         let server_mark = server.offset();
@@ -2712,9 +2728,987 @@ fn run_dedicated() -> ! {
     std::process::exit(if report.failed() { 1 } else { 0 });
 }
 
+// ----------------------------------------------------------------------------
+// MP-2: packaged 3-4 client dedicated layouts (2v1 / 3v1 / 2v2)
+// ----------------------------------------------------------------------------
+
+/// POLITIKA's on-wire compatibility counter from the source tree this harness belongs to.
+fn network_protocol() -> String {
+    let text = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../version.json"));
+    text.lines()
+        .find(|l| l.contains("\"network_protocol\""))
+        .and_then(|l| l.split(':').nth(1))
+        .map(|v| v.trim().trim_end_matches(',').trim().to_owned())
+        .unwrap_or_else(|| "?".into())
+}
+
+struct LayoutOptions {
+    server: PathBuf,
+    client: PathBuf,
+    legacy_client: Option<PathBuf>,
+    layouts: Vec<String>,
+    evidence: PathBuf,
+    port: u16,
+}
+
+fn parse_layout_options() -> Result<LayoutOptions, String> {
+    let usage = "usage: rts_multiplayer --dedicated-layouts SERVER_BINARY CLIENT_BINARY \
+                 [--layouts 2v1,3v1,2v2] [--legacy-client OLD_PROTOCOL_CLIENT] [--evidence DIR] [--port N]";
+    let mut args = env::args().skip(2);
+    let server = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("server binary: {e}"))?;
+    let client = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("client binary: {e}"))?;
+    let mut layouts = vec!["2v1".to_owned(), "3v1".to_owned(), "2v2".to_owned()];
+    let mut legacy_client = None;
+    let mut evidence = None;
+    let mut port = 17860u16;
+    while let Some(flag) = args.next() {
+        let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--layouts" => layouts = value.split(',').map(str::to_owned).collect(),
+            "--legacy-client" => {
+                legacy_client = Some(
+                    PathBuf::from(value)
+                        .canonicalize()
+                        .map_err(|e| format!("legacy client: {e}"))?,
+                )
+            }
+            "--evidence" => evidence = Some(PathBuf::from(value)),
+            "--port" => port = value.parse().map_err(|e| format!("--port: {e}"))?,
+            other => return Err(format!("unknown option {other}")),
+        }
+    }
+    if let Some(bad) = layouts.iter().find(|l| layout_teams(l).is_none()) {
+        return Err(format!(
+            "unknown layout {bad}; expected 1v1, 2v1, 3v1 or 2v2"
+        ));
+    }
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let evidence = evidence.unwrap_or_else(|| {
+        PathBuf::from(format!(
+            "build/diagnostics/mp2-multiclient/packaged-{epoch}"
+        ))
+    });
+    Ok(LayoutOptions {
+        server,
+        client,
+        legacy_client,
+        layouts,
+        evidence,
+        port,
+    })
+}
+
+/// Team of each seat in join order (politika::rules::TeamForSeat): 1 = team A, 2 = team B.
+fn layout_teams(layout: &str) -> Option<&'static [u32]> {
+    Some(match layout {
+        "1v1" => &[1, 2],
+        "2v1" => &[1, 2, 1],
+        "3v1" => &[1, 2, 1, 1],
+        "2v2" => &[1, 2, 1, 2],
+        _ => return None,
+    })
+}
+
+/// (entity, owner, observed team mask) for every unit the server sampled at activation.
+fn activation_samples(server_text: &str, generation: &str) -> Vec<(u64, u32, u32)> {
+    let mut samples: Vec<(u64, u32, u32)> = server_text
+        .lines()
+        .filter(|l| l.contains("MP_SERVER_SAMPLE reason=activated"))
+        .filter(|l| field(l, "generation") == Some(generation))
+        .filter_map(|l| {
+            Some((
+                field(l, "entity")?.parse().ok()?,
+                field(l, "owner")?.parse().ok()?,
+                field(l, "observed")?.parse().ok()?,
+            ))
+        })
+        .collect();
+    samples.sort_unstable();
+    samples.dedup();
+    samples
+}
+
+fn relevant_entities(client_text: &str) -> Vec<(u64, u32)> {
+    let mut relevant: Vec<(u64, u32)> = client_text
+        .lines()
+        .filter(|l| l.contains("MP_CLIENT_UNIT_RELEVANT"))
+        .filter_map(|l| {
+            Some((
+                field(l, "entity")?.parse().ok()?,
+                field(l, "owner")?.parse().ok()?,
+            ))
+        })
+        .collect();
+    relevant.sort_unstable();
+    relevant.dedup();
+    relevant
+}
+
+/// Every damaged health value and death a client observed has a server record. Returns
+/// (observed states, deaths, problems).
+fn health_records(host: &Game, client: &Game) -> (usize, usize, Vec<String>) {
+    let host_text = host.text();
+    let client_text = client.text();
+    let mut problems = Vec::new();
+    let mut observed = 0;
+    for line in client_text
+        .lines()
+        .filter(|l| l.contains("MP_CLIENT_UNIT_HEALTH"))
+    {
+        let (Some(entity), Some(health)) = (field(line, "entity"), field(line, "health")) else {
+            continue;
+        };
+        if field(line, "max").is_some_and(|max| max == health) {
+            continue;
+        }
+        observed += 1;
+        let server = host_text.lines().any(|l| {
+            (l.contains("RTS_HEALTH_CHANGED")
+                && field(l, "unit") == Some(entity)
+                && field(l, "after") == Some(health))
+                || (l.contains("MP_SERVER_SAMPLE")
+                    && field(l, "entity") == Some(entity)
+                    && field(l, "health") == Some(health))
+        });
+        if !server {
+            problems.push(format!(
+                "entity {entity} at health {health}: no server record"
+            ));
+        }
+    }
+    let mut deaths = 0;
+    for line in client_text
+        .lines()
+        .filter(|l| l.contains("MP_CLIENT_UNIT_DESTROYED"))
+    {
+        let Some(entity) = field(line, "entity") else {
+            continue;
+        };
+        deaths += 1;
+        if !host_text
+            .lines()
+            .any(|l| l.contains("RTS_UNIT_DESTROYED") && field(l, "unit") == Some(entity))
+        {
+            problems.push(format!(
+                "entity {entity} destroyed on client, not on server"
+            ));
+        }
+    }
+    (observed, deaths, problems)
+}
+
+/// Audit F27 over the real transport: every cue a client received matches the server's
+/// decision for that participant, exact cues carry the true target point, facing cues do
+/// not, and no participant received a cue the server decided it must not have.
+/// One server shot-cue decision: sequence, participant, cue, target point, sent point.
+type ShotDecision = (String, String, String, (f64, f64), (f64, f64));
+
+fn shot_cue_consistency(server: &Game, clients: &[Game]) -> (usize, [usize; 3], Vec<String>) {
+    let server_text = server.text();
+    let mut decisions: Vec<ShotDecision> = Vec::new();
+    let mut counts = [0usize; 3]; // exact, facing, none
+    let mut problems = Vec::new();
+    for line in server_text
+        .lines()
+        .filter(|l| l.contains("MP_SHOT_CUE_SENT"))
+    {
+        let (Some(sequence), Some(participant), Some(cue)) = (
+            field(line, "sequence"),
+            field(line, "participant"),
+            field(line, "cue"),
+        ) else {
+            continue;
+        };
+        let target = (
+            number(line, "target_x").unwrap_or(f64::NAN),
+            number(line, "target_y").unwrap_or(f64::NAN),
+        );
+        let point = (
+            number(line, "point_x").unwrap_or(f64::NAN),
+            number(line, "point_y").unwrap_or(f64::NAN),
+        );
+        let offset = ((target.0 - point.0).powi(2) + (target.1 - point.1).powi(2)).sqrt();
+        match cue {
+            "exact" => {
+                counts[0] += 1;
+                if offset > 1.0 {
+                    problems.push(format!(
+                        "{sequence}/{participant}: exact cue {offset:.1}cm off target"
+                    ));
+                }
+            }
+            "facing" => {
+                counts[1] += 1;
+                if offset.is_nan() || offset <= 100.0 {
+                    problems.push(format!(
+                        "{sequence}/{participant}: facing cue lies on the target"
+                    ));
+                }
+            }
+            "none" => counts[2] += 1,
+            other => problems.push(format!("{sequence}/{participant}: unknown cue {other}")),
+        }
+        decisions.push((
+            sequence.to_owned(),
+            participant.to_owned(),
+            cue.to_owned(),
+            target,
+            point,
+        ));
+    }
+    let mut received = 0;
+    for client in clients {
+        for line in client
+            .text()
+            .lines()
+            .filter(|l| l.contains("MP_CLIENT_SHOT_CUE"))
+        {
+            let (Some(sequence), Some(participant), Some(exact)) = (
+                field(line, "sequence"),
+                field(line, "participant"),
+                field(line, "exact"),
+            ) else {
+                continue;
+            };
+            received += 1;
+            let point = (
+                number(line, "point_x").unwrap_or(f64::NAN),
+                number(line, "point_y").unwrap_or(f64::NAN),
+            );
+            let Some(decision) = decisions
+                .iter()
+                .find(|d| d.0 == sequence && d.1 == participant)
+            else {
+                problems.push(format!(
+                    "{}: received cue {sequence} with no server decision for participant {participant}",
+                    client.label
+                ));
+                continue;
+            };
+            let expected_exact = if decision.2 == "exact" { "1" } else { "0" };
+            if decision.2 == "none" {
+                problems.push(format!(
+                    "{}: received cue {sequence} the server withheld",
+                    client.label
+                ));
+            } else if exact != expected_exact {
+                problems.push(format!(
+                    "{}: cue {sequence} exact={exact}, server decided {}",
+                    client.label, decision.2
+                ));
+            }
+            // FVector_NetQuantize rounds to whole centimetres.
+            let drift =
+                ((point.0 - decision.4.0).powi(2) + (point.1 - decision.4.1).powi(2)).sqrt();
+            if drift > 1.5 {
+                problems.push(format!(
+                    "{}: cue {sequence} point drifted {drift:.1}cm",
+                    client.label
+                ));
+            }
+            if decision.2 != "exact" {
+                let leak =
+                    ((point.0 - decision.3.0).powi(2) + (point.1 - decision.3.1).powi(2)).sqrt();
+                if leak < 100.0 {
+                    problems.push(format!(
+                        "{}: cue {sequence} reveals the unseen target",
+                        client.label
+                    ));
+                }
+            }
+        }
+    }
+    (received, counts, problems)
+}
+
+fn dedicated_layout(
+    options: &LayoutOptions,
+    layout: &str,
+    port: u16,
+    report: &mut Report,
+) -> Result<(), String> {
+    let teams = layout_teams(layout).ok_or("unknown layout")?;
+    let seats = teams.len();
+    let id = |name: &str| format!("MP2-{}-{name}", layout.to_uppercase());
+    let evidence = options.evidence.join(format!("layout-{layout}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let client_options = Options {
+        binary: options.client.clone(),
+        layout: layout.into(),
+        evidence: evidence.clone(),
+        port,
+    };
+
+    let mut server = Game::launch_server(
+        &options.server,
+        "server",
+        &evidence,
+        &server_args(port, layout),
+    )?;
+    report.fact(&format!("{layout}_server_pid"), server.pid().to_string());
+    report.fact(
+        &format!("{layout}_server_command"),
+        server.command.join(" "),
+    );
+    let server_pid = server.pid();
+    let ready = server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(120))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(30))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let session = server.wait(&["MP_SESSION_LAYOUT"], Duration::from_secs(5))?;
+    report.verdict(
+        &id("LAYOUT"),
+        field(&session, "layout") == Some(layout)
+            && field(&session, "seats") == Some(seats.to_string().as_str())
+            && field(&session, "fog") == Some("1")
+            && field(&session, "hosting") == Some("dedicated")
+            && field(&session, "remote_seats") == Some(seats.to_string().as_str())
+            && field(&ready, "local_players") == Some("0")
+            && field(&ready, "can_render") == Some("0"),
+        format!("{}; {}", ready.trim(), session.trim()),
+    );
+
+    // Clients join one at a time so the server binds seats in a known join order.
+    let mut displays = Vec::new();
+    let mut clients: Vec<Game> = Vec::new();
+    let mut bindings = Vec::new();
+    for seat in 0..seats {
+        let participant = seat + 1;
+        let label = format!("client-{participant}");
+        let display = Display::start(&evidence, &label)?;
+        // One probing client per team: participant 2 (team B) and 3 (team A, with an ally).
+        let probe = participant == 2 || participant == 3;
+        let client = Game::launch(
+            &options.client,
+            &label,
+            &evidence,
+            &client_args(&client_options, true, probe, false),
+            Some(&display.name()),
+        )?;
+        report.fact(&format!("{layout}_{label}_pid"), client.pid().to_string());
+        report.fact(
+            &format!("{layout}_{label}_command"),
+            client.command.join(" "),
+        );
+        let bound = server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={participant} "),
+                "remote=1",
+            ],
+            Duration::from_secs(60),
+        )?;
+        bindings.push(bound);
+        displays.push(display);
+        clients.push(client);
+    }
+    let active = server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    let mut assignments = Vec::new();
+    for (index, client) in clients.iter_mut().enumerate() {
+        assignments.push(client.wait(
+            &[&format!("MP_CLIENT_ASSIGNMENT participant={} ", index + 1)],
+            Duration::from_secs(30),
+        )?);
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(30),
+        )?;
+    }
+    let bind_ok = bindings.iter().zip(teams).all(|(bound, team)| {
+        field(bound, "team") == Some(team.to_string().as_str())
+            && field(bound, "remote") == Some("1")
+    }) && assignments
+        .iter()
+        .all(|a| field(a, "generation") == Some(generation.as_str()));
+    report.verdict(
+        &id("SEATS-BY-JOIN-ORDER"),
+        bind_ok,
+        format!("expected teams {teams:?}; bound {bindings:?}; assigned {assignments:?}"),
+    );
+    let mut pids: Vec<u32> = clients.iter().map(Game::pid).collect();
+    pids.push(server_pid);
+    pids.sort_unstable();
+    pids.dedup();
+    report.verdict(
+        &id("ACTIVE-ALL-REMOTE"),
+        field(&active, "hosting") == Some("dedicated")
+            && field(&active, "local") == Some("0")
+            && field(&active, "remote") == Some(seats.to_string().as_str())
+            && pids.len() == seats + 1,
+        format!(
+            "{} independent processes {pids:?}: {}",
+            seats + 1,
+            active.trim()
+        ),
+    );
+
+    for client in &mut clients {
+        client.attach_window()?;
+    }
+    let mut recorders = Vec::new();
+    for (display, client) in displays.iter().zip(&clients) {
+        recorders.push(Recorder::start(&display.name(), &evidence, &client.label)?);
+    }
+    let result = (|| -> Result<(), String> {
+        thread::sleep(Duration::from_secs(3));
+        for client in &clients {
+            report.artifact(
+                &format!("{layout}_{}_active_png", client.label),
+                &client.screenshot(&evidence, "01-active")?,
+            );
+        }
+
+        // Fog: each client receives exactly the units its team observes at activation,
+        // which always includes every allied participant's units (shared team vision).
+        let samples = activation_samples(&server.text(), &generation);
+        let team_of = |owner: u32| -> u32 {
+            if owner == 0 {
+                3
+            } else {
+                teams.get(owner as usize - 1).copied().unwrap_or(0)
+            }
+        };
+        let mut fog_ok = !samples.is_empty();
+        let mut allied_ok = true;
+        let mut fog_detail = Vec::new();
+        let mut cross_contact = Vec::new();
+        for (index, client) in clients.iter().enumerate() {
+            let participant = index as u32 + 1;
+            let team = teams[index];
+            let expected: Vec<u64> = samples
+                .iter()
+                .filter(|(_, _, mask)| mask & (1 << team) != 0)
+                .map(|(entity, _, _)| *entity)
+                .collect();
+            let received: Vec<u64> = relevant_entities(&client.text())
+                .iter()
+                .map(|(entity, _)| *entity)
+                .collect();
+            fog_ok &= expected == received;
+            let allies: Vec<u64> = samples
+                .iter()
+                .filter(|(_, owner, _)| {
+                    *owner != participant && *owner != 0 && team_of(*owner) == team
+                })
+                .map(|(entity, _, _)| *entity)
+                .collect();
+            allied_ok &= allies.iter().all(|e| received.contains(e));
+            cross_contact.extend(
+                samples
+                    .iter()
+                    .filter(|(e, owner, _)| team_of(*owner) != team && received.contains(e))
+                    .map(|(e, owner, _)| format!("p{participant} sees entity {e} (owner {owner})")),
+            );
+            fog_detail.push(format!(
+                "p{participant} team {team}: expected {expected:?} received {received:?} allies {allies:?}"
+            ));
+        }
+        report.fact(
+            &format!("{layout}_initial_cross_team_contact"),
+            format!("{cross_contact:?}"),
+        );
+        report.verdict(
+            &id("FOG-INITIAL"),
+            fog_ok,
+            format!("server activation samples {samples:?}; {fog_detail:?}"),
+        );
+        report.verdict(
+            &id("FOG-ALLIED-SHARED"),
+            allied_ok && seats > 2,
+            format!("every client receives all allied participants' units: {fog_detail:?}"),
+        );
+
+        // Probing clients finish their hostile sweep before any order is issued.
+        for client in clients
+            .iter_mut()
+            .filter(|c| c.label == "client-2" || c.label == "client-3")
+        {
+            client.wait(&["MP_PROBE_COMPLETE"], Duration::from_secs(25))?;
+        }
+        thread::sleep(Duration::from_secs(2));
+        let first_unit = |participant: u32| -> Option<u64> {
+            samples
+                .iter()
+                .find(|(_, owner, _)| *owner == participant)
+                .map(|(e, _, _)| *e)
+        };
+
+        // Every client: real-input Stop and Guard on its own first unit.
+        let mut order_detail = Vec::new();
+        for index in 0..seats {
+            let participant = index as u32 + 1;
+            let unit =
+                first_unit(participant).ok_or(format!("participant {participant} has no unit"))?;
+            select_entity(&mut clients[index], "MP_CLIENT_SAMPLE", unit)?;
+            for (key, order) in [("s", "Stop"), ("g", "Guard")] {
+                let mark = server.offset();
+                clients[index].key(key)?;
+                let admitted = server.wait_line(
+                    &[
+                        &format!("RTS_ORDER_ADMITTED order={order} "),
+                        &format!("unit={unit} "),
+                        &format!("participant={participant} "),
+                    ],
+                    Duration::from_secs(5),
+                    mark,
+                )?;
+                order_detail.push(admitted.trim().to_owned());
+                thread::sleep(Duration::from_millis(300));
+            }
+        }
+        let server_text = server.text();
+        let all_remote = count_lines(&server_text, &["MP_COMMAND_RECEIVED", "remote=0"]) == 0
+            && (1..=seats).all(|p| {
+                count_lines(
+                    &server_text,
+                    &[&format!("MP_COMMAND_RECEIVED participant={p} remote=1")],
+                ) > 0
+            });
+        report.verdict(
+            &id("ORDERS-EVERY-CLIENT"),
+            all_remote && order_detail.len() == seats * 2,
+            format!(
+                "{} real-input orders, every participant remote: {order_detail:?}",
+                order_detail.len()
+            ),
+        );
+
+        // Contest the objective: team B moves part-way, team A takes it (participant 1
+        // moves onto it, other team-A members attack-move to it).
+        let since = server.offset();
+        for index in 0..seats {
+            let participant = index as u32 + 1;
+            let unit = first_unit(participant).ok_or("missing unit")?;
+            let client = &mut clients[index];
+            zoom_out(client, 5)?;
+            thread::sleep(Duration::from_millis(1500));
+            let objective = wait_screen(
+                client,
+                |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+                "objective",
+            )?;
+            if teams[index] == 2 {
+                let own = wait_screen(
+                    client,
+                    |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit),
+                    "own unit",
+                )?;
+                select_entity(client, "MP_CLIENT_SAMPLE", unit)?;
+                client.click(
+                    objective.0 + (own.0 - objective.0) * 0.45,
+                    objective.1 + (own.1 - objective.1) * 0.45,
+                    "3",
+                )?;
+            } else if participant == 1 {
+                select_entity(client, "MP_CLIENT_SAMPLE", unit)?;
+                client.click(objective.0, objective.1, "3")?;
+            } else {
+                select_entity(client, "MP_CLIENT_SAMPLE", unit)?;
+                client.hover(objective.0 + 18.0, objective.1 + 10.0)?;
+                thread::sleep(Duration::from_millis(150));
+                client.key("a")?;
+            }
+            thread::sleep(Duration::from_millis(400));
+        }
+        let mut advance = Vec::new();
+        for index in 0..seats {
+            let participant = index + 1;
+            let unit = first_unit(participant as u32).ok_or("missing unit")?;
+            let order = if teams[index] == 2 || participant == 1 {
+                "Move"
+            } else {
+                "AttackMove"
+            };
+            advance.push(
+                server
+                    .wait_line(
+                        &[
+                            &format!("RTS_ORDER_ADMITTED order={order} "),
+                            &format!("unit={unit} "),
+                            &format!("participant={participant} "),
+                        ],
+                        Duration::from_secs(5),
+                        since,
+                    )?
+                    .trim()
+                    .to_owned(),
+            );
+        }
+        report.verdict(
+            &id("ADVANCE-ORDERS"),
+            advance.len() == seats,
+            format!("{advance:?}"),
+        );
+        for client in &clients {
+            report.artifact(
+                &format!("{layout}_{}_orders_png", client.label),
+                &client.screenshot(&evidence, "02-orders")?,
+            );
+        }
+
+        // Contact: each team-B client eventually receives a team-A unit it did not see at start.
+        let mut reveals = Vec::new();
+        let mut reveal_ok = true;
+        for index in (0..seats).filter(|i| teams[*i] == 2) {
+            let initially: Vec<u64> = samples
+                .iter()
+                .filter(|(_, _, mask)| mask & (1 << 2) != 0)
+                .map(|(e, _, _)| *e)
+                .collect();
+            let start = Instant::now();
+            let mut found = None;
+            while start.elapsed() < Duration::from_secs(45) && found.is_none() {
+                found = relevant_entities(&clients[index].text())
+                    .into_iter()
+                    .find(|(e, owner)| {
+                        *owner != 0 && team_of(*owner) == 1 && !initially.contains(e)
+                    });
+                thread::sleep(Duration::from_millis(250));
+            }
+            reveal_ok &= found.is_some();
+            reveals.push(format!("{}: {found:?}", clients[index].label));
+        }
+        report.verdict(&id("FOG-REVEAL"), reveal_ok, format!("{reveals:?}"));
+        for client in &clients {
+            report.artifact(
+                &format!("{layout}_{}_contact_png", client.label),
+                &client.screenshot(&evidence, "03-contact")?,
+            );
+        }
+
+        let results = server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(120),
+        )?;
+        let winner = field(&results, "team").unwrap_or("?").to_owned();
+        let mut observed = Vec::new();
+        let mut observed_ok = true;
+        for (index, client) in clients.iter_mut().enumerate() {
+            let line = client.wait(
+                &[
+                    "MP_CLIENT_LIFECYCLE",
+                    "result=1",
+                    "reason=objective_secured",
+                ],
+                Duration::from_secs(20),
+            )?;
+            observed_ok &= field(&line, "team") == Some(winner.as_str())
+                && field(&line, "viewer_team") == Some(teams[index].to_string().as_str());
+            observed.push(line.trim().to_owned());
+        }
+        thread::sleep(Duration::from_millis(1500));
+        for client in &clients {
+            report.artifact(
+                &format!("{layout}_{}_results_png", client.label),
+                &client.screenshot(&evidence, "04-results")?,
+            );
+        }
+        let commits = count_lines(
+            &server.text(),
+            &["MATCH_RESULTS", &format!("generation={generation}")],
+        );
+        report.verdict(
+            &id("RESULT-ONCE-ALL-VIEWERS"),
+            commits == 1 && observed_ok && (winner == "1" || winner == "2"),
+            format!(
+                "{commits} commit(s): {}; observed {observed:?}",
+                results.trim()
+            ),
+        );
+
+        for client in &clients {
+            let (states, deaths, problems) = health_records(&server, client);
+            let name = id(&format!("DAMAGE-{}", client.label.to_uppercase()));
+            let detail = format!(
+                "{states} damaged states, {deaths} deaths, all server-originated; problems={problems:?}"
+            );
+            if !problems.is_empty() {
+                report.verdict(&name, false, detail);
+            } else if states == 0 {
+                report.mark(
+                    &name,
+                    "INCONCLUSIVE",
+                    format!("client observed no damage; {detail}"),
+                );
+            } else {
+                report.verdict(&name, true, detail);
+            }
+        }
+
+        let remote: Vec<u32> = (1..=seats as u32).collect();
+        for index in [1usize, 2] {
+            let client = &mut clients[index];
+            client.wait(
+                &["MP_PROBE_SENT name=after_termination"],
+                Duration::from_secs(10),
+            )?;
+        }
+        thread::sleep(Duration::from_secs(1));
+        for index in [1usize, 2] {
+            let client = &clients[index];
+            let label = client.label.to_uppercase();
+            check_probes_for(
+                report,
+                &id(&format!("PROBES-{label}")),
+                client,
+                &server,
+                &remote,
+            );
+            let text = client.text();
+            let begin = text
+                .lines()
+                .find(|l| l.contains("MP_PROBE_BEGIN"))
+                .unwrap_or("");
+            let has_ally = field(begin, "ally").is_some_and(|a| a != "0");
+            let expects_ally = teams.iter().filter(|t| **t == teams[index]).count() > 1;
+            let allied_probes = count_lines(&text, &["MP_PROBE_SENT name=allied_"]);
+            report.verdict(
+                &id(&format!("ALLIED-PROBES-{label}")),
+                has_ally == expects_ally && allied_probes == if expects_ally { 2 } else { 0 },
+                format!("ally present={has_ally} (expected {expects_ally}); allied probes sent={allied_probes}; {}", begin.trim()),
+            );
+        }
+
+        let (received, counts, problems) = shot_cue_consistency(&server, &clients);
+        report.fact(
+            &format!("{layout}_shot_cues"),
+            format!(
+                "server decisions exact={} facing={} none={}; client receipts={received}",
+                counts[0], counts[1], counts[2]
+            ),
+        );
+        report.verdict(
+            &id("SHOT-CUES-FOG-SAFE"),
+            problems.is_empty() && counts[0] > 0 && received > 0,
+            format!(
+                "decisions exact={} facing={} none={}, {received} client receipts; no multicast; problems={problems:?}",
+                counts[0], counts[1], counts[2]
+            ),
+        );
+
+        // Every client leaves the finished match; the same server resets for a new generation.
+        let server_mark = server.offset();
+        let marks: Vec<usize> = clients.iter().map(Game::offset).collect();
+        for client in &clients {
+            client.hover(640.0, 360.0)?;
+            client.key("Escape")?;
+        }
+        for (client, mark) in clients.iter_mut().zip(&marks) {
+            client.wait_line(
+                &["LoadMap: /Game/Maps/MainMenu"],
+                Duration::from_secs(30),
+                *mark,
+            )?;
+        }
+        let closing = server.wait_line(
+            &[
+                "MP_DEDICATED_SESSION_CLOSING reason=results_complete",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        let awaiting2 = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(60),
+            server_mark,
+        )?;
+        let layout2 =
+            server.wait_line(&["MP_SESSION_LAYOUT"], Duration::from_secs(10), server_mark)?;
+        report.verdict(
+            &id("RESET-AFTER-RESULTS"),
+            server.alive()
+                && server.pid() == server_pid
+                && field(&closing, "remaining") == Some("0")
+                && field(&layout2, "layout") == Some(layout)
+                && field(&awaiting2, "generation").and_then(|g| g.parse::<u64>().ok())
+                    > generation.parse::<u64>().ok(),
+            format!(
+                "{}; {}; {}",
+                closing.trim(),
+                awaiting2.trim(),
+                layout2.trim()
+            ),
+        );
+        for client in &clients {
+            report.artifact(
+                &format!("{layout}_{}_menu_png", client.label),
+                &client.screenshot(&evidence, "05-menu")?,
+            );
+        }
+        Ok(())
+    })();
+    for (recorder, client) in recorders.into_iter().zip(&clients) {
+        match recorder.finish() {
+            Ok(path) => report.artifact(&format!("{layout}_{}_mp4", client.label), &path),
+            Err(error) => report.mark(
+                &id(&format!("VIDEO-{}", client.label)),
+                "INFRA_ERROR",
+                error,
+            ),
+        }
+    }
+    for client in &mut clients {
+        client.stop();
+        report.artifact(
+            &format!("{layout}_{}_log", client.label),
+            &client.log.clone(),
+        );
+    }
+    server.stop();
+    report.artifact(&format!("{layout}_server_log"), &server.log.clone());
+    result
+}
+
+/// A client built for an older network protocol is refused before any seat exists.
+fn legacy_protocol_refusal(
+    options: &LayoutOptions,
+    port: u16,
+    report: &mut Report,
+) -> Result<(), String> {
+    let Some(legacy) = options.legacy_client.as_ref() else {
+        report.mark(
+            "MP2-PROTOCOL-LEGACY-REFUSED",
+            "NOT_RUN",
+            "no --legacy-client given",
+        );
+        return Ok(());
+    };
+    let evidence = options.evidence.join("legacy-protocol");
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let mut server = Game::launch_server(
+        &options.server,
+        "server",
+        &evidence,
+        &server_args(port, "1v1"),
+    )?;
+    server.wait(
+        &["MP_MATCH_AWAITING_PARTICIPANTS"],
+        Duration::from_secs(120),
+    )?;
+    let client_options = Options {
+        binary: legacy.clone(),
+        layout: "1v1".into(),
+        evidence: evidence.clone(),
+        port,
+    };
+    let mut client = Game::launch(
+        legacy,
+        "legacy-client",
+        &evidence,
+        &client_args(&client_options, false, false, false),
+        None,
+    )?;
+    report.fact("legacy_client_binary", legacy.display().to_string());
+    if let Ok(digest) = sha256(legacy) {
+        report.fact("legacy_client_executable_sha256", digest);
+    }
+    let refused = server.wait(&["MP_PRELOGIN REJECTED"], Duration::from_secs(60));
+    let failure = client.wait(&["MP_CLIENT_NETWORK_FAILURE"], Duration::from_secs(30));
+    let menu = client.wait(&["LoadMap: /Game/Maps/MainMenu"], Duration::from_secs(30));
+    let no_seat = !server.text().contains("MP_PARTICIPANT_BOUND");
+    let current = network_protocol();
+    let pass = refused.as_ref().is_ok_and(|l| {
+        field(l, "reason") == Some("MP.PROTOCOL.MISMATCH")
+            && field(l, "protocol") != Some(current.as_str())
+    }) && failure.is_ok()
+        && menu.is_ok()
+        && no_seat;
+    report.verdict(
+        "MP2-PROTOCOL-LEGACY-REFUSED",
+        pass,
+        format!("server protocol {current}; {refused:?}; client {failure:?}; menu={}; no seat bound={no_seat}", menu.is_ok()),
+    );
+    client.stop();
+    server.stop();
+    report.artifact("legacy_server_log", &server.log.clone());
+    report.artifact("legacy_client_log", &client.log.clone());
+    Ok(())
+}
+
+fn run_dedicated_layouts() -> ! {
+    let mut options = match parse_layout_options() {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
+    match fs::create_dir_all(&options.evidence).and_then(|_| options.evidence.canonicalize()) {
+        Ok(absolute) => options.evidence = absolute,
+        Err(error) => {
+            eprintln!("evidence directory: {error}");
+            std::process::exit(2);
+        }
+    }
+    let mut report = Report {
+        schema: Some("politika.mp2.multiclient-evidence.v1"),
+        ..Report::default()
+    };
+    report.fact("network_protocol", network_protocol());
+    for (name, binary) in [("server", &options.server), ("client", &options.client)] {
+        report.fact(&format!("{name}_binary"), binary.display().to_string());
+        if let Ok(digest) = sha256(binary) {
+            report.fact(&format!("{name}_executable_sha256"), digest);
+        }
+        if let Some(archive) = binary.ancestors().nth(4)
+            && let Ok(identity) = fs::read_to_string(archive.join("BuildIdentity.json"))
+        {
+            report.fact(
+                &format!("{name}_build_identity"),
+                identity.trim().to_owned(),
+            );
+        }
+    }
+    report.fact("layouts", options.layouts.join(","));
+    let layouts = options.layouts.clone();
+    for (index, layout) in layouts.iter().enumerate() {
+        let port = options.port + index as u16 * 2;
+        if let Err(error) = dedicated_layout(&options, layout, port, &mut report) {
+            report.mark(
+                &format!("SESSION-{layout}"),
+                if error.starts_with("BLOCKED") {
+                    "BLOCKED"
+                } else {
+                    "FAIL"
+                },
+                error,
+            );
+        }
+    }
+    let legacy_port = options.port + layouts.len() as u16 * 2;
+    if let Err(error) = legacy_protocol_refusal(&options, legacy_port, &mut report) {
+        report.mark("SESSION-legacy-protocol", "FAIL", error);
+    }
+    let path = options.evidence.join("multiclient-evidence.json");
+    if let Err(error) = report.write(&path) {
+        eprintln!("write evidence: {error}");
+        std::process::exit(2);
+    }
+    println!("evidence: {}", path.display());
+    std::process::exit(if report.failed() { 1 } else { 0 });
+}
+
 fn main() {
     if env::args().nth(1).as_deref() == Some("--dedicated") {
         run_dedicated();
+    }
+    if env::args().nth(1).as_deref() == Some("--dedicated-layouts") {
+        run_dedicated_layouts();
     }
     if env::args().nth(1).as_deref() == Some("--shipping-boot") {
         let (Some(binary), Some(evidence)) = (env::args().nth(2), env::args().nth(3)) else {
