@@ -65,7 +65,7 @@ Acceptance criteria: selection changes update the HUD promptly; mouse and hotkey
 
 POLITIKA responsibility: start, configure, run, and end a campaign mission or skirmish. Own teams, player slots, mission rules, objective state, pause policy, victory/defeat, result summaries, and transition to the next local screen. Keep campaign progression separate from per-match state so local saves and mission restarts are predictable.
 
-UE direction: use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. Multiplayer is now a **planned future capability** (not a tested/shipped one): maintain server-authoritative gameplay and observer-specific projection boundaries for **all existing and new code** now, and add replication/session transport only at the independently accepted multiplayer milestones. Follow the [mandatory existing-code retrofit audit](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1); do not make networking a prerequisite for local game lifecycle or duplicate the authoritative match.
+UE direction: use GameMode for authoritative rules, GameState for match-wide state, PlayerState for player-owned state, and purpose-built subsystems/components for mission/objective orchestration. **Multiplayer implementation is an immediate priority** (not yet tested/shipped): maintain server-authoritative gameplay and observer-specific projection boundaries for **all existing and new code** now, and add replication/session transport only at the independently accepted multiplayer milestones. Follow the [mandatory existing-code retrofit audit](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1); do not make networking a prerequisite for local game lifecycle or duplicate the authoritative match.
 
 Acceptance criteria: missions can start, pause where permitted, complete, fail and restart without stale state. Objectives and result summaries follow match rules, and local campaign progress is saved independently of a running match.
 
@@ -177,7 +177,7 @@ Content/map validation: confirm four-faction pool, one-to-one player/faction ass
 - Simulation queries world/navigation and data definitions through explicit interfaces; it emits state changes for UI/audio/VFX.
 - Content definitions reference behavior types, not arbitrary hidden executable logic.
 - Tools validate and generate content, but packaged runtime content must not depend on the editor being installed.
-- Local play remains fully functional with the network unavailable. If online features are later added, they must sit above the local match/content layers.
+- Local play remains fully functional with the network unavailable. Networking is being prioritized now; its transport/session adapter must sit above the existing local match/content rules without breaking offline play.
 
 ## 5. Suggested implementation order
 
@@ -186,7 +186,7 @@ Content/map validation: confirm four-faction pool, one-to-one player/faction ass
 3. Add match/mission lifecycle, local pause/restart/save behavior, and data-defined unit/weapon/ability content.
 4. Add world navigation/visibility rules and editor validation for a representative map.
 5. Add AI, campaign authoring, audio/dialogue/subtitles, mission debrief, and skirmish setup.
-6. Profile and scale; add multiplayer/replay adapters only after product requirements are decided.
+6. **Start MP-0 source-wide multiplayer retrofit auditing immediately and deliver the minimal MP-1 listen-server proof once the specific command/participant prerequisites pass**, in parallel with 3–5. Bring a real dedicated Server target and MP-2 unit-scale network tests forward after MP-1; reserve public providers and unrelated replay features for later requirements.
 
 ## 6. Implementation assumptions and validation boundary
 
@@ -196,7 +196,7 @@ The design currently assumes:
 - An offline-first application with local campaign and skirmish access, local settings and saved progress, and no mandatory sign-in.
 - In-game briefings, radio dialogue, subtitles and mission events in place of required cinematic sequences.
 - C++ ownership of gameplay rules; Unreal-native assets and editor tooling for configurable content; 4K-capable desktop presentation with device-adaptive handheld and Android layouts.
-- Multiplayer, networking, replay architecture and the exact economy/deployment model remain contingent on explicit product decisions.
+- Multiplayer is an **adopted immediate engineering priority**: server-authoritative listen/dedicated architecture and the mandatory MP-0→MP-1→MP-3/MP-2 plan are fixed in [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md). Public sessions, replay integration and exact economy/deployment mechanics retain separate product decisions.
 
 See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md) for the planned build matrix, input contracts, device-level acceptance and possible later platform expansion.
 
