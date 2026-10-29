@@ -213,6 +213,11 @@ Shared unit upgrades normally affect **eligible existing and future units**, con
 
 Some equipment changes may require an authorized depot refit instead of an immediate army-wide effect; this must be declared per definition. A production unlock does not spawn a unit.
 
+### 9.1a. Formation training and communications as later research effects
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) treats basic formation shapes/stances as **baseline RTS commands**, not mandatory research unlocks, ages or eras. Future technology developed within authorized existing buildings may improve eligible organization recovery, radio/role coordination or constrained regrouping through the current participant-owned technology effects. Effects must obey movement/admission, per-unit `UnitResolve`, capped support and locked faction asymmetry. They cannot introduce a formation-specific currency, independent movement process, Unaligned command rights or ineligible massive-army Discipline bonuses.
+
+
 ### 9.2 Buildings, production and repairs
 
 Shared engineering research can unlock local modernization at power stations, refineries or factories. Physical installations cost money and time and attach to one building ID. Destruction retires the attachment. Capture does not convey unrelated owner research. Modernization affecting build time or production price must specify whether an existing queued product retains its committed cost and time; **default: do not retroactively discount previously admitted transactions**.

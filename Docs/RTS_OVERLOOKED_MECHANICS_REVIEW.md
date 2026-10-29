@@ -25,6 +25,11 @@
 | Save/pause/resume | Settings preview commits while running, UI pause allows attack | Keep settings transactional, define local pause freeze and valid save boundaries independent from profile | UI-B + SAV deferred |
 | Play modes and testing | A "mode" appears in menu without runnable match | Clear prototype labels, one scenario-complete skirmish, no fake campaign/multiplayer/replay buttons | 4F |
 
+### Military formations and Discipline as a core later behavior
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns the persistent formation-versus-control-group distinction, legal Line/Column/Dispersed/Perimeter geometry, independent combat stance/adherence, spatial Cohesion, and existing faction-specific `UnitResolve` military support. Basic multi-select and current Guard/Stop orders cannot be presumed to establish formations. This closes a **design ownership gap**, not runtime acceptance: FORM gates depend on 4C grouped admission and applicable NAV qualification.
+
+
 ## 2. Three strategic systems worth developing later
 
 **A. Communications and command cohesion.** A damaged relay/radio station can increase warning delay, prevent an air-support request or interrupt reconnaissance reports without disabling all player orders. Distinguish command *authorization* from command *delivery*; no event may silently vanish after accepted admission. UI shows delay/interference reasons and the countermeasure. This gives radio towers, propaganda and espionage a common material object without inventing a "micro every squad" signal meter.

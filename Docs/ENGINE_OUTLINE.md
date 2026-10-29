@@ -374,6 +374,13 @@ Intimidation targets both kinds of eligible isolated unit: the Iron Ascendancy m
 
 Tests: identical numeric threshold/recovery for both categories; proper labels; no conversion before the meter is broken; no conversion without isolation; no mass-army perk for civilians, Meridian or Unaligned; solo Concord combat immunity to formation-size penalty but not direct coercion. See [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md).
 
+### Military formations, stances and cohesion — core unit-behavior extension (proposed)
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns persistent tactical formations, shape/role assignment, independent combat stances and adherence, spatial Cohesion, and their effects on the **existing single per-combatant `UnitResolve`** Discipline. Local selection/control groups confer neither membership nor bonus. Each member continues using ordinary typed command admission and fixed-step legal movement; do not introduce independent Actor-Tick formation navigation or local Unaligned player control. Line/Column is the first bounded shape slice; Dispersed/Perimeter and advanced geometries follow.
+
+**Delivery order:** relevant NAV lifecycle/failure/scale proof, 4C independently validated multi-issuer group orders, then FORM-F2 eight-unit shape movement, FORM-F3 persistent organization, and separate FORM-F4–F8 stance/cohesion/advanced integration tests. Military formations are intended as a core mechanic but **not implemented** and not a new prerequisite to declare the ordinary Stage 4F skirmish accepted. Existing NAV/GRP/4F evidence is not promoted by this design.
+
+
 ### Advanced propaganda and faction morale
 
 Provide an authoritative per-faction morale state for all five factions, including the NPC Unaligned and non-propaganda Meridian Pact. High morale boosts eligible production throughput and army discipline by data-driven, capped modifiers. Propaganda actions are available only to Atlantic Concord, Red Directorate, Iron Ascendancy and Unaligned, with different faction-specific methods expressed through radio, newspapers and television. Meridian Pact has no advanced propaganda ability tree.

@@ -2,6 +2,9 @@
 
 Status: **source implemented; NAV-A25 cooked static-obstacle detour PASS; NAV-A20 five-schedule repeatability PASS for the identified Linux Development snapshot; broader navigation milestone incomplete** (2026-10-29). This is a bounded continuation of the existing tactical prototype, not Stage 4 completion or First Playable Skirmish acceptance.
 
+> **Future formation design handoff (29 October 2026; no change to NAV evidence):** [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) proposes per-member legal formation slot routes, distinct admission versus route outcomes, bounded regrouping and crowd/scale performance validation. Current NAV-A20 repeatability and NAV-A25 cooked detour qualify their documented *single-unit* cases; they do **not** qualify group-formation movement, local avoidance, mixed unit speeds or massive formation pathfinding. FORM-F0 requires separate measurement and applicable NAV failure/lifecycle closure before FORM-F2. All historical acceptance verdicts remain as recorded.
+
+
 ## Baseline and decision
 
 - Local `/mnt/data/politika` was authoritative: `main`, HEAD `7d6aab9d730a707e898012bbe7acf8d4d6ea470e`, aligned with `origin/main`, clean at preflight. No existing source changes were overwritten. UE doctor verified `/mnt/data/unreal/5.8.3` and pinned source `396c9f059903aed5fec78ecd3d437a40c6415368`.

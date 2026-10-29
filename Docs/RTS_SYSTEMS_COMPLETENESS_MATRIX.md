@@ -17,6 +17,8 @@ A real-time strategy game needs: (1) authoritative, progressing world state; (2)
 | App shell, settings, profile/recovery | Source; historic Linux shell qualification | [Shell](SHELL_SKELETON.md), [UI](POLITIKA_UI_OVERVIEW.md) | Existing |
 | Faction, player, slot, neutral/system identity | Source + bounded recovery; PA-08/10/11 partial | [Match Structure](MATCH_STRUCTURE.md), [Stage 4A](STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md) | 4A |
 | Unit selection and multi-issuer orders | Single-unit source + historic package; multi-select planned | [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) | 4C basic, later advanced |
+| Persistent military formations, tactical stances, Cohesion and Discipline integration | **Proposed design only**; no qualified runtime formations, large-group navigation, or implemented Cohesion bonuses | [Formations and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md); [Selection](RTS_SELECTION_AND_GROUP_ORDERS.md); [Morale](PROPAGANDA_AND_MORALE.md) | FORM-F0–F8 after relevant NAV and 4C foundations, separate from normal 4F |
+
 | Simulation tick, commands, events | 0.05 s coordinator + historic contract tests | [Command/simulation](RTS_COMMAND_SIMULATION_CONTRACT.md), [core rules](../Source/PolitikaCore/Rules.h) | Existing |
 | Movement and navigation | Complete Recast routes/interruptions qualified on identified packages; NAV-A15 inconclusive | [Navigation acceptance](RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md) | Now, then scale |
 | Combat, damage, death, objective | Bounded tactical prototype verified historically | [Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md); [Engine Outline](ENGINE_OUTLINE.md) | Existing; later expand |

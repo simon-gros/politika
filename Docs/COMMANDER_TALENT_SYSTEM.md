@@ -190,6 +190,11 @@ Every effect definition must identify affected entity classes, eligibility predi
 
 An ability never inherits a cheap/free cost simply because a talent unlocked it: declare and validate its existing resource/technology/visibility constraints.
 
+### 5.3. Formation-scoped effects (proposed, deferred)
+
+[Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) models formations independently of commander eligibility. Explicitly eligible Elite commander talents may eventually grant bounded rally/reorganization, coordination or recovery benefits **only to currently qualifying subordinates** inside valid commander relationships/communications coverage. They do not give ordinary soldiers talent trees or create a second Discipline meter. Loss of appointment, subordinate death/detachment, capture, communication loss or match termination invalidates effects without permanently rewriting archetype statistics. Exact talent effects and balance values remain open.
+
+
 ## 6. Unreal / C++ architecture and data contracts
 
 ### 6.1. Authoring and definitions
