@@ -282,6 +282,12 @@ fn main() -> Result<(), String> {
     if env::args().nth(2).as_deref() == Some("--navigation-repeatability") {
         return navigation_obstacle::run_repeatability();
     }
+    if env::args().nth(2).as_deref() == Some("--navigation-unreachable") {
+        return navigation_obstacle::run_unreachable();
+    }
+    if env::args().nth(2).as_deref() == Some("--navigation-destination-failure") {
+        return navigation_obstacle::run_destination_failure();
+    }
     if env::args().nth(2).as_deref() == Some("--static-obstacle") {
         return navigation_obstacle::run();
     }

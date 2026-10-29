@@ -11,6 +11,7 @@
 #include "PolitikaPrototypeGameplay.generated.h"
 
 struct FPolitikaPrototypeContentSnapshot;
+struct FPathFindingResult;
 
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -92,6 +93,8 @@ private:
     friend class FPolitikaMatchParticipantsAutomationTest;
     friend class FPolitikaNavigationUnavailableAutomationTest;
     friend class FPolitikaNavigationObstacleAutomationTest;
+    friend class FPolitikaNavigationFailureAutomationTest;
+    friend class FPolitikaUnprojectableDestinationAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
 #endif
@@ -156,6 +159,8 @@ private:
     friend class FPolitikaMatchParticipantsAutomationTest;
     friend class FPolitikaNavigationUnavailableAutomationTest;
     friend class FPolitikaNavigationObstacleAutomationTest;
+    friend class FPolitikaNavigationFailureAutomationTest;
+    friend class FPolitikaUnprojectableDestinationAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
 #endif
@@ -210,6 +215,8 @@ private:
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
     friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
+    friend class FPolitikaNavigationFailureAutomationTest;
+    friend class FPolitikaUnprojectableDestinationAutomationTest;
     TFunction<void()> NavigationStepObserver;
 #endif
     struct FPendingOrder
@@ -261,7 +268,8 @@ private:
     void AdmitPendingOrders();
     bool ResolveNavigationRoute(APolitikaPrototypeUnit* Unit, const FVector& Destination,
         TArray<FVector>& OutWaypoints, FVector& OutResolvedDestination, FString& OutFailure,
-        uint64 OrderSequence = 0) const;
+        uint64 OrderSequence = 0);
+    static bool IsCompleteNavigationResult(const FPathFindingResult& Result, FString& OutFailure);
     void RunSimulationStep(float DeltaSeconds);
     void QueueGameplayEvent(politika::rules::GameplayEvent&& Event);
     void PublishGameplayEvent(politika::rules::GameplayEvent&& Event);
@@ -299,7 +307,41 @@ private:
         int32 Samples = 0;
         double MaxTravel = 0.0;
     } NavigationAcceptance;
+    struct FNavigationFailureAcceptance
+    {
+        bool bRunning = false;
+        bool bValid = true;
+        bool bDestinationProjectionCase = false;
+        TWeakObjectPtr<APolitikaPrototypeUnit> Unit;
+        FVector Start = FVector::ZeroVector;
+        FVector Goal = FVector::ZeroVector;
+        uint64 Sequence = 0;
+        uint64 FailureStep = 0;
+        int32 Queries = 0;
+        int32 ProjectionChecks = 0;
+        bool bOriginProjected = false;
+        bool bGoalProjected = false;
+        int32 AcceptedCommands = 0;
+        int32 FailureEvents = 0;
+        int32 Arrivals = 0;
+        int32 Samples = 0;
+        uint32 LastQueryResult = 0;
+        bool bLastQueryPartial = false;
+        bool bLastPathValid = false;
+        int32 LastPathPoints = 0;
+        FString LastFailure;
+        uint32 DiagnosticResult = 0;
+        bool bDiagnosticPartial = false;
+        bool bDiagnosticPathValid = false;
+        int32 DiagnosticPathPoints = 0;
+        float DiagnosticEndpointError = 0.0f;
+        FString DiagnosticRejection;
+    } NavigationFailureAcceptance;
     void BeginNavigationAcceptance();
+    void BeginNavigationFailureAcceptance();
+    void AfterNavigationFailureStep();
+    void ObserveNavigationFailureEvent(const politika::rules::GameplayEvent& Event);
+    void FinishNavigationFailureAcceptance(const TCHAR* Failure);
     void BeforeNavigationAcceptanceStep();
     void AfterNavigationAcceptanceStep(float DeltaSeconds);
     void ObserveNavigationAcceptanceEvent(const politika::rules::GameplayEvent& Event);

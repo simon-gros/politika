@@ -27,6 +27,7 @@
 #include "HAL/PlatformTime.h"
 #if !UE_BUILD_SHIPPING
 #include "PolitikaNavigationObstacleFixture.h"
+#include "PolitikaNavigationFailureFixture.h"
 #endif
 
 namespace
@@ -611,6 +612,8 @@ void APolitikaPrototypeMatch::BuildScenario()
         if (FixtureId == TEXT("InvalidMapSchema")) RequestedMapId = TEXT("map.test.invalid_schema");
         else if (FixtureId == TEXT("InvalidParticipantFaction")) RequestedMapId = TEXT("map.test.invalid_participant_faction");
         else if (FixtureId == TEXT("StaticObstacleDetour")) RequestedMapId = TEXT("map.test.static_obstacle_detour");
+        else if (FixtureId == TEXT("DisconnectedNavigation")) RequestedMapId = TEXT("map.test.disconnected_navigation");
+        else if (FixtureId == TEXT("UnprojectableDestination")) RequestedMapId = TEXT("map.test.unprojectable_destination");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -898,6 +901,16 @@ void APolitikaPrototypeMatch::SetAcceptanceMove(APolitikaPrototypeUnit* Unit, co
 
 void APolitikaPrototypeMatch::BeginAcceptanceHarness()
 {
+    if (MapDefinition && MapDefinition->StableId == TEXT("map.test.disconnected_navigation"))
+    {
+        BeginNavigationFailureAcceptance();
+        return;
+    }
+    if (MapDefinition && MapDefinition->StableId == TEXT("map.test.unprojectable_destination"))
+    {
+        BeginNavigationFailureAcceptance();
+        return;
+    }
     if (MapDefinition && MapDefinition->StableId == TEXT("map.test.static_obstacle_detour"))
     {
         BeginNavigationAcceptance();
@@ -1296,6 +1309,7 @@ void APolitikaPrototypeMatch::PublishGameplayEvent(politika::rules::GameplayEven
 {
 #if !UE_BUILD_SHIPPING
     ObserveNavigationAcceptanceEvent(Event);
+    ObserveNavigationFailureEvent(Event);
 #endif
 #if !UE_BUILD_SHIPPING
     using namespace politika::rules;
@@ -1348,9 +1362,30 @@ void APolitikaPrototypeMatch::PublishGameplayEvents()
     PendingGameplayEvents.Reset();
 }
 
+bool APolitikaPrototypeMatch::IsCompleteNavigationResult(const FPathFindingResult& Result, FString& OutFailure)
+{
+    if (Result.Result != ENavigationQueryResult::Success || !Result.Path.IsValid())
+    {
+        OutFailure = TEXT("NoCompletePath");
+        return false;
+    }
+    if (Result.Path->IsPartial())
+    {
+        OutFailure = TEXT("PartialPath");
+        return false;
+    }
+    if (Result.Path->GetPathPoints().IsEmpty())
+    {
+        OutFailure = TEXT("EmptyPath");
+        return false;
+    }
+    OutFailure.Reset();
+    return true;
+}
+
 bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Unit, const FVector& Destination,
     TArray<FVector>& OutWaypoints, FVector& OutResolvedDestination, FString& OutFailure,
-    uint64 OrderSequence) const
+    uint64 OrderSequence)
 {
     OutWaypoints.Reset();
     OutFailure = TEXT("NavigationUnavailable");
@@ -1366,15 +1401,29 @@ bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Uni
     if (!NavData) return false;
     FNavLocation ProjectedStart, ProjectedGoal;
     const FVector QueryExtent(80.0f, 80.0f, 180.0f);
-    if (!NavSystem->ProjectPointToNavigation(Unit->GetActorLocation(), ProjectedStart, QueryExtent, NavData))
+    const bool bProjectedStart = NavSystem->ProjectPointToNavigation(Unit->GetActorLocation(), ProjectedStart, QueryExtent, NavData);
+#if !UE_BUILD_SHIPPING
+    if (NavigationFailureAcceptance.bRunning) { ++NavigationFailureAcceptance.ProjectionChecks; NavigationFailureAcceptance.bOriginProjected = bProjectedStart; }
+#endif
+    if (!bProjectedStart)
     {
         OutFailure = TEXT("OriginNotNavigable");
         return false;
     }
-    if (!NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal, QueryExtent, NavData)
-        || FVector::Dist(ProjectedGoal.Location, Destination) > 150.0f)
+    const bool bProjectedGoal = NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal, QueryExtent, NavData);
+#if !UE_BUILD_SHIPPING
+    if (NavigationFailureAcceptance.bRunning) { ++NavigationFailureAcceptance.ProjectionChecks; NavigationFailureAcceptance.bGoalProjected = bProjectedGoal; }
+#endif
+    if (!bProjectedGoal || FVector::Dist(ProjectedGoal.Location, Destination) > 150.0f)
     {
         OutFailure = TEXT("DestinationNotNavigable");
+#if !UE_BUILD_SHIPPING
+        if (NavigationFailureAcceptance.bRunning && NavigationFailureAcceptance.bDestinationProjectionCase)
+        {
+            NavigationFailureAcceptance.LastFailure = OutFailure;
+            UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FAILURE_PROJECTION generation=%llu unit=%llu sequence=%llu nav=%s origin_projected=%d goal_projected=%d extent=80.000000,80.000000,180.000000 goal=%.6f,%.6f,%.6f projected_goal=NA displacement=NA query_executed=0 failure=%s"), MatchGeneration, Unit->GetStableId(), OrderSequence, *NavData->GetPathName(), NavigationFailureAcceptance.bOriginProjected ? 1 : 0, bProjectedGoal ? 1 : 0, Destination.X, Destination.Y, Destination.Z, *OutFailure);
+        }
+#endif
         return false;
     }
     FPathFindingQuery Query(Unit, *NavData, ProjectedStart.Location, ProjectedGoal.Location);
@@ -1383,28 +1432,40 @@ bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Uni
     const double QueryStartSeconds = FPlatformTime::Seconds();
     const FPathFindingResult Result = NavSystem->FindPathSync(Query);
 #if !UE_BUILD_SHIPPING
+    if (NavigationFailureAcceptance.bRunning) NavigationFailureAcceptance.LastFailure = OutFailure;
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("RTS_NAV_QUERY generation=%llu unit=%llu sequence=%llu result=%u partial=%d points=%d duration_us=%.1f"),
         MatchGeneration, Unit->GetStableId(), OrderSequence, static_cast<uint32>(Result.Result),
         Result.IsPartial() ? 1 : 0, Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0,
         (FPlatformTime::Seconds() - QueryStartSeconds) * 1000000.0);
+    if (NavigationFailureAcceptance.bRunning)
+    {
+        auto& Trace = NavigationFailureAcceptance;
+        ++Trace.Queries;
+        Trace.LastQueryResult = static_cast<uint32>(Result.Result);
+        Trace.bLastQueryPartial = Result.IsPartial();
+        Trace.bLastPathValid = Result.Path.IsValid();
+        Trace.LastPathPoints = Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0;
+        const FVector LastPoint = Result.Path.IsValid() && !Result.Path->GetPathPoints().IsEmpty()
+            ? Result.Path->GetPathPoints().Last().Location : FVector::ZeroVector;
+        const TCHAR* Classification = Result.Result != ENavigationQueryResult::Success || !Result.Path.IsValid()
+            ? TEXT("NoCompletePath") : Result.Path->IsPartial() ? TEXT("PartialPath")
+            : Result.Path->GetPathPoints().IsEmpty() ? TEXT("EmptyPath") : TEXT("CompletePath");
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("NAV_FAILURE_QUERY generation=%llu unit=%llu sequence=%llu profile=%s nav=%s start=%.6f,%.6f,%.6f requested=%.6f,%.6f,%.6f projected_start=%.6f,%.6f,%.6f projected_goal=%.6f,%.6f,%.6f allow_partial=0 require_navigable_end=1 result=%u partial=%d path_valid=%d points=%d endpoint=%.6f,%.6f,%.6f failure=%s"),
+            MatchGeneration, Unit->GetStableId(), OrderSequence,
+            MapDefinition ? *MapDefinition->MovementProfileId.ToString() : TEXT("missing"), *NavData->GetPathName(),
+            Unit->GetActorLocation().X, Unit->GetActorLocation().Y, Unit->GetActorLocation().Z,
+            Destination.X, Destination.Y, Destination.Z,
+            ProjectedStart.Location.X, ProjectedStart.Location.Y, ProjectedStart.Location.Z,
+            ProjectedGoal.Location.X, ProjectedGoal.Location.Y, ProjectedGoal.Location.Z,
+            static_cast<uint32>(Result.Result), Result.IsPartial() ? 1 : 0,
+            Result.Path.IsValid() ? 1 : 0, Trace.LastPathPoints,
+            LastPoint.X, LastPoint.Y, LastPoint.Z, Classification);
+    }
 #endif
-    if (Result.Result != ENavigationQueryResult::Success || !Result.Path.IsValid())
-    {
-        OutFailure = TEXT("NoCompletePath");
-        return false;
-    }
-    if (Result.Path->IsPartial())
-    {
-        OutFailure = TEXT("PartialPath");
-        return false;
-    }
+    if (!IsCompleteNavigationResult(Result, OutFailure)) return false;
     const TArray<FNavPathPoint>& Points = Result.Path->GetPathPoints();
-    if (Points.IsEmpty())
-    {
-        OutFailure = TEXT("EmptyPath");
-        return false;
-    }
     OutWaypoints.Reserve(Points.Num());
     for (const FNavPathPoint& Point : Points)
     {
@@ -1670,6 +1731,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
     PublishGameplayEvents();
 #if !UE_BUILD_SHIPPING
     AfterNavigationAcceptanceStep(DeltaSeconds);
+    AfterNavigationFailureStep();
 #endif
 #if WITH_DEV_AUTOMATION_TESTS
     if (NavigationStepObserver) NavigationStepObserver();

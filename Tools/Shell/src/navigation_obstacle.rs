@@ -428,6 +428,539 @@ fn launch_scenario(
         thread::sleep(Duration::from_millis(100));
     }
 }
+fn verify_disconnected(log: &str) -> Result<(String, String), String> {
+    let fixture = one(log, "NAV_FAILURE_FIXTURE")?;
+    let query = one(log, "NAV_FAILURE_QUERY")?;
+    let submitted = one(log, "NAV_FAILURE_SUBMITTED")?;
+    let result = one(log, "NAV_FAILURE_RESULT")?;
+    require(
+        log.contains("CONTENT_VALIDATION_PASSED map=map.test.disconnected_navigation")
+            && log.contains("MATCH_LIFECYCLE phase=4"),
+        "disconnected fixture did not pass content admission and reach Active",
+    )?;
+    require(
+        field(&fixture, "scenario")? == "Disconnected"
+            && field(&fixture, "map")? == "map.test.disconnected_navigation"
+            && field(&fixture, "level")?.ends_with("/Navigation/W_DisconnectedNavigation")
+            && field(&fixture, "profile")? == "movement.prototype_ground"
+            && field(&fixture, "runtime_generation")? == "0"
+            && field(&query, "nav")? == field(&fixture, "nav")?
+            && field(&query, "profile")? == field(&fixture, "profile")?,
+        "wrong cooked fixture, movement profile, or nav data",
+    )?;
+    for key in ["generation", "unit"] {
+        require(
+            field(&query, key)? == field(&fixture, key)?,
+            "query unit/generation mismatch",
+        )?;
+        require(
+            field(&submitted, key)? == field(&fixture, key)?,
+            "submission unit/generation mismatch",
+        )?;
+        require(
+            field(&result, key)? == field(&fixture, key)?,
+            "result unit/generation mismatch",
+        )?;
+    }
+    for record in [&query, &submitted, &result] {
+        require(
+            field(record, "sequence")? == field(&result, "sequence")?,
+            "stale command sequence in failure trace",
+        )?;
+    }
+    require(
+        field(&query, "allow_partial")? == "0"
+            && field(&query, "require_navigable_end")? == "1"
+            && field(&query, "failure")? == "NoCompletePath"
+            && field(&query, "result")? != "3"
+            && field(&query, "partial")? == field(&result, "partial")?,
+        "production query did not produce a no-complete-path result or its actual partial flag was lost",
+    )?;
+    require(
+        number(&fixture, "start_offset")? <= 80.0
+            && number(&fixture, "goal_offset")? <= 80.0
+            && number(&query, "result")? != 3.0
+            && number(&query, "points")? >= 0.0,
+        "endpoint projections failed or the result code indicates a complete Success route",
+    )?;
+    let start = point(&fixture, "start")?;
+    let goal = point(&fixture, "goal")?;
+    let projected_start = point(&fixture, "projected_start")?;
+    let projected_goal = point(&fixture, "projected_goal")?;
+    require(
+        distance(start, projected_start) <= 80.0 && distance(goal, projected_goal) <= 80.0,
+        "projected endpoint offset exceeded tolerance",
+    )?;
+    let bounds_min: Vec<f64> = field(&fixture, "bounds_min")?
+        .split(',')
+        .map(str::parse::<f64>)
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let bounds_max: Vec<f64> = field(&fixture, "bounds_max")?
+        .split(',')
+        .map(str::parse::<f64>)
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let barrier_min = point(&fixture, "barrier_min")?;
+    let barrier_max = point(&fixture, "barrier_max")?;
+    require(
+        bounds_min.len() == 2
+            && bounds_max.len() == 2
+            && start[0] >= bounds_min[0]
+            && start[0] <= bounds_max[0]
+            && start[1] >= bounds_min[1]
+            && start[1] <= bounds_max[1]
+            && goal[0] >= bounds_min[0]
+            && goal[0] <= bounds_max[0]
+            && goal[1] >= bounds_min[1]
+            && goal[1] <= bounds_max[1]
+            && start[0] < barrier_min[0]
+            && goal[0] > barrier_max[0]
+            && barrier_min[1] < bounds_min[1]
+            && barrier_max[1] > bounds_max[1],
+        "positions are out of bounds or barrier does not divide the playable region",
+    )?;
+    let events = records(log, "NAV_FAILURE_EVENT");
+    let commands: Vec<_> = events
+        .iter()
+        .filter(|e| e.get("kind") == Some(&"CommandOutcome"))
+        .collect();
+    let changes: Vec<_> = events
+        .iter()
+        .filter(|e| e.get("kind") == Some(&"OrderChanged"))
+        .collect();
+    require(
+        commands.len() == 1 && changes.len() == 1,
+        "expected exactly one command and one order publication",
+    )?;
+    let command = commands[0];
+    let changed = changes[0];
+    require(
+        field(command, "sequence")? == field(&result, "sequence")?
+            && field(command, "correlation")? == field(&result, "sequence")?
+            && field(command, "accepted")? == "1"
+            && field(command, "order")? == "0"
+            && field(command, "rejection")? == "0"
+            && field(command, "valid")? == "1"
+            && field(changed, "reason")? == "7"
+            && field(changed, "failure")? == "1"
+            && field(changed, "arrival")? == "0",
+        "typed Move admission or NavigationFailed event contract changed",
+    )?;
+    let steps = records(log, "NAV_FAILURE_STEP");
+    require(
+        steps.len() == 21,
+        &format!(
+            "expected 21 inert authoritative step samples, got {}",
+            steps.len()
+        ),
+    )?;
+    for (index, sample) in steps.iter().enumerate() {
+        require(
+            number(sample, "step")? == number(changed, "step")? + index as f64
+                && distance(point(sample, "position")?, start) <= 0.001
+                && field(sample, "order")? == "4"
+                && field(sample, "points")? == "0"
+                && field(sample, "cursor")? == "0"
+                && field(sample, "route_sequence")? == "0"
+                && field(sample, "route_generation")? == "0"
+                && field(sample, "alive")? == "1"
+                && field(sample, "active")? == "1"
+                && field(sample, "pending")? == "0"
+                && field(sample, "arrivals")? == "0"
+                && field(sample, "valid")? == "1",
+            &format!(
+                "failed route was executable or moved at post-failure step {}",
+                index
+            ),
+        )?;
+    }
+    require(
+        field(&result, "result")? == "PASS"
+            && field(&result, "queries")? == "1"
+            && field(&result, "partial")? == field(&query, "partial")?
+            && field(&result, "accepted_commands")? == "1"
+            && field(&result, "failure_events")? == "1"
+            && field(&result, "arrivals")? == "0"
+            && field(&result, "inert_steps")? == "21"
+            && records(log, "RTS_NAV_QUERY").len() == 1,
+        "authoritative failure result was incomplete or repeated",
+    )?;
+    let probe = one(log, "NAV_FAILURE_PARTIAL_PROBE")?;
+    let partial_verdict = if field(&probe, "partial")? == "1"
+        && field(&probe, "path_valid")? == "1"
+        && number(&probe, "endpoint_error")? > 50.0
+        && field(&probe, "route_admission")? == "REJECTED"
+        && field(&probe, "installed")? == "0"
+        && !field(&probe, "rejection")?.is_empty()
+    {
+        format!(
+            "PASS genuine partial result={} endpoint_error={} rejection={} installed=0",
+            field(&probe, "result")?,
+            field(&probe, "endpoint_error")?,
+            field(&probe, "rejection")?
+        )
+    } else {
+        format!(
+            "INCONCLUSIVE actual partial not reproduced: result={} partial={} points={} endpoint_error={} admission={} installed={}",
+            field(&probe, "result")?,
+            field(&probe, "partial")?,
+            field(&probe, "points")?,
+            field(&probe, "endpoint_error")?,
+            field(&probe, "route_admission")?,
+            field(&probe, "installed")?
+        )
+    };
+    Ok((
+        format!(
+            "PASS result={} partial={} start={} goal={} query_points={} post_failure_steps={} events=accepted_move:1,navigation_failed:1,arrived:0",
+            field(&query, "result")?,
+            field(&query, "partial")?,
+            field(&fixture, "start")?,
+            field(&fixture, "goal")?,
+            field(&query, "points")?,
+            steps.len()
+        ),
+        partial_verdict,
+    ))
+}
+
+fn launch_disconnected(binary: &Path, evidence: &Path, name: &str) -> Result<String, String> {
+    let log = evidence.join(format!("{name}.log"));
+    let user_dir = evidence.join(format!("{name}-user"));
+    fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+    let mut child = Command::new(binary)
+        .args([
+            "/Game/Politika/TestFixtures/Navigation/W_DisconnectedNavigation",
+            "-PolitikaTestFixture=DisconnectedNavigation",
+            "-PolitikaNavigationFailure=Disconnected",
+            "-nullrhi",
+            "-unattended",
+            "-nosound",
+            "-nosplash",
+        ])
+        .arg(format!("-UserDir={}/", user_dir.display()))
+        .arg(format!("-ABSLOG={}", log.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("launch {name}: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            let text = read(&log)?;
+            require(
+                status.success(),
+                &format!(
+                    "{name} failed process outcome {status}; log={}",
+                    log.display()
+                ),
+            )?;
+            fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
+                .map_err(|e| e.to_string())?;
+            return Ok(text);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{name} timed out; log={}", log.display()));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn launch_unprojectable(binary: &Path, evidence: &Path, name: &str) -> Result<String, String> {
+    let log = evidence.join(format!("{name}.log"));
+    let user_dir = evidence.join(format!("{name}-user"));
+    fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+    let mut child = Command::new(binary)
+        .args([
+            "/Game/Politika/TestFixtures/Navigation/W_UnprojectableDestination",
+            "-PolitikaTestFixture=UnprojectableDestination",
+            "-PolitikaNavigationFailure=UnprojectableDestination",
+            "-nullrhi",
+            "-unattended",
+            "-nosound",
+            "-nosplash",
+        ])
+        .arg(format!("-UserDir={}/", user_dir.display()))
+        .arg(format!("-ABSLOG={}", log.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("launch {name}: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            let text = read(&log)?;
+            require(
+                status.success(),
+                &format!(
+                    "{name} failed process outcome {status}; log={}",
+                    log.display()
+                ),
+            )?;
+            fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
+                .map_err(|e| e.to_string())?;
+            return Ok(text);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{name} timed out; log={}", log.display()));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn verify_unprojectable(log: &str) -> Result<String, String> {
+    let fixture = one(log, "NAV_FAILURE_FIXTURE")?;
+    let projection = one(log, "NAV_FAILURE_PROJECTION")?;
+    let ground = one(log, "NAV_FAILURE_GROUND")?;
+    let submitted = one(log, "NAV_FAILURE_SUBMITTED")?;
+    let result = one(log, "NAV_FAILURE_RESULT")?;
+    require(
+        log.contains("CONTENT_VALIDATION_PASSED map=map.test.unprojectable_destination")
+            && log.contains("MATCH_LIFECYCLE phase=4"),
+        "unprojectable destination fixture did not validate and reach Active",
+    )?;
+    require(
+        field(&fixture, "scenario")? == "UnprojectableDestination"
+            && field(&fixture, "map")? == "map.test.unprojectable_destination"
+            && field(&fixture, "level")?.ends_with("/Navigation/W_UnprojectableDestination")
+            && field(&fixture, "profile")? == "movement.prototype_ground"
+            && field(&fixture, "runtime_generation")? == "0"
+            && field(&fixture, "origin_projected")? == "1"
+            && field(&fixture, "goal_projected")? == "0"
+            && field(&projection, "origin_projected")? == "1"
+            && field(&projection, "goal_projected")? == "0"
+            && field(&projection, "query_executed")? == "0"
+            && field(&projection, "failure")? == "DestinationNotNavigable",
+        "wrong fixture, origin/goal projection, query distinction, or failure reason",
+    )?;
+    require(
+        field(&ground, "ground_hit")? == "1"
+            && field(&ground, "bounds_valid")? == "1"
+            && field(&ground, "nav_excluded")? == "1"
+            && distance(point(&ground, "goal")?, point(&fixture, "goal")?) <= 0.001,
+        "goal is not the physically hit authored ground at the declared in-bounds location",
+    )?;
+    require(
+        !log.contains("NAV_FAILURE_QUERY ") && !log.contains("RTS_NAV_QUERY "),
+        "a navigation path query ran despite failed destination projection",
+    )?;
+    for key in ["generation", "unit", "sequence"] {
+        require(
+            field(&submitted, key)? == field(&result, key)?,
+            "submission/result identity mismatch",
+        )?;
+    }
+    require(
+        field(&result, "result")? == "PASS"
+            && field(&result, "failure_classification")? == "DestinationNotNavigable"
+            && field(&result, "projection_checks")? == "2"
+            && field(&result, "origin_projected")? == "1"
+            && field(&result, "goal_projected")? == "0"
+            && field(&result, "queries")? == "0"
+            && field(&result, "query_result")? == "NA"
+            && field(&result, "accepted_commands")? == "1"
+            && field(&result, "failure_events")? == "1"
+            && field(&result, "arrivals")? == "0"
+            && field(&result, "inert_steps")? == "21"
+            && field(&result, "retired")? == "1",
+        "terminal production assertions failed",
+    )?;
+    let events = records(log, "NAV_FAILURE_EVENT");
+    let steps = records(log, "NAV_FAILURE_STEP");
+    require(
+        events.len() == 2 && steps.len() == 21,
+        "expected one accepted command, one failure publication, and 21 stationary step records",
+    )?;
+    require(
+        events
+            .iter()
+            .any(|e| e.get("kind") == Some(&"CommandOutcome") && e.get("accepted") == Some(&"1"))
+            && events
+                .iter()
+                .any(|e| e.get("kind") == Some(&"OrderChanged") && e.get("failure") == Some(&"1"))
+            && steps.iter().all(|step| step.get("valid") == Some(&"1")),
+        "command/event timeline or inert-step evidence is invalid",
+    )?;
+    Ok(format!(
+        "PASS goal={} origin_projected=1 goal_projected=0 query_executed=0 failure=DestinationNotNavigable accepted_move=1 failure_event=1 arrived=0 inert_steps=20",
+        field(&fixture, "goal")?
+    ))
+}
+
+pub fn run_destination_failure() -> Result<(), String> {
+    let binary = PathBuf::from(env::args_os().nth(1).ok_or("missing fixture binary")?)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let normal = PathBuf::from(env::args_os().nth(3).ok_or(
+        "usage: rts_interaction FIXTURE_BINARY --navigation-destination-failure NORMAL_BINARY",
+    )?)
+    .canonicalize()
+    .map_err(|e| e.to_string())?;
+    let package = binary.ancestors().nth(4).ok_or("fixture package layout")?;
+    let normal_package = normal.ancestors().nth(4).ok_or("normal package layout")?;
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let evidence = package.join(format!("navigation-destination-failure-{epoch}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let outcome = (|| -> Result<String, String> {
+        let source = read(&package.join("QualificationSource.sha256"))?;
+        require(
+            !source.trim().is_empty()
+                && source == read(&normal_package.join("QualificationSource.sha256"))?
+                && read(&package.join("BuildIdentity.json"))?
+                    == read(&normal_package.join("BuildIdentity.json"))?
+                && hash(&binary)? == hash(&normal)?,
+            "normal/fixture package source identity mismatch",
+        )?;
+        let fixture_manifest = read(&package.join("Manifest_UFSFiles_Linux.txt"))?;
+        let normal_manifest = read(&normal_package.join("Manifest_UFSFiles_Linux.txt"))?;
+        for asset in [
+            "Navigation/W_UnprojectableDestination.umap",
+            "Navigation/DA_UnprojectableDestination.uasset",
+        ] {
+            require(
+                fixture_manifest.contains(asset),
+                &format!("fixture package missing {asset}"),
+            )?;
+        }
+        require(
+            !normal_manifest.contains("TestFixtures/"),
+            "normal package includes test fixtures",
+        )?;
+        let mut report = String::from("run\tverdict\tdetail\n");
+        for name in ["DP-01-A", "DP-01-B"] {
+            let log = launch_unprojectable(&binary, &evidence, name)?;
+            let detail = verify_unprojectable(&log)?;
+            report.push_str(&format!("{name}\tPASS\t{detail}\n"));
+        }
+        fs::write(evidence.join("acceptance.tsv"), &report).map_err(|e| e.to_string())?;
+        fs::write(evidence.join("artifact-identity.txt"), format!(
+            "fixture_binary={}\nfixture_sha256={}\nnormal_binary={}\nnormal_sha256={}\nsource={}\nfixture_identity={}\n",
+            binary.display(), hash(&binary)?, normal.display(), hash(&normal)?, source.trim(),
+            read(&package.join("BuildIdentity.json"))?.trim().replace('\n', " "))).map_err(|e| e.to_string())?;
+        Ok(report)
+    })();
+    match outcome {
+        Ok(report) => {
+            println!(
+                "PASS DP-01: packaged unprojectable destination; evidence {}\n{}",
+                evidence.display(),
+                report
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let report = format!(
+                "run\tverdict\tdetail\nDP-01\tFAIL\t{}\n",
+                error.replace(['\n', '\t'], " ")
+            );
+            let _ = fs::write(evidence.join("acceptance.tsv"), report);
+            Err(format!("{error}; evidence={}", evidence.display()))
+        }
+    }
+}
+
+pub fn run_unreachable() -> Result<(), String> {
+    let binary = PathBuf::from(env::args_os().nth(1).ok_or("missing fixture binary")?)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let normal =
+        PathBuf::from(env::args_os().nth(3).ok_or(
+            "usage: rts_interaction FIXTURE_BINARY --navigation-unreachable NORMAL_BINARY",
+        )?)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let package = binary.ancestors().nth(4).ok_or("fixture package layout")?;
+    let normal_package = normal.ancestors().nth(4).ok_or("normal package layout")?;
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let evidence = package.join(format!("navigation-unreachable-{epoch}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let outcome = (|| -> Result<String, String> {
+        let source = read(&package.join("QualificationSource.sha256"))?;
+        require(
+            !source.trim().is_empty()
+                && source == read(&normal_package.join("QualificationSource.sha256"))?
+                && read(&package.join("BuildIdentity.json"))?
+                    == read(&normal_package.join("BuildIdentity.json"))?
+                && hash(&binary)? == hash(&normal)?,
+            "normal/fixture package source identity mismatch",
+        )?;
+        let fixture_manifest = read(&package.join("Manifest_UFSFiles_Linux.txt"))?;
+        let normal_manifest = read(&normal_package.join("Manifest_UFSFiles_Linux.txt"))?;
+        for asset in [
+            "Navigation/W_DisconnectedNavigation.umap",
+            "Navigation/DA_DisconnectedNavigation.uasset",
+        ] {
+            require(
+                fixture_manifest.contains(asset),
+                &format!("fixture package missing {asset}"),
+            )?;
+        }
+        require(
+            !normal_manifest.contains("TestFixtures/"),
+            "normal package includes negative fixtures",
+        )?;
+        let mut verdicts = String::from(
+            "run\tverdict\tquery_result\tpartial\tpost_failure_steps\tevents\tdetail\n",
+        );
+        for repetition in 1..=2 {
+            let name = format!("NQ-01-{}", if repetition == 1 { "A" } else { "B" });
+            let log = launch_disconnected(&binary, &evidence, &name)?;
+            let (report, partial_report) = verify_disconnected(&log)?;
+            let query = one(&log, "NAV_FAILURE_QUERY")?;
+            let result = one(&log, "NAV_FAILURE_RESULT")?;
+            verdicts.push_str(&format!("{name}\tPASS\t{}\t{}\t{}\taccepted_move:1,navigation_failed:1,arrived:0\t{report}\n",
+                field(&query, "result")?, field(&query, "partial")?, field(&result, "inert_steps")?));
+            verdicts.push_str(&format!(
+                "NQ-02-{}\t{}\t{}\t{}\tNA\tpartial_route_admission\t{}\n",
+                if repetition == 1 { "A" } else { "B" },
+                if partial_report.starts_with("PASS") {
+                    "PASS"
+                } else {
+                    "INCONCLUSIVE"
+                },
+                field(&one(&log, "NAV_FAILURE_PARTIAL_PROBE")?, "result")?,
+                field(&one(&log, "NAV_FAILURE_PARTIAL_PROBE")?, "partial")?,
+                partial_report
+            ));
+        }
+        fs::write(evidence.join("acceptance.tsv"), &verdicts).map_err(|e| e.to_string())?;
+        fs::write(evidence.join("artifact-identity.txt"), format!(
+            "fixture_binary={}\nfixture_sha256={}\nnormal_binary={}\nnormal_sha256={}\nsource={}\nfixture_identity={}\n",
+            binary.display(), hash(&binary)?, normal.display(), hash(&normal)?, source.trim(),
+            read(&package.join("BuildIdentity.json"))?.trim().replace('\n', " "))).map_err(|e| e.to_string())?;
+        Ok(verdicts)
+    })();
+    match outcome {
+        Ok(report) => {
+            println!(
+                "PASS NQ-01: production disconnected-route failure; evidence {}\n{}",
+                evidence.display(),
+                report
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let report = format!(
+                "run\tverdict\tdetail\nNQ-01\tFAIL\t{}\n",
+                error.replace(['\n', '\t'], " ")
+            );
+            let _ = fs::write(evidence.join("acceptance.tsv"), report);
+            Err(format!("{error}; evidence={}", evidence.display()))
+        }
+    }
+}
+
 pub fn run() -> Result<(), String> {
     let binary = PathBuf::from(env::args_os().nth(1).ok_or("missing fixture binary")?)
         .canonicalize()

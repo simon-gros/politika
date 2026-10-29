@@ -6,6 +6,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "EngineUtils.h"
 #include "Components/BrushComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
 #include "Engine/Brush.h"
 #include "Model.h"
 #include "Engine/Polys.h"
@@ -13,6 +15,7 @@
 #include "Engine/AssetManager.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
+#include "NavModifierVolume.h"
 #include "Builders/CubeBuilder.h"
 #include "UObject/SavePackage.h"
 #include "UObject/Package.h"
@@ -31,6 +34,7 @@
 #include "StaticMeshCompiler.h"
 #include "NavigationData.h"
 #include "PolitikaNavigationObstacleFixture.h"
+#include "PolitikaNavigationFailureFixture.h"
 #include "PolitikaShellGameMode.h"
 
 namespace
@@ -231,6 +235,183 @@ bool CreateStaticObstacleDetourFixture()
     return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
 }
 
+bool CreateDisconnectedNavigationFixture()
+{
+    using namespace PolitikaNavigationFailureFixture;
+    const FString LevelFilename = FPackageName::LongPackageNameToFilename(Level, FPackageName::GetMapPackageExtension());
+    const FString DefinitionFilename = FPackageName::LongPackageNameToFilename(Definition, FPackageName::GetAssetPackageExtension());
+    if (IFileManager::Get().FileExists(*LevelFilename) || IFileManager::Get().FileExists(*DefinitionFilename))
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("Disconnected navigation fixture already exists; refusing to overwrite."));
+        return false;
+    }
+    auto* Source = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(TEXT("/Game/Maps/RTSVerticalSlice"));
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!Source || !World || !Cube) return false;
+    FStaticMeshCompilingManager::Get().FinishAllCompilation();
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(LevelFilename), true);
+    AStaticMeshActor* Barrier = World->SpawnActor<AStaticMeshActor>(BarrierLocation, FRotator::ZeroRotator);
+    if (!Barrier) return false;
+    Barrier->Tags.Add(BarrierTag);
+    Barrier->SetActorLabel(TEXT("Disconnected Navigation Barrier"));
+    Barrier->GetStaticMeshComponent()->SetStaticMesh(Cube);
+    Barrier->SetActorScale3D(BarrierScale);
+    Barrier->GetStaticMeshComponent()->SetMobility(EComponentMobility::Static);
+    Barrier->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
+    Barrier->GetStaticMeshComponent()->SetCanEverAffectNavigation(true);
+    Barrier->GetStaticMeshComponent()->ReregisterComponent();
+    PolitikaNavigationObstacleFixture::ExcludeSolidInterior(Barrier);
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (!Nav) return false;
+    Nav->InitializeLevelCollisions();
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (auto* Bounds = Cast<ANavMeshBoundsVolume>(*It)) Nav->OnNavigationBoundsUpdated(Bounds);
+        UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(**It);
+    }
+    Nav->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+    Nav->ReleaseInitialBuildingLock();
+    Nav->FlushPendingOperations();
+    Nav->Build();
+    int32 Wait = 0;
+    while (Nav->IsNavigationBuildInProgress() && Wait++ < 600) FPlatformProcess::Sleep(0.1f);
+    if (Nav->IsNavigationBuildInProgress()) return false;
+    const ANavigationData* Data = Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
+    FNavLocation ProjectedStart, ProjectedGoal;
+    if (!Data || !Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data)
+        || !Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data)
+        || FVector::Dist(ProjectedStart.Location, Start) > 80.0f
+        || FVector::Dist(ProjectedGoal.Location, Goal) > 80.0f) return false;
+    FPathFindingQuery Query(nullptr, *Data, ProjectedStart.Location, ProjectedGoal.Location);
+    Query.SetAllowPartialPaths(false);
+    Query.SetRequireNavigableEndLocation(true);
+    Query.SetRequireNavigableEndLocation(true);
+    const FPathFindingResult Path = Nav->FindPathSync(Query);
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("NAV_DISCONNECTED_FIXTURE_BUILD nav=%s start=%.3f,%.3f,%.3f goal=%.3f,%.3f,%.3f result=%u partial=%d points=%d barrier=%s"),
+        *Data->GetPathName(), ProjectedStart.Location.X, ProjectedStart.Location.Y, ProjectedStart.Location.Z,
+        ProjectedGoal.Location.X, ProjectedGoal.Location.Y, ProjectedGoal.Location.Z,
+        static_cast<uint32>(Path.Result), Path.IsPartial() ? 1 : 0,
+        Path.Path.IsValid() ? Path.Path->GetPathPoints().Num() : 0, *Barrier->GetPathName());
+    if ((Path.Result == ENavigationQueryResult::Success && Path.Path.IsValid() && !Path.Path->IsPartial())
+        || !FEditorFileUtils::SaveMap(World, LevelFilename)) return false;
+    World = UEditorLoadingAndSavingUtils::LoadMap(LevelFilename);
+    if (!World || World->GetPackage()->GetName() != Level) return false;
+    UPackage* Package = CreatePackage(Definition);
+    auto* Fixture = DuplicateObject<UPolitikaPrototypeMapDefinition>(Source, Package, TEXT("DA_DisconnectedNavigation"));
+    if (!Fixture) return false;
+    Fixture->SetFlags(RF_Public | RF_Standalone);
+    FAssetRegistryModule::AssetCreated(Fixture);
+    Fixture->StableId = MapId;
+    Fixture->LevelAsset = FSoftObjectPath(Level);
+    Fixture->PlayerSlots[0].StartLocation = Start;
+    if (Fixture->PlayerSlots.Num() > 1) Fixture->PlayerSlots[1].StartLocation = FVector(-1100.0, 800.0, 42.0);
+    FPolitikaPrototypeUnitPlacement Placement = Source->UnitPlacements[1];
+    Placement.Location = Start;
+    Fixture->UnitPlacements = {Placement};
+    Fixture->Objective.Location = FVector(-1100.0, 1200.0, 4.0);
+    Fixture->MarkPackageDirty();
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(Fixture, Catalog, Diagnostics);
+    UPolitikaPrototypeContentValidator::ValidateMapSpatial(World, Fixture, Diagnostics);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_DISCONNECTED_FIXTURE_AUTHORING diagnostics=%s"),
+        *UPolitikaPrototypeContentValidator::DiagnosticsToJson(Diagnostics));
+    return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
+}
+
+bool CreateUnprojectableDestinationFixture()
+{
+    using namespace PolitikaUnprojectableDestinationFixture;
+    const FString LevelFilename = FPackageName::LongPackageNameToFilename(Level, FPackageName::GetMapPackageExtension());
+    const FString DefinitionFilename = FPackageName::LongPackageNameToFilename(Definition, FPackageName::GetAssetPackageExtension());
+    if (IFileManager::Get().FileExists(*LevelFilename) || IFileManager::Get().FileExists(*DefinitionFilename)) return false;
+    auto* Source = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr, TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(TEXT("/Game/Maps/RTSVerticalSlice"));
+    if (!Source || !World) return false;
+    FStaticMeshCompilingManager::Get().FinishAllCompilation();
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(LevelFilename), true);
+    ANavModifierVolume* Exclusion = World->SpawnActor<ANavModifierVolume>(ExclusionLocation, FRotator::ZeroRotator);
+    if (!Exclusion) return false;
+    Exclusion->Tags.Add(ExclusionTag);
+    Exclusion->SetActorLabel(TEXT("Unprojectable Destination Exclusion"));
+    ABrush* BuilderBrush = World->GetDefaultBrush();
+    if (!BuilderBrush) return false;
+    if (!BuilderBrush->Brush)
+    {
+        BuilderBrush->Brush = NewObject<UModel>(BuilderBrush, NAME_None, RF_Transactional);
+        BuilderBrush->Brush->Initialize(nullptr, true);
+        BuilderBrush->Brush->Polys = NewObject<UPolys>(BuilderBrush->Brush, NAME_None, RF_Transactional);
+        BuilderBrush->GetBrushComponent()->Brush = BuilderBrush->Brush;
+    }
+    UCubeBuilder* Builder = NewObject<UCubeBuilder>(GetTransientPackage());
+    Builder->X = ExclusionExtent.X * 2.0;
+    Builder->Y = ExclusionExtent.Y * 2.0;
+    Builder->Z = ExclusionExtent.Z * 2.0;
+    BuilderBrush->SetActorLocation(ExclusionLocation);
+    if (!Builder->Build(World, BuilderBrush)) return false;
+    FBSPOps::csgCopyBrush(Exclusion, BuilderBrush, 0, RF_Transactional, true, true);
+    Exclusion->PostEditChange();
+    if (Exclusion->Brush) Exclusion->Brush->BuildBound();
+    Exclusion->GetBrushComponent()->SetMobility(EComponentMobility::Static);
+    Exclusion->GetBrushComponent()->ReregisterComponent();
+    BuilderBrush->SetActorLocation(FVector::ZeroVector);
+    Exclusion->SetAreaClass(UNavArea_Null::StaticClass());
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (!Nav) return false;
+    Nav->InitializeLevelCollisions();
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (auto* Bounds = Cast<ANavMeshBoundsVolume>(*It)) Nav->OnNavigationBoundsUpdated(Bounds);
+        UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(**It);
+    }
+    UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(*Exclusion);
+    Nav->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+    Nav->ReleaseInitialBuildingLock();
+    Nav->FlushPendingOperations();
+    Nav->Build();
+    int32 Wait = 0;
+    while (Nav->IsNavigationBuildInProgress() && Wait++ < 600) FPlatformProcess::Sleep(0.1f);
+    const ANavigationData* Data = Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
+    FNavLocation ProjectedStart, ProjectedGoal;
+    const bool bStart = Data && Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data);
+    const bool bGoal = Data && Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_UNPROJECTABLE_FIXTURE_BUILD nav=%s start_projected=%d goal_projected=%d goal=%.3f,%.3f,%.3f exclusion=%s"),
+        Data ? *Data->GetPathName() : TEXT("missing"), bStart ? 1 : 0, bGoal ? 1 : 0,
+        Goal.X, Goal.Y, Goal.Z, *Exclusion->GetPathName());
+    if (Nav->IsNavigationBuildInProgress() || !bStart || bGoal || !FEditorFileUtils::SaveMap(World, LevelFilename)) return false;
+    World = UEditorLoadingAndSavingUtils::LoadMap(LevelFilename);
+    Nav = World ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World) : nullptr;
+    Data = Nav ? Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+    if (!World || !Nav || !Data || Nav->IsNavigationBuildInProgress()
+        || !Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data)
+        || Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data)) return false;
+    UPackage* Package = CreatePackage(Definition);
+    auto* Fixture = DuplicateObject<UPolitikaPrototypeMapDefinition>(Source, Package, TEXT("DA_UnprojectableDestination"));
+    if (!Fixture) return false;
+    Fixture->SetFlags(RF_Public | RF_Standalone);
+    FAssetRegistryModule::AssetCreated(Fixture);
+    Fixture->StableId = MapId;
+    Fixture->LevelAsset = FSoftObjectPath(Level);
+    Fixture->PlayerSlots[0].StartLocation = Start;
+    FPolitikaPrototypeUnitPlacement Placement = Source->UnitPlacements[1];
+    Placement.Location = Start;
+    Fixture->UnitPlacements = {Placement};
+    Fixture->Objective.Location = FVector(-1100.0, 1200.0, 4.0);
+    Fixture->MarkPackageDirty();
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(Fixture, Catalog, Diagnostics);
+    UPolitikaPrototypeContentValidator::ValidateMapSpatial(World, Fixture, Diagnostics);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_UNPROJECTABLE_FIXTURE_AUTHORING diagnostics=%s"),
+        *UPolitikaPrototypeContentValidator::DiagnosticsToJson(Diagnostics));
+    return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
+}
+
 bool CreatePrototypeDefinitions()
 {
     UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -385,6 +566,10 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
     // navigation, catalog entries, or the existing schema fixture.
     if (FParse::Param(*Params, TEXT("CreateStaticObstacleDetourFixture")))
         return CreateStaticObstacleDetourFixture() ? 0 : 13;
+    if (FParse::Param(*Params, TEXT("CreateDisconnectedNavigationFixture")))
+        return CreateDisconnectedNavigationFixture() ? 0 : 14;
+    if (FParse::Param(*Params, TEXT("CreateUnprojectableDestinationFixture")))
+        return CreateUnprojectableDestinationFixture() ? 0 : 15;
     if (FParse::Param(*Params, TEXT("CreateInvalidParticipantFactionFixture")))
         return CreateInvalidParticipantFactionFixture() ? 0 : 12;
     if (FParse::Param(*Params, TEXT("ValidateBlockedRoute")))

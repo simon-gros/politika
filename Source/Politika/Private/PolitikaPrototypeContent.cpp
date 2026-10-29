@@ -620,6 +620,10 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
         FixturePath = TEXT("/Game/Politika/TestFixtures/DA_InvalidParticipantFaction.DA_InvalidParticipantFaction");
     else if (MapId == TEXT("map.test.static_obstacle_detour"))
         FixturePath = TEXT("/Game/Politika/TestFixtures/Navigation/DA_StaticObstacleDetour.DA_StaticObstacleDetour");
+    else if (MapId == TEXT("map.test.disconnected_navigation"))
+        FixturePath = TEXT("/Game/Politika/TestFixtures/Navigation/DA_DisconnectedNavigation.DA_DisconnectedNavigation");
+    else if (MapId == TEXT("map.test.unprojectable_destination"))
+        FixturePath = TEXT("/Game/Politika/TestFixtures/Navigation/DA_UnprojectableDestination.DA_UnprojectableDestination");
     if (!Map && FixturePath)
     {
         Map = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr, FixturePath);
