@@ -300,15 +300,16 @@ This bounded integration reconciles the qualified participant-authority implemen
 | Item | Verified identity/result |
 |---|---|
 | Current remote-main baseline at preflight | `1dcaf03288e2a3bbb5df40fa6a398b3f456e6433` |
+| Latest remote-main after mid-qualification advancement | `8cdc9429695fb67bdcf977aed066f49d51fb2125` (`tools: add offline Tempest reference indexer`); incorporated by rebasing the scoped integration series with no conflicts |
 | Qualified authority branch/tip | `codex/stage4a-participant-authority-20261029` / `71e4e3a225f95539593fb74a1b29da371f3a9c3e` |
 | Actual merge base | `83ec26703886a32d857291f4380e2bc2524f6c7c` |
 | Pinned Unreal source revision | `396c9f059903aed5fec78ecd3d437a40c6415368` (UE 5.8.3; clean at preflight) |
 | Isolated worktree | `/mnt/data/politika-stage4a-authority-infantry-integration-20261029` |
-| Gameplay/test integration commit | `2cd27ce559b9af7ade0ffad96587e0424dba770b` |
+| Integrated gameplay/test changes after latest-main rebase | `de980bb` plus the scoped preceding authority/harness/bootstrap commits; exact outgoing chain is in the external evidence manifest |
 | Scoped replay-harness refinements | Exact commit chain is recorded in `build/diagnostics/stage4a-integration/final-evidence.json` |
 | Final docs/integration commit and package identity | See `build/diagnostics/stage4a-integration/final-evidence.json`; this generated evidence file is outside Git and names the exact source and runtime identity |
 
-The divergent histories shared changes in `PolitikaPrototypeGameplay.cpp` and `.h`. The gameplay source was reconciled manually: authority commandability/selection revalidation, stale queued-issuer rejection and death-selection cleanup are retained alongside current infantry grenade simulation, typed Grenade/Reload/Sprint variants, combat, movement and presentation. The header retains authority test access and the latest rifleman state/API. Four scoped authority/harness/bootstrap commits were selected; unrelated history and binary assets were not imported. The Git-worktree-aware bootstrap dependency fix is retained.
+The divergent histories shared changes in `PolitikaPrototypeGameplay.cpp` and `.h`. The gameplay source was reconciled manually: authority commandability/selection revalidation, stale queued-issuer rejection and death-selection cleanup are retained alongside current infantry grenade simulation, typed Grenade/Reload/Sprint variants, combat, movement and presentation. The header retains authority test access and the latest rifleman state/API. Four scoped authority/harness/bootstrap commits were selected; unrelated history and binary assets were not imported. During qualification GitHub main advanced with the separate Tempest-reference-indexer commit listed above. The eight added tool files were preserved by rebasing the scoped integration commits onto that current tip; the final qualification and publication checks use the rebased source. The Git-worktree-aware bootstrap dependency fix is retained.
 
 The current player-controller ability inputs now resolve `GetCommandableSelectedUnit` before forwarding Grenade, Reload or Sprint. Ability availability remains an additional check after participant/issuer/ownership/faction admission. Combined assertions exercise foreign-owned Grenade/Reload/Sprint and local attempts against system-owned infantry, verifying `NotOwned`, unchanged order/ammunition/cooldowns/health and an empty pending queue. Stale dead cached selection is retired before each ability input. Existing death presentation keeps the actor available for presentation while removing it from commandable membership and selection.
 
