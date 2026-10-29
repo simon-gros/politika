@@ -41,7 +41,8 @@ struct FPolitikaMultiplayerFixture
 
     // Builds the coordinator from the authored multiplayer fixture (or another map),
     // optionally listening, and resolves the session layout through production code.
-    bool Create(const TCHAR* Layout, bool bListen, FName MapId = TEXT("map.test.multiplayer_skirmish"))
+    bool Create(const TCHAR* Layout, bool bListen, FName MapId = TEXT("map.test.multiplayer_skirmish"),
+        bool bDedicated = false)
     {
         const UWorld::InitializationValues InitValues = UWorld::InitializationValues()
             .AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(false)
@@ -86,6 +87,8 @@ struct FPolitikaMultiplayerFixture
         Match->RuntimeParticipants = Participants;
         Match->LocalRuntimePlayerId = LocalId;
         Match->UnalignedSystemAuthority = {TEXT("faction.unaligned"), true};
+        // The real listen IpNetDriver stays in place; only the hosting policy differs.
+        Match->bTestDedicatedHosting = bDedicated;
         if (!Match->ResolveSessionLayout(LayoutFailure)) return false;
         Match->PlayableMin = FVector2D(-2000, -2000);
         Match->PlayableMax = FVector2D(2000, 2000);
@@ -628,6 +631,167 @@ bool FPolitikaMultiplayerResultAndCleanupTest::RunTest(const FString& Parameters
         TestEqual(TEXT("Repeated logout does not change the committed reason"),
             F.Match->CommittedResult->Reason, FName(TEXT("participant_disconnected")));
         if (UWorld* World = F.World) World->GetTimerManager().ClearAllTimersForObject(F.Match);
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerDedicatedHostingTest,
+    "Politika.RTS.Multiplayer.DedicatedHosting",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerDedicatedHostingTest::RunTest(const FString& Parameters)
+{
+    // MP3-01/02: a dedicated server has no local seat. Every seat, including seat 0, is
+    // bound remotely in join order with the same participant IDs and teams as a listen
+    // session of the same layout; the match activates only when all seats are bound.
+    const TCHAR* Layouts[] = {TEXT("1v1"), TEXT("2v1"), TEXT("3v1"), TEXT("2v2")};
+    for (const TCHAR* LayoutText : Layouts)
+    {
+        FPolitikaMultiplayerFixture Listen(*this);
+        FPolitikaMultiplayerFixture F(*this);
+        if (!Listen.Create(LayoutText, true) || !F.Create(LayoutText, true, TEXT("map.test.multiplayer_skirmish"), true))
+            return false;
+        const int32 Seats = F.Match->GetSessionSeatCount();
+        TestEqual(FString::Printf(TEXT("%s: dedicated hosting mode"), LayoutText),
+            static_cast<int32>(F.Match->GetHostingMode()), static_cast<int32>(HostingMode::Dedicated));
+        TestEqual(FString::Printf(TEXT("%s: parity seat count"), LayoutText), Seats, Listen.Match->GetSessionSeatCount());
+        for (int32 Seat = 0; Seat < Seats; ++Seat)
+        {
+            const FPolitikaPrototypeRuntimeParticipant& D = F.Match->RuntimeParticipants[Seat];
+            const FPolitikaPrototypeRuntimeParticipant& L = Listen.Match->RuntimeParticipants[Seat];
+            TestTrue(FString::Printf(TEXT("%s: seat %d parity (participant, slot, faction, team)"), LayoutText, Seat),
+                D.RuntimePlayerId == L.RuntimePlayerId && D.SlotId == L.SlotId && D.FactionId == L.FactionId
+                && D.TeamId == L.TeamId);
+            TestEqual(FString::Printf(TEXT("%s: seat %d is open to a remote connection"), LayoutText, Seat),
+                D.ControllerKind, EPolitikaPrototypeControllerKind::AssignedOpponent);
+        }
+        TestTrue(FString::Printf(TEXT("%s: fog of war enforced"), LayoutText), F.Match->IsFogOfWarEnabled());
+        TestEqual(FString::Printf(TEXT("%s: no local participant on the server"), LayoutText), F.Match->LocalRuntimePlayerId, 0u);
+        TestEqual(FString::Printf(TEXT("%s: every seat is remote"), LayoutText), F.Match->GetMaxRemoteHumans(),
+            static_cast<uint32>(Seats));
+        TestEqual(FString::Printf(TEXT("%s: listen keeps one local seat"), LayoutText), Listen.Match->GetMaxRemoteHumans(),
+            static_cast<uint32>(Seats - 1));
+
+        FName Failure;
+        TestFalse(FString::Printf(TEXT("%s: a local controller cannot take a seat"), LayoutText),
+            F.Match->BindController(F.Host, Failure));
+        TestEqual(TEXT("Local bind reason"), Failure, FName(TEXT("MP.BIND.NO_LOCAL_SEAT")));
+        TestEqual(TEXT("Local controller holds no authority"), F.Match->GetBoundParticipantId(F.Host), 0u);
+        for (int32 Seat = 0; Seat < Seats; ++Seat)
+        {
+            TestEqual(FString::Printf(TEXT("%s: Starting until every seat is bound"), LayoutText),
+                F.Match->GetMatchPhase(), MatchPhase::Starting);
+            APolitikaPrototypePlayerController* Remote = F.AddRemote();
+            TestTrue(FString::Printf(TEXT("%s: open seat %d admits"), LayoutText, Seat), F.Match->CanAdmitRemoteParticipant(Failure));
+            TestTrue(FString::Printf(TEXT("%s: remote %d binds"), LayoutText, Seat), F.Match->BindController(Remote, Failure));
+            const uint32 ExpectedId = F.Match->RuntimeParticipants[Seat].RuntimePlayerId;
+            TestEqual(FString::Printf(TEXT("%s: remote %d takes the seat-order participant"), LayoutText, Seat),
+                F.Match->GetBoundParticipantId(Remote), ExpectedId);
+            TestEqual(TEXT("Owner-only assignment"), Remote->GetAssignedRuntimePlayerId(), ExpectedId);
+            TestEqual(TEXT("Seat becomes RemoteHuman"), F.Match->RuntimeParticipants[Seat].ControllerKind,
+                EPolitikaPrototypeControllerKind::RemoteHuman);
+        }
+        TestEqual(TEXT("First joiner holds participant 1 on team A"), F.Match->GetTeamForParticipant(
+            F.Match->GetBoundParticipantId(F.Remotes[0])), kTeamA);
+        TestEqual(FString::Printf(TEXT("%s: match activates when all seats are bound remotely"), LayoutText),
+            F.Match->GetMatchPhase(), MatchPhase::Active);
+        APolitikaPrototypePlayerController* Extra = F.AddRemote();
+        TestFalse(FString::Printf(TEXT("%s: extra connection is refused"), LayoutText), F.Match->CanAdmitRemoteParticipant(Failure));
+        TestEqual(TEXT("Extra connection reason"), Failure, FName(TEXT("MP.SESSION.IN_PROGRESS")));
+        TestFalse(TEXT("Extra connection is not bound"), F.Match->BindController(Extra, Failure));
+    }
+
+    {
+        // The same single intake and kernel admission serve seat 0 when it is remote.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, TEXT("map.test.multiplayer_skirmish"), true)) return false;
+        FName Failure;
+        APolitikaPrototypePlayerController* First = F.AddRemote();
+        APolitikaPrototypePlayerController* Second = F.AddRemote();
+        TestTrue(TEXT("Both remotes bind"), F.Match->BindController(First, Failure) && F.Match->BindController(Second, Failure));
+        APolitikaPrototypeUnit* Own = F.AddUnit(1, FVector2D(0, 0));
+        APolitikaPrototypeUnit* Foreign = F.AddUnit(2, FVector2D(300, 0));
+        F.RefreshVision();
+        const CommandOutcomeEvent* Accepted = F.Submit(First, F.Intent(First, OrderKind::Stop, Own->GetStableId()));
+        TestTrue(TEXT("Seat-0 remote command on its own unit is accepted"), Accepted && Accepted->accepted);
+        const CommandOutcomeEvent* Denied = F.Submit(First, F.Intent(First, OrderKind::Stop, Foreign->GetStableId()));
+        TestTrue(TEXT("Seat-0 remote command on a foreign unit is NotOwned"), Denied && !Denied->accepted
+            && Denied->rejection == OrderRejection::NotOwned);
+        TestFalse(TEXT("The unbound local controller has no command authority"), F.Match->SubmitControllerIntent(F.Host,
+            F.Intent(F.Host, OrderKind::Stop, Own->GetStableId())));
+    }
+
+    {
+        // A departure before Active reopens exactly that seat, including seat 0.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, TEXT("map.test.multiplayer_skirmish"), true)) return false;
+        FName Failure;
+        APolitikaPrototypePlayerController* First = F.AddRemote();
+        F.Match->BindController(First, Failure);
+        TestEqual(TEXT("First joiner takes participant 1"), F.Match->GetBoundParticipantId(First), 1u);
+        F.Match->HandleControllerLogout(First);
+        TestEqual(TEXT("Pre-active departure keeps Starting"), F.Match->GetMatchPhase(), MatchPhase::Starting);
+        TestFalse(TEXT("Pre-active departure schedules no session close"),
+            F.World->GetTimerManager().IsTimerActive(F.Match->DedicatedSessionTimer));
+        APolitikaPrototypePlayerController* Replacement = F.AddRemote();
+        TestTrue(TEXT("Reopened seat 0 admits"), F.Match->BindController(Replacement, Failure));
+        TestEqual(TEXT("Replacement receives participant 1"), F.Match->GetBoundParticipantId(Replacement), 1u);
+    }
+
+    {
+        // MP3-12 disconnect: the match ends exactly once; the server schedules a session
+        // close and reset rather than a host return to the menu.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("2v2"), true, TEXT("map.test.multiplayer_skirmish"), true)) return false;
+        FName Failure;
+        for (int32 Seat = 0; Seat < 4; ++Seat) F.Match->BindController(F.AddRemote(), Failure);
+        TestEqual(TEXT("2v2 dedicated is Active"), F.Match->GetMatchPhase(), MatchPhase::Active);
+        F.Match->HandleControllerLogout(F.Remotes[2]);
+        TestEqual(TEXT("Disconnect commits Results"), F.Match->GetMatchPhase(), MatchPhase::Results);
+        TestTrue(TEXT("Disconnect reason committed"), F.Match->CommittedResult.IsSet()
+            && F.Match->CommittedResult->Reason == FName(TEXT("participant_disconnected")));
+        FTimerManager& Timers = F.World->GetTimerManager();
+        TestTrue(TEXT("Session close scheduled"), Timers.IsTimerActive(F.Match->DedicatedSessionTimer));
+        TestEqual(TEXT("Close reason"), F.Match->DedicatedCloseReason, FName(TEXT("participant_disconnected")));
+        TestFalse(TEXT("No listen-host menu return is scheduled"), Timers.IsTimerActive(F.Match->NetworkReturnTimer));
+        TestEqual(TEXT("Remaining clients stay bound until the close"), F.Match->ParticipantBindings.Num(), 3);
+        Timers.ClearAllTimersForObject(F.Match);
+    }
+
+    {
+        // Results: clients may linger on the result; once all have left, reset promptly.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, TEXT("map.test.multiplayer_skirmish"), true)) return false;
+        FName Failure;
+        for (int32 Seat = 0; Seat < 2; ++Seat) F.Match->BindController(F.AddRemote(), Failure);
+        TestTrue(TEXT("Objective result transitions"), F.Match->TransitionLifecycle(MatchPhase::Terminal)
+            && F.Match->TransitionLifecycle(MatchPhase::Results));
+        F.Match->CommittedResult.Emplace(FPolitikaPrototypeMatchResult{1, TEXT("objective_secured"), kTeamA});
+        F.Match->NoteNetworkResultCommitted();
+        FTimerManager& Timers = F.World->GetTimerManager();
+        TestEqual(TEXT("Linger close scheduled"), F.Match->DedicatedCloseReason, FName(TEXT("results_linger_elapsed")));
+        TestTrue(TEXT("Linger is the long timeout"), Timers.GetTimerRemaining(F.Match->DedicatedSessionTimer) > 10.0f);
+        F.Match->HandleControllerLogout(F.Remotes[0]);
+        TestEqual(TEXT("One departure keeps the linger"), F.Match->DedicatedCloseReason, FName(TEXT("results_linger_elapsed")));
+        TestTrue(TEXT("Departure after results does not change the result"),
+            F.Match->CommittedResult->Reason == FName(TEXT("objective_secured")));
+        F.Match->HandleControllerLogout(F.Remotes[1]);
+        TestEqual(TEXT("Empty session resets promptly"), F.Match->DedicatedCloseReason, FName(TEXT("results_complete")));
+        TestTrue(TEXT("Prompt reset is short"), Timers.GetTimerRemaining(F.Match->DedicatedSessionTimer) <= 1.5f);
+        F.Match->ScheduleDedicatedSessionClose(TEXT("results_linger_elapsed"), 30.0f);
+        TestEqual(TEXT("A later request never postpones a pending close"), F.Match->DedicatedCloseReason,
+            FName(TEXT("results_complete")));
+        Timers.ClearAllTimersForObject(F.Match);
+    }
+
+    {
+        // A listen host never uses the dedicated session policy.
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Listen seats bound"), F.BindAll())) return false;
+        F.Match->HandleControllerLogout(F.Remotes[0]);
+        TestFalse(TEXT("Listen disconnect schedules no dedicated close"),
+            F.World->GetTimerManager().IsTimerActive(F.Match->DedicatedSessionTimer));
+        F.World->GetTimerManager().ClearAllTimersForObject(F.Match);
     }
     return true;
 }

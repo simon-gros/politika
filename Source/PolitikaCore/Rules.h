@@ -94,7 +94,8 @@ struct Entity {
 // teams, plus the Unaligned NPC side that is present in every match (so "1v1" is one
 // player vs one player vs the Unaligned). The Unaligned is never a seat, never allied
 // to a player team and is controlled only by the server. Seats alternate teams until
-// the smaller team is full, so seat 0 (the listen-server host) and seat 1 are always
+// the smaller team is full, so seat 0 (the listen-server host, or the first dedicated-
+// server joiner) and seat 1 are always
 // opposed and adding a seat never moves an existing participant to another team.
 enum class TeamLayout : std::uint8_t { OneVsOne, TwoVsOne, ThreeVsOne, TwoVsTwo };
 inline constexpr std::uint8_t kNoTeam = 0;
@@ -140,6 +141,37 @@ inline constexpr std::uint8_t kMaxPlayableSeats = 4;
         case TeamLayout::TwoVsOne: return "2v1";
         case TeamLayout::ThreeVsOne: return "3v1";
         case TeamLayout::TwoVsTwo: return "2v2";
+    }
+    return "invalid";
+}
+
+// How a networked session is hosted. A listen server's local player occupies seat 0, so
+// it admits SeatCount - 1 remote humans. A dedicated server has no player of its own:
+// every seat, including seat 0, is bound to a remote connection in join order.
+enum class HostingMode : std::uint8_t { Standalone, Listen, Dedicated };
+
+[[nodiscard]] constexpr std::uint8_t LocalSeatCount(HostingMode mode) noexcept {
+    return mode == HostingMode::Dedicated ? 0 : 1;
+}
+
+[[nodiscard]] constexpr std::uint8_t RemoteSeatCount(TeamLayout layout, HostingMode mode) noexcept {
+    if (mode == HostingMode::Standalone) return 0;
+    const std::uint8_t seats = SeatCount(layout);
+    return seats >= LocalSeatCount(mode) ? static_cast<std::uint8_t>(seats - LocalSeatCount(mode)) : 0;
+}
+
+// The match becomes active only when every seat of the layout is bound, exactly once.
+[[nodiscard]] constexpr bool SessionSeatsComplete(TeamLayout layout, HostingMode mode,
+    std::uint32_t local_bindings, std::uint32_t remote_bindings) noexcept {
+    return mode != HostingMode::Standalone && SeatCount(layout) != 0
+        && local_bindings == LocalSeatCount(mode) && remote_bindings == RemoteSeatCount(layout, mode);
+}
+
+[[nodiscard]] constexpr std::string_view HostingModeName(HostingMode mode) noexcept {
+    switch (mode) {
+        case HostingMode::Standalone: return "standalone";
+        case HostingMode::Listen: return "listen";
+        case HostingMode::Dedicated: return "dedicated";
     }
     return "invalid";
 }

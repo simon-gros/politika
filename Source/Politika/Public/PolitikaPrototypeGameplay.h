@@ -363,6 +363,9 @@ public:
     bool CanAdmitRemoteParticipant(FName& OutReason) const;
     uint32 GetBoundParticipantId(const APlayerController* Controller) const;
     bool IsNetworkSession() const;
+    // Standalone, listen (host occupies seat 0) or dedicated (every seat is remote).
+    politika::rules::HostingMode GetHostingMode() const;
+    bool IsDedicatedHosting() const { return GetHostingMode() == politika::rules::HostingMode::Dedicated; }
     uint64 GetMatchGeneration() const { return MatchGeneration; }
     APolitikaPrototypeUnit* FindUnitByStableId(uint64 StableId) const;
     const class UPolitikaPrototypeContentCatalog* GetContentCatalog() const { return ContentCatalog; }
@@ -442,6 +445,12 @@ private:
     void SyncReplicatedLifecycle();
     void TryActivateNetworkMatch();
     void TerminateForParticipantDisconnect(uint32 PlayerId);
+    // Dedicated server session lifecycle: after results or a disconnect the server closes
+    // the session (removing any remaining clients) and reloads the map for a fresh match
+    // generation. It never travels to the shell menu and never exits on its own.
+    void NoteNetworkResultCommitted();
+    void ScheduleDedicatedSessionClose(FName Reason, float DelaySeconds);
+    void CloseDedicatedSession();
     void RouteCommandOutcome(const politika::rules::CommandOutcomeEvent& Outcome);
     void RejectIntentAtIntake(APlayerController* Source, const FPolitikaNetCommandIntent& Intent,
         uint32 ParticipantId, politika::rules::OrderRejection Rejection);
@@ -473,6 +482,9 @@ private:
     bool bObservedContentReady = false;
     bool bMapPresentationApplied = false;
     FTimerHandle NetworkReturnTimer;
+    FTimerHandle DedicatedSessionTimer;
+    FName DedicatedCloseReason;
+    bool bDedicatedSessionClosing = false;
 #if !UE_BUILD_SHIPPING
     // Development multiplayer acceptance: server-side fixture actors and sampling.
     bool bMultiplayerAcceptance = false;
@@ -489,7 +501,10 @@ private:
     friend class FPolitikaMultiplayerAuthorityOnlySimulationTest;
     friend class FPolitikaMultiplayerResultAndCleanupTest;
     friend class FPolitikaMultiplayerFogOfWarTest;
+    friend class FPolitikaMultiplayerDedicatedHostingTest;
     friend struct FPolitikaMultiplayerFixture;
+    // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
+    bool bTestDedicatedHosting = false;
     friend class FPolitikaGameplayEventPublicationAutomationTest;
     friend class FPolitikaDefaultInfantryAutomationTest;
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;

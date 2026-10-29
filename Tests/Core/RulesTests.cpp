@@ -242,6 +242,32 @@ int main() {
         assert(ParseTeamLayout(LayoutName(Layout), Parsed) && Parsed == Layout);
     }
     assert(TeamForSeat(static_cast<TeamLayout>(9), 0) == kNoTeam);
+
+    // Hosting: a listen host fills seat 0 itself; a dedicated server binds every seat remotely.
+    static_assert(LocalSeatCount(HostingMode::Listen) == 1 && LocalSeatCount(HostingMode::Dedicated) == 0);
+    static_assert(RemoteSeatCount(TeamLayout::OneVsOne, HostingMode::Standalone) == 0);
+    constexpr int ExpectedListenRemote[] = {1, 2, 3, 3};
+    constexpr int ExpectedDedicatedRemote[] = {2, 3, 4, 4};
+    for (std::size_t Index = 0; Index < std::size(AllLayouts); ++Index) {
+        const TeamLayout Layout = AllLayouts[Index];
+        assert(RemoteSeatCount(Layout, HostingMode::Listen) == ExpectedListenRemote[Index]);
+        assert(RemoteSeatCount(Layout, HostingMode::Dedicated) == ExpectedDedicatedRemote[Index]);
+        // No mode exceeds four humans, and both modes play the same number of seats.
+        assert(RemoteSeatCount(Layout, HostingMode::Dedicated) <= kMaxPlayableSeats);
+        assert(LocalSeatCount(HostingMode::Listen) + RemoteSeatCount(Layout, HostingMode::Listen)
+            == LocalSeatCount(HostingMode::Dedicated) + RemoteSeatCount(Layout, HostingMode::Dedicated));
+        const auto Remote = static_cast<std::uint32_t>(ExpectedDedicatedRemote[Index]);
+        assert(SessionSeatsComplete(Layout, HostingMode::Dedicated, 0, Remote));
+        assert(!SessionSeatsComplete(Layout, HostingMode::Dedicated, 0, Remote - 1));
+        assert(!SessionSeatsComplete(Layout, HostingMode::Dedicated, 1, Remote - 1)); // no local seat exists
+        assert(!SessionSeatsComplete(Layout, HostingMode::Dedicated, 0, Remote + 1));
+        assert(SessionSeatsComplete(Layout, HostingMode::Listen, 1, Remote - 1));
+        assert(!SessionSeatsComplete(Layout, HostingMode::Listen, 0, Remote));
+        assert(!SessionSeatsComplete(Layout, HostingMode::Standalone, 0, 0));
+    }
+    assert(RemoteSeatCount(static_cast<TeamLayout>(9), HostingMode::Dedicated) == 0);
+    assert(!SessionSeatsComplete(static_cast<TeamLayout>(9), HostingMode::Dedicated, 0, 0));
+    static_assert(HostingModeName(HostingMode::Dedicated) == "dedicated" && HostingModeName(HostingMode::Listen) == "listen");
     TeamLayout Unparsed = TeamLayout::TwoVsOne;
     assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)
         && !ParseTeamLayout("3v2", Unparsed) && Unparsed == TeamLayout::TwoVsOne);

@@ -247,7 +247,8 @@ void UPolitikaGameInstance::OnStart()
     // The initial route above is unchanged (GameDefaultMap, or an explicit map/URL).
     // After boot, engine-driven recovery ("?closed" after a disconnect, failed joins)
     // browses to the default map; it must land on the menu, never start an offline match.
-    if (!GIsEditor)
+    // A dedicated server never shows the menu; it stays on its configured match map.
+    if (!GIsEditor && !IsDedicatedServerInstance())
     {
         UGameMapsSettings::SetGameDefaultMap(TEXT("/Game/Maps/MainMenu"));
         UE_LOG(LogPolitikaPlatform, Display, TEXT("SESSION_RECOVERY_DEFAULT_MAP map=/Game/Maps/MainMenu"));
@@ -354,6 +355,13 @@ bool UPolitikaGameInstance::ConsumeDevelopmentTestFixture(FString& OutFixtureId)
 #else
     OutFixtureId.Reset();
     return false;
+#endif
+}
+
+void UPolitikaGameInstance::RearmDevelopmentTestFixture()
+{
+#if !UE_BUILD_SHIPPING
+    bDevelopmentTestFixtureConsumed = false;
 #endif
 }
 

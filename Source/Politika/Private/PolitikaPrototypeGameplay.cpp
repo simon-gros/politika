@@ -21,6 +21,7 @@
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "HAL/PlatformTime.h"
@@ -1109,6 +1110,15 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
         SimulationStepsExecuted, bContentReady ? 1 : 0);
 #endif
 
+    if (GetNetMode() == NM_DedicatedServer)
+    {
+        // A headless server has no menu to recover to; refusing to host is the truthful
+        // outcome. Exit non-zero so an operator or supervisor sees the failure.
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MP_DEDICATED_ADMISSION_FAILED map=%s exit_code=3"), *MapId.ToString());
+        if (GLog) GLog->Flush();
+        FPlatformMisc::RequestExitWithStatus(false, 3);
+        return;
+    }
     World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]
     {
         UWorld* RecoveryWorld = GetWorld();
@@ -2434,6 +2444,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
                     *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId, MatchGeneration,
                     SimulationStepsExecuted, WinningTeam);
                 SyncReplicatedLifecycle();
+                NoteNetworkResultCommitted();
             }
         }
     }
@@ -2989,6 +3000,17 @@ void APolitikaPrototypeGameMode::StartPlay()
     if (GetWorld() && !GetWorld()->GetAuthGameMode<APolitikaPrototypeGameMode>()) return;
     ActiveMatch = GetWorld()->SpawnActor<APolitikaPrototypeMatch>(FVector::ZeroVector, FRotator::ZeroRotator);
     if (GetNetMode() == NM_ListenServer)
+    {
         UE_LOG(LogPolitikaStartup, Display, TEXT("MP_LISTEN_SERVER_READY port=%d net_driver=%d protocol=%lld"),
             GetWorld()->URL.Port, GetWorld()->GetNetDriver() ? 1 : 0, FPolitikaBootstrap::Get().NetworkProtocol());
+    }
+    else if (GetNetMode() == NM_DedicatedServer)
+    {
+        // Headless evidence: no local player, renderer or audio output exists on this process.
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_DEDICATED_SERVER_READY port=%d net_driver=%d protocol=%lld local_players=%d can_render=%d can_render_audio=%d generation=%llu"),
+            GetWorld()->URL.Port, GetWorld()->GetNetDriver() ? 1 : 0, FPolitikaBootstrap::Get().NetworkProtocol(),
+            GetGameInstance() ? GetGameInstance()->GetNumLocalPlayers() : -1, FApp::CanEverRender() ? 1 : 0,
+            FApp::CanEverRenderAudio() ? 1 : 0, ActiveMatch.IsValid() ? ActiveMatch->GetMatchGeneration() : 0);
+    }
 }

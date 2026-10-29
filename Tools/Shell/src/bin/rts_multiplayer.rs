@@ -453,6 +453,7 @@ impl Recorder {
 /// Collected verdicts using only the acceptance vocabulary.
 #[derive(Default)]
 struct Report {
+    schema: Option<&'static str>,
     tests: Vec<(String, &'static str, String)>,
     artifacts: Vec<(String, String)>,
     facts: Vec<(String, String)>,
@@ -481,8 +482,9 @@ impl Report {
         self.tests.iter().any(|(_, verdict, _)| *verdict != "PASS")
     }
     fn write(&self, path: &Path) -> Result<(), String> {
-        let mut json = String::from(
-            "{\n  \"schema\": \"politika.mp1.packaged-evidence.v1\",\n  \"facts\": {\n",
+        let mut json = format!(
+            "{{\n  \"schema\": \"{}\",\n  \"facts\": {{\n",
+            self.schema.unwrap_or("politika.mp1.packaged-evidence.v1")
         );
         for (index, (key, value)) in self.facts.iter().enumerate() {
             json.push_str(&format!(
@@ -738,7 +740,7 @@ fn expected_probe_rejection(name: &str) -> Option<&'static [u32]> {
     })
 }
 
-fn check_probes(report: &mut Report, client: &Game, host: &Game) {
+fn check_probes(report: &mut Report, id: &str, client: &Game, host: &Game) {
     let client_text = client.text();
     let host_text = host.text();
     let mut checked = 0;
@@ -788,11 +790,11 @@ fn check_probes(report: &mut Report, client: &Game, host: &Game) {
     if !server_attributed {
         problems.push("server attributed a remote command to a participant other than 2".into());
     }
-    report.verdict("MP1-NEG-PROBES", checked >= 14 && problems.is_empty(),
+    report.verdict(id, checked >= 14 && problems.is_empty(),
         format!("{checked} correlated hostile/edge probes over the real ServerSubmitCommandIntent RPC; problems={problems:?}"));
 }
 
-fn health_consistency(report: &mut Report, host: &Game, client: &Game) {
+fn health_consistency(report: &mut Report, id: &str, host: &Game, client: &Game) {
     // Every health value a client observed was produced by server damage application, and
     // every unit the client saw destroyed was destroyed by the server.
     let host_text = host.text();
@@ -842,7 +844,7 @@ fn health_consistency(report: &mut Report, host: &Game, client: &Game) {
             ));
         }
     }
-    report.verdict("MP1-POS-DAMAGE-CONSISTENCY", observed > 0 && problems.is_empty(),
+    report.verdict(id, observed > 0 && problems.is_empty(),
         format!("client observed {observed} damaged-health states and {deaths} deaths, all server-originated; problems={problems:?}"));
 }
 
@@ -1180,13 +1182,13 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
                 client_results.trim()
             ),
         );
-        health_consistency(report, &host, &client);
+        health_consistency(report, "MP1-POS-DAMAGE-CONSISTENCY", &host, &client);
         client.wait(
             &["MP_PROBE_SENT name=after_termination"],
             Duration::from_secs(10),
         )?;
         thread::sleep(Duration::from_secs(1));
-        check_probes(report, &client, &host);
+        check_probes(report, "MP1-NEG-PROBES", &client, &host);
 
         // Normal completion: host returns to MainMenu; the client recovers with the result reason.
         let host_mark = host.offset();
@@ -1530,7 +1532,1142 @@ fn shipping_boot(binary: &Path, evidence: &Path) -> Result<Report, String> {
     Ok(report)
 }
 
+// ---------------------------------------------------------------------------------------
+// MP-3 dedicated server: a headless PolitikaServer process hosts; every player is a remote
+// client of the packaged Development game.
+// ---------------------------------------------------------------------------------------
+
+struct DedicatedOptions {
+    server: PathBuf,
+    client: Options,
+}
+
+fn parse_dedicated_options() -> Result<DedicatedOptions, String> {
+    let usage = "usage: rts_multiplayer --dedicated SERVER_BINARY CLIENT_BINARY [--evidence DIR] [--port N]";
+    let mut args = env::args().skip(2);
+    let server = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("server binary: {e}"))?;
+    let binary = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("client binary: {e}"))?;
+    let mut evidence = None;
+    let mut port = 17790u16;
+    while let Some(flag) = args.next() {
+        let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--evidence" => evidence = Some(PathBuf::from(value)),
+            "--port" => port = value.parse().map_err(|e| format!("--port: {e}"))?,
+            other => return Err(format!("unknown option {other}")),
+        }
+    }
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let evidence = evidence.unwrap_or_else(|| {
+        PathBuf::from(format!(
+            "build/diagnostics/mp3-dedicated-server/packaged-{epoch}"
+        ))
+    });
+    Ok(DedicatedOptions {
+        server,
+        client: Options {
+            binary,
+            layout: "1v1".into(),
+            evidence,
+            port,
+        },
+    })
+}
+
+fn server_args(port: u16, layout: &str) -> Vec<String> {
+    vec![
+        format!("/Game/Maps/RTSVerticalSlice?PolitikaLayout={layout}"),
+        format!("-port={port}"),
+        "-PolitikaTestFixture=MultiplayerSkirmish".into(),
+        "-RTSAcceptance=multiplayer".into(),
+    ]
+}
+
+/// Variables that would let a process reach a display server, audio server or the
+/// operator's desktop session. The dedicated server is launched with none of them.
+const DESKTOP_ENV: [&str; 8] = [
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "PULSE_SERVER",
+    "PIPEWIRE_REMOTE",
+    "SDL_VIDEODRIVER",
+];
+
+impl Game {
+    /// Launches the headless server with a minimal environment: an isolated HOME and user
+    /// directory, PATH and locale only. No display, audio or session-bus variables exist.
+    fn launch_server(
+        binary: &Path,
+        label: &str,
+        evidence: &Path,
+        args: &[String],
+    ) -> Result<Self, String> {
+        let user_dir = evidence.join(format!("user-{label}"));
+        let home = evidence.join(format!("home-{label}"));
+        fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+        let log = evidence.join(format!("{label}.log"));
+        let mut all: Vec<String> = args.to_vec();
+        all.push(format!("-UserDir={}/", user_dir.display()));
+        all.push(format!("-ABSLOG={}", log.display()));
+        all.push("-unattended".into());
+        let mut command = Command::new(binary);
+        command
+            .args(&all)
+            .env_clear()
+            .env("PATH", env::var("PATH").unwrap_or_default())
+            .env("HOME", &home)
+            .env("LANG", "C.UTF-8")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = command
+            .spawn()
+            .map_err(|e| format!("launch {label}: {e}"))?;
+        let mut recorded = vec![binary.display().to_string()];
+        recorded.extend(all);
+        Ok(Game {
+            label: label.into(),
+            child,
+            log,
+            display: None,
+            window: None,
+            command: recorded,
+        })
+    }
+
+    /// Environment of the running process, as the kernel reports it.
+    fn environment(&self) -> Vec<String> {
+        fs::read(format!("/proc/{}/environ", self.pid()))
+            .map(|bytes| {
+                bytes
+                    .split(|b| *b == 0)
+                    .filter(|v| !v.is_empty())
+                    .map(|v| String::from_utf8_lossy(v).into_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Authoritative setup lines whose content must be identical on a listen host and a
+/// dedicated server of the same build, fixture and layout.
+fn setup_signature(text: &str) -> Vec<String> {
+    let markers = [
+        "MATCH_AUTHORITATIVE_UNIT ",
+        "MATCH_AUTHORITATIVE_OBJECTIVE ",
+        "MATCH_UNALIGNED_SIDE ",
+        "MP_ACCEPTANCE_UNALIGNED ",
+        "CONTENT_VALIDATION_PASSED ",
+    ];
+    let mut lines: Vec<String> = Vec::new();
+    for line in text.lines() {
+        if let Some(marker) = markers.iter().find(|m| line.contains(*m)) {
+            let start = line.find(marker).unwrap_or(0);
+            lines.push(line[start..].trim().to_owned());
+        }
+        if line.contains("MP_ACCEPTANCE_FIXTURE ") {
+            break; // first match generation only
+        }
+    }
+    if let Some(layout) = text.lines().find(|l| l.contains("MP_SESSION_LAYOUT ")) {
+        lines.push(format!(
+            "layout={} seats={} fog={} roster={}",
+            field(layout, "layout").unwrap_or("?"),
+            field(layout, "seats").unwrap_or("?"),
+            field(layout, "fog").unwrap_or("?"),
+            field(layout, "roster").unwrap_or("?")
+        ));
+    }
+    lines
+}
+
+fn count_lines(text: &str, fragments: &[&str]) -> usize {
+    text.lines()
+        .filter(|line| fragments.iter().all(|f| line.contains(f)))
+        .count()
+}
+
+fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+
+    // Headless boot: no display, audio, desktop session or renderer flag.
+    let mut server = Game::launch_server(
+        &options.server,
+        "server",
+        evidence,
+        &server_args(port, "1v1"),
+    )?;
+    report.fact("server_pid", server.pid().to_string());
+    report.fact("server_command", server.command.join(" "));
+    let server_pid = server.pid();
+    let ready = server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(120))?;
+    let server_env = server.environment();
+    let leaked: Vec<&str> = DESKTOP_ENV
+        .iter()
+        .copied()
+        .filter(|key| server_env.iter().any(|v| v.starts_with(&format!("{key}="))))
+        .collect();
+    report.fact("server_environment", server_env.join(" "));
+    let no_renderer_flag = !server
+        .command
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case("-nullrhi"));
+    report.verdict(
+        "MP3-BOOT-HEADLESS",
+        field(&ready, "port") == Some(&port.to_string())
+            && field(&ready, "net_driver") == Some("1")
+            && field(&ready, "local_players") == Some("0")
+            && field(&ready, "can_render") == Some("0")
+            && field(&ready, "can_render_audio") == Some("0")
+            && leaked.is_empty()
+            && no_renderer_flag,
+        format!(
+            "{}; desktop/audio variables present={leaked:?}; -nullrhi passed={}",
+            ready.trim(),
+            !no_renderer_flag
+        ),
+    );
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(30))?;
+    let generation1 = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let layout = server.wait(&["MP_SESSION_LAYOUT"], Duration::from_secs(5))?;
+    report.verdict(
+        "MP3-LAYOUT-1V1-UNALIGNED",
+        field(&layout, "layout") == Some("1v1")
+            && field(&layout, "seats") == Some("2")
+            && field(&layout, "fog") == Some("1")
+            && field(&layout, "hosting") == Some("dedicated")
+            && field(&layout, "remote_seats") == Some("2")
+            && server.text().contains("MATCH_UNALIGNED_SIDE units=2"),
+        format!("{}; both seats are remote", layout.trim()),
+    );
+
+    // Client A joins first (seat 0 / participant 1 / team A), then client B (participant 2).
+    let display_a = Display::start(evidence, "client-a")?;
+    let display_b = Display::start(evidence, "client-b")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.extend([
+        format!("-PolitikaMPRematch=127.0.0.1:{port}"),
+        "-PolitikaMPRematchDelay=3".into(),
+        "-PolitikaMPRematchAttempts=1".into(),
+    ]);
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_pid", client_a.pid().to_string());
+    report.fact("client_a_command", client_a.command.join(" "));
+    let bound_a = server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, true, true, true),
+        Some(&display_b.name()),
+    )?;
+    report.fact("client_b_pid", client_b.pid().to_string());
+    report.fact("client_b_command", client_b.command.join(" "));
+    let bound_b = server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    let active = server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation1}")],
+        Duration::from_secs(10),
+    )?;
+    let assignment_a = client_a.wait(
+        &["MP_CLIENT_ASSIGNMENT participant=1"],
+        Duration::from_secs(30),
+    )?;
+    let assignment_b = client_b.wait(
+        &["MP_CLIENT_ASSIGNMENT participant=2"],
+        Duration::from_secs(30),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(30),
+        )?;
+    }
+    report.verdict(
+        "MP3-01",
+        field(&bound_a, "team") == Some("1")
+            && field(&assignment_a, "generation") == Some(generation1.as_str()),
+        format!(
+            "first remote takes seat 0: {} / client: {}",
+            bound_a.trim(),
+            assignment_a.trim()
+        ),
+    );
+    report.verdict(
+        "MP3-02",
+        field(&bound_b, "team") == Some("2")
+            && field(&assignment_b, "generation") == Some(generation1.as_str()),
+        format!(
+            "second remote takes seat 1: {} / client: {}",
+            bound_b.trim(),
+            assignment_b.trim()
+        ),
+    );
+    report.verdict(
+        "MP3-ACTIVE-ALL-REMOTE",
+        field(&active, "hosting") == Some("dedicated")
+            && field(&active, "local") == Some("0")
+            && field(&active, "remote") == Some("2")
+            && server_pid != client_a.pid()
+            && client_a.pid() != client_b.pid(),
+        format!(
+            "three independent processes (server {server_pid}, clients {} / {}): {}",
+            client_a.pid(),
+            client_b.pid(),
+            active.trim()
+        ),
+    );
+
+    client_a.attach_window()?;
+    client_b.attach_window()?;
+    let recorder_a = Recorder::start(&display_a.name(), evidence, "client-a")?;
+    let recorder_b = Recorder::start(&display_b.name(), evidence, "client-b")?;
+    let result = (|| -> Result<(), String> {
+        thread::sleep(Duration::from_secs(2));
+        report.artifact(
+            "client_a_active_png",
+            &client_a.screenshot(evidence, "01-active")?,
+        );
+        report.artifact(
+            "client_b_active_png",
+            &client_b.screenshot(evidence, "01-active")?,
+        );
+
+        // Fog: each client initially receives only its own units.
+        let owners = entity_owners(&server.text());
+        let mut fog_ok = !owners.is_empty();
+        let mut fog_detail = Vec::new();
+        for (client, participant) in [(&client_a, 1u32), (&client_b, 2u32)] {
+            let relevant: Vec<(u64, u32)> = client
+                .text()
+                .lines()
+                .filter(|l| l.contains("MP_CLIENT_UNIT_RELEVANT"))
+                .filter_map(|l| {
+                    Some((
+                        field(l, "entity")?.parse().ok()?,
+                        field(l, "owner")?.parse().ok()?,
+                    ))
+                })
+                .collect();
+            let own = owners.iter().filter(|(_, o)| *o == participant).count();
+            fog_ok &= !relevant.is_empty()
+                && relevant.iter().all(|(_, owner)| *owner == participant)
+                && relevant.len() == own;
+            fog_detail.push(format!("participant {participant} received {relevant:?}"));
+        }
+        report.verdict(
+            "MP3-FOG-INITIAL",
+            fog_ok,
+            format!("authoritative entities {owners:?}; {fog_detail:?}"),
+        );
+
+        client_b.wait(&["MP_PROBE_COMPLETE"], Duration::from_secs(20))?;
+        thread::sleep(Duration::from_secs(2));
+        let units_of = |participant: u32| -> Vec<u64> {
+            owners
+                .iter()
+                .filter(|(_, o)| *o == participant)
+                .map(|(e, _)| *e)
+                .collect()
+        };
+        let (a_units, b_units) = (units_of(1), units_of(2));
+        let (unit_a1, unit_a2, unit_b1) = match (a_units.first(), a_units.get(1), b_units.first()) {
+            (Some(a1), Some(a2), Some(b1)) => (*a1, *a2, *b1),
+            _ => return Err(format!("unexpected authoritative roster {owners:?}")),
+        };
+
+        // Client B real input: Sprint, Stop, Guard, then Move toward the objective.
+        let since = server.offset();
+        select_entity(&mut client_b, "MP_CLIENT_SAMPLE", unit_b1)?;
+        let mut b_orders = Vec::new();
+        for (key, order) in [("f", 7u32), ("s", 3), ("g", 4)] {
+            let mark = client_b.offset();
+            client_b.key(key)?;
+            let outcome = client_b.wait_line(
+                &[
+                    "MP_COMMAND_OUTCOME",
+                    &format!("order={order}"),
+                    "accepted=1",
+                    "authority=0",
+                ],
+                Duration::from_secs(5),
+                mark,
+            )?;
+            b_orders.push(format!("{key}->{}", outcome.trim()));
+            thread::sleep(Duration::from_millis(400));
+        }
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(2500));
+        let objective = wait_screen(
+            &mut client_b,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client B",
+        )?;
+        let unit_screen = wait_screen(
+            &mut client_b,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit_b1),
+            "client B unit",
+        )?;
+        let target = (
+            objective.0 + (unit_screen.0 - objective.0) * 0.45,
+            objective.1 + (unit_screen.1 - objective.1) * 0.45,
+        );
+        let mark = client_b.offset();
+        client_b.click(target.0, target.1, "3")?;
+        let b_move = client_b.wait_line(
+            &["MP_COMMAND_OUTCOME", "order=0", "accepted=1"],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        let b_admitted = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit_b1}"),
+                "participant=2",
+            ],
+            Duration::from_secs(5),
+            since,
+        )?;
+        report.verdict(
+            "MP3-POS-CLIENT-B-ORDERS",
+            b_orders.len() == 3,
+            format!(
+                "remote real input Sprint/Stop/Guard/Move: {b_orders:?}; {}; {}",
+                b_move.trim(),
+                b_admitted.trim()
+            ),
+        );
+        report.artifact(
+            "client_b_orders_png",
+            &client_b.screenshot(evidence, "02-orders")?,
+        );
+
+        // Client A (seat 0, remote) real input: unit 2 Stop/Guard, unit 1 Move onto the
+        // objective, unit 2 Attack-move to the objective.
+        let since = server.offset();
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit_a2)?;
+        for (key, order) in [("s", "Stop"), ("g", "Guard")] {
+            let mark = server.offset();
+            client_a.key(key)?;
+            server.wait_line(
+                &[
+                    &format!("RTS_ORDER_ADMITTED order={order}"),
+                    &format!("unit={unit_a2}"),
+                    "participant=1",
+                ],
+                Duration::from_secs(5),
+                mark,
+            )?;
+        }
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit_a1)?;
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(2500));
+        let objective_a = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        client_a.click(objective_a.0, objective_a.1, "3")?;
+        let a_move = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit_a1}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            since,
+        )?;
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit_a2)?;
+        client_a.hover(objective_a.0 + 18.0, objective_a.1 + 10.0)?;
+        thread::sleep(Duration::from_millis(150));
+        let mark = server.offset();
+        client_a.key("a")?;
+        let a_attack_move = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=AttackMove",
+                &format!("unit={unit_a2}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        let server_text = server.text();
+        let all_remote = count_lines(
+            &server_text,
+            &["MP_COMMAND_RECEIVED participant=1 remote=1"],
+        ) > 0
+            && count_lines(&server_text, &["MP_COMMAND_RECEIVED", "remote=0"]) == 0;
+        report.verdict(
+            "MP3-POS-CLIENT-A-ORDERS",
+            all_remote,
+            format!("seat-0 orders arrive remotely through the single intake (no remote=0 command exists): {}; {}", a_move.trim(), a_attack_move.trim()),
+        );
+        report.artifact(
+            "client_a_orders_png",
+            &client_a.screenshot(evidence, "02-orders")?,
+        );
+
+        let reveal = client_b.wait_line(
+            &["MP_CLIENT_UNIT_RELEVANT", "owner=1"],
+            Duration::from_secs(40),
+            0,
+        );
+        report.verdict(
+            "MP3-FOG-REVEAL",
+            reveal.is_ok(),
+            format!("participant-1 unit replicated to client B once observed: {reveal:?}"),
+        );
+        report.artifact(
+            "client_b_contact_png",
+            &client_b.screenshot(evidence, "03-contact")?,
+        );
+
+        let results = server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation1}"),
+            ],
+            Duration::from_secs(90),
+        )?;
+        let observed_a = client_a.wait(
+            &[
+                "MP_CLIENT_LIFECYCLE",
+                "result=1",
+                "reason=objective_secured",
+            ],
+            Duration::from_secs(15),
+        )?;
+        let observed_b = client_b.wait(
+            &[
+                "MP_CLIENT_LIFECYCLE",
+                "result=1",
+                "reason=objective_secured",
+            ],
+            Duration::from_secs(15),
+        )?;
+        let linger = server.wait(
+            &[
+                "MP_DEDICATED_SESSION_CLOSE_SCHEDULED reason=results_linger_elapsed",
+                &format!("generation={generation1}"),
+            ],
+            Duration::from_secs(5),
+        )?;
+        thread::sleep(Duration::from_millis(1500));
+        report.artifact(
+            "client_a_results_png",
+            &client_a.screenshot(evidence, "04-results")?,
+        );
+        report.artifact(
+            "client_b_results_png",
+            &client_b.screenshot(evidence, "04-results")?,
+        );
+        let commits = count_lines(
+            &server.text(),
+            &["MATCH_RESULTS", &format!("generation={generation1}")],
+        );
+        report.verdict(
+            "MP3-11",
+            commits == 1
+                && field(&results, "team") == Some("1")
+                && field(&observed_a, "team") == Some("1")
+                && field(&observed_a, "viewer_team") == Some("1")
+                && field(&observed_b, "team") == Some("1")
+                && field(&observed_b, "viewer_team") == Some("2"),
+            format!(
+                "server committed exactly {commits} result: {}; A observed {}; B observed {}; {}",
+                results.trim(),
+                observed_a.trim(),
+                observed_b.trim(),
+                linger.trim()
+            ),
+        );
+        health_consistency(report, "MP3-POS-DAMAGE-CONSISTENCY-B", &server, &client_b);
+        health_consistency(report, "MP3-POS-DAMAGE-CONSISTENCY-A", &server, &client_a);
+        client_b.wait(
+            &["MP_PROBE_SENT name=after_termination"],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_secs(1));
+        check_probes(report, "MP3-NEG-PROBES", &client_b, &server);
+
+        // Both clients leave the finished match; the server resets for a new generation.
+        let server_mark = server.offset();
+        let (mark_a, mark_b) = (client_a.offset(), client_b.offset());
+        for client in [&client_a, &client_b] {
+            client.hover(640.0, 360.0)?;
+            client.key("Escape")?;
+        }
+        client_a.wait_line(
+            &["LoadMap: /Game/Maps/MainMenu"],
+            Duration::from_secs(25),
+            mark_a,
+        )?;
+        client_b.wait_line(
+            &["LoadMap: /Game/Maps/MainMenu"],
+            Duration::from_secs(25),
+            mark_b,
+        )?;
+        let closing = server.wait_line(
+            &[
+                "MP_DEDICATED_SESSION_CLOSING reason=results_complete",
+                &format!("generation={generation1}"),
+            ],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        let reset = server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(10),
+            server_mark,
+        )?;
+        let ready2 = server.wait_line(
+            &["MP_DEDICATED_SERVER_READY"],
+            Duration::from_secs(60),
+            server_mark,
+        )?;
+        let awaiting2 = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(10),
+            server_mark,
+        )?;
+        let generation2 = field(&awaiting2, "generation").unwrap_or("0").to_owned();
+        thread::sleep(Duration::from_secs(1));
+        report.artifact(
+            "client_a_menu_png",
+            &client_a.screenshot(evidence, "05-menu")?,
+        );
+        report.artifact(
+            "client_b_menu_png",
+            &client_b.screenshot(evidence, "05-menu")?,
+        );
+        report.verdict(
+            "MP3-RESET-AFTER-RESULTS",
+            server.alive()
+                && server.pid() == server_pid
+                && field(&closing, "remaining") == Some("0")
+                && field(&ready2, "port") == Some(&port.to_string())
+                && generation2.parse::<u64>().unwrap_or(0)
+                    > generation1.parse::<u64>().unwrap_or(u64::MAX),
+            format!(
+                "both clients left to MainMenu; same server process reset: {}; {}; {}; {}",
+                closing.trim(),
+                reset.trim(),
+                ready2.trim(),
+                awaiting2.trim()
+            ),
+        );
+
+        // Rematch on the same server: fresh generation and fresh bindings.
+        let active2 = server.wait_line(
+            &["MP_MATCH_ACTIVE", &format!("generation={generation2}")],
+            Duration::from_secs(60),
+            server_mark,
+        )?;
+        let rebound_a = server.wait_line(
+            &[
+                "MP_PARTICIPANT_BOUND participant=1",
+                &format!("generation={generation2}"),
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let rebound_b = server.wait_line(
+            &[
+                "MP_PARTICIPANT_BOUND participant=2",
+                &format!("generation={generation2}"),
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let reassigned_a = client_a.wait_line(
+            &[
+                "MP_CLIENT_ASSIGNMENT participant=1",
+                &format!("generation={generation2}"),
+            ],
+            Duration::from_secs(30),
+            mark_a,
+        )?;
+        let reassigned_b = client_b.wait_line(
+            &[
+                "MP_CLIENT_ASSIGNMENT participant=2",
+                &format!("generation={generation2}"),
+            ],
+            Duration::from_secs(30),
+            mark_b,
+        )?;
+        report.verdict(
+            "MP3-12-REMATCH",
+            true,
+            format!(
+                "generation {generation1} -> {generation2}: {}; {}; {}; {}; {}",
+                active2.trim(),
+                rebound_a.trim(),
+                rebound_b.trim(),
+                reassigned_a.trim(),
+                reassigned_b.trim()
+            ),
+        );
+        thread::sleep(Duration::from_secs(2));
+        report.artifact(
+            "client_a_rematch_png",
+            &client_a.screenshot(evidence, "06-rematch")?,
+        );
+        report.artifact(
+            "client_b_rematch_png",
+            &client_b.screenshot(evidence, "06-rematch")?,
+        );
+
+        // A third connection is refused before any controller or seat exists.
+        let mut third = Game::launch(
+            &client_options.binary,
+            "third",
+            evidence,
+            &client_args(client_options, false, false, false),
+            None,
+        )?;
+        report.fact("third_pid", third.pid().to_string());
+        let mark3 = server.offset();
+        let refused =
+            server.wait_line(&["MP_PRELOGIN REJECTED"], Duration::from_secs(60), mark3)?;
+        let third_failure = third.wait(&["MP_CLIENT_NETWORK_FAILURE"], Duration::from_secs(30))?;
+        third.wait(&["LoadMap: /Game/Maps/MainMenu"], Duration::from_secs(30))?;
+        let no_seat = !server.text()[mark3..].contains("MP_PARTICIPANT_BOUND");
+        report.verdict(
+            "MP3-03",
+            field(&refused, "reason") == Some("MP.SESSION.IN_PROGRESS") && no_seat,
+            format!(
+                "{}; third process: {}",
+                refused.trim(),
+                third_failure.trim()
+            ),
+        );
+        third.stop();
+
+        // Client loss: the server ends the match once, removes the remaining client and resets.
+        let mark4 = server.offset();
+        let mark_b4 = client_b.offset();
+        let killed_at = Instant::now();
+        client_a.kill_hard();
+        let unbound = server.wait_line(
+            &["MP_PARTICIPANT_UNBOUND participant=1", "remote=1"],
+            Duration::from_secs(30),
+            mark4,
+        )?;
+        let detected = killed_at.elapsed();
+        let ended = server.wait_line(
+            &[
+                "MATCH_RESULTS outcome=participant_disconnected",
+                &format!("generation={generation2}"),
+            ],
+            Duration::from_secs(5),
+            mark4,
+        )?;
+        let closing2 = server.wait_line(
+            &["MP_DEDICATED_SESSION_CLOSING reason=participant_disconnected"],
+            Duration::from_secs(10),
+            mark4,
+        )?;
+        let kicked = client_b.wait_line(&["MP_CLIENT_KICKED"], Duration::from_secs(15), mark_b4)?;
+        let removed = client_b.wait_line(
+            &["MP_CLIENT_NETWORK_FAILURE"],
+            Duration::from_secs(20),
+            mark_b4,
+        )?;
+        client_b.wait_line(
+            &["LoadMap: /Game/Maps/MainMenu"],
+            Duration::from_secs(25),
+            mark_b4,
+        )?;
+        let awaiting3 = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(60),
+            mark4,
+        )?;
+        let generation3 = field(&awaiting3, "generation").unwrap_or("0").to_owned();
+        thread::sleep(Duration::from_secs(1));
+        report.artifact(
+            "client_b_removed_menu_png",
+            &client_b.screenshot(evidence, "07-client-a-lost-menu")?,
+        );
+        let commits2 = count_lines(
+            &server.text(),
+            &["MATCH_RESULTS", &format!("generation={generation2}")],
+        );
+        report.verdict(
+            "MP3-G6-CLIENT-LOSS",
+            commits2 == 1
+                && field(&closing2, "remaining") == Some("1")
+                && field(&removed, "kicked") == Some("1")
+                && server.alive()
+                && generation3.parse::<u64>().unwrap_or(0) > generation2.parse::<u64>().unwrap_or(u64::MAX),
+            format!("client A SIGKILL detected in {:.1}s: {}; {}; {}; client B: {} / {}; server reset to {}",
+                detected.as_secs_f64(), unbound.trim(), ended.trim(), closing2.trim(), kicked.trim(), removed.trim(), awaiting3.trim()),
+        );
+
+        // Join order, not process identity, selects seats: client B (rematch attempt 2)
+        // now takes seat 0; a fresh client C takes seat 1. Then the server is killed.
+        let rebound_b3 = server.wait_line(
+            &[
+                "MP_PARTICIPANT_BOUND participant=1",
+                &format!("generation={generation3}"),
+            ],
+            Duration::from_secs(60),
+            mark4,
+        )?;
+        let display_c = Display::start(evidence, "client-c")?;
+        let mut client_c = Game::launch(
+            &client_options.binary,
+            "client-c",
+            evidence,
+            &client_args(client_options, true, false, false),
+            Some(&display_c.name()),
+        )?;
+        report.fact("client_c_pid", client_c.pid().to_string());
+        let bound_c = server.wait_line(
+            &[
+                "MP_PARTICIPANT_BOUND participant=2",
+                &format!("generation={generation3}"),
+            ],
+            Duration::from_secs(60),
+            mark4,
+        )?;
+        server.wait_line(
+            &["MP_MATCH_ACTIVE", &format!("generation={generation3}")],
+            Duration::from_secs(10),
+            mark4,
+        )?;
+        client_c.wait(&["MP_CLIENT_MATCH_OBSERVED"], Duration::from_secs(30))?;
+        let mark_b5 = client_b.offset();
+        client_b.wait_line(
+            &["MP_CLIENT_MATCH_OBSERVED"],
+            Duration::from_secs(30),
+            mark_b4,
+        )?;
+        client_c.attach_window()?;
+        thread::sleep(Duration::from_secs(2));
+        report.verdict(
+            "MP3-SEAT-BY-JOIN-ORDER",
+            true,
+            format!(
+                "generation {generation3}: {}; {}",
+                rebound_b3.trim(),
+                bound_c.trim()
+            ),
+        );
+        let mark_c = client_c.offset();
+        let killed_at = Instant::now();
+        server.kill_hard();
+        let mut lost = Vec::new();
+        for (client, mark) in [(&mut client_b, mark_b5), (&mut client_c, mark_c)] {
+            let failure = client.wait_line(
+                &["MP_CLIENT_NETWORK_FAILURE"],
+                Duration::from_secs(30),
+                mark,
+            )?;
+            client.wait_line(
+                &["LoadMap: /Game/Maps/MainMenu"],
+                Duration::from_secs(30),
+                mark,
+            )?;
+            let explained = client.text()[mark..].contains("NetworkConnectionLost");
+            lost.push((
+                field(&failure, "result_observed") == Some("0") && explained,
+                failure.trim().to_owned(),
+            ));
+        }
+        let detected = killed_at.elapsed();
+        thread::sleep(Duration::from_secs(2));
+        report.artifact(
+            "client_c_after_server_loss_png",
+            &client_c.screenshot(evidence, "08-server-lost-menu")?,
+        );
+        report.artifact(
+            "client_b_after_server_loss_png",
+            &client_b.screenshot(evidence, "08-server-lost-menu")?,
+        );
+        report.verdict(
+            "MP3-G6-SERVER-LOSS",
+            lost.iter().all(|(ok, _)| *ok) && detected < Duration::from_secs(25),
+            format!("server SIGKILL: both clients recovered with NetworkConnectionLost within {:.1}s: {lost:?}", detected.as_secs_f64()),
+        );
+        report.artifact("client_c_log", &client_c.log);
+        client_c.stop();
+        Ok(())
+    })();
+    match recorder_a.finish() {
+        Ok(path) => report.artifact("client_a_mp4", &path),
+        Err(error) => report.mark("EVIDENCE-CLIENT-A-MP4", "INFRA_ERROR", error),
+    }
+    match recorder_b.finish() {
+        Ok(path) => report.artifact("client_b_mp4", &path),
+        Err(error) => report.mark("EVIDENCE-CLIENT-B-MP4", "INFRA_ERROR", error),
+    }
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    server.stop();
+    client_a.stop();
+    client_b.stop();
+
+    // No local profile, save data or settings were written by the server process.
+    let user_files = files_under(&evidence.join("user-server"));
+    let home_files = files_under(&evidence.join("home-server"));
+    let profile_files: Vec<String> = user_files
+        .iter()
+        .chain(home_files.iter())
+        .map(|p| p.display().to_string())
+        .filter(|p| {
+            p.contains("SaveGames") || p.ends_with(".sav") || p.contains("GameUserSettings")
+        })
+        .collect();
+    let server_text = server.text();
+    let forbidden = [
+        "{\"event\":\"profile\"",
+        "{\"event\":\"ui_ready\"",
+        "LoadMap: /Game/Maps/MainMenu",
+        "LogAudioMixer",
+        "Initializing audio mixer",
+    ];
+    let present: Vec<&str> = forbidden
+        .iter()
+        .copied()
+        .filter(|m| server_text.contains(m))
+        .collect();
+    report.fact("server_user_files", format!("{user_files:?}"));
+    report.verdict(
+        "MP3-NO-PROFILE-UI",
+        profile_files.is_empty() && present.is_empty(),
+        format!("server profile/settings/save files={profile_files:?}; shell/profile markers in server log={present:?}"),
+    );
+    result
+}
+
+fn dedicated_admission_failure(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    // An unsupported layout must fail closed: no units, no listening session, exit code 3.
+    let evidence = &options.client.evidence;
+    let mut server = Game::launch_server(
+        &options.server,
+        "server-invalid-layout",
+        evidence,
+        &server_args(options.client.port + 2, "5v5"),
+    )?;
+    let failed = server.wait(&["MP_DEDICATED_ADMISSION_FAILED"], Duration::from_secs(120))?;
+    let start = Instant::now();
+    let mut status = None;
+    while start.elapsed() < Duration::from_secs(30) {
+        if let Ok(Some(code)) = server.child.try_wait() {
+            status = Some(code);
+            break;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let text = server.text();
+    let reason = text.contains("reason=MP.LAYOUT.INVALID");
+    let no_session =
+        !text.contains("MP_MATCH_AWAITING_PARTICIPANTS") && !text.contains("MATCH_CONTENT_READY");
+    report.verdict(
+        "MP3-ADMISSION-FAIL-CLOSED",
+        status.and_then(|s| s.code()) == Some(3) && reason && no_session,
+        format!(
+            "{}; exit={status:?}; MP.LAYOUT.INVALID={reason}; no session/units={no_session}",
+            failed.trim()
+        ),
+    );
+    report.artifact("invalid_layout_server_log", &server.log);
+    server.stop();
+    Ok(())
+}
+
+fn dedicated_parity(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    // The same build, fixture and layout hosted by a listen server must admit the identical
+    // authoritative setup (units, archetypes, owners, factions, slots, locations, weapons,
+    // objective, Unaligned side, seat roster and teams) as the dedicated server did.
+    let evidence = &options.client.evidence;
+    let port = options.client.port + 4;
+    let mut listen_args = vec![
+        "/Game/Maps/RTSVerticalSlice?listen?PolitikaLayout=1v1".to_string(),
+        format!("-port={port}"),
+        "-PolitikaTestFixture=MultiplayerSkirmish".into(),
+        "-RTSAcceptance=multiplayer".into(),
+    ];
+    listen_args.extend(["-nullrhi".into(), "-nosound".into()]);
+    let mut listen = Game::launch(
+        &options.client.binary,
+        "parity-listen",
+        evidence,
+        &listen_args,
+        None,
+    )?;
+    listen.wait(&["MATCH_CONTENT_READY"], Duration::from_secs(120))?;
+    listen.wait(&["MP_SESSION_LAYOUT"], Duration::from_secs(5))?;
+    thread::sleep(Duration::from_secs(1));
+    let listen_signature = setup_signature(&listen.text());
+    listen.stop();
+    let dedicated_text =
+        fs::read_to_string(evidence.join("server.log")).map_err(|e| e.to_string())?;
+    let dedicated_signature = setup_signature(&dedicated_text);
+    let units = listen_signature
+        .iter()
+        .filter(|l| l.starts_with("MATCH_AUTHORITATIVE_UNIT"))
+        .count();
+    fs::write(
+        evidence.join("parity-listen-signature.txt"),
+        listen_signature.join("\n"),
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        evidence.join("parity-dedicated-signature.txt"),
+        dedicated_signature.join("\n"),
+    )
+    .map_err(|e| e.to_string())?;
+    let differing: Vec<String> = listen_signature
+        .iter()
+        .zip(dedicated_signature.iter())
+        .filter(|(l, d)| l != d)
+        .map(|(l, d)| format!("listen `{l}` != dedicated `{d}`"))
+        .collect();
+    report.verdict(
+        "MP3-PARITY-SETUP",
+        units >= 4 && listen_signature.len() == dedicated_signature.len() && differing.is_empty(),
+        format!("{} setup lines ({units} units) compared; listen={} dedicated={}; differences={differing:?}",
+            listen_signature.len(), listen_signature.len(), dedicated_signature.len()),
+    );
+    report.artifact("parity_listen_log", &listen.log);
+    Ok(())
+}
+
+fn run_dedicated() -> ! {
+    let options = match parse_dedicated_options() {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
+    let evidence = options.client.evidence.clone();
+    if let Err(error) = fs::create_dir_all(&evidence) {
+        eprintln!("evidence directory: {error}");
+        std::process::exit(2);
+    }
+    let mut report = Report {
+        schema: Some("politika.mp3.dedicated-evidence.v1"),
+        ..Report::default()
+    };
+    for (name, binary) in [
+        ("server", &options.server),
+        ("client", &options.client.binary),
+    ] {
+        report.fact(&format!("{name}_binary"), binary.display().to_string());
+        if let Ok(digest) = sha256(binary) {
+            report.fact(&format!("{name}_executable_sha256"), digest);
+        }
+        if let Some(archive) = binary.ancestors().nth(4) {
+            if let Ok(identity) = fs::read_to_string(archive.join("BuildIdentity.json")) {
+                report.fact(
+                    &format!("{name}_build_identity"),
+                    identity.trim().to_owned(),
+                );
+            }
+            for file in files_under(&archive.join("Politika/Content/Paks")) {
+                if file.extension().is_some_and(|e| e == "utoc" || e == "ucas")
+                    && let Ok(digest) = sha256(&file)
+                {
+                    report.fact(
+                        &format!(
+                            "{name}:{}",
+                            file.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        digest,
+                    );
+                }
+            }
+        }
+    }
+    report.fact("layout", "1v1");
+    report.fact("port", options.client.port.to_string());
+    for (session, run) in [
+        (
+            "dedicated-gameplay",
+            dedicated_gameplay as fn(&DedicatedOptions, &mut Report) -> Result<(), String>,
+        ),
+        ("admission-failure", dedicated_admission_failure),
+        ("parity", dedicated_parity),
+    ] {
+        if let Err(error) = run(&options, &mut report) {
+            report.mark(
+                &format!("SESSION-{session}"),
+                if error.starts_with("BLOCKED") {
+                    "BLOCKED"
+                } else {
+                    "FAIL"
+                },
+                error,
+            );
+        }
+    }
+    let path = evidence.join("dedicated-evidence.json");
+    if let Err(error) = report.write(&path) {
+        eprintln!("write evidence: {error}");
+        std::process::exit(2);
+    }
+    println!("evidence: {}", path.display());
+    std::process::exit(if report.failed() { 1 } else { 0 });
+}
+
 fn main() {
+    if env::args().nth(1).as_deref() == Some("--dedicated") {
+        run_dedicated();
+    }
     if env::args().nth(1).as_deref() == Some("--shipping-boot") {
         let (Some(binary), Some(evidence)) = (env::args().nth(2), env::args().nth(3)) else {
             eprintln!("usage: rts_multiplayer --shipping-boot SHIPPING_BINARY EVIDENCE_DIR");

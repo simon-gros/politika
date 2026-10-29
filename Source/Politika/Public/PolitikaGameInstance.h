@@ -34,6 +34,9 @@ public:
     void ReturnToMenu(APlayerController* Player);
     void ReportMatchAdmissionRejected(FName MapId);
     bool ConsumeDevelopmentTestFixture(FString& OutFixtureId);
+    // A dedicated server reloads its match map after each session; the Development test
+    // fixture applies again to the next match generation. No effect in Shipping.
+    void RearmDevelopmentTestFixture();
     // Network session recovery. Observed state is recorded so a later connection loss
     // can be explained truthfully (a killed host cannot send a terminal event).
     void NoteNetworkMatchObserved(uint64 Generation, uint8 Phase, bool bResultCommitted, uint32 Winner,

@@ -1,6 +1,7 @@
-// MP-1 listen-server foundation: connection-bound participant authority, the single
-// command intake shared by host-local and remote input, outcome routing, observer
-// initialization and the replicated state boundary. Simulation remains exclusively
+// MP-1 listen-server foundation and MP-3 dedicated hosting: connection-bound participant
+// authority, the single command intake shared by host-local and remote input, outcome
+// routing, observer initialization, the replicated state boundary and the dedicated
+// server's session close/reset. Simulation remains exclusively
 // in APolitikaPrototypeMatch's authoritative fixed-step update.
 #include "PolitikaPrototypeGameplay.h"
 
@@ -28,6 +29,13 @@ namespace
 constexpr int32 MaxPendingCommandsPerParticipant = 16;
 // After a remote participant disconnects, the host shows the reason, then returns.
 constexpr float ParticipantDisconnectReturnSeconds = 3.0f;
+// A dedicated server keeps a finished match's results available to its clients this long,
+// then closes the session for clients that have not left on their own.
+constexpr float DedicatedResultsLingerSeconds = 30.0f;
+// Once every client has left a finished match, the dedicated server resets promptly.
+constexpr float DedicatedEmptySessionResetSeconds = 1.0f;
+// Kicked clients receive their reason before the map reload tears down their connection.
+constexpr float DedicatedKickFlushSeconds = 1.0f;
 
 APolitikaPrototypeMatch* FindMatch(UWorld* World)
 {
@@ -158,10 +166,22 @@ void APolitikaPrototypeMatch::SyncReplicatedLifecycle()
     ReplicatedResultTeam = CommittedResult.IsSet() ? CommittedResult->WinningTeamId : 0;
 }
 
+politika::rules::HostingMode APolitikaPrototypeMatch::GetHostingMode() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+    if (bTestDedicatedHosting) return politika::rules::HostingMode::Dedicated;
+#endif
+    switch (GetNetMode())
+    {
+        case NM_DedicatedServer: return politika::rules::HostingMode::Dedicated;
+        case NM_ListenServer: return politika::rules::HostingMode::Listen;
+        default: return politika::rules::HostingMode::Standalone;
+    }
+}
+
 bool APolitikaPrototypeMatch::IsNetworkSession() const
 {
-    const ENetMode Mode = GetNetMode();
-    return Mode == NM_ListenServer || Mode == NM_DedicatedServer;
+    return GetHostingMode() != politika::rules::HostingMode::Standalone;
 }
 
 // ----------------------------------------------------------------------------
@@ -210,20 +230,32 @@ bool APolitikaPrototypeMatch::ResolveSessionLayout(FName& OutFailure)
     RuntimeParticipants.SetNum(Seats);
     for (int32 Seat = 0; Seat < Seats; ++Seat)
         RuntimeParticipants[Seat].TeamId = TeamForSeat(Layout, static_cast<uint8>(Seat));
+    const HostingMode Hosting = GetHostingMode();
+    if (Hosting == HostingMode::Dedicated)
+    {
+        // No player lives on a dedicated server: every seat, including the authored
+        // human slot (seat 0), is open to a remote connection in join order. Seat order,
+        // teams and participant IDs are identical to the listen layout.
+        for (FPolitikaPrototypeRuntimeParticipant& Participant : RuntimeParticipants)
+            Participant.ControllerKind = EPolitikaPrototypeControllerKind::AssignedOpponent;
+        LocalRuntimePlayerId = 0;
+    }
     SessionLayout = Layout;
     SessionSeatCount = Seats;
     FString Roster;
     for (const FPolitikaPrototypeRuntimeParticipant& Participant : RuntimeParticipants)
         Roster += FString::Printf(TEXT("%s%u:%d:%c"), Roster.IsEmpty() ? TEXT("") : TEXT(","),
             Participant.RuntimePlayerId, Participant.SlotId, TCHAR('A' + Participant.TeamId - 1));
-    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_SESSION_LAYOUT layout=%s seats=%d fog=%d roster=%s"),
-        UTF8_TO_TCHAR(LayoutName(Layout).data()), Seats, bFogOfWar ? 1 : 0, *Roster);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_SESSION_LAYOUT layout=%s seats=%d fog=%d roster=%s hosting=%s remote_seats=%u"),
+        UTF8_TO_TCHAR(LayoutName(Layout).data()), Seats, bFogOfWar ? 1 : 0, *Roster,
+        UTF8_TO_TCHAR(HostingModeName(Hosting).data()), static_cast<uint32>(RemoteSeatCount(Layout, Hosting)));
     return true;
 }
 
 uint32 APolitikaPrototypeMatch::GetMaxRemoteHumans() const
 {
-    return IsNetworkSession() && SessionSeatCount > 1 ? static_cast<uint32>(SessionSeatCount - 1) : 0;
+    return IsNetworkSession() && SessionSeatCount > 1
+        ? static_cast<uint32>(politika::rules::RemoteSeatCount(SessionLayout, GetHostingMode())) : 0;
 }
 
 uint8 APolitikaPrototypeMatch::GetTeamForParticipant(uint32 PlayerId) const
@@ -354,7 +386,11 @@ APolitikaPrototypeUnit* APolitikaPrototypeMatch::FindUnitByStableId(uint64 InSta
 
 void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(NetworkReturnTimer);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(NetworkReturnTimer);
+        World->GetTimerManager().ClearTimer(DedicatedSessionTimer);
+    }
     ParticipantBindings.Reset();
     OutcomeRoutes.Reset();
     Super::EndPlay(EndPlayReason);
@@ -453,6 +489,12 @@ bool APolitikaPrototypeMatch::BindController(APlayerController* Controller, FNam
     const APolitikaPrototypePlayerController* PrototypeController = Cast<APolitikaPrototypePlayerController>(Controller);
     const bool bRemote = PrototypeController ? !PrototypeController->IsLocalSeatController() : !Controller->IsLocalController();
     FPolitikaPrototypeRuntimeParticipant* Seat = nullptr;
+    if (!bRemote && IsDedicatedHosting())
+    {
+        // A dedicated server has no local seat; only remote connections play.
+        OutFailure = TEXT("MP.BIND.NO_LOCAL_SEAT");
+        return false;
+    }
     if (!bRemote)
     {
         // The local controller occupies the authored local-human slot (host or offline player).
@@ -510,13 +552,16 @@ void APolitikaPrototypeMatch::TryActivateNetworkMatch()
     uint32 RemoteBindings = 0;
     for (const FParticipantBinding& Binding : ParticipantBindings)
         (Binding.bRemote ? RemoteBindings : LocalBindings) += Binding.Controller.IsValid() ? 1 : 0;
-    if (LocalBindings != 1 || RemoteBindings != GetMaxRemoteHumans()) return;
+    const politika::rules::HostingMode Hosting = GetHostingMode();
+    if (!politika::rules::SessionSeatsComplete(SessionLayout, Hosting, LocalBindings, RemoteBindings)) return;
     bAwaitingNetworkParticipants = false;
     if (!TransitionLifecycle(politika::rules::MatchPhase::Active)) return;
     LastCommandFeedback = TEXT("All participants connected; the match is active.");
-    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_MATCH_ACTIVE generation=%llu participants=%d units=%d layout=%s fog=%d"),
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_MATCH_ACTIVE generation=%llu participants=%d units=%d layout=%s fog=%d hosting=%s local=%u remote=%u"),
         MatchGeneration, ParticipantBindings.Num(), Units.Num(),
-        UTF8_TO_TCHAR(politika::rules::LayoutName(SessionLayout).data()), bFogOfWar ? 1 : 0);
+        UTF8_TO_TCHAR(politika::rules::LayoutName(SessionLayout).data()), bFogOfWar ? 1 : 0,
+        UTF8_TO_TCHAR(politika::rules::HostingModeName(Hosting).data()), LocalBindings, RemoteBindings);
 #if !UE_BUILD_SHIPPING
     SampleMultiplayerState(TEXT("activated"));
 #endif
@@ -543,8 +588,12 @@ void APolitikaPrototypeMatch::HandleControllerLogout(AController* Exiting)
     SyncReplicatedParticipants();
     UE_LOG(LogPolitikaStartup, Display, TEXT("MP_PARTICIPANT_UNBOUND participant=%u remote=%d phase=%u generation=%llu"),
         Binding.RuntimePlayerId, Binding.bRemote ? 1 : 0, static_cast<uint32>(Lifecycle.phase), MatchGeneration);
-    if (Binding.bRemote && Lifecycle.IsActive() && GetWorld() && !GetWorld()->bIsTearingDown)
+    if (!GetWorld() || GetWorld()->bIsTearingDown) return;
+    if (Binding.bRemote && Lifecycle.IsActive())
         TerminateForParticipantDisconnect(Binding.RuntimePlayerId);
+    else if (IsDedicatedHosting() && Lifecycle.phase == politika::rules::MatchPhase::Results
+        && ParticipantBindings.IsEmpty())
+        ScheduleDedicatedSessionClose(TEXT("results_complete"), DedicatedEmptySessionResetSeconds);
 }
 
 void APolitikaPrototypeMatch::TerminateForParticipantDisconnect(uint32 PlayerId)
@@ -561,6 +610,13 @@ void APolitikaPrototypeMatch::TerminateForParticipantDisconnect(uint32 PlayerId)
         TEXT("MATCH_RESULTS outcome=%s player=%u committed=1 generation=%llu step=%llu departed=%u"),
         *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId, MatchGeneration,
         SimulationStepsExecuted, PlayerId);
+    if (IsDedicatedHosting())
+    {
+        // No host to return: remaining clients see the result, then the server closes the
+        // session and resets for a new match.
+        ScheduleDedicatedSessionClose(TEXT("participant_disconnected"), ParticipantDisconnectReturnSeconds);
+        return;
+    }
     if (UPolitikaGameInstance* Game = GetWorld()->GetGameInstance<UPolitikaGameInstance>())
         Game->ReportNetworkSessionEnded(TEXT("NetworkParticipantDisconnected"), NSLOCTEXT("PolitikaMultiplayer",
             "ParticipantDisconnected", "The remote participant disconnected, so the network match was ended. Start a new session to play again."));
@@ -573,6 +629,66 @@ void APolitikaPrototypeMatch::TerminateForParticipantDisconnect(uint32 PlayerId)
         if (UPolitikaGameInstance* Game = GetWorld() ? GetWorld()->GetGameInstance<UPolitikaGameInstance>() : nullptr)
             Game->ReturnToMenu(Host);
     }), ParticipantDisconnectReturnSeconds, false);
+}
+
+// ----------------------------------------------------------------------------
+// Dedicated server session close and reset
+// ----------------------------------------------------------------------------
+
+void APolitikaPrototypeMatch::NoteNetworkResultCommitted()
+{
+    if (HasAuthority() && IsDedicatedHosting() && CommittedResult.IsSet())
+        ScheduleDedicatedSessionClose(TEXT("results_linger_elapsed"), DedicatedResultsLingerSeconds);
+}
+
+void APolitikaPrototypeMatch::ScheduleDedicatedSessionClose(FName Reason, float DelaySeconds)
+{
+    UWorld* World = GetWorld();
+    if (!HasAuthority() || !IsDedicatedHosting() || !World || bDedicatedSessionClosing) return;
+    FTimerManager& Timers = World->GetTimerManager();
+    // Keep an earlier pending close; a later request never postpones it.
+    if (Timers.IsTimerActive(DedicatedSessionTimer) && Timers.GetTimerRemaining(DedicatedSessionTimer) <= DelaySeconds)
+        return;
+    DedicatedCloseReason = Reason;
+    Timers.SetTimer(DedicatedSessionTimer, FTimerDelegate::CreateWeakLambda(this, [this] { CloseDedicatedSession(); }),
+        DelaySeconds, false);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DEDICATED_SESSION_CLOSE_SCHEDULED reason=%s delay=%.1f generation=%llu bindings=%d"),
+        *Reason.ToString(), DelaySeconds, MatchGeneration, ParticipantBindings.Num());
+}
+
+void APolitikaPrototypeMatch::CloseDedicatedSession()
+{
+    UWorld* World = GetWorld();
+    if (!HasAuthority() || !World || World->bIsTearingDown || bDedicatedSessionClosing) return;
+    bDedicatedSessionClosing = true;
+    const uint64 ClosedGeneration = MatchGeneration;
+    TArray<TWeakObjectPtr<APlayerController>, TInlineAllocator<4>> Remaining;
+    for (const FParticipantBinding& Binding : ParticipantBindings) Remaining.Add(Binding.Controller);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DEDICATED_SESSION_CLOSING reason=%s generation=%llu remaining=%d phase=%u"),
+        *DedicatedCloseReason.ToString(), ClosedGeneration, Remaining.Num(), static_cast<uint32>(Lifecycle.phase));
+    // Revoke every binding and outcome route first, so nothing from this generation can
+    // reach the next match, then remove the clients that are still connected.
+    BeginReturnToMenu();
+    AGameModeBase* GameMode = World->GetAuthGameMode();
+    for (const TWeakObjectPtr<APlayerController>& Controller : Remaining)
+        if (Controller.IsValid() && GameMode && GameMode->GameSession)
+            GameMode->GameSession->KickPlayer(Controller.Get(), NSLOCTEXT("PolitikaMultiplayer", "DedicatedSessionClosed",
+                "The network match has ended and the dedicated server closed the session."));
+#if !UE_BUILD_SHIPPING
+    if (UPolitikaGameInstance* Game = World->GetGameInstance<UPolitikaGameInstance>()) Game->RearmDevelopmentTestFixture();
+#endif
+    // Reload the same map and options (port and layout are unchanged) for a fresh match
+    // generation. The world, its controllers and this coordinator are discarded.
+    FString ResetUrl = World->URL.Map;
+    for (const FString& Option : World->URL.Op) ResetUrl += TEXT("?") + Option;
+    World->GetTimerManager().SetTimer(DedicatedSessionTimer, FTimerDelegate::CreateWeakLambda(this, [this, ResetUrl, ClosedGeneration]
+    {
+        UWorld* ResetWorld = GetWorld();
+        if (!ResetWorld || ResetWorld->bIsTearingDown) return;
+        const bool bTravel = ResetWorld->ServerTravel(ResetUrl, true);
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DEDICATED_SESSION_RESET url=%s closed_generation=%llu travel=%d"),
+            *ResetUrl, ClosedGeneration, bTravel ? 1 : 0);
+    }), DedicatedKickFlushSeconds, false);
 }
 
 // ----------------------------------------------------------------------------
