@@ -52,7 +52,7 @@ Positions and observation come from the server's own samples (`MP_SERVER_SAMPLE`
 
 Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_RUN. Evidence root: `/mnt/data/politika-qualification/MP2-Engagement-20261029/` (`final-239b8db/` for the packaged matrix).
 
-Package identity: `package-multiplayer.sh development` and `server` from `239b8db`, UAT exit 0, `git_dirty=false`, `network_protocol` 2. Executable SHA-256: client `b3f10d0212e7572db961ca7fca4a4a04664c9f33bfea57ef4ff78478e421ac09`, server `3c033fc108d8c5c1adc7ed34ab11994cd9bfcdde69409f91fa6989a9b1573873`. Harness: `rts_multiplayer` / `rts_interaction` built from the same source (the later harness commit adds unit tests only).
+Package identity: `package-multiplayer.sh development` and `server` from local commit `239b8db`. It was later rebased onto the docs-only `647a939` and published as `96b296e`, which has identical Source/Config/Content/Tools. Builds: UAT exit 0, `git_dirty=false`, `network_protocol` 2. Executable SHA-256: client `b3f10d0212e7572db961ca7fca4a4a04664c9f33bfea57ef4ff78478e421ac09`, server `3c033fc108d8c5c1adc7ed34ab11994cd9bfcdde69409f91fa6989a9b1573873`. Harness: `rts_multiplayer` / `rts_interaction` built from the same source (the later harness commit adds unit tests only).
 
 | Gate | Result | Evidence |
 |---|---|---|
