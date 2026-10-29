@@ -2,7 +2,7 @@
 
 **Date:** 29 October 2026 · **Scope:** the first MP-2 increment of [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) §9. It closes MP-0 audit findings **F42** (packaged 2v1/3v1/2v2) and **F27** (shot cue target points), on top of the [MP-1 foundation](RTS_MULTIPLAYER_FOUNDATION_ACCEPTANCE.md) and the [MP-3 dedicated server](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md).
 
-**Outcome: IMPLEMENTED; packaged qualification PASS for the stated scope.** One headless `PolitikaServer` (Linux Development, `LinuxServer` cook) hosted 2v1, 3v1 and 2v2 + Unaligned matches for three or four independent rendered packaged Linux Development clients over 127.0.0.1. Every packaged check passed: 57/57 in the layout matrix, plus the protocol-refusal check.
+**Outcome: IMPLEMENTED; packaged qualification PASS for the stated scope.** One headless `PolitikaServer` (Linux Development, `LinuxServer` cook) hosted 2v1, 3v1 and 2v2 + Unaligned matches for three or four independent rendered packaged Linux Development clients over 127.0.0.1. Every packaged check passed: 57/57 in the layout matrix, plus the protocol-refusal check. After rebasing onto the concurrent launch-switch fix, the **combined** build `6a6b3a7` was repackaged and requalified: layout matrix 60/60, MP-3 23/23, MP-1 18/18, offline PAC-10 and PA-AUTHORITY PASS, Automation 35/35 (§E2). `6a6b3a7` is the accepted artifact.
 
 Not qualified here:
 - Network emulation (latency, loss, reordering), bandwidth and server-step measurements (F36). These are the next MP-2 increment.
@@ -25,7 +25,7 @@ Not qualified here:
 - **Network protocol 1 → 2.** The RPC set changed incompatibly, so `version.json` `network_protocol` is 2. The existing `PreLogin` check refuses old clients before any controller exists. The refusal was verified against the immutable MP-3 protocol-1 client (§D).
 - **Harness.** `rts_multiplayer --dedicated-layouts` drives one headless server and one rendered client per seat. Each client has its own Xvfb display, user directory, log and MP4. The existing `--dedicated` and listen modes now read the protocol from `version.json`. Their probe attribution check also accepts any bound remote participant (in MP-3, participant 1 is remote too).
 
-## B. Source changes (branch `codex/mp2-multiclient-shot-redaction-20261029`, commit `c14a6c4`)
+## B. Source changes (branch `codex/mp2-multiclient-shot-redaction-20261029`; implementation `c14a6c4`, rebased as `df038fa`)
 
 | Area | Files | Change |
 |---|---|---|
@@ -117,6 +117,35 @@ cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_multiplayer 
   $A/Development/Linux/Politika/Binaries/Linux/Politika \
   --legacy-client <MP-3 Final-644abae Development Politika> --evidence <DIR> --port 17860
 ```
+
+## E2. Final combined qualification (accepted artifact)
+
+The branch was rebased onto `origin/main` `7e7f563`, which carries the Development launch-switch fix (`4d80a76`, [MP-3 record §G](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md)). The new layout runner also gained `MP2-<L>-DEV-LAUNCH-OPTIONS`: no `InvalidLaunchOptions` in any server or client process. Everything was rebuilt and rerun from commit `6a6b3a7` (`git_dirty=false`, `network_protocol=2`).
+
+| Gate | Result | Evidence (`build/diagnostics/mp2-multiclient/combined/`) |
+|---|---|---|
+| `PolitikaEditor` build, `quality -- core` | PASS | `logs/editor-build.log`, `../../core.json` |
+| Automation, full `Politika` suite (34 + `Politika.Bootstrap.LaunchOptions`) | PASS 35/35 (environment warnings only) | `automation-all/index.json` |
+| `package-multiplayer.sh server` / `development` | ExitCode 0, manifests verified | `logs/package-{server,development}.log` |
+| `--dedicated-layouts` 2v1/3v1/2v2 + legacy protocol | **PASS 60/60** (57 as §D plus three launch-option checks). Shot cues: exact 171 / 232 / 228, facing 0, none 0 | `matrix/`, `matrix.out` |
+| `--dedicated` 1v1 (MP-3 22 + launch options) | PASS 23/23 | `regression-dedicated-1v1/` |
+| Listen 1v1 (MP-1 17 + launch options) | PASS 18/18 | `regression-listen-1v1/` |
+| Offline PAC-10 / PA-AUTHORITY | PASS / PASS (first attempt each) | `logs/offline-{pac10,authority}.log` |
+
+Matrix processes:
+- 2v1: server 1047878; clients 1047894, 1048004, 1048110.
+- 3v1: server 1048788; clients 1048804–1049121.
+- 2v2: server 1050083; clients 1050099–1050418.
+
+Only 3 Xvfb locks remained afterwards. Two belong to the operator's live session; the third is a stale `:99` left by `xvfb-run` for the offline replays (not this runner) and was removed.
+
+| Artifact (`Saved/MP2Multiclient20261029/Final-6a6b3a7/`) | SHA-256 |
+|---|---|
+| `PolitikaServer` | `04776412a8763b2050228d56408f3a9ab890e32dcb7a3e0faf51bd26d01911ff` |
+| Development `Politika` | `c38b855d3bf61e511ccf38cb87b3f240a9b16af6c048823af509bb78595246c7` |
+| `Politika-LinuxServer.utoc` / `.ucas`, `Politika-Linux.utoc` / `.ucas` | unchanged from MP-3 (`b33412c2…`, `d4702871…`, `405745e3…`, `cc5dbc9a…`) |
+
+The `c14a6c4` archive and `run-1/` (§D–E) remain as the initial, pre-rebase qualification; they are not the accepted artifact. Commands are those of §E with `Final-6a6b3a7` and ports 17900 (matrix), 17920 (dedicated) and 17930 (listen).
 
 ## F. Limitations and next work
 
