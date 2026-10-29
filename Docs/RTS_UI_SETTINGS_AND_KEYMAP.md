@@ -2,6 +2,8 @@
 
 **Status: DESIGN/PROPOSED, 29 October 2026; source-grounded inventory below, not an implementation or accepted build.** This is a normative *implementation contract* for settings and inputs, supplementing the extensive [UI product overview](POLITIKA_UI_OVERVIEW.md), which remains the owner of overall visual hierarchy, faction-specific presentation and accessibility. [Engine Outline](ENGINE_OUTLINE.md) owns sequence; [Selection/Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) owns authoritative selection; [Shell](SHELL_SKELETON.md) owns currently verified shell/recovery behavior; [Match Persistence](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) owns future save/replay. Do not change gameplay authority or native assets merely because a specification is written.
 
+**HUD-specific ownership:** [RTS HUD Architecture](RTS_HUD_ARCHITECTURE.md) owns selected-force/card semantics, contextual modules, permitted observation data, notification behavior, formation/commander/intelligence panel integration and the HUD acceptance matrix. This file remains the owner of action IDs, currently verified bindings and conflicts, menu/settings implementation, focus/back behavior and keymap tests. Neither document establishes an implemented interactive RTS HUD.
+
 ## 1. Code-grounded audit: what actually exists
 
 Examined at source Git SHA \`8eca9a35d58298559f51500c9e04bbdae6a85dd4\`:
@@ -47,6 +49,8 @@ Solve the current `A`/`S` camera/order binding collision before choosing formati
 
 
 ## 2. Recommended interaction layout (desktop baseline)
+
+The schematic below is a compact implementation hypothesis; the dedicated [HUD Architecture](RTS_HUD_ARCHITECTURE.md#4-information-architecture-and-layout) specifies its semantic regions, event/projection data flow and cross-platform composition. Keep HUD layout choices distinct from normative keyboard and group-selection semantics in this specification.
 
 Use a **battlefield-first, relatively low-occlusion** layout combining C&C's immediately discoverable sidebar/production grammar and StarCraft's selected-unit command/selection clarity, without borrowing protected artwork, textures or branding.
 
