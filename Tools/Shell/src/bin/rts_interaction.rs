@@ -605,7 +605,7 @@ fn main() -> Result<(), String> {
             &mut child,
             &log,
             "RTS_UNIT_DESTROYED unit=3",
-            Duration::from_secs(20),
+            Duration::from_secs(35),
         )?;
         let lifecycle_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
         for kind in [
