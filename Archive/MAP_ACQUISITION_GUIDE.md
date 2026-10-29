@@ -1,6 +1,6 @@
 # POLITIKA — Historical Cartographic Acquisition and Map-Production Guide
 
-**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **147 source records**, including **32 contemporary-issued or period-series records**, **80 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [Map relationships](MAP_RELATIONSHIPS.csv) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
+**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **172 source records**, including **35 contemporary-issued or period-series records**, **96 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [Map relationships](MAP_RELATIONSHIPS.csv) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
 
 ## What has actually been acquired?
 
@@ -18,7 +18,19 @@ This archive has *verified metadata and clickable original-source locations*. It
 
 **Earlier coastal/graphic examples:** 1953–1963 British Admiralty maritime charts and Vlasto Kopač's [1954 illustrated tourist map](https://commons.wikimedia.org/wiki/File:Jugoslavija_turisti%C4%8Dka_mapa.jpg) support original coastal and poster art direction; their historical age and reuse permissions must remain visible.
 
-**Data QA:** `Archive/MAP_CATALOG.csv` represents source references rather than 147 independently licensed image binaries; the latest seed added 36 more UT Austin M709 named quadrangles, totaling 80, without making unverified claims about printing/survey years. Details are in the [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md).
+**Data QA:** `Archive/MAP_CATALOG.csv` represents source references rather than 172 independently licensed image binaries; the latest seed added 36 more UT Austin M709 named quadrangles, totaling 96, including the latest sources, without making unverified claims about printing/survey years. Details are in the [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md).
+
+## New source acquisition targets in the latest pass
+
+- [1984 Sarajevo Olympic official final report (LA84)](https://digital.la84.org/digital/collection/p17103coll8/id/11863/): original-period infrastructure and event source; published digitally with IOC permission, **not a general-purpose commercial licence**. Record map-plate page references before use.
+- [National Library of Serbia cartographic collection](https://nb.rs/en/cartographic-collection/): approximately 35,000 sheets across many eras. Request **dated 1980–1989** original maps and atlas volumes; do not multiply archive source count by the size of library holdings.
+- [Croatian History Museum's 154-unit map catalogue](https://kartevgi.hismus.hr/en/e-catalog/): identify actual sheets and contemporary dates individually; most items predate 1980.
+- [1980 Geološka karta Jugoslavije review](https://plus.cobiss.net/cobiss/si/sl/bib/17114722): original 1980 journal article, **not itself a scanned geological map**. Locate the actual map edition before promoting it from a literature lead.
+- [1989 geological map of Slovenia in a historic cave-research library listing](https://odl.dzrjl.si/publikacije/knjiznjica/): retrieve scale, producer and original sheet metadata.
+- [2018 visa-regime drawing of purported 1983 conditions](https://commons.wikimedia.org/wiki/File:Vizni_re%C5%BEim_za_gra%C4%91ane_SFR_Jugoslavije_%28stanje_1983._godine%29.jpg): Commons CC BY-SA 4.0, but independently authenticate visa-free travel rules before converting them into game-law or UI data.
+- [Official 1981 Yugoslav census publication with 1991 introduction](https://publikacije.stat.gov.rs/G1981/Pdf/G19814001.pdf): keep **data year 1981** distinct from **reference publication 1991**; no ethnic map can determine tactical allegiance.
+
+A full evidence-to-asset demonstration based on original 1983–1985 [factory and civilian photographs](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md) is now available separately, with licence and scan-date checks.
 
 ## High-priority originals and source-specific next steps
 
