@@ -12,12 +12,14 @@
 - [Faction descriptions](../Factions/) — faction-specific narratives and visual identity.
 - [Proposed Five-Faction Unit and Building Rosters](POLITIKA_FIVE_FACTION_ROSTERS.md) — design-stage faction equipment and structure catalogue with original C&C inspirations (not implemented or locked).
 
+**Development priority (29 October 2026):** Multiplayer is an **active near-term engineering track**, not an optional post-skirmish extension. The single [Engine Outline](ENGINE_OUTLINE.md) schedules it in parallel with Stage 4; the [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) owns its mandatory pre-implementation code audit and independent gates. Historical qualification reports remain historically accurate and do not imply a working network build.
+
 ## Engine and development
 
 - [Test-map terrain and camera controls](TEST_MAP_TERRAIN.md) — grass/elevation provenance, material-only import, camera pan/zoom fixes and scoped package evidence.
 
 - [Engine Outline](ENGINE_OUTLINE.md) — **the single authoritative implementation sequence**, including incomplete Stage 4A closure and the dependency-ordered First Playable Skirmish milestone; owns implementation order and promotion boundaries.
-- [RTS Multiplayer Architecture and Retrofit Audit](RTS_MULTIPLAYER_ARCHITECTURE.md) — **planned, not implemented:** future up-to-four-human listen/dedicated server design, server-authoritative multiplayer seams, **mandatory inventory and per-symbol retrofit assessment of all existing game code**, staged MP-0–MP-4 work and MP-T01–T12 acceptance.
+- [RTS Multiplayer Architecture and Retrofit Audit](RTS_MULTIPLAYER_ARCHITECTURE.md) — **IMMEDIATE PRIORITY, not implemented:** begin mandatory whole-code audit/retrofit (MP-0) **now**, implement a true two-human listen-server vertical slice next (MP-1), then dedicated parity and 2–4-human validation (MP-3/MP-2); public-service polish follows (MP-4). Owns per-symbol source audit and MP-T01–T12 acceptance.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
 - [Rifle-infantry reference import](CNC3_RIFLEMEN_IMPORT.md) — neutral-named mesh/animation/MP3 import, source provenance, interrupted-package recovery and scoped local audio playtest evidence.
 - [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) — scoped ST3-01–ST3-18 verdicts, exact evidence identities, and remaining acceptance gaps.
