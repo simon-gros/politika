@@ -1,7 +1,7 @@
 # POLITIKA — RTS Asset Resource Research and Sourcing Recommendations
 
 **Research date:** 2026-10-29  
-**Status:** Research and evaluation only; no assets acquired, imported, purchased, or integrated  
+**Status:** Research/evaluation plus selected CC0 source-asset acquisitions; no assets purchased, imported into Unreal, cooked, or integrated
 **Project:** [POLITIKA](https://github.com/simon-gros/politika) — alternate-history real-time strategy game set in Yugoslavia, 1984–1989  
 **Target engine:** Unreal Engine 5.8.3  
 **Planned platforms:** Linux, Windows, SteamOS/Steam Deck, Android (not all qualified or released)
@@ -154,6 +154,22 @@ POLITIKA's documented engine architecture separates authored definitions and vis
 **Produce as original POLITIKA art:** recognizable infantry silhouettes, faction-specific vehicles and installations, insignia, specialist abilities and important campaign landmarks.
 
 The objective is a distinctive, period-sensitive RTS visual identity with reproducible provenance, open-source compatibility, and realistic desktop/handheld/mobile performance budgets.
+
+## 9. Local CC0 acquisition record — 2026-10-29
+
+Selected source assets have been downloaded into the project for later art-direction and Unreal import review. They are not yet engine content or gameplay dependencies.
+
+| Source set | Acquired assets | Local provenance record |
+| --- | --- | --- |
+| Poly Haven props | Concrete Road Barrier, Barrel 03 | [`Art/ThirdParty/PolyHaven-Props-20261029`](../Art/ThirdParty/PolyHaven-Props-20261029/README.md) |
+| Poly Haven props (additional) | Old Military Crate, Metal Jerrycan Green, Modular Chainlink Fence, Modular Electricity Poles | [`Art/ThirdParty/PolyHaven-Props-Additional-20261029`](../Art/ThirdParty/PolyHaven-Props-Additional-20261029/README.md) |
+| ambientCG materials | Asphalt012, Concrete035, Metal009 | [`Art/ThirdParty/ambientCG-UrbanMaterials-20261029`](../Art/ThirdParty/ambientCG-UrbanMaterials-20261029/README.md) |
+| Poly Haven / ambientCG environment | Boulder 01, Shrub 01, Bricks 105 | [`Art/ThirdParty/Environment-Assets-20261029`](../Art/ThirdParty/Environment-Assets-20261029/README.md) |
+| Poly Haven settlement assets | Modular Urban Apartments Facade, Modular Street Seating | [`Art/ThirdParty/PolyHaven-Settlement-Assets-20261029`](../Art/ThirdParty/PolyHaven-Settlement-Assets-20261029/README.md) |
+| Poly Haven / ambientCG industrial assets | Modular Factory Facade, Metal 063 | [`Art/ThirdParty/Industrial-Assets-20261029`](../Art/ThirdParty/Industrial-Assets-20261029/README.md) |
+| Poly Haven infrastructure | Modular Industrial Pipes 01, Old Military Compressor, Large Iron Gate | [`Art/ThirdParty/PolyHaven-Infrastructure-20261029`](../Art/ThirdParty/PolyHaven-Infrastructure-20261029/README.md) |
+
+All selected assets above are recorded as CC0 by their publishers. Each acquisition folder preserves the applicable license page, source URLs/API metadata, and SHA-256 checksums. Treat them as generic environment/prop materials, not proof of Yugoslav historical accuracy. Verify import, asset scale, collisions, RTS-camera readability, and platform budgets before integration.
 
 ---
 
