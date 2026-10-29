@@ -4,6 +4,8 @@ Status: planned product scope and engineering acceptance criteria (2026-10-27). 
 
 POLITIKA is a **multi-platform real-time strategy game**. Linux, Windows, SteamOS/Steam Deck and Android are within the primary planned platform scope from the architectural design stage. Platform-specific delivery can be staged; listing a target does not guarantee a simultaneous release, a signed package, storefront approval or performance on every device.
 
+**Immediate multiplayer platform boundary (29 October 2026):** [RTS Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) is an active engineering track, not an optional post-release consideration. Prioritize the first supported Linux Development network fixture and headless build before expanding actual multiplayer qualification to Windows, SteamOS/Steam Deck and Android; preserve platform-adaptive controls and offline usability. This policy does **not** imply that any multiplayer build presently works.
+
 ## 1. Platform commitment matrix
 
 | Platform | Status | Intended experience | Qualification boundary |
@@ -37,7 +39,7 @@ Set measurable budgets per actual hardware tier (CPU simulation time, memory, GP
 
 Use per-platform configurations, packaged build verification and an incremental CI matrix as toolchains become available. Android requires an independent mobile packaging and input prototype; SteamOS needs actual Steam Deck testing. Native Linux and Windows builds need their own packaging and driver/OS qualification. No release should be called supported based solely on editor play or an untested build.
 
-Keep campaign, local skirmish, saves and settings usable offline without mandatory account creation or external identity services, consistent with the game's offline-first direction. Use platform-specific save locations and suspend/resume handling. Cloud saves, shared saves between OSes, cross-play, online accounts, storefront integration and multiplayer are **not implied** by multi-platform support.
+Keep campaign, local skirmish, saves and settings usable offline without mandatory account creation or external identity services, consistent with the game's offline-first direction. Use platform-specific save locations and suspend/resume handling. Cloud saves, shared saves between OSes, cross-play, online accounts and storefront integration are **not implied** by multi-platform support. **Multiplayer is independently an immediate development priority**: start MP-0 source audit and MP-1 two-client listen-server testing now, then bring dedicated-server parity and up-to-four-human fixtures forward. Cross-play across Linux/Windows/SteamOS/Android remains unverified and requires separate platform/network qualification.
 
 ## 5. Test and release gates
 
