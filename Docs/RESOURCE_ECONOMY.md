@@ -1,7 +1,7 @@
 # POLITIKA — Resources and Strategic Economy
 
 Status: Core resource hierarchy and Meridian Pact starting-position advantage established; quantities, conversion ratios, map distribution, costs and numerical balance remain open.
-Related: [Concepts Outline](CONCEPTS_OUTLINE.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Story Outline](STORY_OUTLINE.md) · [Faction descriptions](../Factions/)
+Related: [Production/structures/technology implementation contract](RTS_PRODUCTION_AND_TECHNOLOGY.md) · [RTS completeness matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) · [Concepts Outline](CONCEPTS_OUTLINE.md) · [Nuclear Ultimate Weapons System](NUCLEAR_WEAPONS_SYSTEM.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Story Outline](STORY_OUTLINE.md) · [Faction descriptions](../Factions/)
 
 ## First Playable Skirmish economy slice (planned, not implemented)
 

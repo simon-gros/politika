@@ -7,6 +7,8 @@ Product constraints: no cinematics; no mandatory internet connection or online-a
 Display target: desktop 4K (3840×2160) plus readable, adaptive handheld/mobile resolutions
 Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; console/Apple platforms are possible later expansions
 
+**Cross-system boundary (29 October 2026):** The [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) specification owns authoritative selection membership, per-unit group submission and rejected-order semantics. [Visibility and Intelligence](RTS_VISIBILITY_AND_INTELLIGENCE.md) owns per-participant observable state; this UI must render that view rather than unfiltered simulation truth. [RTS Systems Completeness Matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) records which behaviors remain design-only. These links do not qualify a new UI feature or plugin.
+
 ## 1. Product direction
 
 POLITIKA's interface should make the player feel like a commander managing a fluid operation, not an operator navigating a software dashboard. It should keep the map and tactical decisions central, surface the next useful action, and make the state of squads, vehicles, objectives, and orders easy to read at a glance.

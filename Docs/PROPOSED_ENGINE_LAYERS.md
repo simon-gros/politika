@@ -6,6 +6,8 @@ Design basis: POLITIKA's gameplay and offline-first requirements
 Product constraints: offline play without mandatory account login; no cinematic sequences; desktop 4K-capable UI; adaptable handheld/mobile control and presentation
 Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple platforms under future consideration
 
+**Proposed RTS subsystem boundaries (29 October 2026):** See the [RTS Systems Completeness Matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) and companion [Visibility](RTS_VISIBILITY_AND_INTELLIGENCE.md), [Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md), [Production](RTS_PRODUCTION_AND_TECHNOLOGY.md), [Opponent AI](RTS_OPPONENT_AI.md), and [Match Persistence](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) contracts for owned data, admission, observation, verification and stage limits. The [Engine Outline](ENGINE_OUTLINE.md) remains the only implementation-sequence authority; these are design specifications, not live subsystems.
+
 ## 1. Purpose
 
 This document expands the “Proposed layers” table in [ENGINE_OUTLINE.md](ENGINE_OUTLINE.md). It separates the application shell, gameplay runtime, packaged content, and authoring tools according to POLITIKA's needs, without assuming a particular external game's executable architecture or strategic rules.
