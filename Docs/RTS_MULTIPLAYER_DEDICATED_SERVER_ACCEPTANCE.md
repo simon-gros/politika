@@ -156,7 +156,54 @@ The canonical-map launch above was checked as a **boot-only smoke**. It reached 
   - Lobby and session browser.
   - Server administration (console, ban/kick commands, config file).
   - A server-side match-rotation choice other than "reload the same map".
-- **Known pre-existing issue.** Development-only switches with values (`-PolitikaMPRematch=…`) cause an `InvalidLaunchOptions` recovery notice on clients (MP-1 behavior). It does not affect gameplay evidence.
+- **Resolved (29 October 2026).** In the run above, Development-only switches with values (`-PolitikaMPRematch=…`) caused an `InvalidLaunchOptions` recovery notice on clients (MP-1 behavior). It did not affect gameplay evidence. Section G covers the fix.
 - **Next.**
   - MP-2: packaged 3–4-client runs on the dedicated server for 2v1/3v1/2v2, network emulation, bandwidth and server-step measurements, F27/F33.
   - A Shipping `PolitikaServer` package with a Shipping-safe default fixture policy.
+
+## G. Follow-up: Development-only multiplayer launch switches (29 October 2026)
+
+Branch `codex/mp-dev-launch-switches-20261029`; source commit `4d80a76`.
+
+- **Change.** `FPolitikaLaunchOptions::Parse` (`Source/PolitikaBootstrap/Private/PolitikaBootstrap.cpp`) now takes an `EPolitikaLaunchSwitchPolicy`.
+  - **Development policy** (default in non-Shipping builds): recognizes `-PolitikaMPRematch=<url>`, `-PolitikaMPRematchDelay=<s>`, `-PolitikaMPRematchAttempts=<n>`, `-PolitikaMPProbe` and the existing `-PolitikaTestFixture=<id>`. These switches no longer raise `InvalidLaunchOptions`.
+  - **Strict policy:** the switch table is compiled out under `UE_BUILD_SHIPPING`, so Shipping is always Strict.
+  - **Still rejected under both policies:**
+    - unknown switches;
+    - flags given a value (`-PolitikaMPProbe=1`);
+    - valued switches with no value (`-PolitikaMPRematch`, `-PolitikaMPRematch=`). This includes the previously tolerated empty `-PolitikaTestFixture=`.
+    - A rejected switch still cancels `-PolitikaResetUserConfig`.
+- **Test.** `Politika.Bootstrap.LaunchOptions` (`Source/PolitikaBootstrap/Private/Tests/PolitikaLaunchOptionsTests.cpp`) checks the following:
+  - Each Development switch, and the MP-3 client command line, is accepted under Development and rejected under Strict.
+  - The rejection list fails under both policies.
+  - Safe mode and reset behavior is unchanged.
+  - The build's default policy is correct.
+- **Harness.** `rts_multiplayer` adds `MP1-DEV-LAUNCH-OPTIONS` (listen) and `MP3-DEV-LAUNCH-OPTIONS` (dedicated). Each fails if any of these logs contains `"code":"InvalidLaunchOptions"`, or is missing the bootstrap event: listen host/client; dedicated server and clients A/B.
+
+| Gate | Result |
+|---|---|
+| `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash tools/unreal.sh build` (PolitikaEditor) | Succeeded, exit 0 |
+| `bash tools/unreal.sh core-test` | PASS (`core.compile`, `core.command_rules`) |
+| `bash tools/unreal.sh test` (Politika Automation) | 34/34 Success, 0 failed (wrapper exit 4 = INCONCLUSIVE by design; report inspected). All warnings are pre-existing log warnings (Wayland/SDL init query, crowd manager, navigation fixtures). A first run failed `Politika.Bootstrap.LaunchOptions` on a typo in the new test (`-politikamprobe`); after the test was corrected and rebuilt, the second run passed. |
+| `package-multiplayer.sh development` / `server` / `shipping` | All `ExitCode=0`; manifest checks passed |
+| `rts_multiplayer` listen, port 17840 (host 1008361, client 1008465) | 18/18 PASS (MP-1 baseline 17 + `MP1-DEV-LAUNCH-OPTIONS`) |
+| `rts_multiplayer --dedicated`, port 17850 (server 1012272, clients A 1012293 / B 1012430 / C 1013576) | 23/23 PASS (MP-3 baseline 22 + `MP3-DEV-LAUNCH-OPTIONS`) |
+| `rts_multiplayer --shipping-boot` | 3/3 PASS; `SHIP-NO-DEV-ENTRY-POINTS` found none of the switch names in the Shipping binary |
+| Shipping spot-check (manual, Xvfb) with all four MP switches | MainMenu still shows `[InvalidLaunchOptions]` (`shipping-strict/shipping-dev-switches-main-menu.png`) |
+
+- **Visual result.** The new `dedicated/client-b-07-client-a-lost-menu.png` shows only `[NetworkRemovedByHost]`; the MP-3 run's screenshot also showed `[InvalidLaunchOptions]`. No listen or dedicated log contains `InvalidLaunchOptions`.
+
+**Package identity** (`BuildIdentity.json`: `git_revision` `4d80a760134d`, `git_dirty` false, game `0.1.0-dev.0`, network_protocol 1).
+
+| Artifact | SHA-256 |
+|---|---|
+| Development `Politika` | `effe73ab826c46b75e301ec4aea40121045f0439f273dc52c2c3c37ca1668da0` |
+| `PolitikaServer` | `73db148b13abfb896e72c5164802e289084bddfd3ae4e3e59f7a86d47000e79b` |
+| `Politika-Linux-Shipping` | `6cd48aed6e22e81496e1970c7a194026e8fd46b6c39a8859ec3f7323d3b0332b` |
+| Development `Politika-Linux.utoc` / `Politika-LinuxServer.utoc` | unchanged from section E (content did not change) |
+
+- **Evidence location.** Working copy: `build/diagnostics/mp-dev-launch-switches/` (build, test, package and run logs; `listen/`, `dedicated/`, `shipping/`, `shipping-strict/`). Durable copy: `/mnt/data/politika-qualification/MP-DevLaunchSwitches-20261029/`.
+- **Limits.**
+  - Same as section F.
+  - No Shipping log exists, because Shipping does not log. Shipping strictness rests on three things: the compiled-out table, the Strict-policy Automation cases and the screenshot.
+  - No version counters changed.
