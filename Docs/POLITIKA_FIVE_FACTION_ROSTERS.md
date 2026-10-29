@@ -6,6 +6,8 @@
 **Source corpus:** the user-provided *Command & Conquer Series — Faction Unit and Building Roster Reference* covering twelve entries; the live POLITIKA GitHub faction descriptions and system documents, consulted 27 October 2026.  
 **Technical target:** an eventual UE 5.8.3 / C++ / C# / Rust RTS content-design inventory; no Python runtime dependency is proposed for the game.
 
+**Unit gameplay specifications (added 29 October 2026):** every unit row in this sheet now has a full PROPOSED gameplay specification (identity, statistics, weapons, abilities, production and logistics, research, commands, AI, multiplayer authority, presentation and counters). The rows, IDs and names below are unchanged and remain the naming authority. Shared rules: [Unit Specification Framework](UNIT_SPECIFICATION_FRAMEWORK.md). Per-faction files: [Atlantic Concord](Units/ATLANTIC_CONCORD_UNITS.md) · [Red Directorate](Units/RED_DIRECTORATE_UNITS.md) · [Iron Ascendancy](Units/IRON_ASCENDANCY_UNITS.md) · [Meridian Pact](Units/MERIDIAN_PACT_UNITS.md) · [The Unaligned](Units/UNALIGNED_UNITS.md). Cross-faction views: [Unit Balance and Ability Matrices](UNIT_BALANCE_AND_ABILITY_MATRICES.md). Verification: [Unit Specification Coverage Report](Reports/UNIT_SPECIFICATION_COVERAGE_20261029.md).
+
 ## Design approach, scope and rules
 
 This is **one new native conceptual roster for each of the five POLITIKA factions**, not twelve imported game rosters or a C&C mod. Every item has (a) a new **English** unit/structure name, (b) a plain gameplay purpose and (c) *original named Command & Conquer correlates* with their source release. Many source designs converge into one proposed POLITIKA archetype; some are represented only by function, not form. The lineages indicate genre/design inspiration **without authorizing copied visual models, trademarks, animations, dialogue, statistics or exact gameplay code**. Nothing here requires an exact one-to-one clone.
@@ -45,6 +47,8 @@ This is **one new native conceptual roster for each of the five POLITIKA faction
 - `Ability lineage`: the cited original is a support power, deployable state or campaign object; it is **not** claimed to be a directly produced C&C unit.
 
 ## Atlantic Concord
+
+**Per-unit specifications:** [Atlantic Concord Unit Specifications](Units/ATLANTIC_CONCORD_UNITS.md) (proposed; one entry per unit row below).
 
 **Playable.** Elite Western-style combined arms, multi-domain operations, contractor-based logistics, air power, media strategy and distinct Psy-Ops. Advanced capabilities require specialized support and fuel rather than free precision advantages.
 
@@ -170,6 +174,8 @@ This is **one new native conceptual roster for each of the five POLITIKA faction
 
 ## Red Directorate
 
+**Per-unit specifications:** [Red Directorate Unit Specifications](Units/RED_DIRECTORATE_UNITS.md) (proposed; one entry per unit row below).
+
 **Playable.** Soviet-inspired state-industrial mass doctrine; far cheaper infantry, large mechanized armies, deep artillery and centralized infrastructure. Intelligence theft/diversion is its spy specialty; ICBM is its nuclear delivery method.
 
 ### Infantry, personnel and intelligence
@@ -292,6 +298,8 @@ This is **one new native conceptual roster for each of the five POLITIKA faction
 
 ## Iron Ascendancy
 
+**Per-unit specifications:** [Iron Ascendancy Unit Specifications](Units/IRON_ASCENDANCY_UNITS.md) (proposed; one entry per unit row below).
+
 **Playable.** Fictional fascist totalitarian military machine, with slightly stronger attacks, costly advanced armor and dangerous political overextension. It is the narrative aggressor and a hostile actor to federal authorities; coercion carries consequences, not rewards without cost.
 
 ### Infantry, security and clandestine personnel
@@ -408,6 +416,8 @@ This is **one new native conceptual roster for each of the five POLITIKA faction
 | `IA-DEF-12` | **Abstract Contamination Operations Cell** | Authorized *fictional facility-status ability* and recovery counters, never modeled as pathogen engineering. | Bio-Research Laboratory (TD, scenario analogue); Tiberium Chemical Plant (TW, gameplay role) |
 
 ## Meridian Pact
+
+**Per-unit specifications:** [Meridian Pact Unit Specifications](Units/MERIDIAN_PACT_UNITS.md) (proposed; one entry per unit row below).
 
 **Playable.** Transcontinental commercial coalition emphasizing early fast truck scouting, qualified low-cost demolition sabotage, flexible regional infantry, fuel access, merchant contracts and a conventional-equipment auction network. No special media/psychological or nuclear production tree.
 
@@ -535,6 +545,8 @@ This is **one new native conceptual roster for each of the five POLITIKA faction
 | `MP-DEF-09` | **Contract Arbitration Office** | Manages mercenary loyalty, pay disputes and termination. | Command Center (Gen); Detention Camp (Gen, information/holding analogue) |
 
 ## The Unaligned (NPC)
+
+**Per-unit specifications:** [The Unaligned Unit Specifications](Units/UNALIGNED_UNITS.md) (proposed; one entry per unit row below).
 
 **Never playable.** Yugoslav sovereign federal, regional and municipal authorities; JNA and Territorial Defence; living civilian economy and autonomous security response. These rows are *NPC and scenario entities*, not human-recruitable unit buttons.
 
