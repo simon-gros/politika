@@ -142,7 +142,7 @@ POLITIKA is a developing independent RTS project with an Unreal application shel
 
 Feedback, bug reports, design discussions, documentation improvements, and contributions can be proposed through this repository's [issues](https://github.com/simon-gros/politika/issues) and pull requests. Proposed features should distinguish between established canon, design proposals, and working implementations, and should not treat planned mechanics as already completed.
 
-Licensing note: The repository does not currently contain a standalone LICENSE file. A public repository is not automatically a grant of rights to reuse or redistribute its contents; licensing terms should be clarified before assuming those permissions.
+**Licensing and media provenance:** At the 29 October 2026 audit baseline, this repository has no root LICENSE, so public GitHub visibility is **not** a general grant of reuse or redistribution rights. The project's code, original media, third-party CC0 sources, research references and converted game-reference prototypes can have **different** rights. In particular, the current [rifle-infantry import](Docs/CNC3_RIFLEMEN_IMPORT.md) remains technical playtest evidence, not a cleared public release asset. See [Archive Rights and Provenance](Archive/RIGHTS_AND_PROVENANCE.md), [Production Standards](Docs/PRODUCTION_STANDARDS.md) and [Release Gates](Docs/PERFORMANCE_AND_RELEASE_GATES.md). Project-wide licensing and source-asset replacement/clearance remain open rights-holder decisions; no license is selected by this documentation.
 
 ---
 

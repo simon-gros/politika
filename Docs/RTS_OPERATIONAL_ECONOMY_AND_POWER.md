@@ -73,6 +73,23 @@ Epic [UPrimaryDataAsset](https://dev.epicgames.com/documentation/unreal-engine/A
 
 Computer opponents must buy food, trade goods and meet building power requirements under the **same ledger/permissions**; a difficulty setting must not invisibly grant unlimited supplies. Enemy economic truth is visible only under legitimate observation/intelligence permissions, not simply because a HUD can query Actors.
 
+### Proposed reproducible Stage 4B economy fixture (not a balance lock)
+
+Author a tiny validated scenario with two different participant IDs, one owned treasury and explicitly dated/step-indexed income source, one tradeable commodity stack, one conventional self-starting generator plus a consumer building with **positive** load, one powered producer, one staffed initial unit and a legitimate USD-priced food purchase channel. The fixture's numeric USD-cent balances, amounts, interval lengths, transaction IDs and production costs must live in typed test data, **not prose or a second Rust simulator**. Keep one small positive path, independent negative variants and a same-process rematch; record the expected full account/structure/unit/event snapshot at named authoritative steps. Do not assume market quotes, oil/gold exchange rates or food penalties are balance-approved.
+
+| Proposed fixture gate | Explicit requirement |
+| --- | --- |
+| ECO-FX-01 — opening solvency | Startup has enough USD and provisions for meaningful first orders and a reachable authorized replenishment path; all active buildings have positive required load and a legal power source |
+| ECO-FX-02 — legal conversion | One quote, valid reservation, sale settlement and net USD credit occur **exactly once**, with checked integer rounding; commodity stock decreases by the transacted amount |
+| ECO-FX-03 — concurrent contention | Same-step production and commodity-sale requests cannot reserve the same stock or overspend; stable participant/transaction ordering determines the winner, with a rejection event and no side effects for the loser |
+| ECO-FX-04 — outage/recovery | Generator disruption pauses dependent production without a second debit; restoring legally eligible power resumes the same queue entry exactly once |
+| ECO-FX-05 — upkeep/recovery | Staffed unit upkeep is charged once per due step, shortage does not create negative stock or an irreversible softlock, and authorized food purchase removes the defined penalty at the next eligible recovery boundary |
+| ECO-FX-06 — lifecycle separation | Unit death/capture and fresh match generation revoke prior authority/reservations; after Terminal/Results and on clean rematch no old income, account, food deduction or production event is replayed |
+| ECO-FX-07 — observability | Human HUD and opponent AI receive only authorized balances and status; they use identical ledger/permission paths and distinguish quote, admitted request and completed transaction |
+| ECO-FX-08 — repeatability | Equal authoritative input/seed sequences produce equivalent normalized ledger/power/food/production traces across distinct render frame schedules and in a real packaged Development fixture |
+
+This fixture must follow the single [Stage 4 integration seam](ENGINE_OUTLINE.md#stage-4-cross-system-execution-and-evidence-thread-proposed). Resolve step ordering for death, capture, new spawns, completed transactions and power outages in code-level test assertions before claiming a complete economy. Existing `USD-*` and `ECO-INT-*` gates remain the official specialist acceptance IDs; `ECO-FX-*` are proposed fixture breakdowns only.
+
 ## 8. Implementation stages and acceptance
 
 **Stage 4B first slice (refined design; still unimplemented):** One authored **$** treasury and income/delivery source; one valid source→delivery→conversion or authorized grant; one fixed **powered** base with positive minimum building load; one basic production queue and produced unit; authored starting food for its initial staffed force; one **USD→Food purchase**; one due food-upkeep interval and bounded power/food deficit-and-recovery fixtures. There is no requirement yet to build a full gold mine, multiple oil refiners or a commodity exchange UI. If this is too broad for one increment, split it into explicitly evidenced 4B sub-slices; finish core upkeep before claiming 4D AI / 4F complete skirmish.

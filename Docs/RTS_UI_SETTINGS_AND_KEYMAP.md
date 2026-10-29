@@ -157,6 +157,23 @@ The economy HUD must show **in-game USD ($)** as the single ordinary purchasing 
 
 The food procurement drawer shows actual dollar price, food quantity and optional player-limited auto-replenishment; no generic agricultural-worker harvesting interface. Low power, paused production and inadequate food must appear in concise, accessible alerts with a concrete recovery action. These are **design targets**, not working menus. The [dollar and upkeep contract](RTS_OPERATIONAL_ECONOMY_AND_POWER.md) owns transaction, cadence and shortage rules; this document owns information layout and device interactions.
 
+### Proposed compact screen-transition and focus acceptance matrix
+
+The [UI Overview](POLITIKA_UI_OVERVIEW.md) remains visual/product authority; this matrix defines testable interaction behavior, not a second screen router. Each implemented screen/overlay should specify entry trigger, permitted phase, primary action, Cancel/Back destination, focus restoration, pointer/controller/touch alternatives, input hint source and authoritative effects. Screens marked unavailable must not masquerade as functioning features; the current Development prototype launch/recovery path stays supported.
+
+| Proposed gate | Test interaction |
+| --- | --- |
+| UI-NAV-01 | Boot into a known main-menu or prototype route with documented config; use keyboard/controller to reach each enabled action, and Cancel returns to the prior focus target without submitting gameplay commands |
+| UI-NAV-02 | Open and close an in-match overlay; orders stop reaching the battlefield while modal focus captures input; gameplay pause is separate and must obey the offline match lifecycle |
+| UI-NAV-03 | Choose windowed/borderless/fullscreen and valid resolution in a *preview*; Keep persists only after confirmation, Revert/timeout restores the last known-good visible mode, restart/recovery does not trap the user off-screen |
+| UI-NAV-04 | User UI scale composes with the existing Unreal DPI curve once, preserving legible status and actionable targets at 1280×720, 1920×1080, 3840×2160 and 1280×800 (handheld); validate focus and safe areas, not only screenshots |
+| UI-NAV-05 | All enabled actions have one semantic ID, actual displayed binding, supported remap/conflict detection and source-backed in-game help; holding W/A/S/D with a selected unit never accidentally emits Stop or Attack-Move |
+| UI-NAV-06 | UI command outcome is correlated to real typed request/issuer; distinguish rejected, accepted, executing, interrupted and completed without leaking hidden opponent state or promising an unimplemented feature |
+| UI-NAV-07 | Audio mixer, subtitles/captions, reduced effects and non-color alerts are user-testable where supported, and modal/menu control remains usable with no audio |
+| UI-NAV-08 | Save/Return/Rematch actions appear only when supported by the match phase and verified persistence contract; no stale focused widget or selected dead unit survives a new match generation |
+
+Implementation choices may use Unreal [Common UI](https://dev.epicgames.com/documentation/unreal-engine/common-ui-plugin-for-advanced-user-interfaces-in-unreal-engine), [Enhanced Input](https://dev.epicgames.com/documentation/unreal-engine/enhanced-input-in-unreal-engine) and [Game User Settings](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/GameFramework/UGameUserSettings), but their actual 5.8.3 behavior and any experimental integrations require local source/package verification before adoption. Steam Deck acceptance should separately check controller accessibility, correct glyphs and text readability using [Valve's compatibility guidance](https://partner.steamgames.com/doc/steamhardware/compat). These references describe candidate approaches, not currently enabled UI subsystems.
+
 ## 8. Implementation phases and acceptance
 
 **UI-A — immediate correction:** record current keys and conflicts, establish common semantic registry/proposed defaults and native text help; test W/A/S/D held with a selected unit for **zero accidental commands**; keep current controller/command authority and packaged prototype. This is a gameplay-code change and requires Unreal Automation + rendered regression.
