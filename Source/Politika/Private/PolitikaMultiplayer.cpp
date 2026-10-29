@@ -1385,6 +1385,45 @@ void APolitikaPrototypeMatch::SampleObservedState(const TCHAR* Reason)
             MatchGeneration, FMath::RoundToInt(Objective->GetProgress() * 1000.0f), Objective->IsContested() ? 1 : 0,
             Objective->IsComplete() ? 1 : 0, Objective->GetCapturingPlayerId(), Objective->GetCapturingTeamId(), Screen.X, Screen.Y);
     }
+    if (Viewer) SampleGroundProbes(*Viewer);
+}
+
+void APolitikaPrototypeMatch::SampleGroundProbes(const APlayerController& Viewer)
+{
+    if (!bGroundProbesParsed)
+    {
+        bGroundProbesParsed = true;
+        FString Spec;
+        FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPGroundProbe="), Spec);
+        TArray<FString> Points;
+        Spec.ParseIntoArray(Points, TEXT("/"));
+        for (const FString& Point : Points)
+        {
+            FString X, Y;
+            if (Point.Split(TEXT(":"), &X, &Y) && X.IsNumeric() && Y.IsNumeric())
+                GroundProbePoints.Add(FVector2D(FCString::Atod(*X), FCString::Atod(*Y)));
+            else
+                UE_LOG(LogPolitikaStartup, Warning, TEXT("MP_CLIENT_GROUND_PROBE_INVALID value=%s"), *Point);
+        }
+    }
+    // The point on the ground a click would hit: the same visibility channel the controller
+    // traces under the cursor, falling back to the objective's height.
+    const double FallbackZ = Objective ? Objective->GetActorLocation().Z : 0.0;
+    for (int32 Index = 0; Index < GroundProbePoints.Num(); ++Index)
+    {
+        const FVector2D& Point = GroundProbePoints[Index];
+        FHitResult Hit;
+        FCollisionQueryParams Params(TEXT("PolitikaGroundProbe"), false);
+        for (const APolitikaPrototypeUnit* Unit : Units) if (IsValid(Unit)) Params.AddIgnoredActor(Unit);
+        const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, FVector(Point.X, Point.Y, FallbackZ + 5000.0),
+            FVector(Point.X, Point.Y, FallbackZ - 5000.0), ECC_Visibility, Params);
+        const FVector Ground(Point.X, Point.Y, bHit ? Hit.ImpactPoint.Z : FallbackZ);
+        FVector2D Screen(-1.0, -1.0);
+        const bool bOnScreen = Viewer.ProjectWorldLocationToScreen(Ground, Screen, true);
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_CLIENT_GROUND_PROBE index=%d x=%.1f y=%.1f z=%.1f ground_hit=%d on_screen=%d screen_x=%.0f screen_y=%.0f viewer=%u"),
+            Index, Point.X, Point.Y, Ground.Z, bHit ? 1 : 0, bOnScreen ? 1 : 0, Screen.X, Screen.Y, LocalRuntimePlayerId);
+    }
 }
 
 void APolitikaPrototypeMatch::LogNetworkEmulation()

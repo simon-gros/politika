@@ -33,6 +33,7 @@ namespace
         TEXT("-PolitikaMPRematch="),
         TEXT("-PolitikaMPRematchDelay="),
         TEXT("-PolitikaMPRematchAttempts="),
+        TEXT("-PolitikaMPGroundProbe="),
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),

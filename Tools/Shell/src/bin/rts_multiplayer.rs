@@ -2971,7 +2971,7 @@ fn health_records(host: &Game, client: &Game) -> (usize, usize, Vec<String>) {
 /// One server shot-cue decision: sequence, participant, cue, target point, sent point.
 type ShotDecision = (String, String, String, (f64, f64), (f64, f64));
 
-fn shot_cue_consistency(server: &Game, clients: &[Game]) -> (usize, [usize; 3], Vec<String>) {
+fn shot_cue_consistency(server: &Game, clients: &[&Game]) -> (usize, [usize; 3], Vec<String>) {
     let server_text = server.text();
     let mut decisions: Vec<ShotDecision> = Vec::new();
     let mut counts = [0usize; 3]; // exact, facing, none
@@ -3876,7 +3876,8 @@ fn dedicated_layout(
             );
         }
 
-        let (received, counts, problems) = shot_cue_consistency(&server, &clients);
+        let (received, counts, problems) =
+            shot_cue_consistency(&server, &clients.iter().collect::<Vec<_>>());
         report.fact(
             &format!("{layout}_shot_cues"),
             format!(
@@ -4471,11 +4472,527 @@ fn fog_memory_session(options: &DedicatedOptions, report: &mut Report) -> Result
     result
 }
 
-fn run_fog_memory() -> ! {
+/// Where a team-A unit attacks the northern militia from: 304 cm from it (inside the 650 cm
+/// weapon range, so the unit fires without moving), about 1057 cm from team B's nearer
+/// start unit (inside its 1200 cm sight, outside its 800 cm idle acquisition), while that
+/// unit stays 1307 cm from the militia. Team B sees the shooter but not its target.
+const ENGAGE_FACING_POST: (f64, f64) = (300.0, 1300.0);
+/// Where a second team-A unit first sees the southern militia (707 cm away), far from
+/// every team-B unit: team B sees neither shooter nor target.
+const ENGAGE_WITHHELD_POST: (f64, f64) = (-700.0, -950.0);
+const SIGHT_CM: f64 = 1200.0;
+const TEAM_B_BIT: u32 = 1 << 2;
+
+fn distance(a: (f64, f64), b: (f64, f64)) -> f64 {
+    ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// Screen position of a `-PolitikaMPGroundProbe` point on a rendered client.
+fn probe_screen(text: &str, index: usize) -> Option<(f64, f64)> {
+    let index = index.to_string();
+    text.lines()
+        .rev()
+        .find(|l| l.contains("MP_CLIENT_GROUND_PROBE") && field(l, "index") == Some(&index))
+        .filter(|l| field(l, "on_screen") == Some("1"))
+        .and_then(|l| Some((number(l, "screen_x")?, number(l, "screen_y")?)))
+        .filter(|(x, y)| {
+            *x > 8.0 && *y > 8.0 && *x < f64::from(WIDTH) - 8.0 && *y < f64::from(HEIGHT) - 8.0
+        })
+}
+
+/// The server's latest sample of an entity: position and the teams observing it.
+fn server_unit(text: &str, entity: u64) -> Option<((f64, f64), u32, i64)> {
+    text.lines()
+        .rev()
+        .filter(|l| l.contains("MP_SERVER_SAMPLE"))
+        .find(|l| field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(entity))
+        .and_then(|l| {
+            Some((
+                (number(l, "x")?, number(l, "y")?),
+                field(l, "observed")?.parse().ok()?,
+                field(l, "health")?.parse().ok()?,
+            ))
+        })
+}
+
+/// Waits until the server samples `entity` within `tolerance` cm of `point`.
+fn wait_arrival(
+    server: &mut Game,
+    entity: u64,
+    point: (f64, f64),
+    tolerance: f64,
+    timeout: Duration,
+) -> Result<(f64, f64), String> {
+    let start = Instant::now();
+    loop {
+        let last = server_unit(&server.text(), entity).map(|u| u.0);
+        if let Some(position) = last
+            && distance(position, point) <= tolerance
+        {
+            return Ok(position);
+        }
+        if start.elapsed() >= timeout || !server.alive() {
+            return Err(format!(
+                "entity {entity} did not reach {point:?} within {timeout:?} (last {last:?})"
+            ));
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// Selects `unit`, then right-clicks `target` until the server admits an explicit Attack.
+/// A zoomed-out unit is small, so nearby points on its body are also tried.
+fn order_attack(
+    game: &mut Game,
+    server: &mut Game,
+    unit: u64,
+    target: u64,
+) -> Result<String, String> {
+    select_entity(game, "MP_CLIENT_SAMPLE", unit)?;
+    for (dx, dy) in [
+        (0.0, 0.0),
+        (0.0, -8.0),
+        (0.0, -16.0),
+        (4.0, -4.0),
+        (-4.0, -4.0),
+        (0.0, 6.0),
+    ] {
+        let (x, y) = wait_screen(
+            game,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", target),
+            &format!("target {target}"),
+        )?;
+        let mark = server.offset();
+        game.click(x + dx, y + dy, "3")?;
+        if let Ok(line) = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Attack ",
+                &format!("unit={unit} "),
+                &format!("target={target} "),
+            ],
+            Duration::from_secs(3),
+            mark,
+        ) {
+            return Ok(line);
+        }
+    }
+    Err(format!(
+        "{}: no admitted Attack of {target} by {unit} with real input",
+        game.label
+    ))
+}
+
+/// One server shot-cue decision: (sequence, participant, shooter, target, cue).
+fn cue_decisions(server_text: &str) -> Vec<(u32, u32, u64, u64, String)> {
+    server_text
+        .lines()
+        .filter(|l| l.contains("MP_SHOT_CUE_SENT"))
+        .filter_map(|l| {
+            Some((
+                field(l, "sequence")?.parse().ok()?,
+                field(l, "participant")?.parse().ok()?,
+                field(l, "shooter")?.parse().ok()?,
+                field(l, "target")?.parse().ok()?,
+                field(l, "cue")?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// Shot cues a client received: (sequence, exact).
+fn cues_received(client_text: &str) -> Vec<(u32, bool)> {
+    client_text
+        .lines()
+        .filter(|l| l.contains("MP_CLIENT_SHOT_CUE"))
+        .filter_map(|l| {
+            Some((
+                field(l, "sequence")?.parse().ok()?,
+                field(l, "exact")? == "1",
+            ))
+        })
+        .collect()
+}
+
+fn relevant_on(client_text: &str, entity: u64) -> bool {
+    let marker = format!("entity={entity} ");
+    client_text
+        .lines()
+        .any(|l| l.contains("MP_CLIENT_UNIT_RELEVANT") && l.contains(&marker))
+}
+
+/// Waits until the server has decided `count` cues against `target`, or it is destroyed.
+fn wait_cues(server: &mut Game, target: u64, count: usize, timeout: Duration) -> usize {
+    let start = Instant::now();
+    loop {
+        let text = server.text();
+        let decided = cue_decisions(&text)
+            .iter()
+            .filter(|d| d.3 == target && d.1 == 1)
+            .count();
+        let destroyed = text
+            .lines()
+            .any(|l| l.contains("RTS_UNIT_DESTROYED") && l.contains(&format!("unit={target}")));
+        if decided >= count || destroyed || start.elapsed() >= timeout || !server.alive() {
+            return decided;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// MP-2 Unaligned engagement: explicit team-A attacks on the Unaligned militia produce
+/// facing-only cues for a team that sees only the shooter, and nothing at all for a team
+/// that sees neither, over real sockets with real input.
+fn engagement_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut server = Game::launch_server(
+        &options.server,
+        "server",
+        evidence,
+        &server_args(port, "1v1"),
+    )?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(120))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(30))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        ENGAGE_FACING_POST.0, ENGAGE_FACING_POST.1, ENGAGE_WITHHELD_POST.0, ENGAGE_WITHHELD_POST.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    // Team B renders too: it is the viewer whose cues are redacted.
+    let display_b = Display::start(evidence, "client-b")?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, true, false, false),
+        Some(&display_b.name()),
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(10),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(30),
+        )?;
+        client.attach_window()?;
+    }
+    let recorder_a = Recorder::start(&display_a.name(), evidence, "client-a")?;
+    let recorder_b = Recorder::start(&display_b.name(), evidence, "client-b")?;
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let units = |owner: u32| -> Vec<u64> {
+            owners
+                .iter()
+                .filter(|(_, o)| *o == owner)
+                .map(|(e, _)| *e)
+                .collect()
+        };
+        let (team_a, team_b) = (units(1), units(2));
+        if team_a.len() < 2 || team_b.is_empty() {
+            return Err(format!("unexpected 1v1 roster {owners:?}"));
+        }
+        let militia: Vec<(u64, (f64, f64))> = server
+            .text()
+            .lines()
+            .filter(|l| l.contains("MP_ACCEPTANCE_UNALIGNED"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "entity")?.parse::<u64>().ok()?,
+                    (number(l, "x")?, number(l, "y")?),
+                ))
+            })
+            .collect();
+        let north = *militia
+            .iter()
+            .find(|(_, p)| p.1 > 0.0)
+            .ok_or("no northern Unaligned placement logged")?;
+        let south = *militia
+            .iter()
+            .find(|(_, p)| p.1 < 0.0)
+            .ok_or("no southern Unaligned placement logged")?;
+        let (facing_shooter, withheld_shooter) = (team_a[0], team_a[1]);
+        report.fact("team_a", format!("{team_a:?}"));
+        report.fact("team_b", format!("{team_b:?}"));
+        report.fact("militia", format!("north={north:?} south={south:?}"));
+
+        zoom_out(&client_a, 5)?;
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(2500));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(evidence, "01-start")?,
+        );
+
+        // 1. Facing-only: shoot the northern militia from where team B sees only the shooter.
+        let post = wait_screen(&mut client_a, |t| probe_screen(t, 0), "facing post")?;
+        let moved = order_move(&mut client_a, &mut server, facing_shooter, post)?;
+        let arrived = wait_arrival(
+            &mut server,
+            facing_shooter,
+            ENGAGE_FACING_POST,
+            150.0,
+            Duration::from_secs(45),
+        )?;
+        client_a.wait(
+            &["MP_CLIENT_UNIT_RELEVANT", &format!("entity={} ", north.0)],
+            Duration::from_secs(10),
+        )?;
+        // A fresh sample after the unit stops, so team B's observation is current.
+        thread::sleep(Duration::from_millis(2500));
+        let text = server.text();
+        let shooter = server_unit(&text, facing_shooter).ok_or("no shooter sample")?;
+        let target = server_unit(&text, north.0).ok_or("no militia sample")?;
+        let nearest_b = team_b
+            .iter()
+            .filter_map(|e| server_unit(&text, *e))
+            .map(|u| (distance(u.0, shooter.0), distance(u.0, target.0)))
+            .fold((f64::MAX, f64::MAX), |acc, d| {
+                (acc.0.min(d.0), acc.1.min(d.1))
+            });
+        report.verdict(
+            "MP2-ENGAGE-FACING-GEOMETRY",
+            distance(shooter.0, target.0) <= 625.0
+                && shooter.1 & TEAM_B_BIT != 0
+                && target.1 & TEAM_B_BIT == 0
+                && nearest_b.0 < SIGHT_CM
+                && nearest_b.1 > SIGHT_CM,
+            format!(
+                "{}; arrived {arrived:?}; shooter-target {:.0}cm; nearest team-B unit {:.0}cm from shooter, {:.0}cm from target; observed masks shooter={} target={}",
+                moved.trim(),
+                distance(shooter.0, target.0),
+                nearest_b.0,
+                nearest_b.1,
+                shooter.1,
+                target.1
+            ),
+        );
+        let attack_north = order_attack(&mut client_a, &mut server, facing_shooter, north.0)?;
+        let decided = wait_cues(&mut server, north.0, 12, Duration::from_secs(20));
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_facing_png",
+            &client_a.screenshot(evidence, "02-owner-exact")?,
+        );
+        report.artifact(
+            "client_b_facing_png",
+            &client_b.screenshot(evidence, "02-opponent-facing")?,
+        );
+        wait_cues(&mut server, north.0, usize::MAX, Duration::from_secs(25));
+        report.fact(
+            "facing_attack",
+            format!("{} ({decided} cues by the screenshot)", attack_north.trim()),
+        );
+
+        // 2. Withheld: shoot the southern militia far from every team-B unit.
+        let post = wait_screen(&mut client_a, |t| probe_screen(t, 1), "withheld post")?;
+        let moved = order_move(&mut client_a, &mut server, withheld_shooter, post)?;
+        wait_arrival(
+            &mut server,
+            withheld_shooter,
+            ENGAGE_WITHHELD_POST,
+            150.0,
+            Duration::from_secs(30),
+        )?;
+        client_a.wait(
+            &["MP_CLIENT_UNIT_RELEVANT", &format!("entity={} ", south.0)],
+            Duration::from_secs(10),
+        )?;
+        let attack_south = order_attack(&mut client_a, &mut server, withheld_shooter, south.0)?;
+        wait_cues(&mut server, south.0, 12, Duration::from_secs(20));
+        report.artifact(
+            "client_b_withheld_png",
+            &client_b.screenshot(evidence, "03-opponent-withheld")?,
+        );
+        wait_cues(&mut server, south.0, usize::MAX, Duration::from_secs(25));
+        report.fact(
+            "withheld_attack",
+            format!("{}; {}", moved.trim(), attack_south.trim()),
+        );
+        // Let in-flight cues and the death presentation reach both clients.
+        thread::sleep(Duration::from_secs(3));
+
+        let server_text = server.text();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let decisions = cue_decisions(&server_text);
+        let on = |target: u64, participant: u32| -> Vec<&(u32, u32, u64, u64, String)> {
+            decisions
+                .iter()
+                .filter(|d| d.3 == target && d.1 == participant)
+                .collect()
+        };
+        let all = |cues: &[&(u32, u32, u64, u64, String)], cue: &str| {
+            !cues.is_empty() && cues.iter().all(|d| d.4 == cue)
+        };
+        let (north_a, north_b) = (on(north.0, 1), on(north.0, 2));
+        let (south_a, south_b) = (on(south.0, 1), on(south.0, 2));
+        let (received_a, received_b) = (cues_received(&text_a), cues_received(&text_b));
+        let got = |received: &[(u32, bool)], cues: &[&(u32, u32, u64, u64, String)]| {
+            received
+                .iter()
+                .filter(|r| cues.iter().any(|d| d.0 == r.0))
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        let (owner_north, owner_south) = (got(&received_a, &north_a), got(&received_a, &south_a));
+        let (facing_got, withheld_got) = (got(&received_b, &north_b), got(&received_b, &south_b));
+
+        report.verdict(
+            "MP2-ENGAGE-EXPLICIT-ATTACK-ON-UNALIGNED",
+            server_text.lines().any(|l| {
+                l.contains("RTS_UNIT_DESTROYED") && l.contains(&format!("unit={}", north.0))
+            }) && server_text.lines().any(|l| {
+                l.contains("RTS_UNIT_DESTROYED") && l.contains(&format!("unit={}", south.0))
+            }),
+            format!(
+                "{}; {}; both militia destroyed by explicit orders",
+                attack_north.trim(),
+                attack_south.trim()
+            ),
+        );
+        report.verdict(
+            "MP2-ENGAGE-UNALIGNED-NEVER-RETALIATES",
+            !decisions.iter().any(|d| d.2 == north.0 || d.2 == south.0),
+            "no shot decision has an Unaligned shooter",
+        );
+        report.verdict(
+            "MP2-SHOT-CUE-OWNER-EXACT",
+            all(&north_a, "exact")
+                && all(&south_a, "exact")
+                && !owner_north.is_empty()
+                && !owner_south.is_empty()
+                && owner_north.iter().chain(&owner_south).all(|r| r.1),
+            format!(
+                "team A decided exact {}+{}, received {}+{} all exact",
+                north_a.len(),
+                south_a.len(),
+                owner_north.len(),
+                owner_south.len()
+            ),
+        );
+        report.verdict(
+            "MP2-SHOT-CUE-FACING-OVER-SOCKETS",
+            all(&north_b, "facing")
+                && !facing_got.is_empty()
+                && facing_got.iter().all(|r| !r.1)
+                && !relevant_on(&text_b, north.0),
+            format!(
+                "team B decided facing {} of {}, received {} (all exact=0); northern militia never replicated to team B={}",
+                north_b.iter().filter(|d| d.4 == "facing").count(),
+                north_b.len(),
+                facing_got.len(),
+                !relevant_on(&text_b, north.0)
+            ),
+        );
+        report.verdict(
+            "MP2-SHOT-CUE-WITHHELD-OVER-SOCKETS",
+            all(&south_b, "none")
+                && withheld_got.is_empty()
+                && !relevant_on(&text_b, south.0)
+                && !relevant_on(&text_b, withheld_shooter),
+            format!(
+                "team B decided none {} of {}, received {}; shooter and southern militia never replicated to team B={}",
+                south_b.iter().filter(|d| d.4 == "none").count(),
+                south_b.len(),
+                withheld_got.len(),
+                !relevant_on(&text_b, south.0) && !relevant_on(&text_b, withheld_shooter)
+            ),
+        );
+        let (received, counts, problems) = shot_cue_consistency(&server, &[&client_a, &client_b]);
+        report.verdict(
+            "MP2-SHOT-CUE-CONSISTENT",
+            problems.is_empty() && counts[1] > 0 && counts[2] > 0,
+            format!(
+                "server decided exact/facing/none={counts:?}, clients received {received}; problems={problems:?}"
+            ),
+        );
+        let remembered_b = count_lines(&text_b, &["MP_LOCAL_CONTACT_LAST_KNOWN"]);
+        let remembered_a: Vec<&str> = text_a
+            .lines()
+            .filter(|l| l.contains("MP_LOCAL_CONTACT_LAST_KNOWN"))
+            .filter(|l| {
+                l.contains(&format!("entity={} ", north.0))
+                    || l.contains(&format!("entity={} ", south.0))
+            })
+            .collect();
+        report.verdict(
+            "MP2-ENGAGE-FOG-MEMORY",
+            remembered_b == 0 && remembered_a.is_empty(),
+            format!(
+                "team B (never saw a militia) remembered {remembered_b} contacts; team A (saw both die) remembered {:?}",
+                remembered_a
+            ),
+        );
+        let objective = server_text
+            .lines()
+            .rev()
+            .find(|l| l.contains("MP_SERVER_OBJECTIVE"))
+            .unwrap_or_default()
+            .to_owned();
+        report.verdict(
+            "MP2-ENGAGE-MATCH-UNDISTURBED",
+            !server_text.contains("MATCH_RESULTS")
+                && field(&objective, "progress_milli") == Some("0"),
+            format!("no result committed; {}", objective.trim()),
+        );
+        Ok(())
+    })();
+    for (recorder, name) in [
+        (recorder_a, "client_a_video"),
+        (recorder_b, "client_b_video"),
+    ] {
+        match recorder.finish() {
+            Ok(path) => report.artifact(name, &path),
+            Err(error) => report.fact(&format!("{name}_error"), error),
+        }
+    }
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
+type DedicatedSession = fn(&DedicatedOptions, &mut Report) -> Result<(), String>;
+
+/// Runs one packaged dedicated-server session (`--fog-memory`, `--engagement`) and writes
+/// its evidence file; exits 1 on any failed verdict.
+fn run_dedicated_session(
+    flag: &str,
+    schema: &'static str,
+    name: &str,
+    session: DedicatedSession,
+) -> ! {
     let mut options = match parse_dedicated_options() {
         Ok(options) => options,
         Err(error) => {
-            eprintln!("{}", error.replace("--dedicated", "--fog-memory"));
+            eprintln!("{}", error.replace("--dedicated", flag));
             std::process::exit(2);
         }
     };
@@ -4489,7 +5006,7 @@ fn run_fog_memory() -> ! {
         }
     }
     let mut report = Report {
-        schema: Some("politika.mp2.fog-memory-evidence.v1"),
+        schema: Some(schema),
         ..Report::default()
     };
     for (name, binary) in [
@@ -4509,9 +5026,9 @@ fn run_fog_memory() -> ! {
             );
         }
     }
-    if let Err(error) = fog_memory_session(&options, &mut report) {
+    if let Err(error) = session(&options, &mut report) {
         report.mark(
-            "SESSION-fog-memory",
+            &format!("SESSION-{name}"),
             if error.starts_with("BLOCKED") {
                 "BLOCKED"
             } else {
@@ -4520,7 +5037,10 @@ fn run_fog_memory() -> ! {
             error,
         );
     }
-    let path = options.client.evidence.join("fog-memory-evidence.json");
+    let path = options
+        .client
+        .evidence
+        .join(format!("{name}-evidence.json"));
     if let Err(error) = report.write(&path) {
         eprintln!("write evidence: {error}");
         std::process::exit(2);
@@ -4531,7 +5051,20 @@ fn run_fog_memory() -> ! {
 
 fn main() {
     if env::args().nth(1).as_deref() == Some("--fog-memory") {
-        run_fog_memory();
+        run_dedicated_session(
+            "--fog-memory",
+            "politika.mp2.fog-memory-evidence.v1",
+            "fog-memory",
+            fog_memory_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--engagement") {
+        run_dedicated_session(
+            "--engagement",
+            "politika.mp2.unaligned-engagement-evidence.v1",
+            "engagement",
+            engagement_session,
+        );
     }
     if env::args().nth(1).as_deref() == Some("--dedicated") {
         run_dedicated();

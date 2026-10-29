@@ -542,6 +542,11 @@ private:
     void BeginMultiplayerAcceptance();
     void SampleMultiplayerState(const TCHAR* Reason);
     void SampleObservedState(const TCHAR* Reason);
+    // Harness ground probes (-PolitikaMPGroundProbe=X:Y/X:Y): fixture map points this
+    // viewer reports on its screen, so packaged runs can click exact positions.
+    TArray<FVector2D> GroundProbePoints;
+    bool bGroundProbesParsed = false;
+    void SampleGroundProbes(const APlayerController& Viewer);
     // Development network measurements (F36): authoritative step cost and server frame time
     // per active match, plus the engine's own per-connection traffic counters.
     TArray<float> StepCostMicros;
