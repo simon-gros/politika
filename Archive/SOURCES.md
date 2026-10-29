@@ -63,7 +63,7 @@ The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) an
 
 **Regional expansion:** the [regional atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) links the new 36 UT Austin topographic sheet leads (80 in total) to the six republics and the two autonomous provinces, while flagging missing 1980s Ljubljana/Maribor city plans and other unfilled source gaps.
 
-**Source relationship register:** [MAP_RELATIONSHIPS.csv](MAP_RELATIONSHIPS.csv) identifies duplicate source-hosts, versions and companion historical editions. [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) connects the evidence to map-gameplay research; [archive catalogue validator](tools/validate_catalogues.py) checks CSV/index consistency without accessing the internet.
+**Source relationship register:** [MAP_RELATIONSHIPS.csv](MAP_RELATIONSHIPS.csv) identifies duplicate source-hosts, versions and companion historical editions. [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) connects the evidence to map-gameplay research; [archive catalogue validator](tools/validate_catalogues.rs) checks CSV/index consistency without accessing the internet.
 
 ### Latest primary visual records and contemporary cartographic sources
 

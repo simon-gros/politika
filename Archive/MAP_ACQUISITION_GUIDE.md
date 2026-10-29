@@ -60,7 +60,7 @@ A full evidence-to-asset demonstration based on original 1983–1985 [factory an
 
 ## Catalogue provenance and duplicate-source relationships
 
-The [Map Relationships CSV](MAP_RELATIONSHIPS.csv) explicitly identifies the genuine 1988 JŽ railway map found at two separate hosts, the four 2011 language-labelled map variants based on the same drawing, companion 1981 CIA shaded/political maps that are **different** contemporary originals, and the 2008 modern map whose filename mentions 1988. This prevents raw catalogue counts from being mistaken for 147 independently produced cartographic works. Run `python3 Archive/tools/validate_catalogues.py` for source-identifier and index consistency; this does not confirm source URLs are live or licences remain valid.
+The [Map Relationships CSV](MAP_RELATIONSHIPS.csv) explicitly identifies the genuine 1988 JŽ railway map found at two separate hosts, the four 2011 language-labelled map variants based on the same drawing, companion 1981 CIA shaded/political maps that are **different** contemporary originals, and the 2008 modern map whose filename mentions 1988. This prevents raw catalogue counts from being mistaken for 147 independently produced cartographic works. Run `cargo run --locked --quiet --manifest-path Archive/tools/Cargo.toml` for source-identifier and index consistency; this does not confirm source URLs are live or licences remain valid.
 
 ## A consistent source-ingestion lifecycle
 

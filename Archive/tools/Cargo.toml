@@ -1,0 +1,12 @@
+[package]
+name = "politika-archive-validator"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Offline historical archive CSV and index validator"
+
+[[bin]]
+name = "politika-archive-validator"
+path = "validate_catalogues.rs"
+
+[dependencies]
