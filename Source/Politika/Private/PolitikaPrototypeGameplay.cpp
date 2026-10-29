@@ -1,6 +1,7 @@
 #include "PolitikaPrototypeGameplay.h"
 #include "PolitikaInfantryPresentation.h"
 #include "PolitikaInfantryBehavior.h"
+#include "PolitikaTestMapMusicComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
@@ -2298,6 +2299,7 @@ void APolitikaPrototypeHUD::DrawHUD()
 
 APolitikaPrototypeGameMode::APolitikaPrototypeGameMode()
 {
+    CreateDefaultSubobject<UPolitikaTestMapMusicComponent>(TEXT("TestMapMusic"));
     PlayerControllerClass = APolitikaPrototypePlayerController::StaticClass();
     DefaultPawnClass = APolitikaPrototypeCameraPawn::StaticClass();
     HUDClass = APolitikaPrototypeHUD::StaticClass();
