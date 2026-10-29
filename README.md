@@ -98,7 +98,7 @@ The planned campaign presents faction-specific missions within a shared 1984–1
 
 Skirmish is intended to provide self-contained battles against AI opponents, independent of the campaign's fixed ending. Matches include a persistent Unaligned world authority alongside the selected playable factions. Match composition and faction-slot rules are covered in [Match Structure](Docs/MATCH_STRUCTURE.md).
 
-Multiplayer and scenario/editor support remain possible later extensions, not confirmed first-release features. The immediate aim is offline-first single-player campaign and skirmish without mandatory internet access, external accounts, or sign-in.
+Multiplayer is a **planned future extension**, with up to four human players joining a player-hosted or independent dedicated server; it is **not yet implemented, verified or promised for the first release**. Existing and future gameplay code must be audited and adapted for server authority before network implementation (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. The immediate aim is offline-first single-player campaign and skirmish without mandatory internet access, external accounts, or sign-in.
 
 ## Technology and interface
 
