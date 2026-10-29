@@ -47,7 +47,7 @@ For selected eligible entity IDs `S`, stored group `G[n]` and all other stored g
 | 0–9 / Recall | `Selection := Revalidate(G[n])` | Unique selected highlights; empty/invalid slot status |
 | Rapid double-tap n / Focus | Recall then frame living eligible members in camera | Only camera position changes; no route or targeting |
 | Shift+0–9 / Union | `G[n] := G[n] ∪ S` | Preserve membership of other groups; no silent transfer |
-| Alt+0–9 / Exclusive transfer | For each `m ≠ n`, `G[m] := G[m] \\ S`; then `G[n] := G[n] ∪ S` | Show changed slot counts; command-selection remains S |
+| Alt+0–9 / Exclusive transfer | For each `m ≠ n`, `G[m] := G[m] \ S`; then `G[n] := G[n] ∪ S` | Show changed slot counts; command-selection remains S |
 | Explicit removal in group UI | `G[n] := G[n] \\ S` for requested slot only | Other slots unaffected |
 | Tab / Shift+Tab | Cycle currently selected eligible archetype/ability subgroups in stable order | Refines active command subgroup, not saved membership by default |
 
