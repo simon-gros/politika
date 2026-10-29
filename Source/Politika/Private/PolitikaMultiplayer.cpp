@@ -1066,8 +1066,9 @@ politika::rules::ShotCue APolitikaPrototypeMatch::ResolveShotCue(const APolitika
         bViewer && IsUnitObservedByParticipant(Shooter, ViewerParticipant),
         bViewer && IsUnitObservedByParticipant(Target, ViewerParticipant));
     if (Cue == ShotCue::Exact) OutPoint = Target->GetActorLocation();
-    // Facing is already public through the shooter's replicated rotation; the distance
-    // is fixed so the cue says nothing about where (or whether) the target is.
+    // Facing is already public through the shooter's replicated rotation. The distance is
+    // a fixed muzzle stub, far shorter than any attack standoff, so the endpoint says
+    // nothing about where (or whether) the target is.
     else if (Cue == ShotCue::FacingOnly)
         OutPoint = Shooter->GetActorLocation() + Shooter->GetActorForwardVector().GetSafeNormal2D() * ShotFacingCueDistanceCm;
     return Cue;

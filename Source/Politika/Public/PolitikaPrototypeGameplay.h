@@ -404,7 +404,10 @@ public:
     // Server only: presents a shot locally (if this process has a viewer) and sends each
     // bound remote connection its own fog-filtered cue.
     void DistributeShotPresentation(APolitikaPrototypeUnit* Shooter, const APolitikaPrototypeUnit* Target, float Cooldown);
-    static constexpr float ShotFacingCueDistanceCm = 600.0f;
+    // A muzzle stub, not a range: Attack approaches stop 100 cm inside weapon range (400 cm
+    // or more for every current weapon), so the endpoint never sits on a target at a normal
+    // engagement distance (audit F43; owner decision 29 Oct 2026).
+    static constexpr float ShotFacingCueDistanceCm = 150.0f;
     // Relevancy query used by APolitikaPrototypeUnit::IsNetRelevantFor (server only).
     bool IsUnitRelevantToViewer(const APolitikaPrototypeUnit* Unit, const AActor* RealViewer) const;
     // Observer-side unit registry: clients only hold units their team currently observes.

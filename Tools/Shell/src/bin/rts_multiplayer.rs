@@ -4890,11 +4890,13 @@ fn fog_memory_session(options: &DedicatedOptions, report: &mut Report) -> Result
     result
 }
 
-/// Where a team-A unit attacks the northern militia from: 304 cm from it (inside the 650 cm
-/// weapon range, so the unit fires without moving), about 1057 cm from team B's nearer
-/// start unit (inside its 1200 cm sight, outside its 800 cm idle acquisition), while that
-/// unit stays 1307 cm from the militia. Team B sees the shooter but not its target.
-const ENGAGE_FACING_POST: (f64, f64) = (300.0, 1300.0);
+/// Where a team-A unit attacks the northern militia from: 550 cm from it, the distance an
+/// Attack approach stops at for the 650 cm weapon, so the unit fires without moving and the
+/// facing-cue leak check runs at a real engagement distance (audit F43). It is about 1045 cm
+/// from team B's nearer start unit (inside its 1200 cm sight, outside its 800 cm idle
+/// acquisition), while that unit stays 1307 cm from the militia. Team B sees the shooter
+/// but not its target.
+const ENGAGE_FACING_POST: (f64, f64) = (480.0, 1518.0);
 /// Where a second team-A unit first sees the southern militia (707 cm away), far from
 /// every team-B unit: team B sees neither shooter nor target.
 const ENGAGE_WITHHELD_POST: (f64, f64) = (-700.0, -950.0);
@@ -5704,7 +5706,8 @@ mod tests {
         // Fixture placements: northern/southern militia, team B's start units.
         let (north, south) = ((0.0, 1250.0), (0.0, -1050.0));
         let team_b = [(1350.0, 600.0), (1220.0, 780.0)];
-        assert!(distance(ENGAGE_FACING_POST, north) < 650.0 - 100.0);
+        let standoff = distance(ENGAGE_FACING_POST, north);
+        assert!((standoff - (650.0 - 100.0)).abs() < 5.0);
         assert!(team_b.iter().any(|b| {
             let d = distance(*b, ENGAGE_FACING_POST);
             d > 800.0 + 100.0 && d < SIGHT_CM - 100.0
