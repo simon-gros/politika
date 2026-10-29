@@ -22,6 +22,8 @@ A **formation** is a *persistent, match-owned tactical relationship* among eligi
 8. Fragmentation/low Discipline must **not automatically trigger** faction-exclusive Concord Psy-Ops elimination or Ascendancy Intimidation conversion. Their specialized eligibility, `BrokenThreshold`, isolation and effects remain independently checked.
 9. Documented proposed shapes, formulae, thresholds, hotkeys and performance targets are *candidates*, not completed or balanced mechanics.
 
+**AI integration:** The [RTS AI Ontology and Architecture](RTS_AI_ARCHITECTURE.md) proposes tactical formation decision responsibilities only *after* the independent FORM gates and ordinary Stage 4D first-opponent acceptance. Such policies may assign legal operation/formation goals but must use this document's explicit membership, stance, per-member navigation/admission, derived Cohesion and existing Discipline permissions. It cannot convert a control group into a formation, grant cohesion through invisible/distant units, or issue simultaneous conflicting individual orders. The later AI-X03 proposal does not imply implemented coordination.
+
 ## 2. Comparative RTS mechanics
 
 | Reference | Characteristic observed | POLITIKA lesson | Boundary |
