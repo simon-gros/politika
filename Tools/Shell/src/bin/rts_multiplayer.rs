@@ -6295,7 +6295,16 @@ fn group_orders_session(options: &DedicatedOptions, report: &mut Report) -> Resu
 
         // GRP-04: a right-click on ground orders every selected unit; each request is
         // admitted on its own, and the 19-unit batch fits the pending bound.
-        let order_point = (f64::from(WIDTH) * 0.78, f64::from(HEIGHT) * 0.52);
+        // The control point: walkable ground inside the playable area, away from the army.
+        let order_point = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective",
+        )?;
+        report.fact(
+            "order_point",
+            format!("{:.0},{:.0}", order_point.0, order_point.1),
+        );
         let before_order_client = client_a.offset();
         let before_order_server = server.offset();
         client_a.click(order_point.0, order_point.1, "3")?;
