@@ -4,6 +4,8 @@
 
 ## Scope and comparative provenance
 
+The [RTS HUD Architecture](RTS_HUD_ARCHITECTURE.md#51-selected-force-and-control-groups) specifies selection-card and control-group-bar presentation, mixed eligibility, current key prompts and event feedback; it **does not** define group membership, grant authority, change control-group algebra or alter the per-issuer command pipeline owned here.
+
 [Comparative Control-Group and Mouse-Selection Research](RTS_CONTROL_GROUP_INPUT_RESEARCH.md) records official StarCraft II, C&C3, Age of Empires IV and Tempest Rising input precedents plus proposed POLITIKA adaptations. It is **research**, not an alternative normative keymap or a verified feature. [Military Formations and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) alone owns match-state tactical organization/stance/Cohesion. The ten-slot group system in this document is a core production feature targeted in dedicated **4C-G** after 4C's foundational multi-selection; existing 4F first-playable acceptance is not silently expanded.
 
 ## 1. Selection is presentation-adjacent state, not command authority
