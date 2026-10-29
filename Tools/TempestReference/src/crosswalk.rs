@@ -812,6 +812,106 @@ mod tests {
             .contains("owner document does not exist")
         );
     }
+
+    #[test]
+    fn category_rejects_unknown_asset_and_tag_refs_with_case_sensitive_identity() {
+        let refs = refs();
+        let header = CATEGORY_HEADER.map(str::to_string).to_vec();
+        let valid = category(
+            "asset|client|TedUnitDefinitionAsset|/Game/A",
+            "defer",
+            "",
+            "",
+            "",
+            "research lead only",
+            "manifest-hash",
+        );
+        for (reference, label) in [
+            (
+                "asset|client|TedUnitDefinitionAsset|/Game/Missing",
+                "TedUnitDefinitionAsset",
+            ),
+            (
+                "asset|client|TedUnitDefinitionAsset|/game/a",
+                "TedUnitDefinitionAsset",
+            ),
+            (
+                "tag|client|/Config/CommandTags.ini|CommandType.Missing",
+                "CommandType.Missing",
+            ),
+            (
+                "tag|client|/config/CommandTags.ini|CommandType.Move",
+                "CommandType.Move",
+            ),
+            (
+                "tag|client|/Config/CommandTags.ini|commandtype.Move",
+                "commandtype.Move",
+            ),
+        ] {
+            let mut row = valid.clone();
+            row[0] = reference.into();
+            row[1] = label.into();
+            assert!(
+                validate_categories(
+                    &[header.clone(), row],
+                    &refs,
+                    "manifest-hash",
+                    "asset-hash",
+                    "tag-hash"
+                )
+                .unwrap_err()
+                .contains("unknown or case-mismatched")
+            );
+        }
+    }
+
+    #[test]
+    fn category_rejects_invalid_retained_identifier_and_each_stale_fingerprint() {
+        let refs = refs();
+        let header = CATEGORY_HEADER.map(str::to_string).to_vec();
+        let valid = category(
+            "asset|client|TedUnitDefinitionAsset|/Game/A",
+            "redefine",
+            "unit.archetype",
+            "Docs/GAMEPLAY_CONTENT.md",
+            "named role taxonomy is not yet authored",
+            "POLITIKA definitions remain authoritative",
+            "manifest-hash",
+        );
+        let mut bad_name = valid.clone();
+        bad_name[3] = "TedUnitDefinitionAsset".into();
+        assert!(
+            validate_categories(
+                &[header.clone(), bad_name],
+                &refs,
+                "manifest-hash",
+                "asset-hash",
+                "tag-hash"
+            )
+            .unwrap_err()
+            .contains("invalid POLITIKA name/ID")
+        );
+        for (index, field) in [
+            (9, "reference_manifest_sha256"),
+            (10, "asset_index_sha256"),
+            (11, "tag_index_sha256"),
+        ] {
+            let mut stale = valid.clone();
+            stale[index] = "stale".into();
+            assert!(
+                validate_categories(
+                    &[header.clone(), stale],
+                    &refs,
+                    "manifest-hash",
+                    "asset-hash",
+                    "tag-hash"
+                )
+                .unwrap_err()
+                .contains(&format!("stale {field}"))
+            );
+        }
+    }
+
     #[test]
     fn relationship_rejects_unknown_refs_and_allows_exact_tag_refs() {
         let refs = refs();
@@ -855,5 +955,91 @@ mod tests {
             .unwrap_err()
             .contains("unknown or case-mismatched")
         );
+    }
+
+    #[test]
+    fn relationship_rejects_bad_rows_duplicates_and_each_stale_fingerprint() {
+        let refs = refs();
+        let header = REL_HEADER.map(str::to_string).to_vec();
+        let valid = vec![
+            "CommandType".into(),
+            "typed command admission".into(),
+            "tag|client|/Config/CommandTags.ini|CommandType.Move".into(),
+            "Tag presence does not establish admission semantics.".into(),
+            "tag-inventory-only".into(),
+            "unknown".into(),
+            "exclude".into(),
+            "".into(),
+            "".into(),
+            "POLITIKA's coordinator remains authoritative.".into(),
+            "manifest-hash".into(),
+            "asset-hash".into(),
+            "tag-hash".into(),
+        ];
+        let validate = |rows: &[Vec<String>]| {
+            validate_relationships(rows, &refs, "manifest-hash", "asset-hash", "tag-hash")
+        };
+        assert_eq!(validate(&[header.clone(), valid.clone()]).unwrap(), 1);
+        assert!(
+            validate(&[header.clone(), valid.clone(), valid.clone()])
+                .unwrap_err()
+                .contains("duplicate")
+        );
+
+        let mut missing_owner = valid.clone();
+        missing_owner[6] = "redefine".into();
+        assert!(
+            validate(&[header.clone(), missing_owner])
+                .unwrap_err()
+                .contains("retained concept requires project owner and concrete design gap")
+        );
+
+        let mut nonexistent_owner = valid.clone();
+        nonexistent_owner[6] = "redefine".into();
+        nonexistent_owner[7] = "Docs/DOES_NOT_EXIST.md".into();
+        nonexistent_owner[8] = "named design gap".into();
+        assert!(
+            validate(&[header.clone(), nonexistent_owner])
+                .unwrap_err()
+                .contains("owner document does not exist")
+        );
+
+        for (index, value, expected) in [
+            (
+                2,
+                "tag|client|/Config/CommandTags.ini|Missing",
+                "unknown or case-mismatched",
+            ),
+            (
+                2,
+                "tag|client|/config/CommandTags.ini|CommandType.Move",
+                "unknown or case-mismatched",
+            ),
+            (2, "", "exact source references"),
+            (5, "unsupported", "invalid confidence"),
+            (6, "accept", "invalid disposition"),
+            (9, " ", "limitation is required"),
+        ] {
+            let mut bad = valid.clone();
+            bad[index] = value.into();
+            assert!(
+                validate(&[header.clone(), bad])
+                    .unwrap_err()
+                    .contains(expected)
+            );
+        }
+        for (index, field) in [
+            (10, "reference_manifest_sha256"),
+            (11, "asset_index_sha256"),
+            (12, "tag_index_sha256"),
+        ] {
+            let mut stale = valid.clone();
+            stale[index] = "stale".into();
+            assert!(
+                validate(&[header.clone(), stale])
+                    .unwrap_err()
+                    .contains(&format!("stale {field}"))
+            );
+        }
     }
 }
