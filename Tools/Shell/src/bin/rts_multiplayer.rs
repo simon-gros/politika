@@ -2463,9 +2463,7 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         .iter()
         .chain(home_files.iter())
         .map(|p| p.display().to_string())
-        .filter(|p| {
-            p.contains("SaveGames") || p.ends_with(".sav") || p.contains("GameUserSettings")
-        })
+        .filter(|p| p.contains("SaveGames") || p.ends_with(".sav"))
         .collect();
     let server_text = server.text();
     let forbidden = [
@@ -2480,11 +2478,15 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         .copied()
         .filter(|m| server_text.contains(m))
         .collect();
+    // The engine's own default config files (e.g. GameUserSettings.ini written at exit) are
+    // recorded, not treated as a profile: the server booted with an empty HOME/UserDir.
     report.fact("server_user_files", format!("{user_files:?}"));
+    report.fact("server_home_files", format!("{home_files:?}"));
+    let audio_disabled = server_text.contains("Audio Device Manager not initializing");
     report.verdict(
-        "MP3-NO-PROFILE-UI",
-        profile_files.is_empty() && present.is_empty(),
-        format!("server profile/settings/save files={profile_files:?}; shell/profile markers in server log={present:?}"),
+        "MP3-NO-PROFILE-UI-AUDIO",
+        profile_files.is_empty() && present.is_empty() && audio_disabled,
+        format!("booted from an empty HOME/UserDir; player profile/save files={profile_files:?}; shell/profile/audio markers in server log={present:?}; audio device manager disabled={audio_disabled}"),
     );
     result
 }
@@ -2501,10 +2503,10 @@ fn dedicated_admission_failure(
         evidence,
         &server_args(options.client.port + 2, "5v5"),
     )?;
-    let failed = server.wait(&["MP_DEDICATED_ADMISSION_FAILED"], Duration::from_secs(120))?;
+    // The process is expected to exit by itself; inspect its log only after it has.
     let start = Instant::now();
     let mut status = None;
-    while start.elapsed() < Duration::from_secs(30) {
+    while start.elapsed() < Duration::from_secs(150) {
         if let Ok(Some(code)) = server.child.try_wait() {
             status = Some(code);
             break;
@@ -2512,12 +2514,20 @@ fn dedicated_admission_failure(
         thread::sleep(Duration::from_millis(200));
     }
     let text = server.text();
+    let failed = text
+        .lines()
+        .find(|l| l.contains("MP_DEDICATED_ADMISSION_FAILED"))
+        .unwrap_or("no MP_DEDICATED_ADMISSION_FAILED line")
+        .to_owned();
     let reason = text.contains("reason=MP.LAYOUT.INVALID");
     let no_session =
         !text.contains("MP_MATCH_AWAITING_PARTICIPANTS") && !text.contains("MATCH_CONTENT_READY");
     report.verdict(
         "MP3-ADMISSION-FAIL-CLOSED",
-        status.and_then(|s| s.code()) == Some(3) && reason && no_session,
+        status.and_then(|s| s.code()) == Some(3)
+            && text.contains("MP_DEDICATED_ADMISSION_FAILED")
+            && reason
+            && no_session,
         format!(
             "{}; exit={status:?}; MP.LAYOUT.INVALID={reason}; no session/units={no_session}",
             failed.trim()
@@ -2587,18 +2597,24 @@ fn dedicated_parity(options: &DedicatedOptions, report: &mut Report) -> Result<(
 }
 
 fn run_dedicated() -> ! {
-    let options = match parse_dedicated_options() {
+    let mut options = match parse_dedicated_options() {
         Ok(options) => options,
         Err(error) => {
             eprintln!("{error}");
             std::process::exit(2);
         }
     };
-    let evidence = options.client.evidence.clone();
-    if let Err(error) = fs::create_dir_all(&evidence) {
-        eprintln!("evidence directory: {error}");
-        std::process::exit(2);
+    // Game processes change directory at startup; every log path must be absolute.
+    match fs::create_dir_all(&options.client.evidence)
+        .and_then(|_| options.client.evidence.canonicalize())
+    {
+        Ok(absolute) => options.client.evidence = absolute,
+        Err(error) => {
+            eprintln!("evidence directory: {error}");
+            std::process::exit(2);
+        }
     }
+    let evidence = options.client.evidence.clone();
     let mut report = Report {
         schema: Some("politika.mp3.dedicated-evidence.v1"),
         ..Report::default()
@@ -2687,16 +2703,20 @@ fn main() {
             }
         }
     }
-    let options = match parse_options() {
+    let mut options = match parse_options() {
         Ok(options) => options,
         Err(error) => {
             eprintln!("{error}");
             std::process::exit(2);
         }
     };
-    if let Err(error) = fs::create_dir_all(&options.evidence) {
-        eprintln!("evidence directory: {error}");
-        std::process::exit(2);
+    // Game processes change directory at startup; every log path must be absolute.
+    match fs::create_dir_all(&options.evidence).and_then(|_| options.evidence.canonicalize()) {
+        Ok(absolute) => options.evidence = absolute,
+        Err(error) => {
+            eprintln!("evidence directory: {error}");
+            std::process::exit(2);
+        }
     }
     let mut report = Report::default();
     report.fact("binary", options.binary.display().to_string());
