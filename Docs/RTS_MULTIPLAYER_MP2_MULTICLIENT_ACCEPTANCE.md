@@ -41,7 +41,7 @@ Not qualified here:
 - **F42 (packaged 2v1 / 3v1 / 2v2): CLOSED for dedicated hosting.** Listen-hosted 3–4 process runs were not run; Automation still covers listen binding for every layout.
 - **F27 (shot target point): CLOSED.** Code and Automation cover every cue kind. Packaged runs prove per-connection delivery and exact-cue integrity. See the limitation above.
 - **F28** (grenade debug draws on a listen host, non-Shipping): unchanged, later.
-- **Still open for MP-2:** F33 (client fog shading), F35 (disconnect policy beyond ending the match). F36 was closed by the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
+- **Still open for MP-2:** F33 (client fog shading), F35 (disconnect policy beyond ending the match). *Update 29 Oct 2026: F33 closed by the [fog memory record](RTS_MULTIPLAYER_MP2_FOG_MEMORY_ACCEPTANCE.md).* F36 was closed by the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
 
 ## D. Verdicts
 

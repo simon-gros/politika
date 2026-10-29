@@ -55,7 +55,7 @@ UE 5.8.3 reads these switches in non-Shipping builds (`UNetDriver::InitPacketSim
 
 - **F36 (bandwidth / server step): CLOSED for the fixture scale.** Measured per connection and per step across 2, 3 and 4 seats, with and without emulation. Unit-scale budgets remain open until a fixture with RTS unit counts exists.
 - F24 (intake freshness) gains packaged evidence under real impairment: the reliable RPC channel delivers commands once and in order through loss, reordering and duplication. The `ClientSequenceGuard` rejected only the probes built to be rejected.
-- Still open for MP-2: F33 (client fog shading), F35 (disconnect policy beyond ending the match).
+- Still open for MP-2: F33 (client fog shading), F35 (disconnect policy beyond ending the match). *Update 29 Oct 2026: F33 closed by the [fog memory record](RTS_MULTIPLAYER_MP2_FOG_MEMORY_ACCEPTANCE.md).*
 
 ## D. Verdicts
 
