@@ -193,4 +193,227 @@ bool FPolitikaMatchParticipantsAutomationTest::RunTest(const FString& Parameters
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMatchParticipantsAuthorityAutomationTest,
+    "Politika.RTS.MatchParticipants.AuthorityAndStaleUnitLifecycle",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMatchParticipantsAuthorityAutomationTest::RunTest(const FString& Parameters)
+{
+    using namespace politika::rules;
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    TestNotNull(TEXT("Production content catalog is available"), Catalog);
+    if (!Catalog) return false;
+    const UPolitikaPrototypeMapDefinition* AuthoredMap =
+        Catalog->FindMap(UPolitikaPrototypeContentValidator::PrototypeMapAssetId);
+    if (!AuthoredMap) { TestNotNull(TEXT("Canonical map definition resolves"), AuthoredMap); return false; }
+
+    TArray<FPolitikaPrototypeRuntimeParticipant> Participants;
+    uint32 LocalPlayerId = 0;
+    FName FailureCode;
+    if (!APolitikaPrototypeMatch::BuildRuntimeParticipantsFromSlots(*AuthoredMap, Participants, LocalPlayerId, FailureCode))
+    {
+        AddError(FString::Printf(TEXT("Canonical participant roster failed: %s"), *FailureCode.ToString()));
+        return false;
+    }
+    const FPolitikaPrototypeRuntimeParticipant* OpponentParticipant = Participants.FindByPredicate(
+        [LocalPlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+        { return Candidate.RuntimePlayerId != LocalPlayerId; });
+    const FPolitikaPrototypeRuntimeParticipant* LocalParticipant = Participants.FindByPredicate(
+        [LocalPlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+        { return Candidate.RuntimePlayerId == LocalPlayerId; });
+    if (!OpponentParticipant || !LocalParticipant) { AddError(TEXT("Local/opponent fixture identities are incomplete")); return false; }
+
+    const UWorld::InitializationValues InitValues = UWorld::InitializationValues()
+        .AllowAudioPlayback(false).RequiresHitProxies(false).CreatePhysicsScene(false)
+        .CreateNavigation(false).CreateAISystem(false).ShouldSimulatePhysics(false)
+        .SetTransactional(false).CreateFXSystem(false);
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false,
+        FName(TEXT("PolitikaParticipantAuthorityAutomationWorld")), GetTransientPackage(), false,
+        ERHIFeatureLevel::Num, &InitValues);
+    TestNotNull(TEXT("Isolated authority-test world created"), World);
+    if (!World) return false;
+
+    APolitikaPrototypePlayerController* Controller = World->SpawnActor<APolitikaPrototypePlayerController>();
+    APolitikaPrototypeMatch* Match = World->SpawnActor<APolitikaPrototypeMatch>();
+    APolitikaPrototypeUnit* LocalUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(0, 0, 42), FRotator::ZeroRotator);
+    APolitikaPrototypeUnit* OpponentUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(100, 0, 42), FRotator::ZeroRotator);
+    APolitikaPrototypeUnit* SystemUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(200, 0, 42), FRotator::ZeroRotator);
+    APolitikaPrototypeUnit* DeadUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(300, 0, 42), FRotator::ZeroRotator);
+    APolitikaPrototypeUnit* QueuedUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(400, 0, 42), FRotator::ZeroRotator);
+    APolitikaPrototypeObjective* Objective = World->SpawnActor<APolitikaPrototypeObjective>(FVector(900, 900, 42), FRotator::ZeroRotator);
+    if (!Controller || !Match || !LocalUnit || !OpponentUnit || !SystemUnit || !DeadUnit || !QueuedUnit || !Objective)
+    {
+        TestTrue(TEXT("All authority fixture actors spawn"), false);
+        World->DestroyWorld(false);
+        return false;
+    }
+    if (World->GetFirstPlayerController() != Controller) World->AddController(Controller);
+
+    const auto Configure = [](APolitikaPrototypeUnit* Unit, uint64 StableId, uint32 Owner, FName Faction)
+    {
+        Unit->Configure(StableId, Owner, FText::FromString(TEXT("Authority fixture")), 100, 100, 200, 10, 0.5f,
+            true, nullptr, FVector::OneVector, FLinearColor::White, Faction);
+    };
+    Configure(LocalUnit, 501, LocalPlayerId, LocalParticipant->FactionId);
+    Configure(OpponentUnit, 502, OpponentParticipant->RuntimePlayerId, OpponentParticipant->FactionId);
+    Configure(SystemUnit, 503, 0, TEXT("faction.unaligned"));
+    Configure(DeadUnit, 504, LocalPlayerId, LocalParticipant->FactionId);
+    Configure(QueuedUnit, 505, LocalPlayerId, LocalParticipant->FactionId);
+
+    Match->RuntimeParticipants = Participants;
+    Match->LocalRuntimePlayerId = LocalPlayerId;
+    Match->UnalignedSystemAuthority = {TEXT("faction.unaligned"), true};
+    Match->Units = {LocalUnit, OpponentUnit, SystemUnit, DeadUnit, QueuedUnit};
+    Match->Objective = Objective;
+    Match->PlayableMin = FVector2D(-1000, -1000);
+    Match->PlayableMax = FVector2D(1000, 1000);
+    Match->MatchGeneration = 51;
+    Match->bContentReady = true;
+    TestTrue(TEXT("Fixture enters Active through legal lifecycle transitions"),
+        Match->TransitionLifecycle(MatchPhase::SetupValidated)
+        && Match->TransitionLifecycle(MatchPhase::Loading)
+        && Match->TransitionLifecycle(MatchPhase::Starting)
+        && Match->TransitionLifecycle(MatchPhase::Active));
+
+    TestTrue(TEXT("Real world first PlayerController is bound as local human"), Match->IsLocalControllerBound(Controller));
+    Controller->SelectUnitForInput(LocalUnit);
+    TestEqual(TEXT("Bound controller selects its living owned unit"), Match->GetSelectedUnitForPlayer(LocalPlayerId), LocalUnit);
+    TestTrue(TEXT("Selected local unit visual is active"), LocalUnit->SelectionIndicator->IsVisible());
+    TestTrue(TEXT("Bound local command reaches typed admission"),
+        Match->SubmitLocalControllerCommand(Controller, LocalUnit, nullptr, GuardOrder{}));
+    Match->Tick(0.05f);
+    TestEqual(TEXT("Valid local Guard command executes through the coordinator"), LocalUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Guard);
+
+    Match->SubmitCommand(OpponentParticipant->RuntimePlayerId, OpponentUnit, nullptr, GuardOrder{});
+    Match->Tick(0.05f);
+    TestEqual(TEXT("Opponent fixture has a legitimate order admitted through the coordinator"),
+        OpponentUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Guard);
+    const TArray<FVector> OriginalRoute = OpponentUnit->NavigationWaypoints;
+    const int32 OriginalCursor = OpponentUnit->NavigationWaypointIndex;
+    const uint64 OriginalRouteSequence = OpponentUnit->NavigationOrderSequence;
+    const FVector OriginalOpponentPosition = OpponentUnit->GetActorLocation();
+    Controller->SelectUnitForInput(OpponentUnit);
+    TestNull(TEXT("Bound controller cannot place opposing unit in local selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
+    TestFalse(TEXT("Foreign unit selection visual remains off"), OpponentUnit->SelectionIndicator->IsVisible());
+    TestTrue(TEXT("Bound-controller foreign typed request reaches authoritative rejection boundary"),
+        Match->SubmitLocalControllerCommand(Controller, OpponentUnit, nullptr, MoveOrder{{200, 200}}));
+    const CommandOutcomeEvent* ForeignOutcome = nullptr;
+    for (const GameplayEvent& Event : Match->PublishedEvents)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Event); Outcome && Outcome->issuer_id == OpponentUnit->GetStableId())
+            ForeignOutcome = Outcome;
+    TestNotNull(TEXT("Foreign typed request publishes a rejection outcome"), ForeignOutcome);
+    if (ForeignOutcome)
+    {
+        TestFalse(TEXT("Foreign typed request is rejected"), ForeignOutcome->accepted);
+        TestEqual(TEXT("Foreign typed request reports NotOwned"), ForeignOutcome->rejection, OrderRejection::NotOwned);
+    }
+    TestEqual(TEXT("Foreign rejection preserves existing opposing order"), OpponentUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Guard);
+    TestEqual(TEXT("Foreign rejection preserves route identity"), OpponentUnit->NavigationOrderSequence, OriginalRouteSequence);
+    TestEqual(TEXT("Foreign rejection preserves route cursor"), OpponentUnit->NavigationWaypointIndex, OriginalCursor);
+    TestTrue(TEXT("Foreign rejection preserves route points"), OpponentUnit->NavigationWaypoints == OriginalRoute);
+    TestTrue(TEXT("Foreign rejection does not alter the opponent's legitimate fixed-step trajectory"),
+        OpponentUnit->GetActorLocation().Equals(OriginalOpponentPosition, 0.01f));
+
+    Controller->SelectUnitForInput(SystemUnit);
+    TestNull(TEXT("Bound local controller cannot select the system-owned Unaligned fixture"),
+        Match->GetSelectedUnitForPlayer(LocalPlayerId));
+    TestFalse(TEXT("System-owned unit does not receive local selection visual"), SystemUnit->SelectionIndicator->IsVisible());
+    const int32 BeforeSystemEvents = Match->PublishedEvents.Num();
+    const FVector OriginalSystemPosition = SystemUnit->GetActorLocation();
+    const int32 OriginalSystemHealth = SystemUnit->GetHealth();
+    TestTrue(TEXT("System-unit attempt from bound local controller is forwarded for authoritative rejection"),
+        Match->SubmitLocalControllerCommand(Controller, SystemUnit, nullptr, GuardOrder{}));
+    const CommandOutcomeEvent* SystemOutcome = nullptr;
+    for (int32 Index = BeforeSystemEvents; Index < Match->PublishedEvents.Num(); ++Index)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Match->PublishedEvents[Index]); Outcome && Outcome->issuer_id == SystemUnit->GetStableId())
+            SystemOutcome = Outcome;
+    TestNotNull(TEXT("System-unit request publishes typed rejection"), SystemOutcome);
+    if (SystemOutcome) TestEqual(TEXT("System-owned unit is rejected as not owned"), SystemOutcome->rejection, OrderRejection::NotOwned);
+    const int32 BeforeUnassignedEvents = Match->PublishedEvents.Num();
+    Match->SubmitCommand(0, SystemUnit, nullptr, GuardOrder{});
+    TestEqual(TEXT("Unassigned participant command is rejected immediately"), Match->PublishedEvents.Num(), BeforeUnassignedEvents + 1);
+    if (Match->PublishedEvents.Num() > BeforeUnassignedEvents)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Match->PublishedEvents.Last()))
+            TestEqual(TEXT("Unassigned participant reports Unauthorized"), Outcome->rejection, OrderRejection::Unauthorized);
+    const int32 BeforeUnboundEvents = Match->PublishedEvents.Num();
+    TestFalse(TEXT("Null/unbound controller cannot submit a command"),
+        Match->SubmitLocalControllerCommand(nullptr, LocalUnit, nullptr, StopOrder{}));
+    TestEqual(TEXT("Pre-typed unbound rejection publishes no command outcome"), Match->PublishedEvents.Num(), BeforeUnboundEvents);
+
+    Controller->SelectUnitForInput(DeadUnit);
+    TestEqual(TEXT("Living local unit can be selected before death"), Match->GetSelectedUnitForPlayer(LocalPlayerId), DeadUnit);
+    DeadUnit->SetGuardOrder();
+    DeadUnit->PendingDamage = static_cast<float>(DeadUnit->GetHealth());
+    TestEqual(TEXT("Production pending-damage application reaches dead-but-existing state"), DeadUnit->ApplyPendingDamage(), 100);
+    TestTrue(TEXT("Dead actor still exists for deferred command validation"), IsValid(DeadUnit));
+    TestFalse(TEXT("Dead actor is unavailable"), DeadUnit->IsAlive());
+    const int32 BeforeDeadInputEvents = Match->PublishedEvents.Num();
+    Controller->GuardSelected();
+    TestNull(TEXT("Dead selected unit is lazily removed from match selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
+    TestFalse(TEXT("Dead selected unit is no longer cached by PlayerController"), Controller->SelectedUnit.IsValid());
+    TestEqual(TEXT("Ordinary input cannot submit against dead cached selection"), Match->PublishedEvents.Num(), BeforeDeadInputEvents);
+    TestTrue(TEXT("Explicit queued dead-issuer request enters typed admission"),
+        Match->SubmitLocalControllerCommand(Controller, DeadUnit, nullptr, GuardOrder{}));
+    Match->Tick(0.05f);
+    int32 DeadIssuerOutcomes = 0;
+    for (const GameplayEvent& Event : Match->PublishedEvents)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Event); Outcome && Outcome->issuer_id == 504)
+        {
+            ++DeadIssuerOutcomes;
+            TestEqual(TEXT("Dead-but-existing issuer reports IssuerUnavailable"), Outcome->rejection, OrderRejection::IssuerUnavailable);
+        }
+    TestEqual(TEXT("Dead issuer produces exactly one command outcome"), DeadIssuerOutcomes, 1);
+
+    Controller->SelectUnitForInput(QueuedUnit);
+    TestTrue(TEXT("Local unit is selected before invalidating its queued issuer"), Controller->SelectedUnit.Get() == QueuedUnit);
+    QueuedUnit->SetGuardOrder();
+    const int32 BeforePending = Match->PublishedEvents.Num();
+    TestTrue(TEXT("Command queues before issuer destruction"),
+        Match->SubmitLocalControllerCommand(Controller, QueuedUnit, nullptr, GuardOrder{}));
+    TestEqual(TEXT("Typed request is pending before destruction"), Match->PendingOrders.Num(), 1);
+    QueuedUnit->Destroy();
+    Match->Tick(0.05f);
+    int32 MissingIssuerOutcomes = 0;
+    for (const GameplayEvent& Event : Match->PublishedEvents)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Event); Outcome && Outcome->issuer_id == 505)
+        {
+            ++MissingIssuerOutcomes;
+            TestFalse(TEXT("Destroyed queued issuer is not accepted"), Outcome->accepted);
+            TestEqual(TEXT("Destroyed queued issuer reports MissingIssuer"), Outcome->rejection, OrderRejection::MissingIssuer);
+        }
+    TestEqual(TEXT("Destroyed pending issuer produces exactly one command outcome"), MissingIssuerOutcomes, 1);
+    TestEqual(TEXT("Destroyed pending request is retired"), Match->PendingOrders.Num(), 0);
+    TestFalse(TEXT("Destroyed issuer leaves no controller selection"), Controller->SelectedUnit.IsValid());
+    TestNull(TEXT("Destroyed issuer leaves no match selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
+
+    APolitikaPrototypeUnit* OrphanUnit = World->SpawnActor<APolitikaPrototypeUnit>(FVector(500, 0, 42), FRotator::ZeroRotator);
+    Configure(OrphanUnit, 506, LocalPlayerId, LocalParticipant->FactionId);
+    Controller->SelectUnitForInput(OrphanUnit);
+    TestNull(TEXT("Alive but non-member actor cannot be selected"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
+    const int32 BeforeOrphan = Match->PublishedEvents.Num();
+    TestTrue(TEXT("Bound attempt against non-member unit is handled as typed rejection"),
+        Match->SubmitLocalControllerCommand(Controller, OrphanUnit, nullptr, GuardOrder{}));
+    TestEqual(TEXT("Non-member issuer is rejected as missing"), Match->PublishedEvents.Num(), BeforeOrphan + 1);
+    if (Match->PublishedEvents.Num() > BeforeOrphan)
+        if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Match->PublishedEvents.Last()))
+            TestEqual(TEXT("Non-member unit reports MissingIssuer"), Outcome->rejection, OrderRejection::MissingIssuer);
+
+    for (int32 Step = 0; Step < 20; ++Step) Match->Tick(0.05f);
+    TestEqual(TEXT("No invalid queued authority request remains after 20 steps"), Match->PendingOrders.Num(), 0);
+    TestEqual(TEXT("Opponent order remains unchanged through observation window"), OpponentUnit->GetCurrentOrder(), EPolitikaPrototypeOrder::Guard);
+    TestTrue(TEXT("System unit never receives executable order"), SystemUnit->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle);
+    TestEqual(TEXT("System unit owner remains unassigned"), SystemUnit->GetOwnerPlayer(), uint32(0));
+    TestEqual(TEXT("System unit faction remains Unaligned"), SystemUnit->GetFactionId(), FName(TEXT("faction.unaligned")));
+    TestEqual(TEXT("Rejected system command preserves health"), SystemUnit->GetHealth(), OriginalSystemHealth);
+    TestTrue(TEXT("Rejected system command causes no movement"), SystemUnit->GetActorLocation().Equals(OriginalSystemPosition, 0.01f));
+    TestTrue(TEXT("Unaligned system-authority record is active and separate from player roster"),
+        Match->GetUnalignedSystemAuthority().bNpcSystemControlled
+        && Match->GetUnalignedSystemAuthority().FactionId == FName(TEXT("faction.unaligned"))
+        && !Match->RuntimeParticipants.ContainsByPredicate([](const FPolitikaPrototypeRuntimeParticipant& Participant)
+            { return Participant.RuntimePlayerId == 0 || Participant.FactionId == FName(TEXT("faction.unaligned")); }));
+    World->DestroyWorld(false);
+    return true;
+}
+
 #endif

@@ -124,6 +124,7 @@ private:
     friend class FPolitikaCommandRepeatabilityAutomationTest;
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
+    friend class FPolitikaMatchParticipantsAuthorityAutomationTest;
     friend class FPolitikaNavigationUnavailableAutomationTest;
     friend class FPolitikaNavigationObstacleAutomationTest;
     friend class FPolitikaNavigationFailureAutomationTest;
@@ -215,7 +216,7 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     const TArray<TObjectPtr<APolitikaPrototypeUnit>>& GetUnits() const { return Units; }
     APolitikaPrototypeObjective* GetObjective() const { return Objective; }
-    APolitikaPrototypeUnit* GetSelectedUnitForPlayer(uint32 PlayerId) const;
+    APolitikaPrototypeUnit* GetSelectedUnitForPlayer(uint32 PlayerId);
     void SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
     bool SubmitLocalControllerCommand(APlayerController* Source, APolitikaPrototypeUnit* Unit,
         APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent);
@@ -258,6 +259,7 @@ private:
     friend class FPolitikaMatchLifecycleAutomationTest;
     friend class FPolitikaMatchParticipantsAutomationTest;
     friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
+    friend class FPolitikaMatchParticipantsAuthorityAutomationTest;
     friend class FPolitikaNavigationUnavailableAutomationTest;
     friend class FPolitikaNavigationObstacleAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
@@ -309,6 +311,7 @@ private:
     void SubmitGuard(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
     void SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
         const politika::rules::Order& Intent);
+    bool IsCommandableUnit(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
     static bool BuildRuntimeParticipantsFromSlots(const UPolitikaPrototypeMapDefinition& Definition,
         TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants, uint32& OutLocalRuntimePlayerId,
         FName& OutFailureCode);
@@ -399,7 +402,30 @@ private:
     void AfterNavigationAcceptanceStep(float DeltaSeconds);
     void ObserveNavigationAcceptanceEvent(const politika::rules::GameplayEvent& Event);
     void FinishNavigationAcceptance(const TCHAR* Failure);
-    enum class EAcceptancePhase : uint8 { None, CaptureApproach, CaptureHold, CaptureExit, CapturePause, CombatSetup, CombatResolve, Done };
+    struct FParticipantAuthorityAcceptance
+    {
+        bool bRunning = false;
+        uint64 StartStep = 0;
+        uint64 ForeignEntityId = 0, SystemEntityId = 0, DeadEntityId = 0, DestroyedEntityId = 0;
+        uint64 ForeignSeedSequence = 0;
+        uint64 LocalSequence = 0, ForeignSequence = 0, SystemSequence = 0, UnassignedSequence = 0;
+        uint64 DeadSequence = 0, DestroyedSequence = 0;
+        int32 ForeignSeedOutcomes = 0, LocalOutcomes = 0, ForeignOutcomes = 0, SystemOutcomes = 0, UnassignedOutcomes = 0;
+        int32 DeadOutcomes = 0, DestroyedOutcomes = 0, ForeignOrderChanges = 0;
+        bool bForeignSeedAccepted = false, bForeignBaselineCaptured = false;
+        bool bLocalAccepted = false, bSetupChecksPassed = false, bSystemRecordValid = false;
+        politika::rules::OrderRejection ForeignRejection = politika::rules::OrderRejection::None;
+        politika::rules::OrderRejection SystemRejection = politika::rules::OrderRejection::None;
+        politika::rules::OrderRejection UnassignedRejection = politika::rules::OrderRejection::None;
+        politika::rules::OrderRejection DeadRejection = politika::rules::OrderRejection::None;
+        politika::rules::OrderRejection DestroyedRejection = politika::rules::OrderRejection::None;
+        TWeakObjectPtr<APolitikaPrototypeUnit> LocalUnit, ForeignUnit, SystemUnit, DeadUnit, DestroyedUnit;
+        uint64 ForeignRouteSequence = 0;
+        int32 ForeignWaypointIndex = 0;
+        FVector ForeignPosition = FVector::ZeroVector;
+        TArray<FVector> ForeignRoutePoints;
+    } ParticipantAuthorityAcceptance;
+    enum class EAcceptancePhase : uint8 { None, CaptureApproach, CaptureHold, CaptureExit, CapturePause, CombatSetup, CombatResolve, ParticipantAuthoritySeed, ParticipantAuthority, Done };
     EAcceptancePhase AcceptancePhase = EAcceptancePhase::None;
     FString AcceptanceMode;
     float AcceptanceElapsed = 0.0f;
@@ -408,6 +434,8 @@ private:
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceAttacker;
     TWeakObjectPtr<APolitikaPrototypeUnit> AcceptanceDefender;
     void BeginAcceptanceHarness();
+    void BeginParticipantAuthorityAcceptance();
+    void ContinueParticipantAuthorityAcceptance();
     void TickAcceptanceHarness(float DeltaSeconds);
     void SetAcceptanceMove(APolitikaPrototypeUnit* Unit, const FVector& Destination);
     void StartAttackerDeathFixture();
@@ -431,6 +459,9 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
 {
     GENERATED_BODY()
     friend class APolitikaPrototypeMatch;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaMatchParticipantsAuthorityAutomationTest;
+#endif
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
@@ -444,6 +475,8 @@ private:
     bool bAcceptancePanRightLogged = false;
 #endif
     void SelectUnderCursor();
+    void SelectUnitForInput(APolitikaPrototypeUnit* Unit);
+    APolitikaPrototypeUnit* GetCommandableSelectedUnit(APolitikaPrototypeMatch* ActiveMatch);
     void OrderUnderCursor();
     void StopSelected();
     void GuardSelected();

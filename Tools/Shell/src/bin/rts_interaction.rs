@@ -276,6 +276,7 @@ fn wait_for(
 }
 
 fn main() -> Result<(), String> {
+    let participant_authority = env::args().nth(2).as_deref() == Some("--participant-authority");
     if env::args().nth(2).as_deref() == Some("--navigation-interruption") {
         return navigation_obstacle::run_interruption();
     }
@@ -329,15 +330,19 @@ fn main() -> Result<(), String> {
     let user_dir = evidence.join("user");
     fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
 
-    let mut child = Command::new(&binary)
-        .args([
-            "/Game/Maps/RTSVerticalSlice",
-            "-windowed",
-            "-ResX=1280",
-            "-ResY=720",
-            "-unattended",
-            "-nosplash",
-        ])
+    let mut launch = Command::new(&binary);
+    launch.args([
+        "/Game/Maps/RTSVerticalSlice",
+        "-windowed",
+        "-ResX=1280",
+        "-ResY=720",
+        "-unattended",
+        "-nosplash",
+    ]);
+    if participant_authority {
+        launch.arg("-RTSAcceptance=participantauthority");
+    }
+    let mut child = launch
         .arg(format!("-UserDir={}/", user_dir.display()))
         .arg(format!("-ABSLOG={}", log.display()))
         .stdout(Stdio::null())
@@ -352,6 +357,25 @@ fn main() -> Result<(), String> {
             "MATCH_CONTENT_READY map=map.prototype.rts_vertical_slice units=3 objective=objective.central_control",
             Duration::from_secs(60),
         )?;
+        if participant_authority {
+            wait_for(
+                &mut child,
+                &log,
+                "RTS_ACCEPTANCE_PARTICIPANT_AUTHORITY result=PASS",
+                Duration::from_secs(15),
+            )?;
+            let authority_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+            if !authority_log.contains("foreign_selection_rejected=1")
+                || !authority_log.contains("dead_selection_retired=1")
+                || !authority_log.contains("destroyed_queued=1")
+                || !authority_log.contains("unaligned_record=1")
+                || !authority_log.contains("system_owner=0 system_faction=faction.unaligned")
+            {
+                return Err(
+                    "participant authority package marker lacks required setup assertions".into(),
+                );
+            }
+        }
         let mut window = None;
         for _ in 0..100 {
             let mut search = Command::new("xdotool");
@@ -393,6 +417,32 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
         )?;
         capture(&window, &evidence, "01-selected")?;
+
+        // The legitimate local selection must not be replaceable by a foreign unit.
+        input(
+            &window,
+            &["mousemove", "--sync", "577", "323", "click", "1"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_SELECTION_REJECTED player=1 unit=3 reason=NotOwned",
+            Duration::from_secs(5),
+        )?;
+        let selection_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        if selection_log.contains("RTS_SELECTION player=1 unit=3") {
+            return Err("opposing unit was logged as selected by the local player".into());
+        }
+        input(
+            &window,
+            &["mousemove", "--sync", "735", "552", "click", "1"],
+        )?;
+        wait_for(
+            &mut child,
+            &log,
+            "RTS_SELECTION player=1 unit=2",
+            Duration::from_secs(5),
+        )?;
 
         // Move to the occupied control point first, proving contested state is reached.
         input(
@@ -626,11 +676,14 @@ fn main() -> Result<(), String> {
         ),
     )
     .map_err(|e| e.to_string())?;
-    let report = format!(
-        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised WASD camera pan with pixel-difference assertion, selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4 for the continuous rendered sequence; desktop_copy={}\n",
+    let mut report = format!(
+        "requirement\tverdict\tdetail\nBUILD\tRECORDED\t{}\nPAC-10\tPASS\tpackaged rendered input exercised local selection, move/position update, typed friendly-target rejection without attack side effects, stop, guard, attack-move, typed damage/death/target-loss/order/objective events, and return to MainMenu at verified 1280x720; see take.mp4; desktop_copy={}\n",
         revision,
         desktop_copy.display()
     );
+    if participant_authority {
+        report.push_str("PA-AUTHORITY\tPASS\tDevelopment-only participantauthority selector reported exact C++ boundary assertions; rendered bound controller foreign selection was rejected and local selection remained available\n");
+    }
     fs::write(evidence.join("results.tsv"), report).map_err(|e| e.to_string())?;
     println!(
         "PASS PAC-10: packaged RTS interaction replay; evidence {}; Desktop video {}",
