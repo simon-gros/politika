@@ -138,6 +138,8 @@ The main README introduces the project; concrete gameplay concepts and system-le
 | [Faction files](Factions/) | In-depth faction descriptions, logos, and banners. |
 | [Historical Reference Archive](Archive/README.md) | **288 sourced reference records** covering 69 political developments, 172 cartographic references and 47 historical/media sources. Includes [regional map research](Archive/REGIONAL_CARTOGRAPHIC_ATLAS.md) and newly documented [1983–1985 industry and civilian photographs](Archive/INDUSTRY_AND_CIVIC_LIFE_1980_1989.md). |
 
+For a wider design comparison with established RTS families, see the [Cross-Genre RTS Comparative Study](Docs/RTS_CROSS_GENRE_COMPARATIVE_STUDY.md) and [Competitive Benchmark Register](Docs/RTS_COMPETITIVE_BENCHMARK_REGISTER.md). These documents contain proposals and prospective quality tests, not evidence that POLITIKA already matches or exceeds production RTS titles.
+
 ## Development and contributions
 
 POLITIKA is a developing independent RTS project with an Unreal application shell and a bounded, locally verified gameplay prototype. Further implementation and documentation are developed against the design materials, with changes evaluated for consistency with the alternate-history canon and the asymmetrical, neutral-world gameplay design.
