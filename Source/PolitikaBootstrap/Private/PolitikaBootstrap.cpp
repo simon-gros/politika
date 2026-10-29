@@ -23,7 +23,49 @@ DEFINE_LOG_CATEGORY(LogPolitikaStartup);
 DEFINE_LOG_CATEGORY(LogPolitikaSettings);
 DEFINE_LOG_CATEGORY(LogPolitikaPlatform);
 
+#if !UE_BUILD_SHIPPING
+namespace
+{
+    // Development-only switches owned by gameplay modules, which resolve and validate the
+    // values. Bootstrap only recognizes them so they do not surface as launch errors.
+    const TCHAR* const DevelopmentValuedSwitches[] = {
+        TEXT("-PolitikaTestFixture="),
+        TEXT("-PolitikaMPRematch="),
+        TEXT("-PolitikaMPRematchDelay="),
+        TEXT("-PolitikaMPRematchAttempts="),
+    };
+    const TCHAR* const DevelopmentFlagSwitches[] = {
+        TEXT("-PolitikaMPProbe"),
+    };
+
+    bool IsDevelopmentSwitch(const FString& Token)
+    {
+        for (const TCHAR* Prefix : DevelopmentValuedSwitches)
+        {
+            // A valued switch needs a value; an empty one would be a silent no-op.
+            if (Token.StartsWith(Prefix, ESearchCase::IgnoreCase) && Token.Len() > FCString::Strlen(Prefix))
+            {
+                return true;
+            }
+        }
+        for (const TCHAR* Flag : DevelopmentFlagSwitches)
+        {
+            if (Token.Equals(Flag, ESearchCase::IgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+#endif
+
 FPolitikaLaunchOptions FPolitikaLaunchOptions::Parse(const TCHAR* CommandLine)
+{
+    return Parse(CommandLine, UE_BUILD_SHIPPING ? EPolitikaLaunchSwitchPolicy::Strict : EPolitikaLaunchSwitchPolicy::Development);
+}
+
+FPolitikaLaunchOptions FPolitikaLaunchOptions::Parse(const TCHAR* CommandLine, EPolitikaLaunchSwitchPolicy Policy)
 {
     FPolitikaLaunchOptions Result;
     FString Token;
@@ -43,10 +85,9 @@ FPolitikaLaunchOptions FPolitikaLaunchOptions::Parse(const TCHAR* CommandLine)
             Result.bResetUserConfig = true;
         }
 #if !UE_BUILD_SHIPPING
-        else if (Token.StartsWith(TEXT("-PolitikaTestFixture="), ESearchCase::IgnoreCase))
+        else if (Policy == EPolitikaLaunchSwitchPolicy::Development && IsDevelopmentSwitch(Token))
         {
-            // The gameplay module resolves and validates the value; bootstrap only recognizes
-            // this Development-only switch so it does not surface as an unrelated launch error.
+            // Recognized only; the owning gameplay module consumes it.
         }
 #endif
         else if (!Token.Equals(TEXT("-PolitikaOffline"), ESearchCase::IgnoreCase))

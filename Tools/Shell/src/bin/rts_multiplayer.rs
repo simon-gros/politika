@@ -722,6 +722,32 @@ fn client_args(options: &Options, rendered: bool, probe: bool, rematch: bool) ->
     args
 }
 
+/// Development-only multiplayer switches must be recognized by the bootstrap launch-option
+/// parser: none may surface as an InvalidLaunchOptions MainMenu recovery issue.
+fn launch_options_verdict(report: &mut Report, id: &str, games: &[&Game]) {
+    let mut detail = Vec::new();
+    let mut pass = games
+        .iter()
+        .any(|g| g.command.iter().any(|a| a.starts_with("-PolitikaMP")));
+    for game in games {
+        let text = game.text();
+        let booted = text.contains("\"event\":\"bootstrap\"");
+        let flagged = text.contains("\"code\":\"InvalidLaunchOptions\"");
+        let switches: Vec<&str> = game
+            .command
+            .iter()
+            .map(String::as_str)
+            .filter(|a| a.starts_with("-Politika"))
+            .collect();
+        pass &= booted && !flagged;
+        detail.push(format!(
+            "{}: bootstrap={booted} InvalidLaunchOptions={flagged} switches={switches:?}",
+            game.label
+        ));
+    }
+    report.verdict(id, pass, detail.join("; "));
+}
+
 /// Expected server verdict for each hostile probe the client sends (rules::OrderRejection).
 fn expected_probe_rejection(name: &str) -> Option<&'static [u32]> {
     Some(match name {
@@ -1363,6 +1389,7 @@ fn session_gameplay(options: &Options, report: &mut Report) -> Result<(), String
         Ok(path) => report.artifact("client_mp4", path),
         Err(error) => report.mark("EVIDENCE-CLIENT-MP4", "INFRA_ERROR", error.clone()),
     }
+    launch_options_verdict(report, "MP1-DEV-LAUNCH-OPTIONS", &[&host, &client]);
     report.artifact("host_log", &host.log);
     report.artifact("client_log", &client.log);
     host.stop();
@@ -2449,6 +2476,11 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
         Ok(path) => report.artifact("client_b_mp4", &path),
         Err(error) => report.mark("EVIDENCE-CLIENT-B-MP4", "INFRA_ERROR", error),
     }
+    launch_options_verdict(
+        report,
+        "MP3-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);

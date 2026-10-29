@@ -6,6 +6,13 @@ POLITIKABOOTSTRAP_API DECLARE_LOG_CATEGORY_EXTERN(LogPolitikaStartup, Log, All);
 POLITIKABOOTSTRAP_API DECLARE_LOG_CATEGORY_EXTERN(LogPolitikaSettings, Log, All);
 POLITIKABOOTSTRAP_API DECLARE_LOG_CATEGORY_EXTERN(LogPolitikaPlatform, Log, All);
 
+/** Development recognizes non-Shipping test switches; Shipping compiles them out and is always Strict. */
+enum class EPolitikaLaunchSwitchPolicy : uint8
+{
+    Strict,
+    Development
+};
+
 /** Only project-owned options are parsed here. UE retains ownership of its flags and map URL. */
 struct POLITIKABOOTSTRAP_API FPolitikaLaunchOptions
 {
@@ -14,7 +21,9 @@ struct POLITIKABOOTSTRAP_API FPolitikaLaunchOptions
     bool bOffline = true;
     TArray<FString> Errors;
 
+    /** Uses the policy of the running build configuration. */
     static FPolitikaLaunchOptions Parse(const TCHAR* CommandLine);
+    static FPolitikaLaunchOptions Parse(const TCHAR* CommandLine, EPolitikaLaunchSwitchPolicy Policy);
 };
 
 struct POLITIKABOOTSTRAP_API FPolitikaStartupIssue
