@@ -196,13 +196,45 @@ The owner chose to raise the bandwidth cap. `Config/DefaultEngine.ini` now sets 
 - **Step cost is unchanged.** 2v2 × 200 engage p99 is 22.2 ms (was 22.2 ms) and the server frame p95 is 33.55 ms. The whole-army admission step is 62.6 ms (was 56.1 ms): F45 is untouched, because it is route-query time, not bandwidth.
 - The other five checks per run pass at every scale, as in §C. Spawn, order admission, idle replication completeness, step p99 and catch-up cap, engagement and shot-cue consistency (up to 69 480 decisions) all hold.
 
-**Regression matrix at `af643d0`:** REGRESSION_PENDING (`final-af643d0/summary.txt`).
+**Regression matrix at `af643d0`: PASS**, identical to the F43 baseline (`final-af643d0/summary.txt`). Dedicated layouts 74/74, dedicated 1v1 20/20, `lag-loss` 47/47, listen layouts 74/74 twice, listen `lag-loss` 51/51, engagement 9/9, fog memory 7/7, MP-3 23/23, MP-1 18/18, offline PAC-10 and PA-AUTHORITY. The only non-PASS lines are the designed NOT_RUNs (legacy client not supplied or covered by `--dedicated-layouts --legacy-client`; 1v1 has no allied participants). Automation at the following commit `f8d86ed`, which carries this config unchanged, is recorded in §H.
 
 **What this does not cover.**
 - **Listen-host upload.** A listen host sends to every remote client. A 2v2 host at 802 converged units would upload about 3 × 200 KB/s, roughly 4.8 Mbit/s, which many home connections cannot sustain. A dedicated server or LAN is unaffected.
 - **Real links.** Loopback has no bandwidth limit of its own, so this proves only that the engine no longer starves replication. Real-network capacity is untested.
 - **Per-unit cost.** Cost still grows linearly with units in view. 80 % of the new cap is reached at about 1 100–1 300 units. Reducing the cost per unit (lower or adaptive update rate, quantized movement, camera-distance priority) remains the F44 follow-up for listen hosts and internet play.
 
-**U-12 (owner decision), updated.**
+**U-12 (owner decision), updated.** *Superseded by §H: the owner set 300 per participant.*
 - Proposed provisional technical cap: **100 units per participant**. 2v2 and 3v1 then stay around 400 units, with a per-client peak of about 106 KB/s and a listen-host 2v2 upload of about 320 KB/s (≈2.5 Mbit/s).
 - 200 per participant (802 units) is packaged-qualified on a dedicated server over loopback. The binding limits there are F45's admission spike and listen-host upload, not the server step.
+
+## H. 300 per participant (`f8d86ed`)
+
+The owner set U-12 to **300 units per participant**. `f8d86ed` raises the fixture limit (`kMaxUnitsPerSeat` 200 → 300) so the packaged sweep can measure that cap. The harness range and the out-of-range refusal (now 301) follow. No gameplay code, config or replicated state changed; `network_protocol` stays 2.
+
+**Identity:** packages from clean commit `f8d86ed`, `git_dirty=false`, protocol 2. Client `dev-f8d86ed/…/Politika` `08524c16f076dee04e923d6c2f61e41d2212d3cbcb1cf474caec00be60b28f5c`; server `server-f8d86ed/…/PolitikaServer` `e2e066cbd26ac179f05f6f06e8e3a47603f094d8928fc14bf2d34ead2b771514`. Every connection logged `net_speed=400000`. Evidence: `final-f8d86ed/unit-scale/`. Editor build and both packages exit 0.
+
+**Automation at `f8d86ed`: 36/36** (all succeeded with warnings, as at F43 and `9212978`), `automation-f8d86ed/`. This also covers the `af643d0` config, which `f8d86ed` carries unchanged.
+
+**Sweep at 300 per seat: 20 PASS, 5 FAIL** (`final-f8d86ed/unit-scale.out`). The 301 refusal passes (exit 3, no session or units).
+
+| Layout × 300 | Units | Min opposing gap | Busiest second (share of 400 KB/s) | Engage mean down | Idle p99 | Engage p99 / max | Server frame p95 | Destroyed before order | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| 1v1 | 602 | 894 cm | 139 888 (35 %) | 103 968 | 9.3 ms | 17.7 / 39.0 ms | 33.5 ms | 0 | **PASS 10/10** |
+| 2v2 | 1 202 | 403 cm | 271 928 (68 %) | 167 663 | 25.5 ms | **54.7** / 110.1 ms | 68.9 ms | 50 | FAIL: orders, replication, step |
+| 3v1 | 1 202 | **50 cm** | 289 291 (72 %) | 217 386 | 25.0 ms | 37.6 / 101.0 ms | 54.2 ms | 105 | FAIL: orders, replication |
+
+- **F46 (open, fixture): opposing armies spawn inside attack range in four-seat layouts at 300 per seat.** The planner packs each seat around its start point at 100 cm spacing out to a 1 476 cm radius. That leaves opposing seats 403 cm (2v2) and 50 cm (3v1) apart, inside the 550 cm attack distance. The sides fight during the 10 s idle phase: 50 (2v2) and 105 (3v1) units are destroyed before the whole-army order.
+  - That alone explains the ORDERS-ADMITTED failures: the fixture orders only living units (1 150 and 1 093 of 1 200), and every one is accepted.
+  - It also explains REPLICATION-COMPLETE: clients still hold units that died in the last 1.5 s retire window (client_present exceeds server_visible by 15–41).
+  - Those two checks are therefore INCONCLUSIVE at 300 per seat in 2v2 and 3v1, not product failures. The fixture must fail closed when the opposing gap is below attack range plus a margin, and four-seat start points or packing must make room for 300 per seat. The 25–200 sweeps in §C and §G had gaps of at least ~1 000 cm and are unaffected.
+- **Bandwidth is not the limit.** The busiest second is 68–72 % of the 400 KB/s send rate at 1 202 units, about 230–240 B/s per unit, so NET-HEADROOM passes everywhere.
+- **Step cost is the next limit.** The 2v2 engage p99 is 54.7 ms against the 50 ms step budget, and the server frame p95 is 68.9 ms (3v1 passes at 37.6 ms). The early fight makes the battle denser than a clean start would, so this is indicative, not final. Idle cost at 1 202 units is already about 25 ms per step.
+- **F45 grows with the army.** The whole-army admission step is 39.0 ms at 600 orders (1v1), and 101–110 ms at about 1 100 orders (four seats). That is two server steps or more in one.
+- Engagement and shot-cue consistency pass at every layout (up to 66 784 decisions).
+
+**U-12 status at 300 per participant.**
+- 1v1 (602 units) is packaged-qualified on a dedicated server over loopback.
+- 2v2 and 3v1 (1 202 units) are **not qualified**. They need the F46 fixture fix and a rerun. Even then the step budget is likely to bind (2v2 engage p99 54.7 ms) together with F45 and listen-host upload (a 2v2 listen host would send about 3 × 270 KB/s, roughly 6.5 Mbit/s).
+- The owner decision stands as the design target. The technical evidence supports 300 per participant only for 1v1 today, and 100 per participant for four-seat layouts (§G).
+
+**Next.** Fix F46 (fail-closed gap guard, room for 300 per seat in four-seat layouts) and rerun 2v2 and 3v1. Then profile the 1 200-unit engage step, and address F45 (spread route resolution over steps, or one route per group).
