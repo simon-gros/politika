@@ -171,6 +171,8 @@ void APolitikaPrototypeUnit::ApplyObservedArchetypePresentation(const UPolitikaU
     ApplyPrototypeColor(SelectionIndicator, FLinearColor(0.96f, 0.83f, 0.30f));
     // Read-only capability data for the local HUD (ammunition row); never simulated here.
     InfantryBehavior = Definition->InfantryBehavior;
+    // Own-team sight drives this viewer's fog shading; the server keeps the authoritative copy.
+    SetSightRadius(Definition->SightRadiusCm);
     ConfigureInfantryPresentation(Definition->InfantryPresentation);
     if (!IsAlive() && MaxHealth > 0) BeginDeathPresentation();
 }
@@ -219,9 +221,15 @@ void APolitikaPrototypeUnit::BeginDeathPresentation()
     if (!InfantryPresentation->GetVisual())
     {
         // Authority retires the actor; observers hide their copy until the
-        // replicated destruction arrives.
-        if (HasAuthority()) Destroy();
-        else SetActorHiddenInGame(true);
+        // replicated destruction arrives. A networked authority retires it after a short
+        // delay so observers that saw it receive Health 0 first (no false last-known contact).
+        if (HasAuthority() && GetNetMode() == NM_Standalone) Destroy();
+        else
+        {
+            SetActorEnableCollision(false);
+            SetActorHiddenInGame(true);
+            if (HasAuthority()) SetLifeSpan(NetworkDeathRetireSeconds);
+        }
         return;
     }
     SetActorEnableCollision(false);
@@ -1169,6 +1177,7 @@ void APolitikaPrototypeMatch::BeginReturnToMenu()
 void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    UpdateLocalFogKnowledge();
     if (!HasAuthority())
     {
         // Observer copies interpolate replicated state; they never simulate.
@@ -2861,6 +2870,12 @@ void APolitikaPrototypeHUD::DrawHUD()
     float Y = 38.0f * UiScale;
     const float Left = 40.0f * UiScale;
     const FLinearColor Ink(0.91f, 0.93f, 0.84f);
+    // Fog shading first so labels and HUD text stay legible on top of it.
+    if (APlayerController* Controller = GetOwningPlayerController())
+    {
+        DrawLocalFog(*Controller, *ActiveMatch);
+        DrawLastKnownContacts(*Controller, *ActiveMatch, UiScale);
+    }
     // Identical placeholder skins must not hide allegiance or target health
     // from human playtesters. These are read-only views of admitted unit state.
     if (APlayerController* Controller = GetOwningPlayerController())

@@ -327,7 +327,12 @@ void APolitikaPrototypeMatch::ApplyLocalFogPresentation()
     if (!bFogOfWar || GetNetMode() != NM_ListenServer) return;
     const uint8 HostTeam = GetTeamForParticipant(LocalRuntimePlayerId);
     for (APolitikaPrototypeUnit* Unit : Units)
-        if (IsValid(Unit)) Unit->SetLocalFogHidden(!Unit->IsObservedByTeam(HostTeam));
+    {
+        if (!IsValid(Unit) || !Unit->ApplyLocalFogVisibility(!Unit->IsObservedByTeam(HostTeam))) continue;
+        // Units holds only living units, so a unit hidden here was last seen alive.
+        if (Unit->IsLocalFogHidden()) NoteLocalContactWithdrawn(Unit, true, Unit->GetLastLocalFogVisibleLocation());
+        else NoteLocalContactObserved(Unit);
+    }
 }
 
 bool APolitikaPrototypeMatch::IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const
@@ -382,15 +387,33 @@ void APolitikaPrototypeUnit::SetLocalFogHidden(bool bHidden)
     if (USceneComponent* Root = GetRootComponent()) Root->SetHiddenInGame(bHidden, true);
 }
 
+bool APolitikaPrototypeUnit::ApplyLocalFogVisibility(bool bHidden)
+{
+    const bool bFirst = !bLocalFogApplied;
+    bLocalFogApplied = true;
+    const bool bChanged = bLocalFogHidden != bHidden;
+    SetLocalFogHidden(bHidden);
+    if (!bHidden) LastLocalFogVisibleLocation = GetActorLocation();
+    return bChanged && !bFirst;
+}
+
 void APolitikaPrototypeUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     if (!HasAuthority())
     {
 #if !UE_BUILD_SHIPPING
-        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_CLIENT_UNIT_WITHDRAWN entity=%llu owner=%u team=%u alive=%d reason=%d"),
-            StableId, OwnerPlayer, TeamId, IsAlive() ? 1 : 0, static_cast<int32>(EndPlayReason));
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_CLIENT_UNIT_WITHDRAWN entity=%llu owner=%u team=%u alive=%d reason=%d x=%.1f y=%.1f"),
+            StableId, OwnerPlayer, TeamId, IsAlive() ? 1 : 0, static_cast<int32>(EndPlayReason),
+            GetActorLocation().X, GetActorLocation().Y);
 #endif
-        if (APolitikaPrototypeMatch* Match = FindMatch(GetWorld())) Match->UnregisterObservedUnit(this);
+        if (APolitikaPrototypeMatch* Match = FindMatch(GetWorld()))
+        {
+            // Relevancy loss and replicated destruction both arrive as Destroyed; a death this
+            // client saw has already replicated Health 0, so only live contacts are remembered.
+            if (EndPlayReason == EEndPlayReason::Destroyed)
+                Match->NoteLocalContactWithdrawn(this, IsAlive() && !bDeathPresented, GetActorLocation());
+            Match->UnregisterObservedUnit(this);
+        }
     }
     Super::EndPlay(EndPlayReason);
 }
@@ -980,7 +1003,11 @@ void APolitikaPrototypeUnit::BeginPlay()
 {
     Super::BeginPlay();
     if (HasAuthority()) return;
-    if (APolitikaPrototypeMatch* Match = FindMatch(GetWorld())) Match->RegisterObservedUnit(this);
+    if (APolitikaPrototypeMatch* Match = FindMatch(GetWorld()))
+    {
+        Match->RegisterObservedUnit(this);
+        Match->NoteLocalContactObserved(this);
+    }
     TryApplyObservedPresentation();
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display, TEXT("MP_CLIENT_UNIT_RELEVANT entity=%llu owner=%u team=%u"), StableId, OwnerPlayer, TeamId);

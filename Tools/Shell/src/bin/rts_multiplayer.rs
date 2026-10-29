@@ -3889,6 +3889,20 @@ fn dedicated_layout(
                 counts[0], counts[1], counts[2]
             ),
         );
+        let mut memory_detail = Vec::new();
+        let mut memory_ok = true;
+        for (client, label) in clients.iter().zip(1..) {
+            let (recorded, deaths, problems) = contact_memory_audit(&client.text());
+            memory_ok &= problems.is_empty();
+            memory_detail.push(format!(
+                "client {label}: recorded {recorded}, deaths seen {deaths}, problems={problems:?}"
+            ));
+        }
+        report.verdict(
+            &id("FOG-MEMORY-NO-LEAK"),
+            memory_ok,
+            memory_detail.join("; "),
+        );
         network_checks(report, &id, layout, profile, &server, &clients, &generation);
 
         // Every client leaves the finished match; the same server resets for a new generation.
@@ -4099,7 +4113,423 @@ fn run_dedicated_layouts() -> ! {
     std::process::exit(if report.failed() { 1 } else { 0 });
 }
 
+// ----------------------------------------------------------------------------
+// MP-2 / audit F33: viewer-side fog memory (last-known contacts) and fog shading
+// ----------------------------------------------------------------------------
+
+/// Last-known contacts a client recorded must come only from contacts it was sent: each
+/// one follows a live withdrawal of the same entity at the same position, never names the
+/// viewer's own side, and a death the client saw never leaves a contact behind.
+/// Returns (recorded contacts, deaths seen, problems).
+fn contact_memory_audit(text: &str) -> (usize, usize, Vec<String>) {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut problems = Vec::new();
+    let mut recorded = 0;
+    let mut deaths: Vec<(usize, String)> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        if line.contains("MP_CLIENT_UNIT_HEALTH")
+            && field(line, "health") == Some("0")
+            && let Some(entity) = field(line, "entity")
+        {
+            deaths.push((index, entity.to_owned()));
+        }
+    }
+    for (index, line) in lines.iter().enumerate() {
+        if !line.contains("MP_LOCAL_CONTACT_LAST_KNOWN") {
+            continue;
+        }
+        recorded += 1;
+        let entity = field(line, "entity").unwrap_or("?");
+        let withdrawn = lines[..index]
+            .iter()
+            .rev()
+            .find(|l| l.contains("MP_CLIENT_UNIT_WITHDRAWN") && field(l, "entity") == Some(entity));
+        let relevant = lines[..index]
+            .iter()
+            .any(|l| l.contains("MP_CLIENT_UNIT_RELEVANT") && field(l, "entity") == Some(entity));
+        let close = |a: Option<f64>, b: Option<f64>| matches!((a, b), (Some(a), Some(b)) if (a - b).abs() < 0.6);
+        match withdrawn {
+            Some(w)
+                if relevant
+                    && field(w, "alive") == Some("1")
+                    && close(number(w, "x"), number(line, "x"))
+                    && close(number(w, "y"), number(line, "y")) => {}
+            _ => problems.push(format!(
+                "contact {entity} not preceded by a matching live withdrawal: {}",
+                line.trim()
+            )),
+        }
+        if field(line, "owner") == field(line, "viewer")
+            || field(line, "team") == field(line, "viewer_team")
+        {
+            problems.push(format!(
+                "contact names the viewer's own side: {}",
+                line.trim()
+            ));
+        }
+        if deaths
+            .iter()
+            .any(|(at, dead)| *at < index && dead == entity)
+        {
+            problems.push(format!(
+                "contact {entity} recorded after its death was seen"
+            ));
+        }
+    }
+    (recorded, deaths.len(), problems)
+}
+
+fn fog_samples(text: &str, role: &str) -> Vec<(u64, u64, u64)> {
+    text.lines()
+        .filter(|l| l.contains("MP_LOCAL_FOG") && field(l, "role") == Some(role))
+        .filter_map(|l| {
+            Some((
+                field(l, "visible")?.parse().ok()?,
+                field(l, "explored")?.parse().ok()?,
+                field(l, "unexplored")?.parse().ok()?,
+            ))
+        })
+        .collect()
+}
+
+/// Right-clicks a ground point until the server admits a Move for the unit.
+fn order_move(
+    game: &mut Game,
+    server: &mut Game,
+    unit: u64,
+    target: (f64, f64),
+) -> Result<String, String> {
+    select_entity(game, "MP_CLIENT_SAMPLE", unit)?;
+    let mark = server.offset();
+    game.click(target.0, target.1, "3")?;
+    server.wait_line(
+        &[
+            "RTS_ORDER_ADMITTED order=Move",
+            &format!("unit={unit}"),
+            "participant=1",
+        ],
+        Duration::from_secs(5),
+        mark,
+    )
+}
+
+fn fog_memory_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut server = Game::launch_server(
+        &options.server,
+        "server",
+        evidence,
+        &server_args(port, "1v1"),
+    )?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(120))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(30))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &client_args(client_options, true, false, false),
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    // Seat 1 only fills the roster; it renders nothing.
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(60),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(10),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(30),
+    )?;
+    client_a.attach_window()?;
+    let recorder = Recorder::start(&display_a.name(), evidence, "client-a")?;
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let unit_a1 = owners
+            .iter()
+            .find(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .ok_or_else(|| format!("no participant-1 unit in {owners:?}"))?;
+        // The southern Unaligned militia: stationary, neutral to auto-engagement, and out
+        // of team A's starting sight.
+        let militia = server
+            .text()
+            .lines()
+            .filter(|l| l.contains("MP_ACCEPTANCE_UNALIGNED"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "entity")?.parse::<u64>().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .find(|(_, _, y)| *y < 0.0)
+            .ok_or("no southern Unaligned placement logged")?;
+        report.fact(
+            "militia",
+            format!("entity={} x={:.1} y={:.1}", militia.0, militia.1, militia.2),
+        );
+
+        let start_fog = client_a
+            .wait(
+                &["MP_LOCAL_FOG role=client", "viewer=1"],
+                Duration::from_secs(10),
+            )
+            .map(|l| l.trim().to_owned())?;
+        let militia_marker = format!("entity={} ", militia.0);
+        let seen_at_start = client_a
+            .text()
+            .lines()
+            .any(|l| l.contains("MP_CLIENT_UNIT_RELEVANT") && l.contains(&militia_marker));
+        report.verdict(
+            "MP2-FOG-SHADING-ACTIVE",
+            !seen_at_start
+                && field(&start_fog, "visible").and_then(|v| v.parse::<u64>().ok()) > Some(0)
+                && field(&start_fog, "unexplored").and_then(|v| v.parse::<u64>().ok()) > Some(0),
+            format!(
+                "fogged start (militia not received={}); {start_fog}",
+                !seen_at_start
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(2500));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(evidence, "01-fogged-start")?,
+        );
+
+        let home = wait_screen(
+            &mut client_a,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit_a1),
+            "unit a1",
+        )?;
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective",
+        )?;
+        let forward = ((home.0 + objective.0) / 2.0, (home.1 + objective.1) / 2.0);
+        report.fact("screen_home", format!("{:.0},{:.0}", home.0, home.1));
+        report.fact(
+            "screen_forward",
+            format!("{:.0},{:.0}", forward.0, forward.1),
+        );
+
+        // 1. Advance: the militia comes into sight and is replicated.
+        let order1 = order_move(&mut client_a, &mut server, unit_a1, forward)?;
+        let relevant = client_a.wait(
+            &["MP_CLIENT_UNIT_RELEVANT", &militia_marker],
+            Duration::from_secs(40),
+        )?;
+        report.verdict(
+            "MP2-FOG-CONTACT-SEEN",
+            true,
+            format!("{}; {}", order1.trim(), relevant.trim()),
+        );
+        thread::sleep(Duration::from_millis(1500));
+        report.artifact(
+            "client_a_contact_png",
+            &client_a.screenshot(evidence, "02-contact")?,
+        );
+
+        // 2. Retreat: the server withdraws the militia; the client remembers it.
+        let order2 = order_move(&mut client_a, &mut server, unit_a1, home)?;
+        let withdrawn = client_a.wait(
+            &["MP_CLIENT_UNIT_WITHDRAWN", &militia_marker],
+            Duration::from_secs(40),
+        )?;
+        let last_known = client_a.wait(
+            &["MP_LOCAL_CONTACT_LAST_KNOWN", &militia_marker],
+            Duration::from_secs(5),
+        )?;
+        let server_sample = server
+            .text()
+            .lines()
+            .rev()
+            .find(|l| l.contains("MP_SERVER_SAMPLE") && l.contains(&militia_marker))
+            .map(str::to_owned)
+            .unwrap_or_default();
+        let same = |a: &str, b: &str, key: &str, tolerance: f64| matches!((number(a, key), number(b, key)), (Some(x), Some(y)) if (x - y).abs() <= tolerance);
+        report.verdict(
+            "MP2-FOG-LAST-KNOWN",
+            field(&withdrawn, "alive") == Some("1")
+                && field(&last_known, "role") == Some("client")
+                && field(&last_known, "viewer") == Some("1")
+                && field(&last_known, "owner") == Some("0")
+                && same(&withdrawn, &last_known, "x", 0.6)
+                && same(&withdrawn, &last_known, "y", 0.6)
+                && same(&last_known, &server_sample, "x", 5.0)
+                && same(&last_known, &server_sample, "y", 5.0),
+            format!(
+                "{}; {}; {} (stationary contact)",
+                order2.trim(),
+                withdrawn.trim(),
+                last_known.trim()
+            ),
+        );
+        // Wait for a periodic fog sample after the unit is home again.
+        thread::sleep(Duration::from_secs(6));
+        let samples = fog_samples(&client_a.text(), "client");
+        let first = samples.first().copied().unwrap_or_default();
+        let last = samples.last().copied().unwrap_or_default();
+        let remembered = client_a
+            .text()
+            .lines()
+            .rev()
+            .find(|l| l.contains("MP_LOCAL_FOG role=client"))
+            .map(str::to_owned)
+            .unwrap_or_default();
+        report.verdict(
+            "MP2-FOG-EXPLORED-PERSISTS",
+            first.1 == 0
+                && last.1 > 0
+                && last.0 > 0
+                && last.2 < first.2
+                && field(&remembered, "contacts") == Some("1"),
+            format!(
+                "start visible/explored/unexplored={first:?}; after retreat={last:?}; {}",
+                remembered.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_last_known_png",
+            &client_a.screenshot(evidence, "03-last-known")?,
+        );
+
+        // 3. Advance again: the live contact replaces the memory.
+        let order3 = order_move(&mut client_a, &mut server, unit_a1, forward)?;
+        let cleared = client_a.wait(
+            &[
+                "MP_LOCAL_CONTACT_CLEARED",
+                &militia_marker,
+                "reason=reobserved",
+            ],
+            Duration::from_secs(40),
+        )?;
+        report.verdict(
+            "MP2-FOG-REOBSERVED",
+            true,
+            format!("{}; {}", order3.trim(), cleared.trim()),
+        );
+        thread::sleep(Duration::from_millis(1500));
+        report.artifact(
+            "client_a_reobserved_png",
+            &client_a.screenshot(evidence, "04-reobserved")?,
+        );
+
+        let (recorded, deaths, problems) = contact_memory_audit(&client_a.text());
+        let b_contacts = count_lines(&client_b.text(), &["MP_LOCAL_CONTACT_LAST_KNOWN"]);
+        report.verdict(
+            "MP2-FOG-MEMORY-NO-LEAK",
+            problems.is_empty() && recorded >= 1,
+            format!("client A recorded {recorded}, deaths seen {deaths}; client B (never saw it) recorded {b_contacts}; problems={problems:?}"),
+        );
+        let server_text = server.text();
+        report.verdict(
+            "MP2-FOG-SERVER-PRESENTS-NOTHING",
+            count_lines(&server_text, &["MP_LOCAL_FOG"]) == 0
+                && count_lines(&server_text, &["MP_LOCAL_CONTACT"]) == 0,
+            "the dedicated server derives no viewer fog or contacts",
+        );
+        Ok(())
+    })();
+    match recorder.finish() {
+        Ok(path) => report.artifact("client_a_video", &path),
+        Err(error) => report.fact("client_a_video_error", error),
+    }
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
+fn run_fog_memory() -> ! {
+    let mut options = match parse_dedicated_options() {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{}", error.replace("--dedicated", "--fog-memory"));
+            std::process::exit(2);
+        }
+    };
+    match fs::create_dir_all(&options.client.evidence)
+        .and_then(|_| options.client.evidence.canonicalize())
+    {
+        Ok(absolute) => options.client.evidence = absolute,
+        Err(error) => {
+            eprintln!("evidence directory: {error}");
+            std::process::exit(2);
+        }
+    }
+    let mut report = Report {
+        schema: Some("politika.mp2.fog-memory-evidence.v1"),
+        ..Report::default()
+    };
+    for (name, binary) in [
+        ("server", &options.server),
+        ("client", &options.client.binary),
+    ] {
+        report.fact(&format!("{name}_binary"), binary.display().to_string());
+        if let Ok(digest) = sha256(binary) {
+            report.fact(&format!("{name}_executable_sha256"), digest);
+        }
+        if let Some(archive) = binary.ancestors().nth(4)
+            && let Ok(identity) = fs::read_to_string(archive.join("BuildIdentity.json"))
+        {
+            report.fact(
+                &format!("{name}_build_identity"),
+                identity.trim().to_owned(),
+            );
+        }
+    }
+    if let Err(error) = fog_memory_session(&options, &mut report) {
+        report.mark(
+            "SESSION-fog-memory",
+            if error.starts_with("BLOCKED") {
+                "BLOCKED"
+            } else {
+                "FAIL"
+            },
+            error,
+        );
+    }
+    let path = options.client.evidence.join("fog-memory-evidence.json");
+    if let Err(error) = report.write(&path) {
+        eprintln!("write evidence: {error}");
+        std::process::exit(2);
+    }
+    println!("evidence: {}", path.display());
+    std::process::exit(if report.failed() { 1 } else { 0 });
+}
+
 fn main() {
+    if env::args().nth(1).as_deref() == Some("--fog-memory") {
+        run_fog_memory();
+    }
     if env::args().nth(1).as_deref() == Some("--dedicated") {
         run_dedicated();
     }
@@ -4186,4 +4616,47 @@ fn main() {
     }
     println!("evidence: {}", path.display());
     std::process::exit(if report.failed() { 1 } else { 0 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::contact_memory_audit;
+
+    const RELEVANT: &str =
+        "LogPolitikaStartup: Display: MP_CLIENT_UNIT_RELEVANT entity=11 owner=0 team=3";
+    const WITHDRAWN: &str = "LogPolitikaStartup: Display: MP_CLIENT_UNIT_WITHDRAWN entity=11 owner=0 team=3 alive=1 reason=0 x=0.0 y=-1050.0";
+    const LAST_KNOWN: &str = "LogPolitikaStartup: Display: MP_LOCAL_CONTACT_LAST_KNOWN role=client generation=1 viewer=1 viewer_team=1 entity=11 owner=0 team=3 x=0.0 y=-1050.0 contacts=1";
+
+    #[test]
+    fn accepts_a_contact_recorded_from_a_live_withdrawal() {
+        let text = [RELEVANT, WITHDRAWN, LAST_KNOWN].join("\n");
+        let (recorded, deaths, problems) = contact_memory_audit(&text);
+        assert_eq!((recorded, deaths), (1, 0));
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn rejects_a_contact_the_client_was_never_sent() {
+        let (_, _, problems) = contact_memory_audit(LAST_KNOWN);
+        assert_eq!(problems.len(), 1);
+    }
+
+    #[test]
+    fn rejects_a_contact_at_a_position_it_was_not_seen() {
+        let moved = LAST_KNOWN.replace("y=-1050.0", "y=-900.0");
+        let (_, _, problems) = contact_memory_audit(&[RELEVANT, WITHDRAWN, &moved].join("\n"));
+        assert_eq!(problems.len(), 1);
+    }
+
+    #[test]
+    fn rejects_a_contact_after_a_seen_death_or_on_the_viewers_side() {
+        let death =
+            "LogPolitikaStartup: Display: MP_CLIENT_UNIT_HEALTH entity=11 owner=0 health=0 max=100";
+        let (_, deaths, problems) =
+            contact_memory_audit(&[RELEVANT, death, WITHDRAWN, LAST_KNOWN].join("\n"));
+        assert_eq!((deaths, problems.len()), (1, 1));
+        let own = LAST_KNOWN.replace("team=3 x", "team=1 x");
+        let (_, _, problems) = contact_memory_audit(&[RELEVANT, WITHDRAWN, &own].join("\n"));
+        assert_eq!(problems.len(), 1);
+    }
 }

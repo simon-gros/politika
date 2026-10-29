@@ -942,4 +942,109 @@ bool FPolitikaMultiplayerShotCueRedactionTest::RunTest(const FString& Parameters
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFogMemoryTest,
+    "Politika.RTS.Multiplayer.FogMemoryAndShading",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Listen-host fog presentation (MP-2, audit F33): the fogged start is not a sighting, a
+// contact is remembered at its last *visible* position, a remembered spot the host clearly
+// sees again is dropped, a death outside sight is not revealed, explored terrain persists,
+// and results / a new generation clear the memory. Remote clients take the same rules
+// through unit EndPlay; packaged rts_multiplayer --fog-memory covers that path.
+bool FPolitikaMultiplayerFogMemoryTest::RunTest(const FString& Parameters)
+{
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bound"), F.BindAll())) return false;
+    APolitikaPrototypeMatch* M = F.Match;
+    APolitikaPrototypeUnit* Own = F.AddUnit(1, {-1000, 0});
+    APolitikaPrototypeUnit* Enemy = F.AddUnit(2, {1000, 0});
+    APolitikaPrototypeUnit* Militia = F.AddUnit(0, {-1000, 1600});
+    if (!Own || !Enemy || !Militia) return false;
+    const auto Refresh = [&]()
+    {
+        F.RefreshVision();
+        M->LastLocalFogSeconds = 0.0;
+        M->UpdateLocalFogKnowledge();
+    };
+    const auto CellAt = [&](double X, double Y)
+    {
+        const FogMap& Fog = M->GetLocalFog();
+        const FogGridSpec& Spec = Fog.Spec();
+        return Fog.At(static_cast<uint32>((X - Spec.min.x) / Spec.cell_size), static_cast<uint32>((Y - Spec.min.y) / Spec.cell_size));
+    };
+    const auto Contacts = [&]() { return static_cast<int32>(M->GetLocalContacts().Contacts().size()); };
+
+    Refresh();
+    TestTrue(TEXT("Listen host presents fog in a networked session"), M->IsLocalFogPresentationActive());
+    TestTrue(TEXT("Enemy and Unaligned start hidden"), Enemy->IsLocalFogHidden() && Militia->IsLocalFogHidden());
+    TestEqual(TEXT("The fogged start is not a sighting: no remembered contacts"), Contacts(), 0);
+    TestEqual(TEXT("Own position is visible"), CellAt(-1000, 0), FogCell::Visible);
+    TestEqual(TEXT("Unseen enemy ground is unexplored"), CellAt(1000, 0), FogCell::Unexplored);
+
+    // Seen at the edge of sight, then lost: remembered where it was last seen.
+    Enemy->SetActorLocation(FVector(150, 0, 42));
+    Refresh();
+    TestFalse(TEXT("Enemy within sight is shown"), Enemy->IsLocalFogHidden());
+    TestEqual(TEXT("A visible contact is not a memory"), Contacts(), 0);
+    Enemy->SetActorLocation(FVector(1000, 0, 42));
+    Refresh();
+    const LastKnownContact* Remembered = M->GetLocalContacts().Find(Enemy->GetStableId());
+    TestTrue(TEXT("Leaving sight records a last-known contact"), Enemy->IsLocalFogHidden() && Remembered != nullptr);
+    if (Remembered)
+    {
+        TestEqual(TEXT("Remembered at the last visible x, not the hidden truth"), Remembered->position.x, 150.0);
+        TestEqual(TEXT("Contact keeps its owner"), Remembered->owner, 2u);
+    }
+
+    // Explored terrain persists after vision leaves; the edge memory is inside the
+    // reveal margin, so it is not cleared by sight that barely reaches it.
+    Own->SetActorLocation(FVector(-1000, -1600, 42));
+    Refresh();
+    TestEqual(TEXT("Former sight becomes explored"), CellAt(-1000, 0), FogCell::Explored);
+    TestEqual(TEXT("New sight is visible"), CellAt(-1000, -1600), FogCell::Visible);
+    TestEqual(TEXT("Contact survives the move"), Contacts(), 1);
+
+    // Seen again: the live unit replaces the memory.
+    Enemy->SetActorLocation(FVector(-900, -1500, 42));
+    Refresh();
+    TestFalse(TEXT("Returning enemy is shown"), Enemy->IsLocalFogHidden());
+    TestEqual(TEXT("Reobserved contact is no longer a memory"), Contacts(), 0);
+
+    // Lost while the spot is still clearly in sight: recorded, then dropped as revealed.
+    Enemy->SetActorLocation(FVector(1500, 1500, 42));
+    F.RefreshVision();
+    TestEqual(TEXT("Teleporting out of sight is recorded at the last visible spot"), Contacts(), 1);
+    M->LastLocalFogSeconds = 0.0;
+    M->UpdateLocalFogKnowledge();
+    TestEqual(TEXT("A remembered spot the host clearly sees, empty, is cleared"), Contacts(), 0);
+
+    // A death outside sight is not revealed.
+    Own->SetActorLocation(FVector(-1000, 0, 42));
+    Enemy->SetActorLocation(FVector(150, 0, 42));
+    Refresh();
+    Enemy->SetActorLocation(FVector(1000, 0, 42));
+    Refresh();
+    TestEqual(TEXT("Contact recorded before the hidden death"), Contacts(), 1);
+    Enemy->Health = 0;
+    F.Step();
+    Refresh();
+    TestFalse(TEXT("The dead unit left the authoritative list"), M->Units.Contains(Enemy));
+    TestEqual(TEXT("A death the host did not see leaves the contact remembered"), Contacts(), 1);
+    TestNull(TEXT("Never-seen Unaligned is not remembered"), M->GetLocalContacts().Find(Militia->GetStableId()));
+
+    // Results clear contacts but keep the explored map; a new generation resets it all.
+    TestTrue(TEXT("Match leaves Active"), M->TransitionLifecycle(MatchPhase::Terminal));
+    Refresh();
+    TestEqual(TEXT("Contacts are cleared when the match is no longer active"), Contacts(), 0);
+    TestTrue(TEXT("Explored terrain is kept through results"), M->GetLocalFog().Count(FogCell::Explored) > 0);
+    M->MatchGeneration += 1;
+    Refresh();
+    TestEqual(TEXT("A new generation forgets explored terrain"), static_cast<int32>(M->GetLocalFog().Count(FogCell::Explored)), 0);
+
+    FPolitikaMultiplayerFixture Offline(*this);
+    if (!Offline.Create(TEXT("1v1"), false)) return false;
+    TestFalse(TEXT("Standalone play has no fog presentation"), Offline.Match->IsLocalFogPresentationActive());
+    return true;
+}
+
 #endif

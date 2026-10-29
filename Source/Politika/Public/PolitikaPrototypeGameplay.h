@@ -8,6 +8,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Rules.h"
+#include "Fog.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -131,6 +132,11 @@ public:
     bool IsObservedByTeam(uint8 Team) const { return Team < 8 && (ObservedByTeams & (1u << Team)) != 0; }
     // Local presentation only (listen-server host view of fog); never replicated.
     void SetLocalFogHidden(bool bHidden);
+    // Listen-host fog view: applies the host team's visibility and returns true only for a
+    // change after the first application (the fogged start is not a sighting or a loss).
+    bool ApplyLocalFogVisibility(bool bHidden);
+    // Where the listen host last saw this unit (never its position while hidden).
+    FVector GetLastLocalFogVisibleLocation() const { return LastLocalFogVisibleLocation; }
     // Observer-side cosmetic shot (a fog-filtered cue from the server); no rules state.
     void PresentObservedShot(const FVector& Point, float Cooldown);
     bool IsLocalFogHidden() const { return bLocalFogHidden; }
@@ -192,6 +198,7 @@ private:
     friend class FPolitikaMultiplayerResultAndCleanupTest;
     friend class FPolitikaMultiplayerFogOfWarTest;
     friend struct FPolitikaMultiplayerFixture;
+    friend class FPolitikaMultiplayerFogMemoryTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -200,6 +207,8 @@ private:
     float SightRadius = PolitikaDefaultSightRadiusCm;
     uint8 ObservedByTeams = 0;
     bool bLocalFogHidden = false;
+    bool bLocalFogApplied = false;
+    FVector LastLocalFogVisibleLocation = FVector::ZeroVector;
     // Public alliance (friend/foe presentation); authority is still server-side.
     UPROPERTY(Replicated) uint8 TeamId = 0;
     // Cosmetic fan-out of authoritative events. Authority already presented them
@@ -220,6 +229,9 @@ private:
     UPROPERTY(ReplicatedUsing=OnRep_ArchetypeId) FName ArchetypeId;
     bool bObservedPresentationApplied = false;
     bool bDeathPresented = false;
+    // Networked authority keeps a dead unit this long so every observer that saw it receives
+    // its death before the actor channel closes (otherwise it reads as a fog withdrawal).
+    static constexpr float NetworkDeathRetireSeconds = 1.5f;
     bool bPendingBlastDamage = false;
     bool bMovedThisStep = false;
     TWeakObjectPtr<APolitikaPrototypeUnit> GrenadeTarget;
@@ -398,6 +410,18 @@ public:
     // Observer-side unit registry: clients only hold units their team currently observes.
     void RegisterObservedUnit(APolitikaPrototypeUnit* Unit);
     void UnregisterObservedUnit(APolitikaPrototypeUnit* Unit);
+    // Viewer-side fog presentation (MP-2, audit F33): explored/visible shading and last-known
+    // contacts, derived only from this process's own-team units and the contacts it was
+    // sent. Never replicated and never consulted for authority; contacts are not targets.
+    // Inactive offline, on a dedicated server and for an unseated viewer.
+    bool IsLocalFogPresentationActive() const;
+    const politika::rules::FogMap& GetLocalFog() const { return LocalFog; }
+    const politika::rules::ContactMemory& GetLocalContacts() const { return LocalContacts; }
+    float GetLocalFogGroundZ() const { return LocalFogGroundZ; }
+    void NoteLocalContactWithdrawn(const APolitikaPrototypeUnit* Unit, bool bLastKnownAlive, const FVector& LastSeenLocation);
+    void NoteLocalContactObserved(const APolitikaPrototypeUnit* Unit);
+    static constexpr double LocalFogCellSizeCm = 125.0;
+    static constexpr double LocalFogUpdateSeconds = 0.1;
     void ReportRejectedCommand(const FString& Reason) { LastCommandFeedback = Reason; }
     FString GetLastCommandFeedback() const { return LastCommandFeedback; }
     const TArray<politika::rules::GameplayEvent>& GetPublishedEvents() const { return PublishedEvents; }
@@ -470,6 +494,10 @@ private:
     bool ResolveSessionLayout(FName& OutFailure);
     void UpdateTeamVisibility();
     void ApplyLocalFogPresentation();
+    void UpdateLocalFogKnowledge();
+    void ResetLocalFogKnowledge(const TCHAR* Reason);
+    void ClearLocalContacts(const TCHAR* Reason);
+    bool IsLocalContact(const APolitikaPrototypeUnit* Unit) const;
     uint32 GetMaxRemoteHumans() const;
     void InitializeObservedMatch();
     void ApplyObservedPresentationToUnits();
@@ -494,6 +522,13 @@ private:
     bool bAwaitingNetworkParticipants = false;
     bool bObservedContentReady = false;
     bool bMapPresentationApplied = false;
+    politika::rules::FogMap LocalFog;
+    politika::rules::ContactMemory LocalContacts;
+    uint64 LocalFogGeneration = 0;
+    bool bLocalFogInitialized = false;
+    double LastLocalFogSeconds = 0.0;
+    double LastLocalFogLogSeconds = 0.0;
+    float LocalFogGroundZ = 0.0f;
     FTimerHandle NetworkReturnTimer;
     FTimerHandle DedicatedSessionTimer;
     FName DedicatedCloseReason;
@@ -531,6 +566,7 @@ private:
     friend class FPolitikaMultiplayerDedicatedHostingTest;
     friend class FPolitikaMultiplayerShotCueRedactionTest;
     friend struct FPolitikaMultiplayerFixture;
+    friend class FPolitikaMultiplayerFogMemoryTest;
     // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
     bool bTestDedicatedHosting = false;
     // Automation-only: record each shot cue decision instead of sending the client RPC
@@ -759,6 +795,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerResultAndCleanupTest;
     friend class FPolitikaMultiplayerFogOfWarTest;
     friend struct FPolitikaMultiplayerFixture;
+    friend class FPolitikaMultiplayerFogMemoryTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -843,12 +880,17 @@ public:
     APolitikaPrototypeHUD();
     void AttachMatch(APolitikaPrototypeMatch* InMatch);
     virtual void DrawHUD() override;
+    static constexpr float FogDarknessExplored = 0.45f;
+    static constexpr float FogDarknessUnexplored = 0.78f;
+    static constexpr double FogSkirtCm = 30000.0;
     // Only the owning controller's own correlated outcomes reach this HUD.
     void ShowCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     void ShowLocalFeedback(const FString& Feedback) { CommandFeedback = Feedback; }
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     FString CommandFeedback;
+    void DrawLocalFog(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch);
+    void DrawLastKnownContacts(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch, float UiScale);
 };
 
 UCLASS()

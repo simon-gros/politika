@@ -1,5 +1,6 @@
 #include "Rules.h"
 #include "Metrics.h"
+#include "Fog.h"
 
 #include <cassert>
 #include <iterator>
@@ -353,6 +354,61 @@ int main() {
     assert(balance.crude_oil == 7 && balance.natural_gas == 3);
     assert(!TrySpend(balance, {0, 0, 2}));
     assert(balance.processed_nuclear == 1);
+
+    // Viewer-side fog: the current mask comes only from the viewer team's own sources;
+    // explored terrain persists after vision leaves; other teams' sources are ignored.
+    {
+        FogMap fog({{-500, -500}, {500, 500}, 100});
+        assert(fog.Columns() == 10 && fog.Rows() == 10 && fog.Count(FogCell::Unexplored) == 100);
+        const VisionSource Near[] = {{kTeamA, {-50, -50}, 100}, {kTeamB, {450, 450}, 400}};
+        fog.Update(kTeamA, Near);
+        assert(fog.At(4, 4) == FogCell::Visible && fog.At(0, 0) == FogCell::Unexplored);
+        assert(fog.At(9, 9) == FogCell::Unexplored);               // team B's sight is not ours
+        const std::size_t Seen = fog.Count(FogCell::Visible);
+        assert(Seen == 5);                                         // own cell + 4 neighbours at 100 cm
+        const VisionSource Moved[] = {{kTeamA, {450, -450}, 100}};
+        fog.Update(kTeamA, Moved);
+        assert(fog.At(4, 4) == FogCell::Explored && fog.At(9, 0) == FogCell::Visible);
+        assert(fog.Count(FogCell::Explored) == Seen);
+        fog.Update(kNoTeam, Moved);                                // an unseated viewer sees nothing
+        assert(fog.Count(FogCell::Visible) == 0);
+        FogMap invalid({{0, 0}, {0, 10}, 100});
+        assert(invalid.Columns() == 0 && invalid.Count(FogCell::Visible) == 0);
+    }
+
+    // Last-known contacts: recorded only for contacts last seen alive, replaced by the
+    // live entity when it is received again, and cleared as revealed only when the
+    // remembered spot is clearly inside the viewer's own sight (radius minus margin).
+    {
+        ContactMemory memory;
+        using W = ContactMemory::Withdrawal;
+        assert(memory.Withdrawn({0, 2, kTeamB, {0, 0}, 1}, true) == W::Ignored);
+        assert(memory.Withdrawn({7, 2, kTeamB, {1000, 0}, 10}, true) == W::Recorded);
+        assert(memory.Withdrawn({7, 2, kTeamB, {1100, 0}, 20}, true) == W::Recorded);  // updated, not duplicated
+        assert(memory.Contacts().size() == 1 && memory.Find(7)->position.x == 1100 && memory.Find(7)->last_seen_ms == 20);
+        assert(memory.Withdrawn({8, 2, kTeamB, {0, 900}, 30}, false) == W::Ignored);   // seen dying: nothing kept
+        assert(memory.Withdrawn({9, 0, kUnalignedTeam, {-900, 0}, 40}, true) == W::Recorded);
+        assert(memory.Withdrawn({9, 0, kUnalignedTeam, {-900, 0}, 41}, false) == W::ForgottenDead);
+        assert(memory.Reobserved(7) && !memory.Reobserved(7) && memory.Contacts().empty());
+
+        assert(memory.Withdrawn({7, 2, kTeamB, {1000, 0}, 50}, true) == W::Recorded);
+        std::size_t Cleared = 0;
+        const auto Count = [&Cleared](const LastKnownContact&) { ++Cleared; };
+        const VisionSource Edge[] = {{kTeamA, {0, 0}, 1100}};          // inside radius, inside margin band
+        memory.ClearRevealed(kTeamA, Edge, Count);
+        assert(Cleared == 0 && memory.Contacts().size() == 1);
+        const VisionSource Enemy[] = {{kTeamB, {1000, 0}, 1200}};       // the contact's own team does not reveal for us
+        memory.ClearRevealed(kTeamA, Enemy, Count);
+        assert(Cleared == 0);
+        const VisionSource Close[] = {{kTeamA, {0, 0}, 1150}};          // 1150 - 150 = 1000: exactly clear
+        memory.ClearRevealed(kTeamA, Close, Count);
+        assert(Cleared == 1 && memory.Contacts().empty());
+
+        assert(memory.Withdrawn({3, 2, kTeamB, {5, 5}, 60}, true) == W::Recorded);
+        memory.Clear(Count);
+        assert(Cleared == 2 && memory.Contacts().empty());
+        static_assert(ContactClearReasonName(ContactClearReason::Revealed) == "revealed");
+    }
 
     // Faction nuclear permissions are independent of ownership and unit count.
     static_assert(CanRefineNuclear(Faction::AtlanticConcord));
