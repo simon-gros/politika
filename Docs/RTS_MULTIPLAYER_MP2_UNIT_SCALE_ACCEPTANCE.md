@@ -2,9 +2,9 @@
 
 **Date:** 29 October 2026 · **Scope:** the sixth MP-2 increment of [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) §9. The [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md) closed audit finding F36 at fixture scale only (5–9 units) and left "unit-scale budgets" open. This increment measures per-connection bandwidth and authoritative step cost at RTS unit counts (52 to 802 units) in packaged dedicated sessions. It also supplies the measurement that [Unit Specification Framework](UNIT_SPECIFICATION_FRAMEWORK.md) decision **U-12** (technical per-participant entity cap) waits for.
 
-**Outcome: IMPLEMENTED; packaged measurement PASS for the stated scope, with two new open findings.**
+**Outcome: IMPLEMENTED; packaged measurement PASS for the stated scope. Finding F44 was found and mitigated the same day (§G); F45 is open.**
 - Every run spawned the requested units, admitted every order, replicated exactly what each team sees, kept shot cues fog-safe, and stayed inside the 50 ms step budget at p99, with no catch-up frames.
-- **F44 (open):** per-unit movement replication fills the engine's 100 KB/s per-connection send rate at about 400 units in a converged fight. The headroom gate fails at 1v1 × 200, 2v2 × 100 and 2v2 × 200 per seat. These are the three FAIL rows in §D.
+- **F44 (mitigated in `af643d0`):** per-unit movement replication filled the engine's default 100 KB/s per-connection send rate at about 400 units in a converged fight. The headroom gate failed at 1v1 × 200, 2v2 × 100 and 2v2 × 200 per seat (the three FAIL rows in §D). With the send rate raised to 400 KB/s, all 65 checks pass, up to 802 units (§G). Listen-host upload and per-unit cost remain open.
 - **F45 (open):** the step that admits a whole-army order spends about 30–70 µs per order on route queries. At 800 orders that one step takes 56 ms, longer than one 50 ms step.
 - No gameplay, replicated state or RPC changed. `network_protocol` stays **2**. All new code is Development-only (`!UE_BUILD_SHIPPING`).
 
@@ -124,8 +124,8 @@ Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_R
 | Harness: `cargo fmt --check`, `cargo test --bin rts_multiplayer` | PASS; 10/10 unit tests | — |
 | `--unit-scale` refusal (201 per seat) | PASS | `final-9212978/unit-scale/invalid-201/` |
 | `--unit-scale` 1v1 and 2v2 × 25 / 50 / 100 / 200 per seat | 62 PASS, 3 FAIL. All three FAILs are `UNITSCALE-NET-HEADROOM` at 1v1 × 200, 2v2 × 100 and 2v2 × 200 (F44). Every other check passes in all eight runs. The runner exits 1 because of those FAILs. | `final-9212978/unit-scale.out`, `unit-scale/` |
-| Automation, full `Politika` suite | REGRESSION_PENDING | `automation-all/` |
-| Regression matrix (listen and dedicated layouts, lag/loss, engagement, fog memory, MP-3, MP-1, offline PAC-10 and participant authority) | REGRESSION_PENDING | `final-9212978/summary.txt` |
+| Automation, full `Politika` suite (Editor built from `9212978`) | PASS 36/36, exit 0, including the updated `Politika.Bootstrap.LaunchOptions`. The 77 warnings are identical to the F43 baseline (same message set). | `automation-all/` |
+| Regression matrix (listen and dedicated layouts, lag/loss, engagement, fog memory, MP-3, MP-1, offline PAC-10 and participant authority) | PASS. Listen layouts 74/74 twice and lag/loss 51/51; dedicated layouts 74/74, 1v1 20/20 and lag/loss 47/47; engagement 9/9; fog memory 7/7; MP-3 23/23; MP-1 18/18; offline participant authority and PAC-10 PASS on the first attempt. The only non-PASS rows are the designed NOT_RUNs (no `--legacy-client`; 1v1 has no allies), as in the F43 baseline. | `final-9212978/summary.txt` |
 
 ## E. Identity and reproduction
 
@@ -151,7 +151,7 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
 
 ## F. Findings, U-12 and next work
 
-- **F44 (open): unit movement replication saturates the per-connection send rate.**
+- **F44 (mitigated 29 Oct 2026 in `af643d0`, see §G; listen-host upload and per-unit cost still open): unit movement replication saturated the per-connection send rate.**
   - Every unit actor replicates its movement to each client whose team sees it, at the engine default update rate, limited only by the server's 30 Hz tick. That costs about 300 B/s per moving unit received.
   - The engine's default `net_speed` of 100 000 B/s is reached at about 330 units received; 80 % at about 260.
   - Candidate remedies, to be chosen against measurements:
@@ -166,7 +166,7 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
   - Candidate remedies: spread route resolution over several steps with an ordered budget per step, or share one route per group with formation offsets.
 - **U-12 measurement (owner decision).**
   - With current replication, a match whose armies converge stays under 80 % of the send rate at about 260 units in total. Measured passing points: 1v1 at 100 per seat (202 units, 54 %) and 2v2 at 50 per seat (202 units, 61 %).
-  - Proposed provisional technical cap until F44 is fixed: **50 units per participant**. That keeps 2v2 and 3v1 at or below about 200 units total. 3v1 and 2v1 are not run here (inferred from total units).
+  - Proposed provisional technical cap until F44 is fixed: **50 units per participant**. That keeps 2v2 and 3v1 at or below about 200 units total. 3v1 and 2v1 are not run here (inferred from total units). *Superseded by §G: with the 400 KB/s send rate, the proposal is 100 per participant.*
   - The step budget is not the binding limit at these counts. Bandwidth is.
 - **Not covered and next.**
   - Multi-unit selection and group commands: there is no box selection, and the 16-command intake queue would reject a large army order sent one unit at a time.
@@ -174,3 +174,35 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
   - F35 (disconnect policy beyond ending the match).
   - A Shipping server measurement.
   - This sweep under the `lag-loss` profile.
+
+## G. F44 mitigation: 400 KB/s send rate (`af643d0`)
+
+The owner chose to raise the bandwidth cap. `Config/DefaultEngine.ini` now sets the server's per-client clamp (`[/Script/OnlineSubsystemUtils.IpNetDriver] MaxClientRate` and `MaxInternetClientRate`) and the rate each client requests at login (`[/Script/Engine.Player] ConfiguredInternetSpeed` and `ConfiguredLanSpeed`) to **400 000 B/s**, up from the engine default of 100 000. This is a config change only: no code, replicated state or RPC changed, and `network_protocol` stays 2.
+
+**Identity:** packages from clean commit `af643d0`, `git_dirty=false`, protocol 2. Client `dev-af643d0/…/Politika` `e6038cab90fa1e273f8977d4bd483a25e6f6de943b71737dc81e382f59f31e5e`; server `server-af643d0/…/PolitikaServer` `924e15dc6bcabcdd2f1c5e5eeeb9070c38b320e7fc7a0e10ffc8d62c27132c9e`. Every connection in every run logged `net_speed=400000`, so the cap was in force at runtime. Evidence: `final-af643d0/`.
+
+**Unit-scale sweep: PASS 65/65** (`final-af643d0/unit-scale.out`), including the refusal check.
+
+| Layout × per seat | Units | Busiest second, 100 KB/s cap | Busiest second, 400 KB/s cap | Engage mean down, 100 → 400 KB/s | Share of new cap | Headroom |
+|---|---|---|---|---|---|---|
+| 1v1 × 100 | 202 | 54 329 | 54 570 | 32 189 → 32 224 | 14 % | PASS |
+| 1v1 × 200 | 402 | 95 759 | 96 620 | 66 312 → 66 321 | 24 % | PASS (was FAIL) |
+| 2v2 × 50 | 202 | 60 585 | 60 541 | 24 999 → 24 924 | 15 % | PASS |
+| 2v2 × 100 | 402 | 99 907 (capped) | 105 960 | 50 694 → 51 366 | 26 % | PASS (was FAIL) |
+| 2v2 × 200 | 802 | 100 910 (capped) | 201 376 | 72 227 → 102 080 | 50 % | PASS (was FAIL) |
+
+- **Below saturation nothing changed.** Runs that were under the old cap carry the same traffic within noise. 1v1 × 200 had been sitting just under the cap (95.8 KB/s, demand 96.6 KB/s).
+- **At 802 units the old cap was withholding updates.** The engagement mean rose from about 70 KB/s to about 100 KB/s per client, so roughly 30 % of unit updates had been delayed or dropped. The real busiest second is about 201 KB/s, about 250 B/s per unit.
+- **Step cost is unchanged.** 2v2 × 200 engage p99 is 22.2 ms (was 22.2 ms) and the server frame p95 is 33.55 ms. The whole-army admission step is 62.6 ms (was 56.1 ms): F45 is untouched, because it is route-query time, not bandwidth.
+- The other five checks per run pass at every scale, as in §C. Spawn, order admission, idle replication completeness, step p99 and catch-up cap, engagement and shot-cue consistency (up to 69 480 decisions) all hold.
+
+**Regression matrix at `af643d0`:** REGRESSION_PENDING (`final-af643d0/summary.txt`).
+
+**What this does not cover.**
+- **Listen-host upload.** A listen host sends to every remote client. A 2v2 host at 802 converged units would upload about 3 × 200 KB/s, roughly 4.8 Mbit/s, which many home connections cannot sustain. A dedicated server or LAN is unaffected.
+- **Real links.** Loopback has no bandwidth limit of its own, so this proves only that the engine no longer starves replication. Real-network capacity is untested.
+- **Per-unit cost.** Cost still grows linearly with units in view. 80 % of the new cap is reached at about 1 100–1 300 units. Reducing the cost per unit (lower or adaptive update rate, quantized movement, camera-distance priority) remains the F44 follow-up for listen hosts and internet play.
+
+**U-12 (owner decision), updated.**
+- Proposed provisional technical cap: **100 units per participant**. 2v2 and 3v1 then stay around 400 units, with a per-client peak of about 106 KB/s and a listen-host 2v2 upload of about 320 KB/s (≈2.5 Mbit/s).
+- 200 per participant (802 units) is packaged-qualified on a dedicated server over loopback. The binding limits there are F45's admission spike and listen-host upload, not the server step.
