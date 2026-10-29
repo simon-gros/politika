@@ -102,6 +102,7 @@ Skirmish is intended to provide self-contained battles against AI opponents, ind
 - **What it is.** A listen server plus remote clients over Unreal IP networking, server-only simulation, connection-bound seats, one command intake, and team fog of war.
 - **Layouts.** 1v1, 2v1, 3v1 and 2v2, each with the Unaligned NPC side.
 - **Qualified so far.** Two packaged Linux Development processes over loopback (1v1). Larger layouts are Automation-tested only.
+- **Dedicated server (MP-3, first increment).** A real headless `PolitikaServer` hosts the same rules with every seat remote; one server plus rendered clients pass the packaged 1v1 run over loopback, including reset/rematch and loss recovery. See [MP-3 acceptance](Docs/RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md).
 
 Public multiplayer is **not released, verified across machines, or promised for a particular release**; see the [MP-1 acceptance record](Docs/RTS_MULTIPLAYER_FOUNDATION_ACCEPTANCE.md). *Earlier wording, kept for history:* Multiplayer is **not yet implemented, verified or promised for a particular release**. The audit is the first required implementation task, with a playable two-client proof targeted before the complete skirmish/campaign (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. Offline-first campaign and skirmish must remain available without mandatory internet access, external accounts, or sign-in. This constraint does not postpone the parallel networking work.
 

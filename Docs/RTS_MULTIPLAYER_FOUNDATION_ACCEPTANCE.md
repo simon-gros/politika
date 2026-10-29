@@ -38,8 +38,8 @@ The full inventory and the F01–F42 register are in the [audit report](Reports/
 - **Fixed for MP-1.** Single-local-player authority; local-only ingress; unguarded simulation; missing replication; unit-list count leak; fog relevancy; target-existence oracle; owner-only hostility; local-only capture and winner; HUD leaks of other participants' commands; acknowledgement audio on every machine; music and map lighting only on the authority; client-side destroy; camera replication; remote menu exit mutating the match; network-failure recovery; protocol and capacity admission; disconnect termination; intake freshness; the Iris bypass; Unaligned authoring.
 - **Deferred.**
   - Cosmetic shot target points can reveal unseen third parties in 3–4-seat games (F27, MP-2).
-  - The listen host holds all actors in memory (F29, MP-3).
-  - There is no Server target (F32, MP-3).
+  - The listen host holds all actors in memory (F29; inherent to listen hosting, absent on the MP-3 dedicated server).
+  - There is no Server target (F32) — **closed by MP-3**, see the [dedicated-server record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md).
   - Client fog shading and last-seen contacts are missing (F33, MP-2).
   - The disconnect policy beyond ending the match is open (F35).
   - Bandwidth has not been measured (F36, MP-2).
@@ -129,6 +129,4 @@ All packaged verdicts in §E come from one final package pair built from commit 
   - Redacting cosmetic target points (F27).
   - Client fog shading and last-seen contacts.
   - AI-filled seats when opponent AI lands.
-- **Next MP-3.**
-  - A `PolitikaServer` target with a headless boot (no UI, audio or profile).
-  - Listen/dedicated parity for the same fixtures.
+- **MP-3 (done 29 October 2026, first increment).** A headless `PolitikaServer` target and listen/dedicated parity for the 1v1 fixture: see the [dedicated-server record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md).

@@ -38,7 +38,7 @@
 | `Source/PolitikaBootstrap/*` | Process start | Logging, version, startup issues | **Changed.** Exposes `network_protocol` from `version.json`. It already skips UI-blocking paths for commandlets and dedicated servers (lines 95, 326). |
 | `Source/PolitikaEditor/Private/PolitikaCreateShellCommandlet.cpp` | Editor only | Map and fixture authoring | **Changed.** New `-CreateMultiplayerSkirmishFixture`; it reads the canonical catalog and map without modifying them. |
 | `Source/PolitikaEditor/Private/PolitikaImport*Commandlet.cpp`, `Tests/*Navigation*` | Editor only | Asset import and navigation tests | **No change.** Never runs in a game or server process. |
-| `Source/Politika.Target.cs`, `PolitikaEditor.Target.cs`, `*.Build.cs` | Build | Targets and modules | `Politika.Build.cs` adds `EngineSettings` (recovery default map). **No Server target** (F32, MP-3). |
+| `Source/Politika.Target.cs`, `PolitikaEditor.Target.cs`, `*.Build.cs` | Build | Targets and modules | `Politika.Build.cs` adds `EngineSettings` (recovery default map). **No Server target** (F32) at the audited commit; closed by MP-3 (`PolitikaServer.Target.cs`). |
 | `Politika.uproject` | Build | Plugins | Enables `OnlineSubsystemUtils`, which provides only `IpNetDriver`. No online service is configured (F37). |
 | `Config/DefaultEngine.ini` | Every process | Engine config | Adds `LocalPlayerClassName`, IpNetDriver timeouts and `RelevantTimeout=0.25` (F06, F21, F23). `DefaultGame.ini`, `DefaultInput.ini` and `DefaultGameUserSettings.ini` are unchanged (input is local). |
 | `Content/Maps/*.umap`, `Content/Politika/{Definitions,Prototypes,Terrain,Audio}` (170 tracked assets) | Cooked into every process | Canonical content | **Unchanged** (git-clean after every fixture run). Unit placements resolve to stable archetype IDs; the replicated `ArchetypeId` lets clients load presentation locally. |
@@ -107,10 +107,10 @@ Path trace (every layout): mouse/keyboard on the local controller → `APolitika
 | F26 | Replication system | Iris would ignore `IsNetRelevantFor` | Change now | `GetDesiredReplicationSystem` → Generic. | Test asserts `!IsUsingIrisReplication()` |
 | F27 | Shot/grenade multicast target point | Can reveal an unseen third party in 3–4 seat games | **MP-2** | Send target entity only when observed, or a direction-only cue. | — |
 | F28 | Grenade debug draws on the listen host (non-Shipping) | Draws hidden positions on the host | Later (development only) | Gate by host team vision when a host-fog playtest needs it. | — |
-| F29 | Listen host process memory | The host holds all actors (inherent) | **MP-3** | Hidden enemies are hidden on the host via local component flags; a dedicated server removes the advantage. | Packaged host-hidden samples |
+| F29 | Listen host process memory | The host holds all actors (inherent) | **MP-3** | Hidden enemies are hidden on the host via local component flags; a dedicated server removes the advantage. **MP-3: the dedicated server has no player process (listen remains inherent).** | Packaged host-hidden samples; MP-3 dedicated record |
 | F30 | `StableId` | Small sequential integers (guessable) | No change | The no-oracle rejection makes guessing worthless. | Packaged ID sweep probe |
 | F31 | Development acceptance harnesses | Standalone assumptions | No change | Skipped in network sessions. | — |
-| F32 | Targets | No Server target | **MP-3** | Add `PolitikaServer.Target.cs`; headless parity. | — |
+| F32 | Targets | No Server target | **MP-3 — CLOSED 29 Oct 2026** | `PolitikaServer.Target.cs` (TargetType.Server), packaged headless `LinuxServer` boot and 1v1 parity. | [MP-3 record](../RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md) |
 | F33 | Client fog presentation | No fog overlay or last-seen ghosts | **MP-2** | Hidden units are simply absent on clients; shading and remembered contacts are the next increment. | — |
 | F34 | Unaligned side | Present only as an authority record; no authored units | Change now (schema/runtime) | `UnalignedPlacements`, owner 0, `kUnalignedTeam`, its own vision, never seated, neutral to auto-engagement. The canonical offline map is unchanged and needs an owner content decision. | Rules tests; FogOfWar test; packaged layout check |
 | F35 | Mid-match disconnect policy | — | MP-2/MP-4 | MP-1 ends the match; AI takeover, grace and reconnect are deferred. | — |

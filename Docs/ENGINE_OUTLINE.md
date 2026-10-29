@@ -609,7 +609,8 @@ Also test a **valid asset rename or display-label change with unchanged gameplay
 **Priority: START NOW.** This track is a peer of current Stage 4 integration, not a Stage 6 optional extension. Begin the [mandatory whole-repository code/asset retrofit audit](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1) and resolve blocking server authority, participant identity, presentation and per-client observation seams (MP-0). Next, build/execute a genuine listen-server plus remote-client two-human move/attack fixture (MP-1) using the sole 20 Hz coordinator, with server-only simulation, connection-bound command ownership and regression tests. Create/verify a dedicated Server target and headless parity early (MP-3) and expand active 2–4-player workloads/network emulation as their gameplay prerequisites appear (MP-2). Do not wait for a full Stage 4F skirmish, advanced AI, final factions, UI polish or platform storefront work before MP-1. Do not expand MP-1 to all of those systems. **Status update (29 October 2026):**
 - **MP-0** baseline audit: complete.
 - **MP-1**: implemented and packaged-qualified for two-process 1v1 loopback; see the acceptance record.
-- **MP-2 and MP-3**: open.
+- **MP-3**: first increment implemented (29 Oct 2026): real headless `PolitikaServer` target, all-remote seats, session reset, packaged 1v1 parity; see the [MP-3 record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md). A Shipping server and 3–4-client dedicated runs remain open.
+- **MP-2**: open (next: packaged 3–4-process layouts, network emulation, bandwidth/server-step measurements).
 
 The offline Stage 4A–4F exit gates remain intact; [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) owns MP scope/evidence.
 

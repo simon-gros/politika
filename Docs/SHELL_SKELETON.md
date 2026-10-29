@@ -68,7 +68,7 @@ If a desktop launcher cannot resolve the project's `5.8` association to a locall
 
 An explicit UE `-GameUserSettingsINI=…` override is a development-only external destination: the shell does not reset it. Combining it with startup safe mode/reset produces an early actionable failure (exit 70) without changing the original. Runtime safe/reset controls are disabled for that destination. No `-headless` flag is invented.
 
-`-nullrhi` is a **client diagnostic mode**, not a server: it can initialize a local profile/player but constructs no shell widgets. Dedicated-server guards are present, but there is **no Server target** and no server support claim. Multiplayer has been adopted as a future design direction, with a mandatory [existing-code audit and MP-0–MP-4 staged plan](RTS_MULTIPLAYER_ARCHITECTURE.md); the real server build/launch/package is **an early high-priority MP-3 deliverable**, following MP-0 audit and the minimal MP-1 listen-server proof; none has yet passed.
+`-nullrhi` is a **client diagnostic mode**, not a server: it can initialize a local profile/player but constructs no shell widgets. Dedicated-server guards are present. *Update 29 October 2026:* a real `PolitikaServer` Server target now exists and its headless Development package is qualified for the scoped MP-3 run ([MP-3 record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md)); the shell itself is never constructed on it. *Original statement:* there was **no Server target** and no server support claim. Multiplayer has been adopted as a future design direction, with a mandatory [existing-code audit and MP-0–MP-4 staged plan](RTS_MULTIPLAYER_ARCHITECTURE.md); the real server build/launch/package is **an early high-priority MP-3 deliverable**, following MP-0 audit and the minimal MP-1 listen-server proof; none has yet passed.
 
 ## Storage and recovery boundaries
 
@@ -111,7 +111,7 @@ The 14 checks cover first-run/restart identity, explicit-map routing, byte-prese
 
 The Linux Development shell has been built and checked with the locally installed UE 5.8.3 toolchain. See the delivery record below for actual build/artifact outcomes. Do not infer gameplay acceptance from compilation or shell checks.
 
-Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance is **prioritized immediately after the MP-1 prerequisite**, but remains NOT_RUN until a real Server target and headless package are tested. Shell acceptance itself does not cover RTS simulation, campaign or skirmish; the later bounded RTS prototype is documented in the [vertical-slice milestone record](RTS_VERTICAL_SLICE_MILESTONE.md).
+Gamepad/touch navigation, translations, physical display/driver coverage and non-Linux targets need separate qualification. Server acceptance: a real Server target and headless Linux Development package were tested on 29 October 2026 (MP-3 first increment, [record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md)); a Shipping server and other platforms remain NOT_RUN. Shell acceptance itself does not cover RTS simulation, campaign or skirmish; the later bounded RTS prototype is documented in the [vertical-slice milestone record](RTS_VERTICAL_SLICE_MILESTONE.md).
 
 ## Verified delivery — 27 October 2026
 
@@ -155,4 +155,4 @@ All interaction fixtures used `-UserDir=` under `Saved/ShellChecks/`; no player 
 
 Screenshots and logs: `Saved/ShellChecks/ui-recovered-20261027/` (4K menu/sandbox, 720p safe mode, reset confirmation/cancellation/completion, normal/recovery run logs) and `Saved/ShellChecks/ui-profile-recovered-20261027/` (invalid profile, successful retry, diagnostics and run log). These and the package are local ignored artifacts, not files published with the source repository.
 
-**Handoff:** shell build steps 1–4 are delivered for the tested Linux environment. Server step 5 is **an immediate high-priority next-phase task (MP-3)**, not a post-campaign extension; there is currently no Server target. Gameplay, campaign persistence, performance, full accessibility/input coverage, clean-machine installs and other platforms remain separate milestones. Launch the local archive with `Saved/Packages/Linux/Politika.sh`.
+**Handoff:** shell build steps 1–4 are delivered for the tested Linux environment. Server step 5 (MP-3) has its first increment delivered: `PolitikaServer` target, headless Development package and scoped parity evidence in the [MP-3 record](RTS_MULTIPLAYER_DEDICATED_SERVER_ACCEPTANCE.md). Gameplay, campaign persistence, performance, full accessibility/input coverage, clean-machine installs and other platforms remain separate milestones. Launch the local archive with `Saved/Packages/Linux/Politika.sh`.
