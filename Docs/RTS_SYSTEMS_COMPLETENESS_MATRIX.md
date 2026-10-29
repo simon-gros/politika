@@ -36,6 +36,10 @@ A real-time strategy game needs: (1) authoritative, progressing world state; (2)
 | Performance, density and platforms | Repeatability fixtures; no representative scale/device qualification | [Performance](PERFORMANCE_AND_RELEASE_GATES.md), [Platforms](PLATFORM_SUPPORT.md) | 4F baseline, 6 release |
 | Multiplayer, replication, spectators, reconnect | No supported multiplayer release contract | [Engine Outline](ENGINE_OUTLINE.md#6-performance-determinism-and-networking-posture) | Optional future, not 4F |
 
+## 2A. Cross-genre quality comparison — research only
+
+The [Cross-Genre RTS Comparative Study](RTS_CROSS_GENRE_COMPARATIVE_STUDY.md) examines classical industrial RTS, asymmetric competitive play, macro-scale armies, tactical wargames, political/economic RTS hybrids and alternative input/AI approaches. It distinguishes the current bounded source/runtime implementation from the proposed completed game, and explicitly **does not** assert that POLITIKA currently surpasses any reference game. The companion [Competitive Benchmark Register](RTS_COMPETITIVE_BENCHMARK_REGISTER.md) maps CMP-01–CMP-17 to existing owners, test evidence and deferred dependencies. The CMP identifiers are **research cases, not newly passed tests or additional Stage 4F gates**. Read current acceptance from the owning records; this matrix's original 29 October source snapshot is preserved above.
+
 ## 3. High-impact conceptual omissions closed by accompanying specifications
 
 The [RTS HUD Architecture](RTS_HUD_ARCHITECTURE.md) closes the *design-documentation* gap for a cross-system HUD ontology and implementation plan: the existing UI is still a bounded prototype, and none of its proposed minimap, formations, research, talents or intelligence presentations are thereby declared implemented.
