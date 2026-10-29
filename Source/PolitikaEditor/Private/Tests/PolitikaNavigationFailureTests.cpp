@@ -193,4 +193,122 @@ bool FPolitikaUnprojectableDestinationAutomationTest::RunTest(const FString& Par
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaProjectionDisplacementAutomationTest,
+    "Politika.RTS.Navigation.SavedMapExcessiveProjectionDisplacementFailsClosed",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaProjectionDisplacementAutomationTest::RunTest(const FString& Parameters)
+{
+    using namespace politika::rules;
+    using namespace PolitikaProjectionDisplacementFixture;
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(Level);
+    if (!TestNotNull(TEXT("Saved projection-displacement fixture loads"), World)) return false;
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    ANavigationData* Data = Nav ? Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+    TestTrue(TEXT("Ready saved Recast data is present"), Nav && Data && !Nav->IsNavigationBuildInProgress());
+    FNavLocation ProjectedStart, ProjectedGoal;
+    const bool bOrigin = Nav && Data && Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data);
+    const bool bGoal = Nav && Data && Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data);
+    const double Displacement = bGoal ? FVector::Dist(ProjectedGoal.Location, Goal) : 0.0;
+    TestTrue(TEXT("Unit origin projects successfully"), bOrigin);
+    TestTrue(FString::Printf(TEXT("In-bounds ground goal projects >150 cm away (actual=%.9f)"), Displacement),
+        bGoal && Displacement > 150.0);
+    if (!Nav || !Data || !bOrigin || !bGoal || Displacement <= 150.0) return false;
+
+    AActor* Platform = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+        if (It->ActorHasTag(PlatformTag)) Platform = *It;
+    FHitResult GroundHit;
+    const bool bGround = World->LineTraceSingleByChannel(GroundHit, Goal + FVector(0, 0, 300),
+        Goal - FVector(0, 0, 300), ECC_Visibility);
+    TestTrue(TEXT("Requested XY is on the authored elevated ground surface"), bGround && GroundHit.GetActor() == Platform
+        && FMath::Abs(GroundHit.ImpactPoint.Z - 200.0) <= 5.0);
+    AddInfo(FString::Printf(TEXT("requested=%s projected=%s ground=%s horizontal=%.9f vertical=%.9f distance=%.9f"),
+        *Goal.ToString(), *ProjectedGoal.Location.ToString(), *GroundHit.ImpactPoint.ToString(),
+        FVector::Dist2D(ProjectedGoal.Location, Goal), FMath::Abs(ProjectedGoal.Location.Z - Goal.Z), Displacement));
+    FPathFindingQuery ConnectivityQuery(nullptr, *Data, ProjectedStart.Location, ProjectedGoal.Location);
+    ConnectivityQuery.SetAllowPartialPaths(false);
+    ConnectivityQuery.SetRequireNavigableEndLocation(true);
+    const FPathFindingResult Connectivity = Nav->FindPathSync(ConnectivityQuery);
+    AddInfo(FString::Printf(TEXT("Ramp connectivity: result=%u partial=%d path_valid=%d points=%d start=%s goal=%s"),
+        static_cast<uint32>(Connectivity.Result), Connectivity.IsPartial() ? 1 : 0,
+        Connectivity.Path.IsValid() ? 1 : 0,
+        Connectivity.Path.IsValid() ? Connectivity.Path->GetPathPoints().Num() : 0,
+        *ProjectedStart.Location.ToString(), *ProjectedGoal.Location.ToString()));
+    TestTrue(FString::Printf(TEXT("Raised target is connected by the authored ramp (result=%u partial=%d points=%d)"),
+        static_cast<uint32>(Connectivity.Result), Connectivity.IsPartial() ? 1 : 0,
+        Connectivity.Path.IsValid() ? Connectivity.Path->GetPathPoints().Num() : 0),
+        Connectivity.Result == ENavigationQueryResult::Success && Connectivity.Path.IsValid()
+        && !Connectivity.Path->IsPartial() && !Connectivity.Path->GetPathPoints().IsEmpty());
+
+    auto* Match = World->SpawnActor<APolitikaPrototypeMatch>();
+    auto* Unit = World->SpawnActor<APolitikaPrototypeUnit>(Start, FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("Coordinator spawned"), Match) || !TestNotNull(TEXT("Unit spawned"), Unit)) return false;
+    Match->SetActorTickEnabled(false);
+    Unit->Configure(9916, 1, FText::FromString(TEXT("Projection displacement fixture")), 100, 210, 250, 10, 0.5f,
+        true, nullptr, FVector(0.85f), FLinearColor::White);
+    Unit->SetActorLocation(Start);
+    Match->Units = {Unit};
+    Match->MapDefinition = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Navigation/DA_ProjectionDisplacement.DA_ProjectionDisplacement"));
+    Match->MatchGeneration = 993;
+    Match->LocalRuntimePlayerId = 1;
+    Match->PlayableMin = FVector2D(-2000, -2000);
+    Match->PlayableMax = FVector2D(2000, 2000);
+    Match->bContentReady = true;
+    const bool bActive = Match->TransitionLifecycle(MatchPhase::SetupValidated)
+        && Match->TransitionLifecycle(MatchPhase::Loading)
+        && Match->TransitionLifecycle(MatchPhase::Starting)
+        && Match->TransitionLifecycle(MatchPhase::Active);
+    TestTrue(TEXT("Coordinator reaches Active through legal lifecycle transitions"), bActive);
+    auto& Trace = Match->NavigationFailureAcceptance;
+    Trace.bRunning = true;
+    Trace.bValid = true;
+    Trace.bDestinationProjectionCase = true;
+    Trace.bExcessiveProjectionCase = true;
+    Trace.Unit = Unit;
+    Trace.Start = Start;
+    Trace.Goal = Goal;
+    Trace.Sequence = Match->NextCommandSequence;
+    int32 AcceptedMoves = 0, NavigationFailures = 0, Arrivals = 0;
+    Match->GameplayEventPublished.AddLambda([&](const GameplayEvent& Event)
+    {
+        if (const auto* Command = std::get_if<CommandOutcomeEvent>(&Event))
+            AcceptedMoves += Command->order == OrderKind::Move && Command->accepted ? 1 : 0;
+        if (const auto* Changed = std::get_if<OrderChangedEvent>(&Event))
+        {
+            NavigationFailures += Changed->previous_end == OrderEndReason::NavigationFailed ? 1 : 0;
+            Arrivals += Changed->previous_end == OrderEndReason::Arrived ? 1 : 0;
+        }
+    });
+    Match->SubmitMove(1, Unit, Goal);
+    Match->Tick(0.05f);
+    TestEqual(TEXT("Typed Move is accepted once before navigation failure"), AcceptedMoves, 1);
+    TestEqual(TEXT("DestinationNotNavigable publishes once"), NavigationFailures, 1);
+    TestEqual(TEXT("Rejected route never arrives"), Arrivals, 0);
+    TestTrue(TEXT("Production guard observed both projections and skipped pathfinding"),
+        Match->NavigationFailureAcceptance.ProjectionChecks == 2
+        && Match->NavigationFailureAcceptance.bOriginProjected
+        && Match->NavigationFailureAcceptance.bGoalProjected
+        && Match->NavigationFailureAcceptance.ProjectionDisplacement > 150.0
+        && Match->NavigationFailureAcceptance.Queries == 0
+        && Match->NavigationFailureAcceptance.LastFailure == TEXT("DestinationNotNavigable"));
+    TestTrue(TEXT("Failure retires route and leaves unit stationary"), Unit->IsAlive()
+        && Unit->GetActorLocation().Equals(Start, 0.001) && Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop
+        && Unit->NavigationWaypoints.IsEmpty() && Unit->NavigationWaypointIndex == 0
+        && Unit->NavigationOrderSequence == 0 && Unit->NavigationMatchGeneration == 0);
+    for (int32 Step = 0; Step < 20; ++Step) Match->Tick(0.05f);
+    TestTrue(TEXT("Twenty following fixed steps remain inert and Active"), Match->Lifecycle.IsActive()
+        && Unit->GetActorLocation().Equals(Start, 0.001));
+    TestEqual(TEXT("No duplicate failure event"), NavigationFailures, 1);
+    TestEqual(TEXT("No delayed arrival"), Arrivals, 0);
+    TestTrue(TEXT("Production acceptance observer records actual successful excessive projection and no route query"),
+        !Trace.bRunning && Trace.bValid && Trace.ProjectionChecks == 2
+        && Trace.bOriginProjected && Trace.bGoalProjected && Trace.ProjectionDisplacement > 150.0
+        && Trace.Queries == 0 && Trace.FailureEvents == 1 && Trace.Arrivals == 0 && Trace.Samples == 21);
+    Match->GameplayEventPublished.Clear();
+    UEditorLoadingAndSavingUtils::LoadMap(TEXT("/Game/Maps/MainMenu"));
+    return true;
+}
+
 #endif

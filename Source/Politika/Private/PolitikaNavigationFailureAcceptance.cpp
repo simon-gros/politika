@@ -3,6 +3,7 @@
 
 #if !UE_BUILD_SHIPPING
 #include "PolitikaNavigationFailureFixture.h"
+#include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -18,19 +19,25 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
     auto& Trace = NavigationFailureAcceptance;
     FString Mode;
     if (!FParse::Value(FCommandLine::Get(), TEXT("PolitikaNavigationFailure="), Mode)
-        || (Mode != TEXT("Disconnected") && Mode != TEXT("UnprojectableDestination"))
+        || (Mode != TEXT("Disconnected") && Mode != TEXT("UnprojectableDestination")
+            && Mode != TEXT("ProjectionDisplacement"))
         || !MapDefinition || !Lifecycle.IsActive())
     {
         FinishNavigationFailureAcceptance(TEXT("invalid_selector_or_match"));
         return;
     }
-    const bool bProjectionCase = Mode == TEXT("UnprojectableDestination");
-    const TCHAR* BarrierTag = bProjectionCase ? PolitikaUnprojectableDestinationFixture::ExclusionTag
+    const bool bExcessiveProjectionCase = Mode == TEXT("ProjectionDisplacement");
+    const bool bProjectionCase = Mode == TEXT("UnprojectableDestination") || bExcessiveProjectionCase;
+    const TCHAR* BarrierTag = bExcessiveProjectionCase ? PolitikaProjectionDisplacementFixture::ExclusionTag
+        : bProjectionCase ? PolitikaUnprojectableDestinationFixture::ExclusionTag
         : PolitikaNavigationFailureFixture::BarrierTag;
     Trace.bDestinationProjectionCase = bProjectionCase;
+    Trace.bExcessiveProjectionCase = bExcessiveProjectionCase;
     Trace.Unit = Units.IsEmpty() ? nullptr : Units[0];
-    Trace.Start = bProjectionCase ? PolitikaUnprojectableDestinationFixture::Start : PolitikaNavigationFailureFixture::Start;
-    Trace.Goal = bProjectionCase ? PolitikaUnprojectableDestinationFixture::Goal : PolitikaNavigationFailureFixture::Goal;
+    Trace.Start = bExcessiveProjectionCase ? PolitikaProjectionDisplacementFixture::Start
+        : bProjectionCase ? PolitikaUnprojectableDestinationFixture::Start : PolitikaNavigationFailureFixture::Start;
+    Trace.Goal = bExcessiveProjectionCase ? PolitikaProjectionDisplacementFixture::Goal
+        : bProjectionCase ? PolitikaUnprojectableDestinationFixture::Goal : PolitikaNavigationFailureFixture::Goal;
     const FVector Start = Trace.Start;
     const FVector Goal = Trace.Goal;
     APolitikaPrototypeUnit* Unit = Trace.Unit.Get();
@@ -42,8 +49,11 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
         && FVector::Dist(ProjectedStart.Location, Start) <= 80.0f;
     const bool bGoalProjectionSucceeded = Nav && Data && !Nav->IsNavigationBuildInProgress()
         && Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data);
+    const double GoalProjectionDisplacement = bGoalProjectionSucceeded
+        ? FVector::Dist(ProjectedGoal.Location, Goal) : 0.0;
     const bool bGoalProjects = bGoalProjectionSucceeded
-        && FVector::Dist(ProjectedGoal.Location, Goal) <= 80.0f;
+        && (bExcessiveProjectionCase ? GoalProjectionDisplacement > 150.0
+            : FVector::Dist(ProjectedGoal.Location, Goal) <= 80.0f);
     AActor* Barrier = nullptr;
     int32 Barriers = 0;
     for (TActorIterator<AActor> It(GetWorld()); It; ++It)
@@ -53,11 +63,14 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
     FCollisionQueryParams GroundQuery(SCENE_QUERY_STAT(NavigationFailureGround), true);
     if (Barrier) GroundQuery.AddIgnoredActor(Barrier);
     const bool bGroundHit = GetWorld()->LineTraceSingleByChannel(GroundHit,
-        Goal + FVector(0, 0, 150.0f), Goal - FVector(0, 0, 150.0f), ECC_Visibility, GroundQuery)
+        Goal + FVector(0, 0, bExcessiveProjectionCase ? 300.0f : 150.0f),
+        Goal - FVector(0, 0, bExcessiveProjectionCase ? 300.0f : 150.0f), ECC_Visibility, GroundQuery)
         && GroundHit.GetActor()
         && (GroundHit.GetActor()->ActorHasTag(TEXT("PolitikaPrototypeGround"))
+            || GroundHit.GetActor()->ActorHasTag(PolitikaProjectionDisplacementFixture::PlatformTag)
             || GroundHit.GetActor()->GetClass()->GetName().StartsWith(TEXT("Landscape")))
-        && FVector::Dist(GroundHit.ImpactPoint, Goal) <= 5.0f;
+        && (bExcessiveProjectionCase ? FMath::Abs(GroundHit.ImpactPoint.Z - 200.0) <= 5.0
+            : FVector::Dist(GroundHit.ImpactPoint, Goal) <= 5.0f);
     const bool bInBounds = Start.X >= PlayableMin.X && Start.X <= PlayableMax.X
         && Start.Y >= PlayableMin.Y && Start.Y <= PlayableMax.Y
         && Goal.X >= PlayableMin.X && Goal.X <= PlayableMax.X
@@ -67,7 +80,19 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
         && Unit->GetActorLocation().Equals(Start, 0.01)
         && Unit->NavigationWaypoints.IsEmpty() && Unit->NavigationWaypointIndex == 0
         && Unit->NavigationOrderSequence == 0 && Unit->NavigationMatchGeneration == 0;
-    const bool bGeometryValid = bProjectionCase
+    AActor* Platform = nullptr;
+    int32 Platforms = 0;
+    if (bExcessiveProjectionCase)
+    {
+        for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+            if (It->ActorHasTag(PolitikaProjectionDisplacementFixture::PlatformTag)) { Platform = *It; ++Platforms; }
+    }
+    const FBox PlatformBounds = Platform ? Platform->GetComponentsBoundingBox(true) : FBox(ForceInit);
+    const bool bGeometryValid = bExcessiveProjectionCase
+        ? Platforms == 1 && Platform && bGroundHit
+            && Goal.X >= PlatformBounds.Min.X && Goal.X <= PlatformBounds.Max.X
+            && Goal.Y >= PlatformBounds.Min.Y && Goal.Y <= PlatformBounds.Max.Y
+        : bProjectionCase
         ? Barriers == 1 && Barrier && bGroundHit
             && Goal.X >= BarrierBounds.Min.X && Goal.X <= BarrierBounds.Max.X
             && Goal.Y >= BarrierBounds.Min.Y && Goal.Y <= BarrierBounds.Max.Y
@@ -75,7 +100,8 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
             && Cast<AStaticMeshActor>(Barrier)
             && Cast<AStaticMeshActor>(Barrier)->GetStaticMeshComponent()->CanEverAffectNavigation()
             && BarrierBounds.Min.Y < PlayableMin.Y && BarrierBounds.Max.Y > PlayableMax.Y;
-    Trace.bValid = bStartProjects && (bProjectionCase ? !bGoalProjectionSucceeded : bGoalProjects)
+    Trace.bValid = bStartProjects && (bExcessiveProjectionCase ? bGoalProjects
+        : bProjectionCase ? !bGoalProjectionSucceeded : bGoalProjects)
         && bInBounds && bProfile && bCleanUnit && bGeometryValid && Lifecycle.IsActive() && Data;
     if (!Trace.bValid)
     {
@@ -86,6 +112,31 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
     Trace.Sequence = NextCommandSequence;
     if (bProjectionCase)
     {
+        if (bExcessiveProjectionCase)
+        {
+            const FVector2D MapPosition(Goal.X - PlayableMin.X, Goal.Y - PlayableMin.Y);
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("NAV_FAILURE_COORDINATES raw_xy=%.6f,%.6f map_relative_xy=%.6f,%.6f requested=%.6f,%.6f,%.6f ground_hit=%.6f,%.6f,%.6f"),
+                Goal.X, Goal.Y, MapPosition.X, MapPosition.Y, Goal.X, Goal.Y, Goal.Z,
+                GroundHit.ImpactPoint.X, GroundHit.ImpactPoint.Y, GroundHit.ImpactPoint.Z);
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("NAV_FAILURE_FIXTURE scenario=ProjectionDisplacement map=%s level=%s generation=%llu unit=%llu owner=%u profile=%s nav=%s start=%.6f,%.6f,%.6f requested=%.6f,%.6f,%.6f ground=%.6f,%.6f,%.6f projected_origin=%.6f,%.6f,%.6f projected_goal=%.6f,%.6f,%.6f displacement=%.9f horizontal=%.9f vertical=%.9f threshold=150.000000 extent=80.000000,80.000000,180.000000 bounds_min=%.6f,%.6f bounds_max=%.6f,%.6f platform=%s runtime_generation=%d"),
+                *MapDefinition->StableId.ToString(), *GetWorld()->GetPackage()->GetName(), MatchGeneration,
+                Unit->GetStableId(), Unit->GetOwnerPlayer(), *MapDefinition->MovementProfileId.ToString(), *Data->GetPathName(),
+                Start.X, Start.Y, Start.Z, Goal.X, Goal.Y, Goal.Z, GroundHit.ImpactPoint.X,
+                GroundHit.ImpactPoint.Y, GroundHit.ImpactPoint.Z, ProjectedStart.Location.X,
+                ProjectedStart.Location.Y, ProjectedStart.Location.Z, ProjectedGoal.Location.X,
+                ProjectedGoal.Location.Y, ProjectedGoal.Location.Z, GoalProjectionDisplacement,
+                FVector::Dist2D(ProjectedGoal.Location, Goal), FMath::Abs(ProjectedGoal.Location.Z - Goal.Z),
+                PlayableMin.X, PlayableMin.Y, PlayableMax.X, PlayableMax.Y, *Platform->GetPathName(),
+                static_cast<int32>(Data->GetRuntimeGenerationMode()));
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("NAV_FAILURE_GROUND requested=%.6f,%.6f,%.6f ground_hit=1 ground=%.6f,%.6f,%.6f ground_actor=%s bounds_valid=1 nav_excluded=0 platform=%s"),
+                Goal.X, Goal.Y, Goal.Z, GroundHit.ImpactPoint.X, GroundHit.ImpactPoint.Y,
+                GroundHit.ImpactPoint.Z, *GroundHit.GetActor()->GetPathName(), *Platform->GetPathName());
+        }
+        else
+        {
         UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FAILURE_FIXTURE scenario=UnprojectableDestination map=%s level=%s generation=%llu unit=%llu owner=%u profile=%s nav=%s start=%.6f,%.6f,%.6f goal=%.6f,%.6f,%.6f origin_projected=1 goal_projected=0 extent=80.000000,80.000000,180.000000 bounds_min=%.6f,%.6f bounds_max=%.6f,%.6f exclusion=%s exclusion_min=%.6f,%.6f,%.6f exclusion_max=%.6f,%.6f,%.6f runtime_generation=%d"),
             *MapDefinition->StableId.ToString(), *GetWorld()->GetPackage()->GetName(), MatchGeneration,
             Unit->GetStableId(), Unit->GetOwnerPlayer(), *MapDefinition->MovementProfileId.ToString(), *Data->GetPathName(),
@@ -94,6 +145,7 @@ void APolitikaPrototypeMatch::BeginNavigationFailureAcceptance()
             BarrierBounds.Min.Y, BarrierBounds.Min.Z, BarrierBounds.Max.X, BarrierBounds.Max.Y,
             BarrierBounds.Max.Z, static_cast<int32>(Data->GetRuntimeGenerationMode()));
         UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FAILURE_GROUND goal=%.6f,%.6f,%.6f ground_hit=%d ground_actor=%s bounds_valid=1 nav_excluded=1 exclusion=%s"), Goal.X, Goal.Y, Goal.Z, bGroundHit ? 1 : 0, GroundHit.GetActor() ? *GroundHit.GetActor()->GetPathName() : TEXT("none"), *Barrier->GetPathName());
+        }
         SubmitMove(LocalRuntimePlayerId, Unit, Goal);
         UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FAILURE_SUBMITTED generation=%llu unit=%llu sequence=%llu participant=%u boundary_step=%llu"), MatchGeneration, Unit->GetStableId(), Trace.Sequence, LocalRuntimePlayerId, SimulationStepsExecuted);
         return;
@@ -207,8 +259,12 @@ void APolitikaPrototypeMatch::FinishNavigationFailureAcceptance(const TCHAR* Fai
         && (!Trace.bLastQueryPartial || Trace.LastPathPoints > 0 || !Trace.bLastPathValid);
     const bool bProjectionFailedClosed = Trace.ProjectionChecks == 2 && Trace.bOriginProjected
         && !Trace.bGoalProjected && Trace.Queries == 0 && Trace.LastFailure == TEXT("DestinationNotNavigable");
+    const bool bExcessiveProjectionFailedClosed = Trace.ProjectionChecks == 2 && Trace.bOriginProjected
+        && Trace.bGoalProjected && Trace.ProjectionDisplacement > 150.0
+        && Trace.Queries == 0 && Trace.LastFailure == TEXT("DestinationNotNavigable");
     const bool bPass = !Failure && Trace.bValid && Unit
-        && (Trace.bDestinationProjectionCase ? bProjectionFailedClosed : bQueryFailedClosed)
+        && (Trace.bExcessiveProjectionCase ? bExcessiveProjectionFailedClosed
+            : Trace.bDestinationProjectionCase ? bProjectionFailedClosed : bQueryFailedClosed)
         && Trace.AcceptedCommands == 1 && Trace.FailureEvents == 1 && Trace.Arrivals == 0
         && Trace.Samples == 21 && Trace.FailureStep && SimulationStepsExecuted >= Trace.FailureStep + 20
         && Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop
@@ -216,11 +272,13 @@ void APolitikaPrototypeMatch::FinishNavigationFailureAcceptance(const TCHAR* Fai
         && Unit->NavigationOrderSequence == 0 && Unit->NavigationMatchGeneration == 0
         && Unit->GetActorLocation().Equals(Trace.Start, 0.001) && Lifecycle.IsActive();
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("NAV_FAILURE_RESULT scenario=%s result=%s reason=%s generation=%llu unit=%llu sequence=%llu projection_checks=%d origin_projected=%d goal_projected=%d queries=%d query_result=%s partial=%s path_valid=%s points=%s failure_classification=%s accepted_commands=%d failure_events=%d arrivals=%d failure_step=%llu final_step=%llu inert_steps=%d retired=%d partial_probe_result=%s partial_probe_partial=%s partial_probe_path_valid=%s partial_probe_points=%s partial_probe_endpoint_error=%s partial_probe_rejection=%s partial_probe_installed=0"),
-        Trace.bDestinationProjectionCase ? TEXT("UnprojectableDestination") : TEXT("Disconnected"),
+        TEXT("NAV_FAILURE_RESULT scenario=%s result=%s reason=%s generation=%llu unit=%llu sequence=%llu projection_checks=%d origin_projected=%d goal_projected=%d projected_goal=%.6f,%.6f,%.6f displacement=%.9f threshold=150.000000 queries=%d query_result=%s partial=%s path_valid=%s points=%s route_installed=0 failure_classification=%s accepted_commands=%d failure_events=%d arrivals=%d failure_step=%llu final_step=%llu inert_steps=%d retired=%d partial_probe_result=%s partial_probe_partial=%s partial_probe_path_valid=%s partial_probe_points=%s partial_probe_endpoint_error=%s partial_probe_rejection=%s partial_probe_installed=0"),
+        Trace.bExcessiveProjectionCase ? TEXT("ProjectionDisplacement")
+            : Trace.bDestinationProjectionCase ? TEXT("UnprojectableDestination") : TEXT("Disconnected"),
         bPass ? TEXT("PASS") : TEXT("FAIL"), Failure ? Failure : (bPass ? TEXT("none") : TEXT("final_invariant")),
         MatchGeneration, Unit ? Unit->GetStableId() : 0, Trace.Sequence, Trace.ProjectionChecks,
-        Trace.bOriginProjected ? 1 : 0, Trace.bGoalProjected ? 1 : 0, Trace.Queries,
+        Trace.bOriginProjected ? 1 : 0, Trace.bGoalProjected ? 1 : 0,
+        Trace.ProjectedGoal.X, Trace.ProjectedGoal.Y, Trace.ProjectedGoal.Z, Trace.ProjectionDisplacement, Trace.Queries,
         Trace.bDestinationProjectionCase ? TEXT("NA") : *LexToString(Trace.LastQueryResult),
         Trace.bDestinationProjectionCase ? TEXT("NA") : (Trace.bLastQueryPartial ? TEXT("1") : TEXT("0")),
         Trace.bDestinationProjectionCase ? TEXT("NA") : (Trace.bLastPathValid ? TEXT("1") : TEXT("0")),
@@ -236,6 +294,8 @@ void APolitikaPrototypeMatch::FinishNavigationFailureAcceptance(const TCHAR* Fai
         Trace.bDestinationProjectionCase ? TEXT("NA") : *LexToString(Trace.DiagnosticEndpointError),
         Trace.bDestinationProjectionCase ? TEXT("NA") : *Trace.DiagnosticRejection);
     Trace.bRunning = false;
-    FPlatformMisc::RequestExit(false);
+    FString FailureMode;
+    if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaNavigationFailure="), FailureMode))
+        FPlatformMisc::RequestExit(false);
 }
 #endif

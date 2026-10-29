@@ -288,6 +288,9 @@ fn main() -> Result<(), String> {
     if env::args().nth(2).as_deref() == Some("--navigation-destination-failure") {
         return navigation_obstacle::run_destination_failure();
     }
+    if env::args().nth(2).as_deref() == Some("--navigation-projection-displacement") {
+        return navigation_obstacle::run_projection_displacement();
+    }
     if env::args().nth(2).as_deref() == Some("--static-obstacle") {
         return navigation_obstacle::run();
     }

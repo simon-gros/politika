@@ -614,6 +614,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         else if (FixtureId == TEXT("StaticObstacleDetour")) RequestedMapId = TEXT("map.test.static_obstacle_detour");
         else if (FixtureId == TEXT("DisconnectedNavigation")) RequestedMapId = TEXT("map.test.disconnected_navigation");
         else if (FixtureId == TEXT("UnprojectableDestination")) RequestedMapId = TEXT("map.test.unprojectable_destination");
+        else if (FixtureId == TEXT("ProjectionDisplacement")) RequestedMapId = TEXT("map.test.projection_displacement");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -907,6 +908,11 @@ void APolitikaPrototypeMatch::BeginAcceptanceHarness()
         return;
     }
     if (MapDefinition && MapDefinition->StableId == TEXT("map.test.unprojectable_destination"))
+    {
+        BeginNavigationFailureAcceptance();
+        return;
+    }
+    if (MapDefinition && MapDefinition->StableId == TEXT("map.test.projection_displacement"))
     {
         BeginNavigationFailureAcceptance();
         return;
@@ -1403,7 +1409,12 @@ bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Uni
     const FVector QueryExtent(80.0f, 80.0f, 180.0f);
     const bool bProjectedStart = NavSystem->ProjectPointToNavigation(Unit->GetActorLocation(), ProjectedStart, QueryExtent, NavData);
 #if !UE_BUILD_SHIPPING
-    if (NavigationFailureAcceptance.bRunning) { ++NavigationFailureAcceptance.ProjectionChecks; NavigationFailureAcceptance.bOriginProjected = bProjectedStart; }
+    if (NavigationFailureAcceptance.bRunning)
+    {
+        ++NavigationFailureAcceptance.ProjectionChecks;
+        NavigationFailureAcceptance.bOriginProjected = bProjectedStart;
+        if (bProjectedStart) NavigationFailureAcceptance.ProjectedOrigin = ProjectedStart.Location;
+    }
 #endif
     if (!bProjectedStart)
     {
@@ -1412,7 +1423,16 @@ bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Uni
     }
     const bool bProjectedGoal = NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal, QueryExtent, NavData);
 #if !UE_BUILD_SHIPPING
-    if (NavigationFailureAcceptance.bRunning) { ++NavigationFailureAcceptance.ProjectionChecks; NavigationFailureAcceptance.bGoalProjected = bProjectedGoal; }
+    if (NavigationFailureAcceptance.bRunning)
+    {
+        ++NavigationFailureAcceptance.ProjectionChecks;
+        NavigationFailureAcceptance.bGoalProjected = bProjectedGoal;
+        if (bProjectedGoal)
+        {
+            NavigationFailureAcceptance.ProjectedGoal = ProjectedGoal.Location;
+            NavigationFailureAcceptance.ProjectionDisplacement = FVector::Dist(ProjectedGoal.Location, Destination);
+        }
+    }
 #endif
     if (!bProjectedGoal || FVector::Dist(ProjectedGoal.Location, Destination) > 150.0f)
     {
@@ -1421,7 +1441,17 @@ bool APolitikaPrototypeMatch::ResolveNavigationRoute(APolitikaPrototypeUnit* Uni
         if (NavigationFailureAcceptance.bRunning && NavigationFailureAcceptance.bDestinationProjectionCase)
         {
             NavigationFailureAcceptance.LastFailure = OutFailure;
-            UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_FAILURE_PROJECTION generation=%llu unit=%llu sequence=%llu nav=%s origin_projected=%d goal_projected=%d extent=80.000000,80.000000,180.000000 goal=%.6f,%.6f,%.6f projected_goal=NA displacement=NA query_executed=0 failure=%s"), MatchGeneration, Unit->GetStableId(), OrderSequence, *NavData->GetPathName(), NavigationFailureAcceptance.bOriginProjected ? 1 : 0, bProjectedGoal ? 1 : 0, Destination.X, Destination.Y, Destination.Z, *OutFailure);
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("NAV_FAILURE_PROJECTION generation=%llu unit=%llu sequence=%llu nav=%s origin_projected=%d goal_projected=%d extent=80.000000,80.000000,180.000000 requested=%.6f,%.6f,%.6f projected_origin=%.6f,%.6f,%.6f projected_goal=%s displacement=%s threshold=150.000000 query_executed=0 failure=%s"),
+                MatchGeneration, Unit->GetStableId(), OrderSequence, *NavData->GetPathName(),
+                NavigationFailureAcceptance.bOriginProjected ? 1 : 0, bProjectedGoal ? 1 : 0,
+                Destination.X, Destination.Y, Destination.Z,
+                NavigationFailureAcceptance.ProjectedOrigin.X, NavigationFailureAcceptance.ProjectedOrigin.Y,
+                NavigationFailureAcceptance.ProjectedOrigin.Z,
+                bProjectedGoal ? *FString::Printf(TEXT("%.6f,%.6f,%.6f"), ProjectedGoal.Location.X,
+                    ProjectedGoal.Location.Y, ProjectedGoal.Location.Z) : TEXT("NA"),
+                bProjectedGoal ? *FString::Printf(TEXT("%.6f"), FVector::Dist(ProjectedGoal.Location, Destination)) : TEXT("NA"),
+                *OutFailure);
         }
 #endif
         return false;

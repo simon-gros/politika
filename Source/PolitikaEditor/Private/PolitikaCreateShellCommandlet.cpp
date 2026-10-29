@@ -412,6 +412,172 @@ bool CreateUnprojectableDestinationFixture()
     return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
 }
 
+bool CreateProjectionDisplacementFixture()
+{
+    using namespace PolitikaProjectionDisplacementFixture;
+    const FString LevelFilename = FPackageName::LongPackageNameToFilename(Level, FPackageName::GetMapPackageExtension());
+    const FString DefinitionFilename = FPackageName::LongPackageNameToFilename(Definition, FPackageName::GetAssetPackageExtension());
+    if (IFileManager::Get().FileExists(*LevelFilename) || IFileManager::Get().FileExists(*DefinitionFilename))
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("Projection-displacement fixture already exists; refusing to overwrite."));
+        return false;
+    }
+    auto* Source = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
+        TEXT("/Game/Politika/Definitions/Maps/DA_RTSVerticalSlice.DA_RTSVerticalSlice"));
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(TEXT("/Game/Maps/RTSVerticalSlice"));
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!Source || !World || !Cube) return false;
+    FStaticMeshCompilingManager::Get().FinishAllCompilation();
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(LevelFilename), true);
+
+    AStaticMeshActor* Platform = World->SpawnActor<AStaticMeshActor>(PlatformLocation, FRotator::ZeroRotator);
+    AStaticMeshActor* Ramp = World->SpawnActor<AStaticMeshActor>(RampLocation, FRotator(0.0, 0.0, RampAngleDegrees));
+    if (!Platform || !Ramp) return false;
+    Platform->Tags.Add(PlatformTag);
+    Platform->SetActorLabel(TEXT("Projection Displacement Elevated Ground"));
+    Platform->GetStaticMeshComponent()->SetStaticMesh(Cube);
+    Platform->SetActorScale3D(PlatformScale);
+    Platform->GetStaticMeshComponent()->SetMobility(EComponentMobility::Static);
+    Platform->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
+    Platform->GetStaticMeshComponent()->SetCanEverAffectNavigation(true);
+    Platform->GetStaticMeshComponent()->ReregisterComponent();
+    Ramp->Tags.Add(RampTag);
+    Ramp->SetActorLabel(TEXT("Projection Displacement Walkable Ramp"));
+    Ramp->GetStaticMeshComponent()->SetStaticMesh(Cube);
+    Ramp->SetActorScale3D(RampScale);
+    Ramp->GetStaticMeshComponent()->SetMobility(EComponentMobility::Static);
+    Ramp->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
+    Ramp->GetStaticMeshComponent()->SetCanEverAffectNavigation(true);
+    Ramp->GetStaticMeshComponent()->ReregisterComponent();
+
+    ANavModifierVolume* Exclusion = World->SpawnActor<ANavModifierVolume>(ExclusionLocation, FRotator::ZeroRotator);
+    if (!Exclusion) return false;
+    Exclusion->Tags.Add(ExclusionTag);
+    Exclusion->SetActorLabel(TEXT("Projection Displacement Low Ground Exclusion"));
+    ABrush* BuilderBrush = World->GetDefaultBrush();
+    if (!BuilderBrush) return false;
+    if (!BuilderBrush->Brush)
+    {
+        BuilderBrush->Brush = NewObject<UModel>(BuilderBrush, NAME_None, RF_Transactional);
+        BuilderBrush->Brush->Initialize(nullptr, true);
+        BuilderBrush->Brush->Polys = NewObject<UPolys>(BuilderBrush->Brush, NAME_None, RF_Transactional);
+        BuilderBrush->GetBrushComponent()->Brush = BuilderBrush->Brush;
+    }
+    UCubeBuilder* Builder = NewObject<UCubeBuilder>(GetTransientPackage());
+    Builder->X = ExclusionExtent.X * 2.0;
+    Builder->Y = ExclusionExtent.Y * 2.0;
+    Builder->Z = ExclusionExtent.Z * 2.0;
+    BuilderBrush->SetActorLocation(ExclusionLocation);
+    if (!Builder->Build(World, BuilderBrush)) return false;
+    FBSPOps::csgCopyBrush(Exclusion, BuilderBrush, 0, RF_Transactional, true, true);
+    Exclusion->PostEditChange();
+    if (Exclusion->Brush) Exclusion->Brush->BuildBound();
+    Exclusion->GetBrushComponent()->SetMobility(EComponentMobility::Static);
+    Exclusion->GetBrushComponent()->ReregisterComponent();
+    BuilderBrush->SetActorLocation(FVector::ZeroVector);
+    Exclusion->SetAreaClass(UNavArea_Null::StaticClass());
+
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (!Nav) return false;
+    Nav->InitializeLevelCollisions();
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (auto* Bounds = Cast<ANavMeshBoundsVolume>(*It)) Nav->OnNavigationBoundsUpdated(Bounds);
+        UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(**It);
+    }
+    Nav->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+    Nav->ReleaseInitialBuildingLock();
+    Nav->FlushPendingOperations();
+    Nav->Build();
+    int32 Wait = 0;
+    while (Nav->IsNavigationBuildInProgress() && Wait++ < 600) FPlatformProcess::Sleep(0.1f);
+    const ANavigationData* Data = Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
+    FNavLocation ProjectedStart, ProjectedGoal;
+    const bool bStart = Data && Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data);
+    const bool bGoal = Data && Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data);
+    const double Displacement = bGoal ? FVector::Distance(ProjectedGoal.Location, Goal) : 0.0;
+    FPathFindingResult Reachability;
+    if (bStart && bGoal)
+    {
+        FPathFindingQuery ReachabilityQuery(nullptr, *Data, ProjectedStart.Location, ProjectedGoal.Location);
+        ReachabilityQuery.SetAllowPartialPaths(false);
+        ReachabilityQuery.SetRequireNavigableEndLocation(true);
+        Reachability = Nav->FindPathSync(ReachabilityQuery);
+    }
+    const bool bConnected = Reachability.Result == ENavigationQueryResult::Success
+        && Reachability.Path.IsValid() && !Reachability.Path->IsPartial()
+        && !Reachability.Path->GetPathPoints().IsEmpty();
+    const FVector ReachabilityEndpoint = Reachability.Path.IsValid() && !Reachability.Path->GetPathPoints().IsEmpty()
+        ? Reachability.Path->GetPathPoints().Last().Location : FVector::ZeroVector;
+    if (Data)
+    {
+        for (int32 SampleY = -800; SampleY <= 1300; SampleY += 200)
+        {
+            const double ExpectedZ = -14.0 + (static_cast<double>(SampleY) + 800.0) * 214.0 / 1900.0;
+            FNavLocation SampleProjection;
+            const bool bSampleProjected = Nav->ProjectPointToNavigation(FVector(1300.0, SampleY, ExpectedZ),
+                SampleProjection, FVector(80, 80, 180), Data);
+            FHitResult SampleGround;
+            const bool bSampleGround = World->LineTraceSingleByChannel(SampleGround,
+                FVector(1300, SampleY, ExpectedZ + 200), FVector(1300, SampleY, ExpectedZ - 200), ECC_Visibility);
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("NAV_PROJECTION_DISPLACEMENT_RAMP_SAMPLE y=%.3f expected_z=%.3f projected=%d projected_location=%.3f,%.3f,%.3f ground_hit=%d ground=%.3f,%.3f,%.3f actor=%s"),
+                static_cast<double>(SampleY), ExpectedZ, bSampleProjected ? 1 : 0,
+                bSampleProjected ? SampleProjection.Location.X : 0.0,
+                bSampleProjected ? SampleProjection.Location.Y : 0.0,
+                bSampleProjected ? SampleProjection.Location.Z : 0.0, bSampleGround ? 1 : 0,
+                SampleGround.ImpactPoint.X, SampleGround.ImpactPoint.Y, SampleGround.ImpactPoint.Z,
+                SampleGround.GetActor() ? *SampleGround.GetActor()->GetPathName() : TEXT("none"));
+        }
+    }
+    FHitResult GroundHit;
+    const bool bGround = World->LineTraceSingleByChannel(GroundHit, Goal + FVector(0, 0, 300),
+        Goal - FVector(0, 0, 300), ECC_Visibility);
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("NAV_PROJECTION_DISPLACEMENT_FIXTURE_BUILD nav=%s start_projected=%d goal_projected=%d requested=%.6f,%.6f,%.6f projected_goal=%.6f,%.6f,%.6f displacement=%.6f ground_hit=%d ground=%.6f,%.6f,%.6f connected_path=%d path_result=%u partial=%d path_points=%d path_endpoint=%.6f,%.6f,%.6f platform=%s ramp=%s exclusion=%s"),
+        Data ? *Data->GetPathName() : TEXT("missing"), bStart ? 1 : 0, bGoal ? 1 : 0,
+        Goal.X, Goal.Y, Goal.Z, bGoal ? ProjectedGoal.Location.X : 0.0, bGoal ? ProjectedGoal.Location.Y : 0.0,
+        bGoal ? ProjectedGoal.Location.Z : 0.0, Displacement, bGround ? 1 : 0,
+        GroundHit.ImpactPoint.X, GroundHit.ImpactPoint.Y, GroundHit.ImpactPoint.Z, bConnected ? 1 : 0,
+        static_cast<uint32>(Reachability.Result), Reachability.IsPartial() ? 1 : 0,
+        Reachability.Path.IsValid() ? Reachability.Path->GetPathPoints().Num() : 0,
+        ReachabilityEndpoint.X, ReachabilityEndpoint.Y, ReachabilityEndpoint.Z,
+        *Platform->GetPathName(), *Ramp->GetPathName(), *Exclusion->GetPathName());
+    if (Nav->IsNavigationBuildInProgress() || !bStart || !bGoal || Displacement <= 150.0
+        || !bGround || !GroundHit.GetActor()->ActorHasTag(PlatformTag) || !bConnected
+        || !FEditorFileUtils::SaveMap(World, LevelFilename)) return false;
+
+    World = UEditorLoadingAndSavingUtils::LoadMap(LevelFilename);
+    Nav = World ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World) : nullptr;
+    Data = Nav ? Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+    if (!World || !Nav || !Data || Nav->IsNavigationBuildInProgress()
+        || !Nav->ProjectPointToNavigation(Start, ProjectedStart, FVector(80, 80, 180), Data)
+        || !Nav->ProjectPointToNavigation(Goal, ProjectedGoal, FVector(80, 80, 180), Data)
+        || FVector::Distance(ProjectedGoal.Location, Goal) <= 150.0) return false;
+
+    UPackage* Package = CreatePackage(Definition);
+    auto* Fixture = DuplicateObject<UPolitikaPrototypeMapDefinition>(Source, Package, TEXT("DA_ProjectionDisplacement"));
+    if (!Fixture) return false;
+    Fixture->SetFlags(RF_Public | RF_Standalone);
+    FAssetRegistryModule::AssetCreated(Fixture);
+    Fixture->StableId = MapId;
+    Fixture->LevelAsset = FSoftObjectPath(Level);
+    Fixture->PlayerSlots[0].StartLocation = Start;
+    FPolitikaPrototypeUnitPlacement Placement = Source->UnitPlacements[1];
+    Placement.Location = Start;
+    Fixture->UnitPlacements = {Placement};
+    Fixture->Objective.Location = FVector(-1100.0, 1200.0, 4.0);
+    Fixture->MarkPackageDirty();
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(Fixture, Catalog, Diagnostics);
+    UPolitikaPrototypeContentValidator::ValidateMapSpatial(World, Fixture, Diagnostics);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("NAV_PROJECTION_DISPLACEMENT_FIXTURE_AUTHORING diagnostics=%s"),
+        *UPolitikaPrototypeContentValidator::DiagnosticsToJson(Diagnostics));
+    return !UPolitikaPrototypeContentValidator::HasErrors(Diagnostics) && SaveDefinitionAsset(Fixture);
+}
+
 bool CreatePrototypeDefinitions()
 {
     UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -570,6 +736,8 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
         return CreateDisconnectedNavigationFixture() ? 0 : 14;
     if (FParse::Param(*Params, TEXT("CreateUnprojectableDestinationFixture")))
         return CreateUnprojectableDestinationFixture() ? 0 : 15;
+    if (FParse::Param(*Params, TEXT("CreateProjectionDisplacementFixture")))
+        return CreateProjectionDisplacementFixture() ? 0 : 16;
     if (FParse::Param(*Params, TEXT("CreateInvalidParticipantFactionFixture")))
         return CreateInvalidParticipantFactionFixture() ? 0 : 12;
     if (FParse::Param(*Params, TEXT("ValidateBlockedRoute")))

@@ -95,6 +95,7 @@ private:
     friend class FPolitikaNavigationObstacleAutomationTest;
     friend class FPolitikaNavigationFailureAutomationTest;
     friend class FPolitikaUnprojectableDestinationAutomationTest;
+    friend class FPolitikaProjectionDisplacementAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
 #endif
@@ -161,6 +162,7 @@ private:
     friend class FPolitikaNavigationObstacleAutomationTest;
     friend class FPolitikaNavigationFailureAutomationTest;
     friend class FPolitikaUnprojectableDestinationAutomationTest;
+    friend class FPolitikaProjectionDisplacementAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
 #endif
@@ -217,6 +219,7 @@ private:
     friend class FPolitikaAuthoredStartupAdmissionAutomationTest;
     friend class FPolitikaNavigationFailureAutomationTest;
     friend class FPolitikaUnprojectableDestinationAutomationTest;
+    friend class FPolitikaProjectionDisplacementAutomationTest;
     TFunction<void()> NavigationStepObserver;
 #endif
     struct FPendingOrder
@@ -312,6 +315,7 @@ private:
         bool bRunning = false;
         bool bValid = true;
         bool bDestinationProjectionCase = false;
+        bool bExcessiveProjectionCase = false;
         TWeakObjectPtr<APolitikaPrototypeUnit> Unit;
         FVector Start = FVector::ZeroVector;
         FVector Goal = FVector::ZeroVector;
@@ -321,6 +325,9 @@ private:
         int32 ProjectionChecks = 0;
         bool bOriginProjected = false;
         bool bGoalProjected = false;
+        FVector ProjectedOrigin = FVector::ZeroVector;
+        FVector ProjectedGoal = FVector::ZeroVector;
+        double ProjectionDisplacement = 0.0;
         int32 AcceptedCommands = 0;
         int32 FailureEvents = 0;
         int32 Arrivals = 0;

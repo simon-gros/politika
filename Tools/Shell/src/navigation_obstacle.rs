@@ -713,6 +713,259 @@ fn launch_unprojectable(binary: &Path, evidence: &Path, name: &str) -> Result<St
     }
 }
 
+fn launch_projection_displacement(
+    binary: &Path,
+    evidence: &Path,
+    name: &str,
+) -> Result<String, String> {
+    let log = evidence.join(format!("{name}.log"));
+    let user_dir = evidence.join(format!("{name}-user"));
+    fs::create_dir_all(&user_dir).map_err(|e| e.to_string())?;
+    let mut child = Command::new(binary)
+        .args([
+            "/Game/Politika/TestFixtures/Navigation/W_ProjectionDisplacement",
+            "-PolitikaTestFixture=ProjectionDisplacement",
+            "-PolitikaNavigationFailure=ProjectionDisplacement",
+            "-nullrhi",
+            "-unattended",
+            "-nosound",
+            "-nosplash",
+        ])
+        .arg(format!("-UserDir={}/", user_dir.display()))
+        .arg(format!("-ABSLOG={}", log.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("launch {name}: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            let text = read(&log)?;
+            require(
+                status.success(),
+                &format!("{name} process outcome {status}; log={}", log.display()),
+            )?;
+            fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
+                .map_err(|e| e.to_string())?;
+            return Ok(text);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{name} timed out; log={}", log.display()));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn pair(r: &Record<'_>, key: &str) -> Result<[f64; 2], String> {
+    let values: Vec<f64> = field(r, key)?
+        .split(',')
+        .map(|v| v.parse::<f64>())
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    if values.len() != 2 || values.iter().any(|v| !v.is_finite()) {
+        return Err(format!("invalid pair {key}"));
+    }
+    Ok([values[0], values[1]])
+}
+
+fn verify_projection_displacement(log: &str) -> Result<String, String> {
+    let fixture = one(log, "NAV_FAILURE_FIXTURE")?;
+    let projection = one(log, "NAV_FAILURE_PROJECTION")?;
+    let coordinates = one(log, "NAV_FAILURE_COORDINATES")?;
+    let ground = one(log, "NAV_FAILURE_GROUND")?;
+    let submitted = one(log, "NAV_FAILURE_SUBMITTED")?;
+    let result = one(log, "NAV_FAILURE_RESULT")?;
+    require(
+        log.contains("CONTENT_VALIDATION_PASSED map=map.test.projection_displacement")
+            && log.contains("MATCH_LIFECYCLE phase=4"),
+        "projection-displacement fixture did not validate and reach Active",
+    )?;
+    require(
+        field(&fixture, "scenario")? == "ProjectionDisplacement"
+            && field(&fixture, "map")? == "map.test.projection_displacement"
+            && field(&fixture, "level")?.ends_with("/Navigation/W_ProjectionDisplacement")
+            && field(&fixture, "profile")? == "movement.prototype_ground"
+            && field(&fixture, "runtime_generation")? == "0"
+            && field(&fixture, "threshold")? == "150.000000"
+            && field(&projection, "origin_projected")? == "1"
+            && field(&projection, "goal_projected")? == "1"
+            && field(&projection, "query_executed")? == "0"
+            && field(&projection, "failure")? == "DestinationNotNavigable",
+        "wrong fixture, projection state, production query outcome, or failure reason",
+    )?;
+    let requested = point(&projection, "requested")?;
+    let projected = point(&projection, "projected_goal")?;
+    let reported = number(&projection, "displacement")?;
+    let actual = distance(requested, projected);
+    require(
+        actual > 150.0 && reported > 150.0 && (actual - reported).abs() <= 0.00001,
+        "Unreal projection is not strictly beyond the production threshold or its measured distance disagrees",
+    )?;
+    let delta: Point = std::array::from_fn(|i| projected[i] - requested[i]);
+    require(
+        delta[0].abs() <= 80.00001 && delta[1].abs() <= 80.00001 && delta[2].abs() <= 180.00001,
+        "projected location falls outside the unchanged production projection extent",
+    )?;
+    require(
+        field(&fixture, "requested")? == field(&projection, "requested")?
+            && field(&coordinates, "requested")? == field(&projection, "requested")?
+            && pair(&coordinates, "raw_xy")? == [requested[0], requested[1]],
+        "raw target and actual production destination diverged",
+    )?;
+    let raw = pair(&coordinates, "raw_xy")?;
+    let map = pair(&coordinates, "map_relative_xy")?;
+    let bounds_min = pair(&fixture, "bounds_min")?;
+    let bounds_max = pair(&fixture, "bounds_max")?;
+    require(
+        (raw[0] - bounds_min[0] - map[0]).abs() <= 0.00001
+            && (raw[1] - bounds_min[1] - map[1]).abs() <= 0.00001
+            && raw[0] >= bounds_min[0]
+            && raw[0] <= bounds_max[0]
+            && raw[1] >= bounds_min[1]
+            && raw[1] <= bounds_max[1],
+        "typed Move XY conversion or playable-bound evidence is invalid",
+    )?;
+    let hit = point(&ground, "ground")?;
+    require(
+        field(&ground, "ground_hit")? == "1"
+            && field(&ground, "bounds_valid")? == "1"
+            && field(&ground, "nav_excluded")? == "0"
+            && (hit[0] - requested[0]).abs() <= 0.001
+            && (hit[1] - requested[1]).abs() <= 0.001
+            && (hit[2] - 200.0).abs() <= 5.0,
+        "requested target is not on its authored collision-bearing elevated ground",
+    )?;
+    require(
+        !log.contains("NAV_FAILURE_QUERY ") && !log.contains("RTS_NAV_QUERY "),
+        "production path query executed despite the excessive-projection guard",
+    )?;
+    for key in ["generation", "unit", "sequence"] {
+        require(
+            field(&submitted, key)? == field(&result, key)?,
+            "submission/result identity mismatch",
+        )?;
+    }
+    require(
+        field(&result, "result")? == "PASS"
+            && field(&result, "scenario")? == "ProjectionDisplacement"
+            && field(&result, "failure_classification")? == "DestinationNotNavigable"
+            && field(&result, "origin_projected")? == "1"
+            && field(&result, "goal_projected")? == "1"
+            && number(&result, "displacement")? > 150.0
+            && field(&result, "queries")? == "0"
+            && field(&result, "query_result")? == "NA"
+            && field(&result, "route_installed")? == "0"
+            && field(&result, "accepted_commands")? == "1"
+            && field(&result, "failure_events")? == "1"
+            && field(&result, "arrivals")? == "0"
+            && field(&result, "inert_steps")? == "21"
+            && field(&result, "retired")? == "1",
+        "terminal production assertions failed",
+    )?;
+    let events = records(log, "NAV_FAILURE_EVENT");
+    let steps = records(log, "NAV_FAILURE_STEP");
+    require(
+        events.len() == 2 && steps.len() == 21,
+        "expected accepted Move, one failure event, and 21 inert fixed steps",
+    )?;
+    require(
+        events
+            .iter()
+            .any(|e| e.get("kind") == Some(&"CommandOutcome") && e.get("accepted") == Some(&"1"))
+            && events
+                .iter()
+                .any(|e| e.get("kind") == Some(&"OrderChanged") && e.get("failure") == Some(&"1"))
+            && steps.iter().all(|step| {
+                step.get("valid") == Some(&"1")
+                    && step.get("points") == Some(&"0")
+                    && step.get("cursor") == Some(&"0")
+                    && step.get("route_sequence") == Some(&"0")
+                    && step.get("route_generation") == Some(&"0")
+                    && point(step, "position").is_ok_and(|position| {
+                        distance(position, point(&fixture, "start").unwrap_or([f64::NAN; 3]))
+                            <= 0.001
+                    })
+            }),
+        "event timeline, retired route, or stationary fixed-step evidence is invalid",
+    )?;
+    Ok(format!(
+        "PASS requested={requested:?} projected={projected:?} ground={hit:?} displacement={actual:.9}cm query=NOT_EXECUTED route=none failure_event=1 arrival=0 inert_steps=20"
+    ))
+}
+
+pub fn run_projection_displacement() -> Result<(), String> {
+    let binary = PathBuf::from(env::args_os().nth(1).ok_or("missing fixture binary")?)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let normal = PathBuf::from(env::args_os().nth(3).ok_or(
+        "usage: rts_interaction FIXTURE_BINARY --navigation-projection-displacement NORMAL_BINARY",
+    )?)
+    .canonicalize()
+    .map_err(|e| e.to_string())?;
+    let package = binary.ancestors().nth(4).ok_or("fixture package layout")?;
+    let normal_package = normal.ancestors().nth(4).ok_or("normal package layout")?;
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let evidence = package.join(format!("navigation-projection-displacement-{epoch}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let outcome = (|| -> Result<String, String> {
+        let source = read(&package.join("QualificationSource.sha256"))?;
+        require(
+            !source.trim().is_empty()
+                && source == read(&normal_package.join("QualificationSource.sha256"))?
+                && read(&package.join("BuildIdentity.json"))?
+                    == read(&normal_package.join("BuildIdentity.json"))?
+                && hash(&binary)? == hash(&normal)?,
+            "normal/fixture package source identity mismatch",
+        )?;
+        let fixture_manifest = read(&package.join("Manifest_UFSFiles_Linux.txt"))?;
+        let normal_manifest = read(&normal_package.join("Manifest_UFSFiles_Linux.txt"))?;
+        for asset in [
+            "Navigation/W_ProjectionDisplacement.umap",
+            "Navigation/DA_ProjectionDisplacement.uasset",
+        ] {
+            require(
+                fixture_manifest.contains(asset),
+                &format!("fixture package missing {asset}"),
+            )?;
+        }
+        require(
+            !normal_manifest.contains("TestFixtures/"),
+            "normal package includes test fixtures",
+        )?;
+        let mut report = String::from("run\tverdict\tdetail\n");
+        for name in ["DP-02-A", "DP-02-B"] {
+            let log = launch_projection_displacement(&binary, &evidence, name)?;
+            let detail = verify_projection_displacement(&log)?;
+            report.push_str(&format!("{name}\tPASS\t{detail}\n"));
+        }
+        fs::write(evidence.join("acceptance.tsv"), &report).map_err(|e| e.to_string())?;
+        fs::write(evidence.join("artifact-identity.txt"), format!(
+            "fixture_binary={}\nfixture_sha256={}\nnormal_binary={}\nnormal_sha256={}\nsource={}\nfixture_identity={}\n",
+            binary.display(), hash(&binary)?, normal.display(), hash(&normal)?, source.trim(),
+            read(&package.join("BuildIdentity.json"))?.trim().replace('\n', " "))).map_err(|e| e.to_string())?;
+        Ok(report)
+    })();
+    match outcome {
+        Ok(report) => {
+            println!(
+                "PASS DP-02: excessive destination projection displacement; evidence {}\n{}",
+                evidence.display(),
+                report
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::write(evidence.join("failure.txt"), &error);
+            Err(format!("{}; evidence {}", error, evidence.display()))
+        }
+    }
+}
+
 fn verify_unprojectable(log: &str) -> Result<String, String> {
     let fixture = one(log, "NAV_FAILURE_FIXTURE")?;
     let projection = one(log, "NAV_FAILURE_PROJECTION")?;
