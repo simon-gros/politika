@@ -1,14 +1,15 @@
-# POLITIKA — Cartographic reference-only index
+# POLITIKA — Source-linked historical map index
 
-**147 map-source records**, including **32 period-produced maps, documents or historical-series references** and **80 selected named M709 topographic-sheet leads**, checked 29 October 2026. [Map catalogue](../../../MAP_CATALOG.csv) · [Research atlas](../../../MAPS_1980_1989.md) · [Acquisition guide](../../../MAP_ACQUISITION_GUIDE.md) · [Rights](../../../RIGHTS_AND_PROVENANCE.md).
+**172 cartographic references** on 29 October 2026, including **96 named M709 topographic-sheet leads** and 35 contemporary originals, period-publication research leads, and historical series records. [MAP_CATALOG.csv](../../../MAP_CATALOG.csv) contains exact status, creator, source, rights, limitations and map ID. See [Historical Map Guide](../../../MAPS_1980_1989.md), [Regional Atlas](../../../REGIONAL_CARTOGRAPHIC_ATLAS.md) and [Map Acquisition](../../../MAP_ACQUISITION_GUIDE.md).
 
-These are individually documented source and presentation references, not 147 distinct acquired map scans. The 1988 Geokarta railway map appears on more than one host, and multiple modern map variants share a common base. Some period-produced original maps survive only as bibliographic items without a downloadable image. Topographic sheet names are verified in the [UT Austin M709 index](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/), but their edition dates remain unverified.
+This is not a set of 172 downloaded, licensed, independently published map binaries. Modern maps depicting the 1980s, print items from 1980–1989, 1980s census data published in 1991, and post-period terrain maps have separate evidence statuses. Follow links for each item and verify rights before game integration.
 
-## Genuine contemporary-issued or dated 1980s publications and map series
+## Original decade maps and dated period map-publication research
 
-| Reference | Title | Publication/edition status | Geographical coverage | Scale | Priority | Source |
+| Map ID | Source / sheet title | Issue date or classification | Region | Scale | Priority | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `POL-MAP-1980-84-CRO-TK100` | Croatian official 1:100,000 TK100 series (historic revision range) | 1980–1984 | SR Croatia territory | 1:100,000 | P0 | [Source](https://registri.nipp.hr/izvori/11) |
+| `POL-MAP-1980-GEOLOGY-REVIEW` | Review of Geological Map of Yugoslavia at 1:500000 | 1980 | SFRY | 1:500,000 | P1 | [Source](https://plus.cobiss.net/cobiss/si/sl/bib/17114722) |
 | `POL-MAP-1980-YU-TOUR-SWE` | Jugoslavien tourist map — Swedish-language edition | 1980 | SFRY | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/sr/sr_latn/bib/185117191) |
 | `POL-MAP-1981-82-SISAK-VGI` | Sisak 1 and Sisak 2 military topographic sheets; assembled map | 1981–1982 | SR Croatia: Sisak; Petrinja; Glina; Kupa/Sava valleys | 1:50,000 | P0 | [Source](https://kartevgi.hismus.hr/en/e-catalog/belgrade/) |
 | `POL-MAP-1981-CIA-POL` | Yugoslavia, CIA political map | 1981 | SFRY | — | P0 | [Source](https://www.loc.gov/item/2011587053/) |
@@ -24,6 +25,7 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-1982-YU-TOUR-SWE` | Jugoslavien tourist map — Swedish-language edition | 1982 | SFRY | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/sr/sr_latn/bib/202724359) |
 | `POL-MAP-1983-CIA-WORLD` | 1983 CIA political world map | 1983 | global including SFRY | world | P1 | [Source](https://www.loc.gov/item/2011589550/) |
 | `POL-MAP-1984-IDRIJA-PANORAMA` | Panoramska karta občine Idrija | 1984 | SR Slovenia / Idrija municipality | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D13934179&r1=0) |
+| `POL-MAP-1984-SAR-OFFICIAL-REPORT` | 1984 Sarajevo Olympics final report: venue and flame-route map research | 1984 | Sarajevo; Olympic mountain venues; federation-wide torch relay | — | P0 | [Source](https://digital.la84.org/digital/collection/p17103coll8/id/11863/) |
 | `POL-MAP-1984-YU-SEL-1` | Socialistična federativna republika Jugoslavija — Slovenian map (1984 record 1) | 1984 | SFRY | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0) |
 | `POL-MAP-1984-YU-SEL-2` | Socialistična federativna republika Jugoslavija — Slovenian map (1984 record 2) | 1984 | SFRY | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0) |
 | `POL-MAP-1985-86-SLO-VGI25` | Slovenian VGI economic-issue topographic reproductions 1985–1986 | 1985–1986 | SR Slovenia | 1:25,000 | P0 | [Source](https://dlib.si/details/URN:NBN:SI:DOC-N9BMLCDV) |
@@ -39,11 +41,12 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-1988-YU-AUTO-UKM` | Jugoslavija avtokarta, fourth edition | 1988 | SFRY | 1:1,550,000 | P0 | [Source](https://plus-legacy.cobiss.net/cobiss/si/en/bib/ukm/35263233) |
 | `POL-MAP-1989-KOROSKA-PANORAMA` | Panoramska karta občin Koroške | 1989 | SR Slovenia / Dravograd; Radlje ob Dravi; Ravne; Slovenj Gradec | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D13934179&r1=0) |
 | `POL-MAP-1989-MICHELIN-991` | Michelin Yugoslavia selected sights, map 991, eighth edition | 1989 | SFRY | 1:1,000,000 | P1 | [Source](https://ci.nii.ac.jp/ncid/BC14808956) |
+| `POL-MAP-1989-SLO-GEOLOGY-LIB` | Geological map of Slovenia, 1989 library inventory item | 1989 | SR Slovenia | — | P1 | [Source](https://odl.dzrjl.si/publikacije/knjiznjica/) |
 | `POL-MAP-1989-YU-SELAN` | Socialistična federativna republika Jugoslavija — Ivan Selan credit | 1989 | SFRY | — | P1 | [Source](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0) |
 
-## Earlier historical baselines and nautical charts
+## Before the decade: historical roads, nautical charts and other baselines
 
-| Reference | Title | Publication/edition status | Geographical coverage | Scale | Priority | Source |
+| Map ID | Source / sheet title | Issue date or classification | Region | Scale | Priority | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `POL-MAP-1404-SERIES` | British World Series 1404 | 1958 | Yugoslavia | 1:500,000 | P2 | [Source](https://maps.lib.utexas.edu/maps/yugoslav.html) |
 | `POL-MAP-1953-ADMIRALTY-3675` | Admiralty Chart 3675 Ports and Anchorages in Yugoslavia | 1953 | Adriatic Yugoslav coast | various | P2 | [Source](https://commons.wikimedia.org/wiki/File:Admiralty_Chart_No_3675_Ports_and_Anchorages_in_Yugoslavia,_Published_1953.jpg) |
@@ -55,9 +58,9 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-M404-SERIES` | British Europe Series M404 | 1942 | former Yugoslavia | 1:500,000 | P2 | [Source](https://maps.lib.utexas.edu/maps/yugoslav.html) |
 | `POL-MAP-M501-SERIES` | Western Europe Series M501 | 1959 | Yugoslavia and neighbors | 1:250,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/slovenia.html) |
 
-## Modern reconstructions, later map editions and undated collection leads
+## Modern reconstructions, later editions and catalogue collection leads
 
-| Reference | Title | Publication/edition status | Geographical coverage | Scale | Priority | Source |
+| Map ID | Source / sheet title | Issue date or classification | Region | Scale | Priority | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `POL-MAP-1982-AUSTRIA-MONTENEGRO-LEAD` | Tourist map SR Montenegro in Austrian Kriegsarchiv | undated-archive-lead | SR Montenegro | — | P2 | [Source](https://www.archivinformationssystem.at/detail.aspx?ID=2139619) |
 | `POL-MAP-1983-WEB` | Detailed Yugoslavia political map labelled 1983 | retrospective-unverified-origin | SFRY | — | P2 | [Source](https://www.mapsland.com/europe/yugoslavia/detailed-political-map-of-the-former-yugoslavia-1983) |
@@ -71,10 +74,16 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-2011-GENERAL-HR` | Modern Yugoslavia general reference map (Croatian labels) | 2011 | SFRY 1945–1991 depiction | schematic raster | P1 | [Source](https://commons.wikimedia.org/wiki/File:General_map_of_yugoslavia_(1945-1991)_(HR_labels).png) |
 | `POL-MAP-2011-GENERAL-SH` | Modern Yugoslavia general reference map (Serbo-Croatian labels) | 2011 | SFRY 1945–1991 depiction | schematic raster | P1 | [Source](https://commons.wikimedia.org/wiki/File:General_map_of_yugoslavia_(1945-1991)_(SH_labels).png) |
 | `POL-MAP-2011-GENERAL-SL` | Modern Yugoslavia general reference map (Slovenian labels) | 2011 | SFRY 1945–1991 depiction | schematic raster | P1 | [Source](https://commons.wikimedia.org/wiki/File:General_map_of_yugoslavia_(1945-1991)_(SL_labels).png) |
+| `POL-MAP-2018-VISA-1983` | 1983 Yugoslav citizens visa-regime map drawn in 2018 | 2018 | Yugoslavia international travel policy | world thematic | P1 | [Source](https://commons.wikimedia.org/wiki/File:Vizni_re%C5%BEim_za_gra%C4%91ane_SFR_Jugoslavije_%28stanje_1983._godine%29.jpg) |
+| `POL-MAP-2021-SAR-IOC-VENUES` | IOC modern Sarajevo 1984 sports venue map overview | 2021 | Sarajevo; Igman; Jahorina; Bjelašnica; Trebević | — | P1 | [Source](https://www.olympics.com/ioc/news/sarajevo-1984-olympic-venues-overview) |
 | `POL-MAP-2024-FEDERAL-ADMIN` | Modern map of socialist republics and autonomous provinces (1968–1990) | 2024 | SFRY six republics and SAP Kosovo/Vojvodina | schematic | P0 | [Source](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) |
+| `POL-MAP-COLLECTION-1981-CENSUS-COMMONS` | Wikimedia collection of maps based on the 1981 Yugoslav census | modern-derivative-collection | SFRY; Kosovo; Serbia; other republics | various | P2 | [Source](https://commons.wikimedia.org/wiki/Category:1981_census_of_Yugoslavia) |
 | `POL-MAP-COLLECTION-COMMONS-CIA` | Commons collection: CIA maps of SFR Yugoslavia | mixed-period-collection | SFRY; related themes | — | P1 | [Source](https://commons.wikimedia.org/wiki/Category:CIA_maps_of_the_Socialist_Federal_Republic_of_Yugoslavia) |
 | `POL-MAP-COLLECTION-COMMONS-OLD` | Commons collection: Old maps of Socialist Yugoslavia | mixed-period-collection | Yugoslav territory and Adriatic | — | P1 | [Source](https://commons.wikimedia.org/wiki/Category:Old_maps_of_the_Socialist_Federal_Republic_of_Yugoslavia) |
 | `POL-MAP-COLLECTION-COMMONS-REPUBLICS` | Commons subcollections: maps of SFRY republics | mixed-period-collection | six Yugoslav republics and Kosovo/Vojvodina | — | P1 | [Source](https://commons.wikimedia.org/wiki/Category:Maps_of_the_Socialist_Federal_Republic_of_Yugoslavia) |
+| `POL-MAP-COLLECTION-HPM-154` | Croatian History Museum military-cartographic collection, 154 catalog items | mixed-period-collection | SR Croatia; former Yugoslavia; Austria-Hungary | various | P1 | [Source](https://kartevgi.hismus.hr/en/e-catalog/) |
+| `POL-MAP-COLLECTION-NBS-35000` | National Library of Serbia cartographic collection, around 35000 sheets | mixed-period-collection | South Slavic lands; Southern/Southeastern Europe | multiple | P0 | [Source](https://nb.rs/en/cartographic-collection/) |
+| `POL-MAP-COLLECTION-RAIL-1980S-COMMONS` | Commons rail transport photographs and 1988 railway map reference | mixed-dates-collection | SFRY; all republics | various | P1 | [Source](https://commons.wikimedia.org/wiki/Category:Rail_transport_in_Yugoslavia_in_the_1980s) |
 | `POL-MAP-COLLECTION-SERB-MAPS-UNILIB` | Belgrade University Library historic map-and-atlas portal | collection-mixed-dates | Yugoslavia; Adriatic; Serbia; Balkans | — | P1 | [Source](https://maps.unilib.rs/) |
 | `POL-MAP-COLLECTION-SERB-VGI` | Serbian VGI historical maps of former Yugoslavia, eight published scales | collection-mixed-dates | entire former Yugoslavia | 1:25,000 through 1:1,000,000 | P0 | [Source](https://www.vgi.mod.gov.rs/lat/221/karte-bivse-jugoslavije-221) |
 | `POL-MAP-HPM-COLLECTION` | Croatian History Museum VGI map catalogue | mixed-collection | Yugoslavia; Croatia | — | P1 | [Source](https://kartevgi.hismus.hr/en/e-catalog/belgrade/) |
@@ -86,9 +95,11 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-UT-YU-COLLECTION` | UT Austin former Yugoslavia country maps | mixed-collection | former Yugoslavia | — | P1 | [Source](https://maps.lib.utexas.edu/maps/yugoslav.html) |
 | `POL-MAP-VGI-HYDRO` | SFRY hydrometeorological physical map | undated-collection-lead | SFRY | — | P1 | [Source](https://kartevgi.hismus.hr/en/e-catalog/belgrade/) |
 
-## Topographic M709 sheet locators
+## Regional M709 topographic sheet locators
 
-| Reference | Title | Publication/edition status | Geographical coverage | Scale | Priority | Source |
+The 96 entries are actual named sheets in the [UT Austin alphabetical GeoPDF index](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/). Their **individual publication or survey year has not been verified**. Do not treat later editions as evidence of 1984 political boundaries or urban infrastructures.
+
+| Map ID | Source / sheet title | Issue date or classification | Region | Scale | Priority | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | `POL-MAP-M709-ADA` | DMA M709 topographic sheet: Ada (3086 I) | later-or-undated-sheet | SAP Vojvodina / SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-AJDOVSCINA` | DMA M709 topographic sheet: Ajdovscina (2086 IV) | later-or-undated-sheet | SR Slovenia | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
@@ -103,27 +114,43 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-M709-BANJA-LUKA` | Series M709: Banja Luka (2584 I) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BANOVICI` | DMA M709 topographic sheet: Banovici (2783 I) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BAR` | Series M709: Bar (2879 II) | later-or-undated-sheet | SR Montenegro | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-BELA-CRKVA` | DMA M709 quadrangle: Bela Crkva, sheet 3284 I | later-or-undated-sheet | SR Serbia / Romania | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BEOGRAD` | Series M709: Beograd (3184 IV) | later-or-undated-sheet | SR Serbia | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-BERANE` | DMA M709 quadrangle: Berane, sheet 3080 IV | later-or-undated-sheet | SR Montenegro | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BIHAC` | DMA M709 topographic sheet: Bihac (2384 IV) | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Croatia | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BIJELJINA` | DMA M709 topographic sheet: Bijeljina (2984 IV) | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-BIJELO-POLJE` | DMA M709 quadrangle: Bijelo Polje, sheet 2981 II | later-or-undated-sheet | SR Montenegro | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BOR` | Series M709: Bor (3383 II) | later-or-undated-sheet | SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-BOSANSKI-BROD` | DMA M709 quadrangle: Bosanski Brod, sheet 2685 II | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Croatia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-BOVEC` | DMA M709 quadrangle: Bovec, sheet 1987 I | later-or-undated-sheet | SR Slovenia / Italy | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BRCKO` | Series M709: Brcko (2884 IV) | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Croatia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BROD` | DMA M709 topographic sheet: Brod (2881 IV) | later-or-undated-sheet | SR Montenegro / SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-BUGOJNO` | DMA M709 topographic sheet: Bugojno (2683 III) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-CAPLJINA` | DMA M709 topographic sheet: Capljina (2681 II) | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Croatia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-CETINJE` | Series M709: Cetinje (2879 I) | later-or-undated-sheet | SR Montenegro | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-CRNA-NA-KOROSKEM` | DMA M709 quadrangle: Crna na Koroskem, sheet 2187 I | later-or-undated-sheet | SR Slovenia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-DANILOVGRAD` | DMA M709 quadrangle: Danilovgrad, sheet 2880 II | later-or-undated-sheet | SR Montenegro | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-DERVENTA` | DMA M709 quadrangle: Derventa, sheet 2684 I | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-DOBOJ` | DMA M709 quadrangle: Doboj, sheet 2784 III | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-DUBROVNIK` | Series M709: Dubrovnik (2780 III) | later-or-undated-sheet | SR Croatia / SR Bosnia and Herzegovina | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-FOCA` | DMA M709 quadrangle: Foca, sheet 2882 III | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-GORAZDE` | DMA M709 topographic sheet: Gorazde (2882 II) | later-or-undated-sheet | SR Bosnia and Herzegovina / SR Montenegro | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-HERCEG-NOVI` | DMA M709 topographic sheet: Herceg Novi (2779 I) | later-or-undated-sheet | SR Montenegro / SR Croatia | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-IDRIJA` | DMA M709 topographic sheet: Idrija (2087 III) | later-or-undated-sheet | SR Slovenia | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-ILIRSKA-BISTRICA` | DMA M709 topographic sheet: Ilirska Bistrica (2086 II) | later-or-undated-sheet | SR Slovenia / SR Croatia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-JESENICE` | Series M709: Jesenice (2087 IV) | later-or-undated-sheet | SR Slovenia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-KAKANJ` | DMA M709 quadrangle: Kakanj, sheet 2783 III | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-KARLOVAC-NORTH` | DMA M709 quadrangle: Karlovac North, sheet 2286 II | later-or-undated-sheet | SR Croatia / SR Slovenia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-KIKINDA` | DMA M709 quadrangle: Kikinda, sheet 3186 IV | later-or-undated-sheet | SAP Vojvodina / SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-KNIN` | Series M709: Knin (2483 III) | later-or-undated-sheet | SR Croatia / SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-KOSOVSKA-MITROVICA` | Series M709: Kosovska Mitrovica (3180) | later-or-undated-sheet | SAP Kosovo / SR Serbia | 1:100,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-KOTOR` | Series M709: Kotor (2879 IV) | later-or-undated-sheet | SR Montenegro | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-KRAGUJEVAC` | Series M709: Kragujevac (3183 II) | later-or-undated-sheet | SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-KRANJ` | Series M709: Kranj (2087 II) | later-or-undated-sheet | SR Slovenia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-KRIVA-PALANKA` | DMA M709 quadrangle: Kriva Palanka, sheet 3479 III | later-or-undated-sheet | SR Macedonia / Bulgaria | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-LAKE-SCUTARI` | Series M709: Lake Scutari (2979 III) | later-or-undated-sheet | SR Montenegro / Albania | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-LENDAVA` | DMA M709 quadrangle: Lendava, sheet 2488 III | later-or-undated-sheet | SR Slovenia / Hungary | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
+| `POL-MAP-M709-LIVNO` | DMA M709 quadrangle: Livno, sheet 2582 IV | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-MOSTAR` | Series M709: Mostar (2681 I) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-MURSKA-SOBOTA` | Series M709: Murska Sobota (2388 II) | later-or-undated-sheet | SR Slovenia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-NEUM` | Series M709: Neum (2680 IV) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
@@ -171,6 +198,6 @@ These are individually documented source and presentation references, not 147 di
 | `POL-MAP-M709-ZENICA` | Series M709: Zenica (2683 II) | later-or-undated-sheet | SR Bosnia and Herzegovina | 1:50,000 | P0 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 | `POL-MAP-M709-ZRENJANIN-EAST` | Series M709: Zrenjanin East (3185 IV) | later-or-undated-sheet | SAP Vojvodina / SR Serbia | 1:50,000 | P1 | [Source](https://maps.lib.utexas.edu/maps/topo/former_yugoslavia/) |
 
-## Research policy
+## Period authenticity and asset policy
 
-Historical dates refer to the *map*, not the source's online upload time. A 2011 vector outlining 1980s Yugoslavia is **modern historical reconstruction**. Survey date, edition, publication year, projection and resolution must be documented before treating a source as a cartographic base. Distinguish historical republic/province borders from modern successor-state borders, and preserve the game's alternate-history fiction separately from real events. Source licences and copyright must be resolved before moving images or PDFs into a distributed build.
+Attribution and rights apply to the actual file and map edition, not only the hosting site's general notice. Map source dates, depiction dates, scan upload dates and historical data publication dates are different. The game derives fictional RTS maps, civilian systems and faction borders without representing modern political or ethnic maps as evidence of real population loyalties.
