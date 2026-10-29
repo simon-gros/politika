@@ -166,4 +166,4 @@ The runner exits non-zero whenever any verdict is not PASS, including the expect
   - An Unaligned engagement fixture, so facing-only and withheld shot cues are observed over sockets.
   - Client fog shading and last-seen contacts (F33).
   - Listen-hosted 3–4 process runs.
-  - A unit-scale fixture to set bandwidth and step budgets for real RTS unit counts.
+  - A unit-scale fixture to set bandwidth and step budgets for real RTS unit counts. *(Done 29 Oct 2026: [unit-scale record](RTS_MULTIPLAYER_MP2_UNIT_SCALE_ACCEPTANCE.md).)*

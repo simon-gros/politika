@@ -4,6 +4,8 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Multiplayer MP-2 (sixth increment): Development builds can fill each seat with up to 200 units (`-PolitikaMPUnitScale=N`) and measure bandwidth and server step cost per phase at RTS unit counts. Packaged 1v1/2v2 runs from 52 to 802 units find that a client's 100 KB/s send rate fills at about 400 converged units (F44) and that ordering a whole army costs one long server step (F45). Network protocol and game_version are unchanged. See the [MP-2 unit-scale record](Docs/RTS_MULTIPLAYER_MP2_UNIT_SCALE_ACCEPTANCE.md).
+
 - Prototype controls: **Attack-Move is now Q and Stop is X**. W/A/S/D only pan the camera, so pressing an order no longer also nudges the camera, and holding a pan key with a unit selected no longer issues Attack-Move or Stop. Order keys are `DefaultInput.ini` action mappings, and `quality -- audit` rejects order keys that reuse a pan key. Linux Development package and 21 packaged PAC-10 replays, including 10 under CPU load: see [Test-map controls](Docs/TEST_MAP_TERRAIN.md#pac-10-hotkeypan-key-separation-resolved). Version/counters are unchanged.
 
 - Multiplayer MP-2 (second increment): Development builds now measure each connection's bandwidth and the server's step cost, and the packaged dedicated layouts (1v1 to 2v2) are qualified under engine-emulated latency, packet loss, reordering and duplication. Network protocol and game_version are unchanged. See the [MP-2 network conditions record](Docs/RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
