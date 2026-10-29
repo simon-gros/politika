@@ -68,7 +68,7 @@ If a desktop launcher cannot resolve the project's `5.8` association to a locall
 
 An explicit UE `-GameUserSettingsINI=…` override is a development-only external destination: the shell does not reset it. Combining it with startup safe mode/reset produces an early actionable failure (exit 70) without changing the original. Runtime safe/reset controls are disabled for that destination. No `-headless` flag is invented.
 
-`-nullrhi` is a **client diagnostic mode**, not a server: it can initialize a local profile/player but constructs no shell widgets. Dedicated-server guards are present, but there is **no Server target** and no server support claim; build step 5 is conditional on a future multiplayer/server scope decision.
+`-nullrhi` is a **client diagnostic mode**, not a server: it can initialize a local profile/player but constructs no shell widgets. Dedicated-server guards are present, but there is **no Server target** and no server support claim. Multiplayer has been adopted as a future design direction, with a mandatory [existing-code audit and MP-0–MP-4 staged plan](RTS_MULTIPLAYER_ARCHITECTURE.md); the real server build/launch/package is still deferred until the appropriate validated multiplayer milestone.
 
 ## Storage and recovery boundaries
 
