@@ -1,6 +1,6 @@
 # POLITIKA — Development Validation and Documentation Governance
 
-**Status:** Mandatory lightweight working policy from 27 October 2026. The existing Rust quality utility performs metadata checks; no existing Unreal project, gameplay build or hosted workflow is assumed.
+**Status:** Mandatory lightweight working policy from 27 October 2026, updated 29 October 2026. The Unreal project and bounded gameplay prototype exist, with scoped historical Linux Development acceptance evidence; this policy never infers a current build or hosted workflow from repository source. The Rust quality utility performs offline metadata and native core checks.
 
 ## 1. Single-source documentation hierarchy
 
@@ -22,7 +22,7 @@ When editing a feature, update its owning document, associated regression tests,
 | Narrative, descriptions, documentation | References/link hygiene, canon consistency, review of historical assertions; existing Rust docs/metadata audit where relevant | Unreal launch, gameplay balance, campaign outcomes |
 | Historical archives and political/map source catalogues | Source ID and rights/date/category consistency; historical decision traceability; research-only versus approved asset status | Cartographic accuracy of uninspected items or copyright permission |
 | Rust tools/manifests | Cargo formatting check, `cargo test --locked --all-targets`, `quality audit`, targeted malformed-data regression tests | Unreal builds and imports |
-| Portable C++ RTS command/rules kernel | Compile/tests through `quality core`, missing/invalid/edge cases | Movement, combat or match integration in Unreal |
+| Portable C++ RTS command/rules kernel | Compile/tests through `quality core` or standalone `bash tools/core-test.sh` when Cargo is unavailable, including missing/invalid/edge cases | Standalone test covers only the C++ assertions and produces no Rust report; neither mode proves movement/combat or Unreal match integration |
 | Unreal C++ changes (once the project exists) | Pinned toolchain preflight, affected C++ tests and Unreal Automation IDs, Editor/Client compilation | Packaged-world user acceptance unless explicitly run |
 | Maps/navigation/fog (once implemented) | One map fixture, spawn/collision, group paths, LOS/visibility and faction/NPC occupation assertions | Every campaign map and every target platform |
 | Art, materials, audio imports (once implemented) | Provenance/rights review; file/metadata import validation; one representative in-engine playback/render check | Complete art polish, memory/performance qualification |

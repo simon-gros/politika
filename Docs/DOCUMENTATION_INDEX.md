@@ -1,6 +1,6 @@
 # POLITIKA — Documentation Index and Ownership
 
-**Authority:** This file is for navigation and maintenance; it is not an additional game design, technical specification or release plan. Files and code currently present are not evidence of a running Unreal game.
+**Authority:** This file is for navigation and maintenance; it is not an additional game design, technical specification or release plan. Source files and committed assets alone do not prove runtime behavior; consult the scoped acceptance records for historically verified Linux Development builds and packages.
 
 ## Game design and canon
 
@@ -35,6 +35,7 @@
 - [UI Overview](POLITIKA_UI_OVERVIEW.md) — main menu, faction HUD, commands, accessibility and input design.
 - [Development Foundations](DEVELOPMENT_FOUNDATIONS.md) — implemented local Rust/C++ foundations and staged possibilities.
 - [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) — change-scope testing policy and document ownership.
+- [Repository Implementation Audit — 29 October 2026](Reports/REPOSITORY_IMPLEMENTATION_AUDIT_20261029.md) — tracked-source inventory, verified versus unqualified milestones, prioritized risks, and Rust-free native core test fallback; an audit, not a new gameplay acceptance.
 - [Versioning and Release Management](VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) — canonical build/game version policy.
 - [Performance and Release Gates](PERFORMANCE_AND_RELEASE_GATES.md) — planned measurable RTS fixtures and release acceptance.
 

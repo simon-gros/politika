@@ -17,7 +17,9 @@ The canonical [`version.json`](../version.json) and the independent compatibilit
 
 ## 2. Local commands
 
-Run from the repository root with a Rust 2024-compatible toolchain (Rust 1.85 or newer):
+For a local checkout with a C++20 compiler but no Rust/Cargo, run `bash tools/core-test.sh` to compile and execute the **portable C++ rules assertions only**. This is a standalone fallback with the same strict C++ warning flags as `quality core`; it produces no Rust quality JSON and does not prove Unreal behavior. It uses an isolated temporary directory and supports `CXX` to choose the compiler.
+
+Run the full Rust quality lane from the repository root with a Rust 2024-compatible toolchain (Rust 1.85 or newer):
 
 ```bash
 cargo fmt --manifest-path tools/version/Cargo.toml -- --check
