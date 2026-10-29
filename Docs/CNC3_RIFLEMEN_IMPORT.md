@@ -56,6 +56,12 @@ Recovery diagnosed an incompatible package: its game executable was timestamped 
 
 This remains a local reference-placeholder playtest, not original POLITIKA production media or a release/platform certification.
 
+### Sole retained prototype (2026-10-29)
+
+At the user's request, `RifleInfantry` is now the only active rifleman prototype. Removed the superseded static `Art/Prototypes/Infantry/AC-INF-01` GLB/manifest and `Tools/InfantryAuthoring`, and removed the legacy CC0, Miazmatic and previous reference-model branches from the importer and package checks. Local `Saved/ACInfantryImport`, `Saved/CC0SquadKit` and `Saved/CC4InfantryTexture` candidate directories were moved to desktop Trash. Faction concept artwork/roster proposals, external reference extraction sources and historical evidence are unchanged; Git history is not rewritten.
+
+Validation: pinned UE 5.8.3 Editor build succeeded; all **4/4** `Politika.Infantry` automation tests passed with zero failures. Shell syntax and current-package manifest checks passed. All tracked Content assets and retained rifle-infantry audio sources match their pre-cleanup SHA-256 values; the promoted package's existing checksum manifest also passes. No game runtime or cooked asset changed, so the accepted playtest package was retained without a new cook. Local evidence: `Saved/RifleCandidateCleanup20261029/`.
+
 ### Verified acceptance
 
 - Package source: `16644045cc4aac6fffcfb8ac66dd5bdd2fa16847`; engine: `396c9f059903aed5fec78ecd3d437a40c6415368` (UE 5.8.3). Startup log reports `git_revision=16644045cc4a`, matching the archived source/header. Subsequent documentation commits do not change that package identity.

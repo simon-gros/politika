@@ -128,7 +128,7 @@ POLITIKA's documented engine architecture separates authored definitions and vis
 **Objective:** raise the visual quality of the already accepted RTS slice without expanding the gameplay systems or faction rosters.
 
 1. **Environment sample:** import a small number of approved CC0 asphalt, ground, concrete and industrial materials, plus a few civilian props. Validate mesh collisions and static navigation obstacles on the existing test map.
-2. **Infantry sample:** use the existing `AC-INF-01` concept as the POLITIKA art reference; rig/texture an appropriately licensed or original prototype and test idle, move, attack and death visual states. Do not substitute the concept's faction identity with a generic marketplace uniform.
+2. **Infantry sample:** retain the implemented `RifleInfantry` reference prototype and its [accepted import/audio workflow](CNC3_RIFLEMEN_IMPORT.md). The `AC-INF-01` faction concept remains a future production-art reference; its superseded static prototype is removed. Any future production replacement needs separate approval and idle, move, attack and death validation.
 3. **Vehicle sample:** evaluate an era-appropriate tank, such as the T-55, in an isolated presentation test with correct hull, turret, collision and scalable LOD representation.
 4. **Quality gate:** validate content provenance, UE import, cooked package inclusion, visual legibility, render/CPU/memory costs, and no regressions in selection, orders, navigation, combat, damage/death or objective outcomes.
 5. **Review gate:** record screenshots or comparable acceptance evidence at representative desktop RTS zoom levels; test lower-tier presentation rather than projecting desktop quality assumptions onto Android.

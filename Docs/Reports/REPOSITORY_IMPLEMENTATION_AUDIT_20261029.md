@@ -1,5 +1,7 @@
 # POLITIKA — Repository implementation and validation audit (29 October 2026)
 
+> Later cleanup (2026-10-29): the static AC-INF-01 candidate and `Tools/InfantryAuthoring` were removed in favor of the implemented `RifleInfantry` profile. The inventory and qualification findings below describe the earlier audit snapshot, not current candidate availability. See [current infantry acceptance](../CNC3_RIFLEMEN_IMPORT.md).
+
 **Scope and identity.** Read-only audit of GitHub `simon-gros/politika` default branch `main` at `da23ae5db74fc8ca2079d501db5ea4b06ff63385`, followed by a narrowly scoped offline-test entry-point and documentation-consistency change. The GitHub recursive tree response was complete (`truncated=false`); inventory below is a *tracked source tree* count, not an inventory of generated packages or external engine files. Historical acceptance records are evidence about their own source/build/package identities, **not** tests rerun for this audit.
 
 ## 1. Observed repository inventory
@@ -64,4 +66,4 @@ cargo run --locked --quiet --manifest-path Archive/tools/Cargo.toml
 
 For full engine work, first verify `UNREAL_ENGINE_DIR` and the exact UE pin with `bash tools/unreal.sh doctor`, then run the affected Unreal Automation and packaged-runtime acceptance gates. Treat future release/platform/art qualifications as separate evidence; do not inherit these verdicts from documentation or tool installation.
 
-**References:** [Engine implementation order](../ENGINE_OUTLINE.md), [Stage 4A acceptance](../STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md), [Runtime navigation acceptance](../RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md), [Stage 3 acceptance](../STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md), [Validation policy](../VALIDATION_AND_GOVERNANCE.md), [Infantry prototype](../../Art/Prototypes/Infantry/AC-INF-01/README.md).
+**References:** [Engine implementation order](../ENGINE_OUTLINE.md), [Stage 4A acceptance](../STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md), [Runtime navigation acceptance](../RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md), [Stage 3 acceptance](../STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md), [Validation policy](../VALIDATION_AND_GOVERNANCE.md), [Current infantry prototype](../CNC3_RIFLEMEN_IMPORT.md).
