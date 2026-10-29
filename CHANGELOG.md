@@ -4,6 +4,8 @@ Record meaningful implemented player-facing and compatibility changes under [ver
 
 ## Unreleased
 
+- Multiplayer MP-2 (second increment): Development builds now measure each connection's bandwidth and the server's step cost, and the packaged dedicated layouts (1v1 to 2v2) are qualified under engine-emulated latency, packet loss, reordering and duplication. Network protocol and game_version are unchanged. See the [MP-2 network conditions record](Docs/RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
+
 - Multiplayer MP-2 (first increment): the dedicated server now hosts packaged 2v1, 3v1 and 2v2 matches for three or four clients, and shot effects are sent per connection by team vision so they never reveal a target the viewer cannot see. **Network protocol 1 → 2**: clients built before this change are refused when joining, with a protocol-mismatch message. Development builds only; see the [MP-2 record](Docs/RTS_MULTIPLAYER_MP2_MULTICLIENT_ACCEPTANCE.md). game_version is unchanged.
 
 - Implemented the UE 5.8.3 offline application shell, two cooked maps, persistent local profile with corruption detection, safe/reset recovery controls, canonical Rust-generated build identity, and Linux packaging. Recovered the interrupted build and fixed link exports, corrupt-profile deserialization, duplicate 4K DPI scaling, and fatal-shutdown settings writes. See [shell verification](Docs/SHELL_SKELETON.md) for compiler, package, 14-case process-check and UI evidence. This is not RTS gameplay or a public release; version/counters are unchanged.

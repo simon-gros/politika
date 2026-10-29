@@ -5,7 +5,7 @@
 **Outcome: IMPLEMENTED; packaged qualification PASS for the stated scope.** One headless `PolitikaServer` (Linux Development, `LinuxServer` cook) hosted 2v1, 3v1 and 2v2 + Unaligned matches for three or four independent rendered packaged Linux Development clients over 127.0.0.1. Every packaged check passed: 57/57 in the layout matrix, plus the protocol-refusal check. After rebasing onto the concurrent launch-switch fix, the **combined** build `6a6b3a7` was repackaged and requalified: layout matrix 60/60, MP-3 23/23, MP-1 18/18, offline PAC-10 and PA-AUTHORITY PASS, Automation 35/35 (§E2). `6a6b3a7` is the accepted artifact.
 
 Not qualified here:
-- Network emulation (latency, loss, reordering), bandwidth and server-step measurements (F36). These are the next MP-2 increment.
+- Network emulation (latency, loss, reordering), bandwidth and server-step measurements (F36). **Done in the second increment:** see the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
 - **The packaged runs exercised only exact shot cues.** In player-versus-player combat the target's team always sees the shooter, because weapon range (650 cm) is below sight (1200 cm). Facing-only and withheld cues only arise around the Unaligned side, and the fixture choreography does not fight it. Those two paths are **Automation-qualified only**.
 - Listen-server 3–4 process layouts, client fog shading/last-seen contacts (F33), AI-filled seats, reconnect, a Shipping server, other machines/platforms.
 
@@ -41,7 +41,7 @@ Not qualified here:
 - **F42 (packaged 2v1 / 3v1 / 2v2): CLOSED for dedicated hosting.** Listen-hosted 3–4 process runs were not run; Automation still covers listen binding for every layout.
 - **F27 (shot target point): CLOSED.** Code and Automation cover every cue kind. Packaged runs prove per-connection delivery and exact-cue integrity. See the limitation above.
 - **F28** (grenade debug draws on a listen host, non-Shipping): unchanged, later.
-- **Still open for MP-2:** F33 (client fog shading), F36 (bandwidth / server step), F35 (disconnect policy beyond ending the match).
+- **Still open for MP-2:** F33 (client fog shading), F35 (disconnect policy beyond ending the match). F36 was closed by the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
 
 ## D. Verdicts
 
