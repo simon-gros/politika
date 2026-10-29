@@ -78,6 +78,16 @@ Every row should provide `ref_id`, title, creator/source institution, stable URL
 - Attribution must survive future asset export, packaging and promotional use. Do not erase source signatures, licences or authors from catalogues.
 - If a source page becomes unavailable, preserve stable bibliographic metadata, discovery date and archival identifier, not an unauthorized mirror copy.
 
+## Repository-wide copyright and distribution separation (29 October 2026)
+
+The repository has **no root LICENSE** at the audited baseline. Public source availability by itself does not grant general rights to modify, redistribute, commercialize or include all files in another distribution. The project rights holder must choose and publish separate or compatible terms for code, original artwork/audio, documentation and contributions. Do not presume that clearing code also clears media, trademarks, third-party samples or source-game derivatives.
+
+For any in-game or staged material, track **source rights**, **permission for repository hosting**, **permission for source-file redistribution**, **permission for shipping cooked binaries**, and **attribution obligations** separately. Use a rights status such as `reference_only`, `permission_pending`, `cleared_for_repo`, `cleared_for_game_distribution` or `rejected`, with item-specific source URL, copyright holder, evidence of terms/permission, checksum and reviewer/date. This is a proposed extension to production metadata, **not** a claim that a complete validated manifest already exists. CC0 is reusable when accurately verified per item; it is not a license inherited by all neighboring assets.
+
+The [C&C3 rifle-infantry import](../Docs/CNC3_RIFLEMEN_IMPORT.md) and [local rifle-infantry audio](../Art/Audio/Infantry/RifleInfantry/README.md) describe externally sourced converted game media. Renaming files, re-encoding MP3 audio, changing texture colors or converting the mesh does **not** independently establish redistribution permission. Treat derived media as **distribution-rights review pending** unless the relevant rights holder licenses the use; future public downloads, source archives and cooked packages require explicit permission, authorized replacement or verified exclusion. Existing tracked media are not asserted cleared merely by being committed. Keep the existing playtest evidence intact while resolving the rights status; any actual asset removal/replacement is a separately reviewed production change.
+
+Reference-only research citations and historical scans must not be confused with production-ready game artwork. The [production policy](../Docs/PRODUCTION_STANDARDS.md) owns approval gates; [release gates](../Docs/PERFORMANCE_AND_RELEASE_GATES.md) block unreviewed public distribution independently of technical packaging success.
+
 ## Production review
 
 1. Confirm item identity, city and precise date; verify period build/state rather than rely on a modern photo.

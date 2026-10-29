@@ -99,6 +99,20 @@ The [planned audio event catalogue](../Data/audio_events.json) establishes **sem
 
 **First audio milestone:** import one licensed/original selection cue, one combat warning, one order acknowledgement and one broadcast sample; verify their real Unreal playback routing, volume behavior, caption/transcript strategy and recognition in a busy skirmish. Catalog entries `planned` are not recorded, licensed, implemented or mixed.
 
+## Asset intake, technical qualification and release clearance
+
+Every candidate mesh, texture, sound, music track, banner or map source follows independent status axes:
+
+| Axis | Candidate states | Evidence |
+| --- | --- | --- |
+| Authorship/provenance | Original / external CC0 or attributed / protected reference / permission pending | Creator, source URL, asset/source ID, checksum, obtained license text and rights reviewer |
+| Production integration | Staged source / imported UE / bound to authored content / cooked / rendered or played in package | Unreal content path, import config, validation run, cook manifest and package identity |
+| Public distribution | Not reviewed / excluded / cleared with conditions / cleared for release | Item-specific permission/license, attribution, inclusion scope, approval date |
+
+A Blender source, successful FBX conversion, valid skeleton or cached cooked package is **not** rights clearance. Do not redistribute extracted media from other commercial games merely because names and formats have changed. The [archive rights policy](../Archive/RIGHTS_AND_PROVENANCE.md#repository-wide-copyright-and-distribution-separation-29-october-2026) owns underlying rights interpretation; [rifle-infantry reference provenance](CNC3_RIFLEMEN_IMPORT.md) is a concrete unresolved case. Preserve original evidence and runtime files during documentation-only review; replacing restricted assets needs its own tested import/cook change.
+
+For a skinned RTS infantry candidate, require stable gameplay/presentation ID, authored scale and orientation, rig/skeleton and animation retarget verification, material/texture budgets, LODs, collision/selection bounds, key animation states, audible event mapping, desktop RTS-zoom silhouette, and at least one real packaged visual/audio inspection. For environment props require footprint/passability and blocked-route checks when physical collision is involved. Each approved asset should trace from any historical [archive reference](../Archive/README.md) through an explicit [historical decision](../Data/historical_decisions.json) or map-production record to a final authored asset; design-stage entries remain proposed until reviewed.
+
 ## 6. Promotion and responsibility
 
 - **Rust** validates manifest structure, referenced archive IDs, safe file paths and metadata consistency; offline derived-content generators may be added when inputs exist.

@@ -1,5 +1,11 @@
 # C&C3 Riflemen source analysis and POLITIKA import
 
+## Distribution-rights boundary (not a gameplay regression)
+
+This document describes local technical conversion of model, animation and sound content from *Command & Conquer 3: Tiberium Wars*. The imported/prototype assets and neutral-named MP3 variants are **reference/playtest material with public redistribution permission not established by this record**. A neutral POLITIKA path, re-encoding, custom import script, valid cooked-manifest entry and successful packaged playback do not remove third-party copyright interests. Do not treat this prototype as approved production content, licensed open-source game media, or automatically safe to release through the public repository, archives or storefronts. Before any public distribution, document explicit rights-holder permission or replace/exclude the derived source and cooked assets, verify the released artifact, and maintain source provenance. Any change to the existing media needs a separate tested implementation task; this documentation amendment intentionally changes **no** mesh, skeleton, audio, gameplay, scripts or package.
+
+See [archive rights and provenance](../Archive/RIGHTS_AND_PROVENANCE.md), [production standards](PRODUCTION_STANDARDS.md) and [performance/release gates](PERFORMANCE_AND_RELEASE_GATES.md). A rights-review blocker is distinct from the scoped Linux technical acceptance below.
+
 ## Scope and evidence
 
 The source is the locally installed *Command & Conquer 3: Tiberium Wars* content, extracted with C&C Asset Extractor 1.10 into the title-specific Universal Modder workspace at `/mnt/data/CommandAndConquer/UM/Command and Conquer 3 Tiberium Wars/infantry-import-20261029/`. Source archives and extracted W3X/DDS files are not copied into this repository. Authored game data was cross-checked against the local C&C Modding Support XML pack. That XML is useful authored evidence, not proof of shipped runtime values; the W3D adapter warns that animation reconstruction is not guaranteed.
