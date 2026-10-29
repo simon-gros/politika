@@ -43,7 +43,8 @@ bash "$UNREAL_ENGINE_DIR/Engine/Build/BatchFiles/RunUAT.sh" -WaitForUATMutex Bui
     "-map=$maps" "-CookDir=$cook_dirs" "-archivedirectory=$archive_dir" '-UbtArgs=-WaitMutex -MaxParallelActions=12'
 
 out="$archive_dir/$platform_dir"
-manifest="$out/Manifest_UFSFiles_$platform_dir.txt"
+# UAT names the manifest after the platform (Linux) even for the LinuxServer archive.
+manifest="$out/Manifest_UFSFiles_Linux.txt"
 [[ -f "$manifest" ]] || { echo "UAT produced no UFS manifest: $manifest" >&2; exit 1; }
 require() { rg -q -F "$1" "$manifest" || { echo "Package manifest is missing $1" >&2; exit 1; }; }
 for asset in DA_RifleInfantryPresentation DA_RifleInfantryBehavior DA_TestRifleInfantry DA_TestRifle; do
