@@ -1,0 +1,10 @@
+# category<TAB>class_contains<TAB>path_contains<TAB>POLITIKA research question
+unit_definition	TedUnitDefinitionAsset	/	Which authored definition references inform POLITIKA unit-definition validation?
+weapon_definition	TedWeaponDefinitionAsset	/	Which authored definition references inform POLITIKA unit/weapon relationships?
+structure_definition	TedStructureDefinitionAsset	/	Which authored definition references inform POLITIKA structure-content validation?
+production_candidate	TedStructureDefinitionAsset	Factory	Which structures have factory-like path/name markers worth manual producer/queue authoring review? Registry paths do not confirm mechanics.
+map_metadata	TedMapInfo	/Maps/	Which map metadata families expose slots, starts, objectives or navigation context?
+objective	TedObjectiveObj	/Maps/	Which authored objective families expose map/objective authoring relationships?
+build_order	AIDefinition_BuildOrder	/AI/BuildOrders/	Which AI build-order assets are discoverable without inferring behavior?
+navigation	InfluenceMapQueryPreset	/	Which navigation-adjacent query preset families warrant POLITIKA map-validation questions?
+effects_selected	TedEffectAppliedToAttackerConfigAsset	/	Which effect configuration family could inform generic presentation authoring without asset reuse?
