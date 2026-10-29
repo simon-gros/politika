@@ -2,6 +2,8 @@
 
 **Status:** Design and source-gap assessment, 29 October 2026. **Not an implementation or milestone acceptance.** Audited against tracked GitHub `main` at `cdb85303f7e5a44d8a5469ba40531ce625cf8cc9`, the [Engine Outline](ENGINE_OUTLINE.md), [Stage 4A](STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md), [Stage 3](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md), [navigation record](RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md), source modules and test registries. Historical Linux acceptance reports are prior-snapshot evidence; no UE/Cargo runtime was executed in this audit.
 
+**Audit identity caution (29 October 2026):** This matrix's source snapshot is `cdb85303f7e5a44d8a5469ba40531ce625cf8cc9`. It is **not** a test of later main revisions. Read later navigation and infantry publication qualifications at their exact source/package identities in the owning acceptance records; do not promote an older dirty-build PASS into a current-clean-source claim. [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) specifies evidence identity and future register fields; no current-source master acceptance ledger is asserted here.
+
 ## 1. Minimum RTS contract versus optional genre conventions
 
 A real-time strategy game needs: (1) authoritative, progressing world state; (2) at least one player/agent controlling multiple strategically relevant entities or assets over time; (3) admissible spatial/strategic decisions; (4) observable feedback bounded by what that player can know; (5) scenario goals and terminal outcomes; and (6) a usable command/input interface. Their *specific implementations* vary. Resource harvesting, base construction, technological upgrades, fog of war, minimap, multiplayer, save/replay, formations and diplomacy are **common but not universal requirements**. For POLITIKA's stated **C&C-like, offline First Playable Skirmish**, a small economy, reinforcement production and autonomous opposing decisions have been deliberately selected as additional milestone requirements by [§7.5](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match). More elaborate systems below are later design candidates, not automatically mandatory.
@@ -42,6 +44,10 @@ The adjacent specifications provide *implementation-ready boundaries and negativ
 - [Match Persistence and Replay](RTS_MATCH_PERSISTENCE_AND_REPLAY.md): separates profile data from authoritative match snapshots, replay event/order logs, schema compatibility, atomic write and integrity checks.
 
 These documents supplement (and link to) the existing ontology, UI, economy, roadmap and acceptance records; they do **not** change existing gameplay design canon, command variants, saved Unreal assets, or the authoritative implementation sequence.
+
+### Stage 4 cross-system dependency and whole-match criterion
+
+The 4B USD-cent treasury, food/upkeep and positive building power are shared authoritative prerequisites for reinforcement production; they must not become separate simulation loops. Stage 4C group requests submit ordinary per-issuer typed commands. Stage 4D opponent behavior uses the same participant authority and (when implemented) participant-scoped observations. Stage 4E–4F needs both ordinary victory and defeat, Results, menu recovery and same-process rematch with no stale previous-generation money, orders or spawned units. The proposed single integration fixture and phase-order decision live in the [Engine Outline](ENGINE_OUTLINE.md#stage-4-cross-system-execution-and-evidence-thread-proposed), not in this secondary coverage matrix. Existing tests remain historically scoped, not an accepted complete skirmish.
 
 ## 4. Implementation prioritization and hard gates
 

@@ -53,6 +53,12 @@ For each release candidate retain:
 
 Do not declare an artifact shipped because it compiled. Runtime package hashes and device testing may only be added when real packages exist.
 
+### Rights and evidence conditions before distributing any build
+
+A successful cook or packaged gameplay test does **not** establish copyright permission. Audit software, original POLITIKA media, CC0/attributed third-party assets, reference-only materials and extracted proprietary game media separately. The [rifle-infantry reference import](CNC3_RIFLEMEN_IMPORT.md) documents model and audio conversions from another game; neutral naming and re-encoding alone do not clear public redistribution. Before public packages, record explicit rights/permission, replacement with original or cleared material, or verified exclusion from distributable assets (including cooked output, source-control exports and sample media). Project-wide software/artwork license terms require the rights holder's decision; no license is selected by these rules.
+
+For every candidate PASS reconcile [release_matrix.json](../Data/release_matrix.json) with the exact Git SHA/dirty state, engine revision, content and package hashes, platform/device, fixture, test command, date and linked report. A prior package PASS remains *historical evidence*, never a current-build verdict. Document rights blockers and NOT_RUN device/packaged checks separately from failed tests; follow [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) for status definitions.
+
 ## 5. Low-cost next moves
 
 Keep current Rust reports and regression tests honest, retain all four benchmark fixture definitions as *planned*, and do not add a monitoring server or a heavyweight benchmarking harness. Immediate product work remains the Stage 4A admission/recovery gaps, followed by the bounded economy/production, controls, opponent and result/rematch increments in the [Engine Outline](ENGINE_OUTLINE.md). Once the first skirmish runs, implement only `small_skirmish`, establish real frame/simulation budgets, then expand to the remaining fixtures if they expose measurable problems. Hosted build workflows remain absent by design.
