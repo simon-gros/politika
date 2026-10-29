@@ -561,6 +561,10 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
         )?;
         capture(&window, &evidence, "04-guard")?;
+        // The rifleman may already be within weapon range after its Guard order. In that
+        // legitimate case AttackMove acquires and fires rather than producing a movement
+        // position event, so prove the authoritative order then accept either runtime path.
+        let attack_move_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
         input(&window, &["mousemove", "--sync", "650", "430", "key", "a"])?;
         wait_for(
             &mut child,
@@ -568,12 +572,18 @@ fn main() -> Result<(), String> {
             "RTS_ORDER_ADMITTED order=AttackMove",
             Duration::from_secs(5),
         )?;
-        wait_for(
-            &mut child,
-            &log,
-            "RTS_POSITION_UPDATED order=AttackMove",
-            Duration::from_secs(5),
-        )?;
+        let attack_move_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        if !attack_move_log[attack_move_log_start..]
+            .contains("RTS_POSITION_UPDATED order=AttackMove")
+        {
+            wait_for_since(
+                &mut child,
+                &log,
+                "INFANTRY_SHOT actor=",
+                Duration::from_secs(5),
+                attack_move_log_start,
+            )?;
+        }
         input(
             &window,
             &["mousemove", "--sync", "577", "323", "click", "3"],
