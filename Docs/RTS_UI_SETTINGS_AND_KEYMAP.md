@@ -29,6 +29,9 @@ These are current source bindings, **not** the intended final default profile. A
 | A | Attack-Move to the point currently under the cursor | \`AttackMoveSelected\` on press, no separate confirm cursor state; **also pan left** |
 | S | Stop selected unit | \`StopSelected\` on press; **also pan backward** |
 | G | Guard selected unit (provisional prototype semantics) | \`GuardSelected\` |
+| E | Eligible selected infantry uses grenade ability | \`GrenadeSelected\`; capability/target checks still apply |
+| R | Eligible selected infantry reloads | \`ReloadSelected\`; not a control-group command |
+| F | Eligible selected infantry uses sprint | \`SprintSelected\`; **F is occupied**, so an unmodified F camera-focus proposal conflicts |
 | Escape | Exit current prototype match to main menu | \`ReturnToMenu\`; **not** a pause/options popup |
 | W / S | Camera forward / backward | Legacy \`PrototypePanForward\` axis |
 | A / D | Camera left / right | Legacy \`PrototypePanRight\` axis |
@@ -132,16 +135,45 @@ References: [Audio Modulation Quick Start](https://dev.epicgames.com/documentati
 | Action family | Suggested initial binding | What the help UI must explain |
 | --- | --- | --- |
 | Select / inspect / contextual move or attack | LMB, RMB, modifiers | Owner/visibility requirements; what happens when no valid target or order |
-| Camera pan, zoom, focus selected | Arrows, MMB-drag, wheel, F | No implicit combat order; separate edge-scroll setting |
-| Tactical commands | A Attack-Move, S Stop, G Guard, optional H Hold | Target confirmation/command state; what differs from Move or Guard |
-| Select group | Drag LMB; Shift add/toggle; Ctrl same type (later) | Exclude hostile/neutral/dead and show selection count |
-| Control groups | Ctrl+1…9 assign, 1…9 recall, double-tap focus (later) | Invalidation, empty group, stale match, binding conflicts |
+| Camera pan, zoom, group focus | Arrows, MMB-drag, wheel, double-tap numbered group; optional remappable camera-focus action | Do **not** assign F to camera focus by default: current infantry F is Sprint; no implicit combat order |
+| Tactical commands | A Attack-Move, S Stop, G Guard, E Grenade, R Reload, F Sprint (current ability keys retained); optional later stance keys | Match current ability availability; target confirmation/command state; no accidental camera orders |
+| Selection gestures | LMB, marquee drag; Shift+click toggle, Shift+drag add; Ctrl+click/double-click same-type; Ctrl+drag subtract | Commandable selection excludes hostile/neutral/dead; same-type applies only to authorized, visible on-screen entities |
+| Numbered control groups (4C-G) | Ctrl+0–9 replace, 0–9 recall, double-tap recall+focus, Shift+0–9 add, Alt+0–9 exclusive transfer, Tab subgroup cycle | Ten slots including 0; overlaps allowed; no hotkey creates a formation or enqueues gameplay orders; keybind conflicts/OS interception |
 | Queue waypoints | Shift+RMB (later) | Append vs replace and queue limit; not present in existing prototype |
 | Alert history / base focus | Space latest alert; Backspace base focus (later) | Camera only, no new sensor/omniscient intel |
 | Diplomacy/intelligence/map overlay | Candidate D, I, M (later) | These are **screen-navigation intents**, never privileged gameplay actions |
 | Production/build | Contextual command card or selected producer menu (later) | Bound recipe/unlock/price/power restrictions and queue state |
 | Pause/back/help | Esc contextual Pause/Back; F1 help (later) | Esc in prototype currently **returns to main menu** |
 | Screenshot and system shortcuts | Platform/Steam capture handled externally unless adopted | Do not hijack Alt+Tab, OS window switching or accessibility shortcuts |
+
+### 6.2 Proposed complete tactical selection/group actions (not currently bound)
+
+These entries refine the summary above. [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) owns exact set algebra, authority and validation; [Comparative RTS Group/Input Research](RTS_CONTROL_GROUP_INPUT_RESEARCH.md) owns sourced precedent. `4C` means first multi-selection/commands; `4C-G` is the **separate mandatory core-production group-control follow-on**, not part of the historic 4F first-skirmish exit.
+
+| Semantic action ID (candidate) | Proposed desktop binding | Operation and context |
+| --- | --- | --- |
+| `rts.selection.click` | LMB tactical world | Replace with one commandable unit, or clear on empty terrain; inspection remains separate |
+| `rts.selection.rectangle` | LMB world press + drag beyond DPI-aware threshold | Replace with eligible proxy-intersecting IDs; never while modal/minimap/target mode captures |
+| `rts.selection.toggle_member` | Shift+LMB | Toggle one eligible unit |
+| `rts.selection.union_rectangle` | Shift+LMB drag | Union rectangle with current selected IDs |
+| `rts.selection.subtract_rectangle` | Ctrl+LMB drag | Remove intersecting eligible IDs; drag wins over Ctrl+click at threshold |
+| `rts.selection.visible_same_archetype` | Ctrl+click or double-click eligible unit | Select same authored type in currently authorized visible viewport |
+| `rts.group.assign.0-9` | Ctrl+0–9 | Replace stored slot ID set with current selection; no gameplay command |
+| `rts.group.recall.0-9` | 0–9 | Recall valid existing group; refuse stale generation |
+| `rts.group.union.0-9` | Shift+0–9 | Add selected IDs **without stealing** from other groups |
+| `rts.group.transfer.0-9` | Alt+0–9 | Transfer selected IDs out of other numbered slots into destination slot |
+| `rts.group.focus` | Rapid second press of same number | Re-select and focus camera; configurable/debounced threshold, never issue a move |
+| `rts.selection.subgroup.next/previous` | Tab / Shift+Tab | Cycle eligible archetype/ability subgroup; does not rewrite stored slot membership |
+| `rts.order.context` | RMB tactical world/observed hostile | Dispatch per issuer via current typed request; mixed capability outcomes shown |
+| `camera.pan` / `camera.zoom` | Arrow keys, MMB-drag / wheel | Camera-only actions; camera pan cannot also produce Stop/Attack-Move |
+| `rts.order.queue_append` | Shift+RMB **later** | Explicit bounded queue only once a separate queue contract exists |
+| `rts.formation.facing_preview` | Explicit Form/Reform tool **later** | Formation geometry/stance is not implicit in a drag-selection |
+
+**Collision policy:** Only one semantic action can consume an input chord in the same active context unless an explicit deterministic chord/hold/release disambiguation exists. Current **F= Sprint** blocks using unmodified F as Focus. Current **A/S** conflict with legacy WASD pan until the proposed arrow-key/MMB camera preset is implemented and accepted. Ctrl/Shift/Alt combinations must be validated against desktop compositor, IME, accessibility and shortcut interception; where blocked, offer rebinding and a clickable group bar. Legacy `BindKey` listeners and new Enhanced Input mapping must not both dispatch the same request during migration.
+
+**Gesture arbitration:** One press owns one path `Idle → PendingClick → ClickRelease | BoxSelection | Cancel`. Drag threshold is DPI-aware; hold a stable camera/view/projection snapshot or explicitly document behavior during pan. UI widgets and minimap consume pointer input before the tactical world. Escape/Back closes the deepest modal/target/drag state first; on focus loss/phase transition/rematch, clear latched modifiers and pending click states. Rectangle selection uses authored selection proxies, not just a unit pivot, with eligible/visible/command-authority filtering before one sorted/unique ID transition.
+
+**Group HUD requirements:** up to ten clickable slots (0–9), active slot, count, empty/stale indicator, group ownership/eligible count, keyboard hints taken from actual rebound actions and optional formation badge **only if** a real formation exists. A control-group button never silently changes unit orders or produces military Discipline. With mixed selected types, distinguish common commands, subset-eligible actions and ineligible counts; feedback must match each typed command outcome.
 
 Rebinding: support alternative bindings, modifier chords, deliberate duplicate detection, keyboard-layout display names, gamepad/touch separate profiles, Reset Category/Reset All with confirmation, accessibility alternatives to held keys, and changes visible instantly in HUD/tooltips/help. Respect system-level key capture and input-method-editor/text-entry focus. Distinguish rebind **failure** from a saved key profile. Avoid requiring keyboard shortcuts to access key settings.
 
