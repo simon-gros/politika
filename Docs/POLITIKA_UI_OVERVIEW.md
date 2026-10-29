@@ -119,7 +119,7 @@ Exact placement can be tuned with prototypes, but the initial layout should prov
 | Region | POLITIKA role |
 |---|---|
 | Battlefield | Main view for movement, combat, selection, target designation, and tactical feedback |
-| Selection/force panel | Selected unit or squad identity, health/readiness, relevant status, and shared valid commands |
+| Selection/force panel | Selected individual/mixed-force identity, health/readiness, subgroup/formation status and common versus subset-valid commands; optional 0–9 clickable control-group bar |
 | Command/ability panel | Contextual orders and selected unit abilities, with hotkey hints and unavailable reasons |
 | Strategic map | Camera navigation, objectives, friendly positions, and only currently known enemy/intel markers |
 | Objective panel | Current primary/secondary objectives, state changes, and explicit completion/failure feedback |
@@ -184,7 +184,7 @@ This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTL
 - Resource balance and collection/delivery feedback; production queue, affordability, progress/completion and cancellation only where authoritative rules support it.
 - Objective and victory/defeat condition status, terminal result/debrief, return-to-menu and rematch navigation.
 
-**Later refinements, not first-match blockers:** advanced minimap interaction, command groups, sophisticated command queues, formation previews, adaptive tactical overlays, special-ability panels, full intelligence dossiers and CommonUI migration. Preserve the current shell/main-menu and Slate/C++ presentation unless a measured need warrants an incremental change. Linux/Windows desktop input is the immediate focus; SteamOS/Steam Deck and Android remain planned until their interactions are built and tested on actual devices.
+**Later refinements, not first-match blockers:** advanced minimap interaction, sophisticated command queues, formation previews, adaptive tactical overlays, special-ability panels, full intelligence dossiers and CommonUI migration. **Persistent numbered control groups are separately required for core production usability under 4C-G, though they are not a retroactive 4F first-match blocker.** Preserve the current shell/main-menu and Slate/C++ presentation unless a measured need warrants an incremental change. Linux/Windows desktop input is the immediate focus; SteamOS/Steam Deck and Android remain planned until their interactions are built and tested on actual devices.
 
 **Acceptance principle:** rendered package interaction must establish that the player can understand selection, ownership, orders, economy, production, objective state and result—not merely that simulation tests passed. The player gesture is translated to semantic intent; shared command admission and authoritative C++ state decide its effect; events/snapshots drive UI feedback. Input device specifics must not enter core simulation rules. Proposed screens elsewhere in this document remain future requirements unless explicitly marked implemented above.
 
@@ -326,7 +326,17 @@ Selection is local player intent over currently visible/eligible entities, not a
 
 Selection presentation should preserve map readability: clear rings/shape outlines, a subtle group bounding cue, category/ownership symbol and hover feedback. Selection effect animation is not confirmation of an admitted gameplay order.
 
-### 14.1a. Tactical formation controls (future behavior)
+### 14.1a. Persistent control-group bar and selection gestures (proposed core production interaction)
+
+The numbered **control-group bar** is a compact discoverable alternative to Ctrl/Shift/Alt+0–9. Each clickable slot must show its number (0–9), current eligible/total count where meaningful, active selection, a distinct empty/missing indicator and a bound-key hint from the live input registry. Click recalls; an explicitly identified focus action frames units without issuing orders. Do not show a formation icon unless that group references real formed units; selecting an overlapping group **never** creates a formation or affects Discipline. Slot assignment is a local input operation, not a privileged gameplay call. On screen layouts with insufficient horizontal room, collapse or scroll the bar while preserving accessible slot selection (do not cover tactical play).
+
+Mouse/keyboard grammar: LMB single/clear, LMB-drag rectangle after a **DPI-aware** threshold, Shift+click toggle, Shift+drag add, Ctrl+click/double-click visible same archetype, Ctrl+drag subtract; RMB context order and MMB pan/wheel zoom remain distinct. Ctrl+0–9 replaces a slot, Shift+0–9 **adds without removing other associations**, Alt+0–9 **transfers selected units exclusively**, number recalls, rapid repeated number focuses, and Tab cycles selected archetype/ability subgroups. All are **proposed** and must be remappable. The actual prototype currently has no marquee/numbered group interface and additionally binds **E Grenade, R Reload, F Sprint**; F must not be reused for camera focus. A and S currently conflict with WASD camera axes, and must be remapped/tested before this expanded grammar is accepted.
+
+Visual interaction is a state machine, not a sequence of independent click callbacks: one gesture is either click, rectangle, camera pan, UI capture, or cancelled targeting. Project authored unit selection proxies (not just Actor positions) into screen space; apply visibility/selection-authority filters and one normalized ID transition. A click on minimap/UI must not leak into world orders. Cancel, focus loss, phase change and rematch release held gesture/modifier state. On mixed selections, the command card must show common versus subset-valid actions and per-member accepted/rejected outcomes.
+
+[Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) owns normative membership and order admission; [Comparative Selection/Input Research](RTS_CONTROL_GROUP_INPUT_RESEARCH.md) owns precedent; [Practical UI Keymap](RTS_UI_SETTINGS_AND_KEYMAP.md) owns physical bindings; [Engine Outline](ENGINE_OUTLINE.md) schedules this as **4C-G**, the mandatory core-production follow-on to 4C, without changing the historic 4F First Playable Skirmish exit gate.
+
+### 14.1b. Tactical formation controls (future behavior)
 
 [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) specifies explicitly created tactical formations, separate from local multi-select or control-group hotkeys. For an eligible group, present a contextual **Form** operation and shape, facing, stance and adherence as separate settings; an existing formation may remain intact while only some members are selected. Show role/slot overrides, reinforcement/detach, valid destination previews, partial member rejection, route failure and organizational status (Assembling/Deployed/Degraded/Fragmented/Dissolved). Inspect individual combat Discipline using the canonical resolve value; never imply a second Morale meter from derived Cohesion. UI cannot teleport units or reveal hidden enemies and must not claim formation capability is currently shipped.
 
