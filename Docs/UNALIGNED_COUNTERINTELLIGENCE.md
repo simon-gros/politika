@@ -1,7 +1,7 @@
 # POLITIKA — Unaligned Counterintelligence and False Intelligence
 
 Status: The Unaligned's superior counterintelligence, fabricated intelligence, false-flag activity and match-stabilization role are established game-design rules. Exact triggers, probabilities, durations and counterplay remain to be balanced.
-Related: [Concepts Outline](CONCEPTS_OUTLINE.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) · [Match Structure](MATCH_STRUCTURE.md) · [Nuclear Ultimate Weapons](NUCLEAR_WEAPONS_SYSTEM.md) · [Faction description](../Factions/TheUnaligned/description.md)
+Related: [Concepts Outline](CONCEPTS_OUTLINE.md) · [Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md) · [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) · [Match Structure](MATCH_STRUCTURE.md) · [AI Ontology and Architecture](RTS_AI_ARCHITECTURE.md) · [Nuclear Ultimate Weapons](NUCLEAR_WEAPONS_SYSTEM.md) · [Faction description](../Factions/TheUnaligned/description.md)
 
 ## 1. The fifth faction's strategic identity
 
@@ -56,6 +56,9 @@ The Unaligned's counterintelligence may act in service of stability even when th
 - The Unaligned's survival-balancing logic does not forcibly prevent a valid match win or veto the Iron Ascendancy's own-first-bomb immediate victory. Faction hostility rules, including toward identified Ascendancy forces, still operate.
 
 ## 6. NPC decision and information architecture
+
+**Integration boundary (proposed):** The [AI Ontology and Architecture](RTS_AI_ARCHITECTURE.md#6-the-unaligned-is-institutional-agency-not-a-fifth-opponent) separates patrol/protection, civil administration and security/intelligence/balancing mandates under one NPC-only faction authority. This document remains the owner of the Unaligned's fictional counterintelligence and deception rules. Limited privileged strategic-strength assessment for balancing must not leak into ordinary institutional patrol targeting or participant observations. These policies remain Stage 5D/5E proposals, not implemented agents or a Stage 4D playable-opponent shortcut.
+
 
 Keep three distinct concepts:
 
