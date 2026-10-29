@@ -252,6 +252,16 @@ fn wait_for(
     marker: &str,
     timeout: Duration,
 ) -> Result<String, String> {
+    wait_for_since(child, log, marker, timeout, 0)
+}
+
+fn wait_for_since(
+    child: &mut Child,
+    log: &Path,
+    marker: &str,
+    timeout: Duration,
+    offset: usize,
+) -> Result<String, String> {
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
@@ -261,7 +271,7 @@ fn wait_for(
             ));
         }
         if let Ok(text) = fs::read_to_string(log) {
-            if text.contains(marker) {
+            if text.get(offset..).is_some_and(|tail| tail.contains(marker)) {
                 return Ok(text);
             }
         }
@@ -419,29 +429,33 @@ fn main() -> Result<(), String> {
         capture(&window, &evidence, "01-selected")?;
 
         // The legitimate local selection must not be replaceable by a foreign unit.
+        let foreign_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
         input(
             &window,
             &["mousemove", "--sync", "577", "323", "click", "1"],
         )?;
-        wait_for(
+        wait_for_since(
             &mut child,
             &log,
             "RTS_SELECTION_REJECTED player=1 unit=3 reason=NotOwned",
             Duration::from_secs(5),
+            foreign_log_start,
         )?;
         let selection_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
         if selection_log.contains("RTS_SELECTION player=1 unit=3") {
             return Err("opposing unit was logged as selected by the local player".into());
         }
+        let local_log_start = selection_log.len();
         input(
             &window,
             &["mousemove", "--sync", "735", "552", "click", "1"],
         )?;
-        wait_for(
+        wait_for_since(
             &mut child,
             &log,
             "RTS_SELECTION player=1 unit=2",
             Duration::from_secs(5),
+            local_log_start,
         )?;
 
         // Move to the occupied control point first, proving contested state is reached.
@@ -458,23 +472,29 @@ fn main() -> Result<(), String> {
         capture(&window, &evidence, "03-objective-contested")?;
 
         // Attempt to attack the other friendly unit. It must be rejected and have no attack effect.
+        // Authority setup deliberately damages its dead-issuer fixture. Only events after this
+        // input belong to the friendly-target check; earlier setup is not a side effect.
+        let friendly_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
         input(
             &window,
             &["mousemove", "--sync", "799", "500", "click", "3"],
         )?;
-        wait_for(
+        wait_for_since(
             &mut child,
             &log,
-            "RTS_ORDER_REJECTED",
+            "reason=Orders_cannot_target_friendly_units.",
             Duration::from_secs(5),
+            friendly_log_start,
         )?;
-        wait_for(
+        wait_for_since(
             &mut child,
             &log,
-            "RTS_GAMEPLAY_EVENT kind=CommandOutcome",
+            "entity=2 order=1 accepted=0 rejection=8",
             Duration::from_secs(5),
+            friendly_log_start,
         )?;
         let current = fs::read_to_string(&log).map_err(|e| e.to_string())?;
+        let current = &current[friendly_log_start..];
         if !current.contains("reason=Orders_cannot_target_friendly_units.") {
             return Err("rejected order was not the expected friendly-target rule".into());
         }
@@ -522,7 +542,7 @@ fn main() -> Result<(), String> {
         wait_for(
             &mut child,
             &log,
-            "RTS_ORDER_ADMITTED order=Guard",
+            "RTS_ORDER_ADMITTED order=Guard unit=2",
             Duration::from_secs(5),
         )?;
         capture(&window, &evidence, "04-guard")?;
