@@ -38,7 +38,7 @@ Not qualified here:
 
 ## C. MP-0 audit register
 
-- **F42 (packaged 2v1 / 3v1 / 2v2): CLOSED for dedicated hosting.** Listen-hosted 3–4 process runs were not run; Automation still covers listen binding for every layout.
+- **F42 (packaged 2v1 / 3v1 / 2v2): CLOSED for dedicated hosting.** Listen-hosted 3–4 process runs were not run; Automation still covers listen binding for every layout. *Update 29 Oct 2026: listen-hosted runs are now packaged-qualified too; see the [listen layouts record](RTS_MULTIPLAYER_MP2_LISTEN_LAYOUTS_ACCEPTANCE.md).*
 - **F27 (shot target point): CLOSED.** Code and Automation cover every cue kind. Packaged runs prove per-connection delivery and exact-cue integrity. See the limitation above.
 - **F28** (grenade debug draws on a listen host, non-Shipping): unchanged, later.
 - **Still open for MP-2:** F33 (client fog shading), F35 (disconnect policy beyond ending the match). *Update 29 Oct 2026: F33 closed by the [fog memory record](RTS_MULTIPLAYER_MP2_FOG_MEMORY_ACCEPTANCE.md).* F36 was closed by the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
@@ -74,7 +74,7 @@ Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_R
 | MP1 regression | Two-process listen 1v1 on this build | Packaged | PASS 17/17 (first attempt BLOCKED: no free Xvfb display, see below) | `regression-listen-1v1/` |
 | OFFLINE-AUTHORITY | Rendered participant-authority replay | Packaged Development, Xvfb | PASS | `logs/offline-authority.log` |
 | OFFLINE-PAC10 | Rendered offline interaction replay | Same | PASS on re-run; **first attempt FAIL** (`camera input reached the controller but its clamped position did not change … axis=right x=-0.0 y=0.0`) | `logs/offline-pac10{,-attempt1-fail}.log` |
-| Listen 3–4 process | Listen host + 2–3 clients | — | NOT_RUN | Dedicated only in this increment |
+| Listen 3–4 process | Listen host + 2–3 clients | — | NOT_RUN | Dedicated only in this increment. *Later PASS: [listen layouts record](RTS_MULTIPLAYER_MP2_LISTEN_LAYOUTS_ACCEPTANCE.md).* |
 
 **Harness defect found and fixed — Xvfb display exhaustion.** The first listen regression was BLOCKED because every display 90–159 had a stale `/tmp/.X<n>-lock` while no Xvfb was running. `Display::drop` SIGKILLed Xvfb, so Xvfb never removed its lock; MP-1, MP-3 and this matrix had accumulated 71 of them. The 71 stale locks (all owned by dead PIDs) were removed. The runner now sends SIGTERM, waits up to 5 s, and removes the lock and socket itself if it must SIGKILL. After the re-run only the operator's two real displays held locks. This fix is in the harness commit after `c14a6c4`; the matrix and dedicated regression ran with the earlier teardown, which only affects cleanup.
 
