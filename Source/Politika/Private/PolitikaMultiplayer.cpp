@@ -9,8 +9,11 @@
 #include "PolitikaGameInstance.h"
 #include "PolitikaInfantryPresentation.h"
 #include "PolitikaPrototypeContent.h"
+#include "Metrics.h"
 #include "Rules.h"
 
+#include "Engine/NetConnection.h"
+#include "Engine/NetDriver.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameSession.h"
@@ -71,6 +74,22 @@ void FillIntentParameters(FPolitikaNetCommandIntent& Intent, const politika::rul
     else if (const auto* Attack = std::get_if<AttackOrder>(&Order)) Intent.TargetEntityId = Attack->target_id;
     else if (const auto* Grenade = std::get_if<GrenadeOrder>(&Order)) Intent.TargetEntityId = Grenade->target_id;
 }
+
+#if !UE_BUILD_SHIPPING
+// The engine's cumulative counters for one connection. Totals include the handshake and
+// map load, so the harness differences the activation sample against later ones.
+void LogConnectionStats(const TCHAR* Role, const TCHAR* Reason, uint64 Generation, uint64 Step, uint32 Participant,
+    uint32 Team, const UNetConnection& Connection, int32 VisibleUnits, double ElapsedSeconds)
+{
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_NET_STATS role=%s reason=%s generation=%llu step=%llu participant=%u team=%u elapsed_s=%.3f in_bytes=%d out_bytes=%d in_packets=%d out_packets=%d in_lost=%d out_lost=%d ooo_recovered=%d ooo_lost=%d ooo_duplicate=%d in_bps=%d out_bps=%d avg_lag_ms=%.1f jitter_ms=%.1f visible_units=%d"),
+        Role, Reason, Generation, Step, Participant, Team, ElapsedSeconds, Connection.InTotalBytes, Connection.OutTotalBytes,
+        Connection.InTotalPackets, Connection.OutTotalPackets, Connection.InTotalPacketsLost, Connection.OutTotalPacketsLost,
+        Connection.GetTotalOutOfOrderPacketsRecovered(), Connection.GetTotalOutOfOrderPacketsLost(),
+        Connection.GetTotalOutOfOrderPacketsDuplicate(), Connection.InBytesPerSecond, Connection.OutBytesPerSecond,
+        Connection.AvgLag * 1000.0f, Connection.GetAverageJitterInMS(), VisibleUnits);
+}
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -391,6 +410,9 @@ void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
         World->GetTimerManager().ClearTimer(NetworkReturnTimer);
         World->GetTimerManager().ClearTimer(DedicatedSessionTimer);
     }
+#if !UE_BUILD_SHIPPING
+    ReportNetworkMeasurements(TEXT("end_play"));
+#endif
     ParticipantBindings.Reset();
     OutcomeRoutes.Reset();
     Super::EndPlay(EndPlayReason);
@@ -564,6 +586,15 @@ void APolitikaPrototypeMatch::TryActivateNetworkMatch()
         UTF8_TO_TCHAR(politika::rules::HostingModeName(Hosting).data()), LocalBindings, RemoteBindings);
 #if !UE_BUILD_SHIPPING
     SampleMultiplayerState(TEXT("activated"));
+    // Network measurements cover the active match only; the activation sample is the
+    // baseline the harness subtracts from the final engine counters.
+    StepCostMicros.Reset();
+    ServerFrameMillis.Reset();
+    CatchUpCapFrames = 0;
+    bNetMeasurementsReported = false;
+    MeasurementStartSeconds = FPlatformTime::Seconds();
+    LogNetworkEmulation();
+    SampleNetworkStats(TEXT("activated"));
 #endif
 }
 
@@ -610,6 +641,9 @@ void APolitikaPrototypeMatch::TerminateForParticipantDisconnect(uint32 PlayerId)
         TEXT("MATCH_RESULTS outcome=%s player=%u committed=1 generation=%llu step=%llu departed=%u"),
         *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId, MatchGeneration,
         SimulationStepsExecuted, PlayerId);
+#if !UE_BUILD_SHIPPING
+    ReportNetworkMeasurements(TEXT("participant_disconnected"));
+#endif
     if (IsDedicatedHosting())
     {
         // No host to return: remaining clients see the result, then the server closes the
@@ -877,6 +911,10 @@ void APolitikaPrototypeMatch::InitializeObservedMatch()
     ApplyObservedPresentationToUnits();
     UE_LOG(LogPolitikaStartup, Display, TEXT("MP_CLIENT_MATCH_OBSERVED map=%s generation=%llu units=%d objective=%d phase=%u"),
         *ReplicatedMapId.ToString(), MatchGeneration, Units.Num(), Objective ? 1 : 0, ReplicatedPhase);
+#if !UE_BUILD_SHIPPING
+    MeasurementStartSeconds = FPlatformTime::Seconds();
+    LogNetworkEmulation();
+#endif
 }
 
 void APolitikaPrototypeMatch::ApplyObservedPresentationToUnits()
@@ -1320,6 +1358,86 @@ void APolitikaPrototypeMatch::SampleObservedState(const TCHAR* Reason)
             MatchGeneration, FMath::RoundToInt(Objective->GetProgress() * 1000.0f), Objective->IsContested() ? 1 : 0,
             Objective->IsComplete() ? 1 : 0, Objective->GetCapturingPlayerId(), Objective->GetCapturingTeamId(), Screen.X, Screen.Y);
     }
+}
+
+void APolitikaPrototypeMatch::LogNetworkEmulation()
+{
+    const UNetDriver* Driver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+    if (bNetEmulationLogged || !Driver) return;
+    bNetEmulationLogged = true;
+    const TCHAR* Role = HasAuthority() ? TEXT("server") : TEXT("client");
+#if DO_ENABLE_NET_TEST
+    // The engine applies -Pkt* switches and emulation profiles to each sending process;
+    // logging the effective settings proves which conditions a run was under.
+    const FPacketSimulationSettings& Settings = Driver->PacketSimulationSettings;
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_NET_EMULATION role=%s available=1 loss=%d order=%d dup=%d lag=%d lag_variance=%d lag_min=%d lag_max=%d incoming_loss=%d incoming_lag_min=%d incoming_lag_max=%d jitter=%d"),
+        Role, Settings.PktLoss, Settings.PktOrder, Settings.PktDup, Settings.PktLag, Settings.PktLagVariance,
+        Settings.PktLagMin, Settings.PktLagMax, Settings.PktIncomingLoss, Settings.PktIncomingLagMin,
+        Settings.PktIncomingLagMax, Settings.PktJitter);
+#else
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_NET_EMULATION role=%s available=0"), Role);
+#endif
+}
+
+void APolitikaPrototypeMatch::SampleNetworkStats(const TCHAR* Reason)
+{
+    if (!HasAuthority() || !IsNetworkSession()) return;
+    const double Now = FPlatformTime::Seconds();
+    if (FCString::Strcmp(Reason, TEXT("periodic")) == 0 && Now < LastNetStatsSeconds + 1.0) return;
+    LastNetStatsSeconds = Now;
+    for (const FParticipantBinding& Binding : ParticipantBindings)
+    {
+        const APlayerController* Controller = Binding.Controller.Get();
+        const UNetConnection* Connection = Binding.bRemote && Controller ? Controller->GetNetConnection() : nullptr;
+        if (!Connection) continue;
+        int32 Visible = 0;
+        for (const APolitikaPrototypeUnit* Unit : Units)
+            Visible += IsValid(Unit) && IsUnitObservedByParticipant(Unit, Binding.RuntimePlayerId) ? 1 : 0;
+        LogConnectionStats(TEXT("server"), Reason, MatchGeneration, SimulationStepsExecuted, Binding.RuntimePlayerId,
+            GetTeamForParticipant(Binding.RuntimePlayerId), *Connection, Visible, Now - MeasurementStartSeconds);
+    }
+}
+
+void APolitikaPrototypeMatch::SampleClientNetworkStats()
+{
+    const UNetDriver* Driver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+    const UNetConnection* Connection = Driver ? Driver->ServerConnection.Get() : nullptr;
+    if (!bObservedContentReady || !Connection) return;
+    const double Now = FPlatformTime::Seconds();
+    if (Now < LastClientNetStatsSeconds + 1.0) return;
+    LastClientNetStatsSeconds = Now;
+    int32 Present = 0;
+    for (const APolitikaPrototypeUnit* Unit : Units) Present += IsValid(Unit) ? 1 : 0;
+    LogConnectionStats(TEXT("client"), TEXT("periodic"), MatchGeneration, 0, LocalRuntimePlayerId,
+        GetLocalViewerTeam(), *Connection, Present, Now - MeasurementStartSeconds);
+}
+
+void APolitikaPrototypeMatch::ReportNetworkMeasurements(const TCHAR* Reason)
+{
+    if (bNetMeasurementsReported || !HasAuthority() || !IsNetworkSession() || StepCostMicros.IsEmpty()) return;
+    bNetMeasurementsReported = true;
+    SampleNetworkStats(Reason);
+    using politika::metrics::NearestRank;
+    TArray<float> Steps = StepCostMicros;
+    Steps.Sort();
+    TArray<float> Frames = ServerFrameMillis;
+    Frames.Sort();
+    double Total = 0.0;
+    for (const float Cost : Steps) Total += Cost;
+    int32 Remote = 0;
+    for (const FParticipantBinding& Binding : ParticipantBindings) Remote += Binding.bRemote ? 1 : 0;
+    const auto Step = [&Steps](unsigned Percent) { return NearestRank(Steps.GetData(), static_cast<std::size_t>(Steps.Num()), Percent); };
+    const auto Frame = [&Frames](unsigned Percent) { return NearestRank(Frames.GetData(), static_cast<std::size_t>(Frames.Num()), Percent); };
+    // The budget is one fixed simulation step: a server that needs longer cannot keep
+    // real time without the catch-up cap dropping steps.
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_SERVER_STEP_SUMMARY reason=%s generation=%llu layout=%s hosting=%s seats=%u remote=%d units=%d steps=%d mean_us=%.1f p50_us=%.1f p95_us=%.1f p99_us=%.1f max_us=%.1f budget_us=%.0f frames=%d frame_p50_ms=%.2f frame_p95_ms=%.2f frame_max_ms=%.2f catchup_cap_frames=%d duration_s=%.3f"),
+        Reason, MatchGeneration, UTF8_TO_TCHAR(politika::rules::LayoutName(SessionLayout).data()),
+        UTF8_TO_TCHAR(politika::rules::HostingModeName(GetHostingMode()).data()),
+        static_cast<uint32>(politika::rules::SeatCount(SessionLayout)), Remote, Units.Num(), Steps.Num(),
+        Total / Steps.Num(), Step(50), Step(95), Step(99), Step(100), SimulationStepSeconds * 1.0e6, Frames.Num(),
+        Frame(50), Frame(95), Frame(100), CatchUpCapFrames, FPlatformTime::Seconds() - MeasurementStartSeconds);
 }
 
 void APolitikaPrototypePlayerController::SendProbeIntent(const TCHAR* Name, FPolitikaNetCommandIntent Intent,

@@ -601,7 +601,19 @@ bool FPolitikaMultiplayerResultAndCleanupTest::RunTest(const FString& Parameters
         TestEqual(TEXT("Winning team is team A"), First.WinningTeamId, kTeamA);
         TestTrue(TEXT("Winning participant is on team A"), First.WinningPlayerId == 1 || First.WinningPlayerId == 3);
         TestEqual(TEXT("Result team replicated to observers"), F.Match->ReplicatedResultTeam, kTeamA);
+#if !UE_BUILD_SHIPPING
+        // F36: every authoritative step and server frame of the active match is timed, and
+        // the measurements are reported once, when the result commits.
+        const int32 ActiveSteps = static_cast<int32>(F.Match->SimulationStepsExecuted);
+        TestTrue(TEXT("The active match executed steps"), ActiveSteps > 0);
+        TestEqual(TEXT("Every authoritative step was timed"), F.Match->StepCostMicros.Num(), ActiveSteps);
+        TestEqual(TEXT("Every active server frame was timed"), F.Match->ServerFrameMillis.Num(), ActiveSteps);
+        TestTrue(TEXT("Measurements reported at the result"), F.Match->bNetMeasurementsReported);
+#endif
         F.Step(5);
+#if !UE_BUILD_SHIPPING
+        TestEqual(TEXT("Finished matches are not measured"), F.Match->StepCostMicros.Num(), ActiveSteps);
+#endif
         F.Match->HandleControllerLogout(F.Remotes[0]);
         TestTrue(TEXT("Later steps or departures never re-commit"), F.Match->CommittedResult->Reason == First.Reason
             && F.Match->CommittedResult->WinningTeamId == First.WinningTeamId);

@@ -2761,13 +2761,49 @@ struct LayoutOptions {
     client: PathBuf,
     legacy_client: Option<PathBuf>,
     layouts: Vec<String>,
+    profile: &'static NetProfile,
     evidence: PathBuf,
     port: u16,
 }
 
+/// Engine packet emulation (UE `FPacketSimulationSettings`, non-Shipping only) applied to
+/// the server and every client, so both directions of each connection are affected.
+/// The engine gives `PktOrder` precedence over `PktLag`/`PktDup` and refuses `PktDup` with
+/// lag, so reordering, duplication and latency are separate profiles.
+struct NetProfile {
+    name: &'static str,
+    args: &'static [&'static str],
+    /// Expected `MP_NET_EMULATION` values: loss, order, dup, lag, lag_variance.
+    expected: [i64; 5],
+}
+
+const NET_PROFILES: [NetProfile; 4] = [
+    NetProfile {
+        name: "none",
+        args: &[],
+        expected: [0, 0, 0, 0, 0],
+    },
+    NetProfile {
+        name: "lag-loss",
+        args: &["-PktLag=60", "-PktLagVariance=20", "-PktLoss=3"],
+        expected: [3, 0, 0, 60, 20],
+    },
+    NetProfile {
+        name: "reorder",
+        args: &["-PktOrder=1", "-PktLoss=3"],
+        expected: [3, 1, 0, 0, 0],
+    },
+    NetProfile {
+        name: "duplicate",
+        args: &["-PktDup=10", "-PktLoss=3"],
+        expected: [3, 0, 10, 0, 0],
+    },
+];
+
 fn parse_layout_options() -> Result<LayoutOptions, String> {
     let usage = "usage: rts_multiplayer --dedicated-layouts SERVER_BINARY CLIENT_BINARY \
-                 [--layouts 2v1,3v1,2v2] [--legacy-client OLD_PROTOCOL_CLIENT] [--evidence DIR] [--port N]";
+                 [--layouts 1v1,2v1,3v1,2v2] [--net-profile none|lag-loss|reorder|duplicate] \
+                 [--legacy-client OLD_PROTOCOL_CLIENT] [--evidence DIR] [--port N]";
     let mut args = env::args().skip(2);
     let server = PathBuf::from(args.next().ok_or(usage)?)
         .canonicalize()
@@ -2779,10 +2815,17 @@ fn parse_layout_options() -> Result<LayoutOptions, String> {
     let mut legacy_client = None;
     let mut evidence = None;
     let mut port = 17860u16;
+    let mut profile = &NET_PROFILES[0];
     while let Some(flag) = args.next() {
         let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
         match flag.as_str() {
             "--layouts" => layouts = value.split(',').map(str::to_owned).collect(),
+            "--net-profile" => {
+                profile = NET_PROFILES
+                    .iter()
+                    .find(|p| p.name == value)
+                    .ok_or_else(|| format!("unknown --net-profile {value}"))?
+            }
             "--legacy-client" => {
                 legacy_client = Some(
                     PathBuf::from(value)
@@ -2814,6 +2857,7 @@ fn parse_layout_options() -> Result<LayoutOptions, String> {
         client,
         legacy_client,
         layouts,
+        profile,
         evidence,
         port,
     })
@@ -3042,6 +3086,285 @@ fn shot_cue_consistency(server: &Game, clients: &[Game]) -> (usize, [usize; 3], 
     (received, counts, problems)
 }
 
+/// One engine traffic sample (`MP_NET_STATS`) for a connection in one match generation.
+struct NetSample {
+    reason: String,
+    participant: u32,
+    elapsed: f64,
+    counters: Vec<(String, f64)>,
+}
+
+impl NetSample {
+    fn get(&self, key: &str) -> f64 {
+        self.counters
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(0.0, |(_, v)| *v)
+    }
+}
+
+const NET_COUNTERS: [&str; 12] = [
+    "in_bytes",
+    "out_bytes",
+    "in_packets",
+    "out_packets",
+    "in_lost",
+    "out_lost",
+    "ooo_recovered",
+    "ooo_lost",
+    "ooo_duplicate",
+    "avg_lag_ms",
+    "jitter_ms",
+    "visible_units",
+];
+
+fn net_samples(text: &str, role: &str, generation: &str) -> Vec<NetSample> {
+    text.lines()
+        .filter(|l| {
+            l.contains("MP_NET_STATS")
+                && field(l, "role") == Some(role)
+                && field(l, "generation") == Some(generation)
+        })
+        .filter_map(|l| {
+            Some(NetSample {
+                reason: field(l, "reason")?.to_owned(),
+                participant: field(l, "participant")?.parse().ok()?,
+                elapsed: number(l, "elapsed_s")?,
+                counters: NET_COUNTERS
+                    .iter()
+                    .map(|k| ((*k).to_owned(), number(l, k).unwrap_or(0.0)))
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// F36 and network-condition verdicts for one dedicated layout run: the emulation each
+/// process applied, exactly-once ordered command intake, per-connection bandwidth from the
+/// engine's own counters, observed impairment, and authoritative step cost.
+fn network_checks(
+    report: &mut Report,
+    id: &dyn Fn(&str) -> String,
+    layout: &str,
+    profile: &NetProfile,
+    server: &Game,
+    clients: &[Game],
+    generation: &str,
+) {
+    let server_text = server.text();
+    let key = |name: &str| {
+        if profile.name == "none" {
+            format!("{layout}_{name}")
+        } else {
+            format!("{layout}_{}_{name}", profile.name)
+        }
+    };
+
+    // 1. Every process runs under the requested engine emulation, and only that.
+    let mut emulation_ok = true;
+    let mut emulation = Vec::new();
+    for (label, text) in std::iter::once((server.label.as_str(), server_text.clone()))
+        .chain(clients.iter().map(|c| (c.label.as_str(), c.text())))
+    {
+        let line = text.lines().find(|l| l.contains("MP_NET_EMULATION"));
+        let applied: Option<Vec<i64>> = line.and_then(|l| {
+            (field(l, "available") == Some("1")).then(|| {
+                ["loss", "order", "dup", "lag", "lag_variance"]
+                    .iter()
+                    .map(|k| field(l, k).and_then(|v| v.parse().ok()).unwrap_or(-1))
+                    .collect()
+            })
+        });
+        emulation_ok &= applied.as_deref() == Some(&profile.expected[..]);
+        emulation.push(format!("{label}: {}", line.map_or("missing", str::trim)));
+    }
+    report.verdict(
+        &id("NET-EMULATION-APPLIED"),
+        emulation_ok,
+        format!(
+            "profile {} {:?} expects loss/order/dup/lag/variance {:?}; {emulation:?}",
+            profile.name, profile.args, profile.expected
+        ),
+    );
+
+    // 2. Reliable intake: the server sees every command a client sent exactly once, in send
+    // order, and never rejects an honest command as a duplicate or for rate.
+    let mut intake_problems = Vec::new();
+    let mut commands = 0;
+    for (index, client) in clients.iter().enumerate() {
+        let participant = (index + 1).to_string();
+        let text = client.text();
+        let sent: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT") || l.contains("MP_PROBE_SENT"))
+            .filter_map(|l| field(l, "correlation"))
+            .collect();
+        let honest: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
+            .filter_map(|l| field(l, "correlation"))
+            .collect();
+        let arrived: Vec<&str> = server_text
+            .lines()
+            .filter(|l| {
+                (l.contains("MP_COMMAND_RECEIVED") || l.contains("MP_COMMAND_REJECTED_AT_INTAKE"))
+                    && field(l, "participant") == Some(participant.as_str())
+            })
+            .filter_map(|l| field(l, "correlation"))
+            .collect();
+        commands += sent.len();
+        if sent != arrived {
+            intake_problems.push(format!(
+                "{}: sent {} commands, server took {} (sent {sent:?}, arrived {arrived:?})",
+                client.label,
+                sent.len(),
+                arrived.len()
+            ));
+        }
+        for correlation in &sent {
+            let outcomes = text
+                .lines()
+                .filter(|l| {
+                    l.contains("MP_COMMAND_OUTCOME")
+                        && field(l, "correlation") == Some(*correlation)
+                })
+                .collect::<Vec<_>>();
+            if outcomes.len() != 1 {
+                intake_problems.push(format!(
+                    "{}: correlation {correlation} has {} outcomes",
+                    client.label,
+                    outcomes.len()
+                ));
+            } else if honest.contains(correlation)
+                && matches!(field(outcomes[0], "rejection"), Some("16") | Some("17"))
+            {
+                intake_problems.push(format!(
+                    "{}: honest command {correlation} rejected as duplicate/rate: {}",
+                    client.label,
+                    outcomes[0].trim()
+                ));
+            }
+        }
+    }
+    report.verdict(
+        &id("INTAKE-EXACTLY-ONCE-ORDERED"),
+        intake_problems.is_empty() && commands > 0,
+        format!(
+            "{commands} client commands (real input and probes) over ServerSubmitCommandIntent; problems={intake_problems:?}"
+        ),
+    );
+
+    // 3. Bandwidth per connection over the active match, from the engine's counters.
+    let samples = net_samples(&server_text, "server", generation);
+    let mut bandwidth_ok = !samples.is_empty();
+    let mut rows = Vec::new();
+    let mut impairment = [0.0f64; 3]; // lost, out-of-order (all), duplicate
+    for participant in 1..=clients.len() as u32 {
+        let base = samples
+            .iter()
+            .find(|s| s.participant == participant && s.reason == "activated");
+        let last = samples.iter().rfind(|s| {
+            s.participant == participant && s.reason != "periodic" && s.reason != "activated"
+        });
+        let (Some(base), Some(last)) = (base, last) else {
+            bandwidth_ok = false;
+            rows.push(format!("p{participant}: missing activated/final sample"));
+            continue;
+        };
+        let seconds = last.elapsed - base.elapsed;
+        let rate = |k: &str| (last.get(k) - base.get(k)) / seconds.max(f64::EPSILON);
+        let (down, up) = (rate("out_bytes"), rate("in_bytes"));
+        bandwidth_ok &= seconds > 5.0 && down > 0.0 && up > 0.0;
+        impairment[0] +=
+            last.get("out_lost") - base.get("out_lost") + last.get("in_lost") - base.get("in_lost");
+        impairment[1] +=
+            last.get("ooo_recovered") + last.get("ooo_lost") + last.get("ooo_duplicate")
+                - base.get("ooo_recovered")
+                - base.get("ooo_lost")
+                - base.get("ooo_duplicate");
+        impairment[2] += last.get("ooo_duplicate") - base.get("ooo_duplicate");
+        let client_lag = clients
+            .get(participant as usize - 1)
+            .and_then(|c| {
+                net_samples(&c.text(), "client", generation)
+                    .into_iter()
+                    .rev()
+                    .find(|s| s.get("avg_lag_ms") > 0.0)
+            })
+            .map_or(-1.0, |s| s.get("avg_lag_ms"));
+        rows.push(format!(
+            "p{participant} {seconds:.1}s down={down:.0}B/s ({:.1}pkt/s) up={up:.0}B/s ({:.1}pkt/s) server_rtt={:.1}ms client_rtt={client_lag:.1}ms visible_at_end={}",
+            rate("out_packets"),
+            rate("in_packets"),
+            last.get("avg_lag_ms"),
+            last.get("visible_units")
+        ));
+    }
+    // Clients count their own receive-side impairment of server traffic.
+    for client in clients {
+        let client_samples = net_samples(&client.text(), "client", generation);
+        if let (Some(first), Some(last)) = (client_samples.first(), client_samples.last()) {
+            impairment[0] += last.get("in_lost") - first.get("in_lost");
+            impairment[1] +=
+                last.get("ooo_recovered") + last.get("ooo_lost") + last.get("ooo_duplicate")
+                    - first.get("ooo_recovered")
+                    - first.get("ooo_lost")
+                    - first.get("ooo_duplicate");
+            impairment[2] += last.get("ooo_duplicate") - first.get("ooo_duplicate");
+        }
+    }
+    report.fact(&key("bandwidth"), rows.join("; "));
+    report.verdict(
+        &id("NET-BANDWIDTH-MEASURED"),
+        bandwidth_ok,
+        format!("engine counters, activation to result, per connection: {rows:?}"),
+    );
+
+    // 4. The impairment actually happened (the engine counted it), not just configured.
+    let observed = format!(
+        "packets lost={} out-of-order={} duplicate={}",
+        impairment[0], impairment[1], impairment[2]
+    );
+    report.fact(&key("impairment"), observed.clone());
+    let expected_seen = match profile.name {
+        "lag-loss" => impairment[0] > 0.0,
+        "reorder" => impairment[1] > 0.0,
+        "duplicate" => impairment[2] > 0.0,
+        _ => true,
+    };
+    if profile.name != "none" {
+        if expected_seen {
+            report.verdict(&id("NET-IMPAIRMENT-OBSERVED"), true, observed);
+        } else {
+            report.mark(
+                &id("NET-IMPAIRMENT-OBSERVED"),
+                "INCONCLUSIVE",
+                format!("configured but not counted by the engine: {observed}"),
+            );
+        }
+    }
+
+    // 5. Authoritative step cost against the fixed-step budget.
+    let summary = server_text.lines().find(|l| {
+        l.contains("MP_SERVER_STEP_SUMMARY") && field(l, "generation") == Some(generation)
+    });
+    let step_ok = summary.is_some_and(|l| {
+        field(l, "reason") == Some("result")
+            && field(l, "seats") == Some(clients.len().to_string().as_str())
+            && number(l, "steps").is_some_and(|s| s > 0.0)
+            && match (number(l, "p99_us"), number(l, "budget_us")) {
+                (Some(p99), Some(budget)) => p99 < budget,
+                _ => false,
+            }
+    });
+    report.fact(&key("server_step"), summary.map_or("missing", str::trim));
+    report.verdict(
+        &id("SERVER-STEP-WITHIN-BUDGET"),
+        step_ok,
+        summary.map_or("no MP_SERVER_STEP_SUMMARY".into(), |l| l.trim().to_owned()),
+    );
+}
+
 fn dedicated_layout(
     options: &LayoutOptions,
     layout: &str,
@@ -3050,8 +3373,16 @@ fn dedicated_layout(
 ) -> Result<(), String> {
     let teams = layout_teams(layout).ok_or("unknown layout")?;
     let seats = teams.len();
-    let id = |name: &str| format!("MP2-{}-{name}", layout.to_uppercase());
-    let evidence = options.evidence.join(format!("layout-{layout}"));
+    let profile = options.profile;
+    let suffix = if profile.name == "none" {
+        String::new()
+    } else {
+        format!("-{}", profile.name.to_uppercase())
+    };
+    let id = |name: &str| format!("MP2-{}{suffix}-{name}", layout.to_uppercase());
+    let evidence = options
+        .evidence
+        .join(format!("layout-{layout}{}", suffix.to_lowercase()));
     fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
     let client_options = Options {
         binary: options.client.clone(),
@@ -3060,12 +3391,10 @@ fn dedicated_layout(
         port,
     };
 
-    let mut server = Game::launch_server(
-        &options.server,
-        "server",
-        &evidence,
-        &server_args(port, layout),
-    )?;
+    let emulation: Vec<String> = profile.args.iter().map(|a| (*a).to_owned()).collect();
+    let mut launch_args = server_args(port, layout);
+    launch_args.extend(emulation.iter().cloned());
+    let mut server = Game::launch_server(&options.server, "server", &evidence, &launch_args)?;
     report.fact(&format!("{layout}_server_pid"), server.pid().to_string());
     report.fact(
         &format!("{layout}_server_command"),
@@ -3098,11 +3427,13 @@ fn dedicated_layout(
         let display = Display::start(&evidence, &label)?;
         // One probing client per team: participant 2 (team B) and 3 (team A, with an ally).
         let probe = participant == 2 || participant == 3;
+        let mut args = client_args(&client_options, true, probe, false);
+        args.extend(emulation.iter().cloned());
         let client = Game::launch(
             &options.client,
             &label,
             &evidence,
-            &client_args(&client_options, true, probe, false),
+            &args,
             Some(&display.name()),
         )?;
         report.fact(&format!("{layout}_{label}_pid"), client.pid().to_string());
@@ -3237,11 +3568,19 @@ fn dedicated_layout(
             fog_ok,
             format!("server activation samples {samples:?}; {fog_detail:?}"),
         );
-        report.verdict(
-            &id("FOG-ALLIED-SHARED"),
-            allied_ok && seats > 2,
-            format!("every client receives all allied participants' units: {fog_detail:?}"),
-        );
+        if seats > 2 {
+            report.verdict(
+                &id("FOG-ALLIED-SHARED"),
+                allied_ok,
+                format!("every client receives all allied participants' units: {fog_detail:?}"),
+            );
+        } else {
+            report.mark(
+                &id("FOG-ALLIED-SHARED"),
+                "NOT_RUN",
+                "1v1 has no allied participants",
+            );
+        }
 
         // Probing clients finish their hostile sweep before any order is issued.
         for client in clients
@@ -3464,7 +3803,9 @@ fn dedicated_layout(
         }
 
         let remote: Vec<u32> = (1..=seats as u32).collect();
-        for index in [1usize, 2] {
+        // Probing clients: participant 2 (team B) and, with three or more seats, 3 (team A).
+        let probing: Vec<usize> = [1usize, 2].into_iter().filter(|i| *i < seats).collect();
+        for &index in &probing {
             let client = &mut clients[index];
             client.wait(
                 &["MP_PROBE_SENT name=after_termination"],
@@ -3472,7 +3813,7 @@ fn dedicated_layout(
             )?;
         }
         thread::sleep(Duration::from_secs(1));
-        for index in [1usize, 2] {
+        for &index in &probing {
             let client = &clients[index];
             let label = client.label.to_uppercase();
             check_probes_for(
@@ -3513,6 +3854,7 @@ fn dedicated_layout(
                 counts[0], counts[1], counts[2]
             ),
         );
+        network_checks(report, &id, layout, profile, &server, &clients, &generation);
 
         // Every client leaves the finished match; the same server resets for a new generation.
         let server_mark = server.offset();
@@ -3692,6 +4034,8 @@ fn run_dedicated_layouts() -> ! {
         }
     }
     report.fact("layouts", options.layouts.join(","));
+    report.fact("net_profile", options.profile.name);
+    report.fact("net_profile_args", options.profile.args.join(" "));
     let layouts = options.layouts.clone();
     for (index, layout) in layouts.iter().enumerate() {
         let port = options.port + index as u16 * 2;

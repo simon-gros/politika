@@ -1,4 +1,5 @@
 #include "Rules.h"
+#include "Metrics.h"
 
 #include <cassert>
 #include <iterator>
@@ -276,6 +277,21 @@ int main() {
     static_assert(ShotCueFor(true, true, false) == ShotCue::FacingOnly);
     static_assert(ShotCueFor(true, true, true) == ShotCue::Exact);
     static_assert(ShotCueName(ShotCue::FacingOnly) == "facing" && ShotCueName(static_cast<ShotCue>(7)) == "invalid");
+
+    // Development network measurements: nearest-rank percentiles and non-negative rates.
+    {
+        using politika::metrics::NearestRank;
+        using politika::metrics::RatePerSecond;
+        constexpr int Ten[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+        static_assert(NearestRank(Ten, 10, 50) == 5 && NearestRank(Ten, 10, 95) == 10 && NearestRank(Ten, 10, 91) == 10);
+        static_assert(NearestRank(Ten, 10, 90) == 9 && NearestRank(Ten, 10, 0) == 1 && NearestRank(Ten, 10, 100) == 10);
+        static_assert(NearestRank(Ten, 10, 150) == 10 && NearestRank(Ten, 1, 99) == 1);
+        static_assert(NearestRank<int>(nullptr, 3, 50) == 0 && NearestRank(Ten, 0, 50) == 0);
+        constexpr float Twenty[] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f, 10.f, 11.f, 12.f, 13.f, 14.f, 15.f,
+            16.f, 17.f, 18.f, 19.f};
+        static_assert(NearestRank(Twenty, 20, 95) == 18.f && NearestRank(Twenty, 20, 5) == 0.f);
+        static_assert(RatePerSecond(5000, 2.0) == 2500.0 && RatePerSecond(10, 0.0) == 0.0 && RatePerSecond(-4, 1.0) == 0.0);
+    }
     TeamLayout Unparsed = TeamLayout::TwoVsOne;
     assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)
         && !ParseTeamLayout("3v2", Unparsed) && Unparsed == TeamLayout::TwoVsOne);

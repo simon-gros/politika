@@ -507,6 +507,20 @@ private:
     void BeginMultiplayerAcceptance();
     void SampleMultiplayerState(const TCHAR* Reason);
     void SampleObservedState(const TCHAR* Reason);
+    // Development network measurements (F36): authoritative step cost and server frame time
+    // per active match, plus the engine's own per-connection traffic counters.
+    TArray<float> StepCostMicros;
+    TArray<float> ServerFrameMillis;
+    int32 CatchUpCapFrames = 0;
+    double MeasurementStartSeconds = 0.0;
+    double LastNetStatsSeconds = 0.0;
+    double LastClientNetStatsSeconds = 0.0;
+    bool bNetMeasurementsReported = false;
+    bool bNetEmulationLogged = false;
+    void LogNetworkEmulation();
+    void SampleNetworkStats(const TCHAR* Reason);
+    void SampleClientNetworkStats();
+    void ReportNetworkMeasurements(const TCHAR* Reason);
 #endif
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaMultiplayerParticipantBindingTest;

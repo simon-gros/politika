@@ -1174,6 +1174,7 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
         // Observer copies interpolate replicated state; they never simulate.
 #if !UE_BUILD_SHIPPING
         SampleObservedState(TEXT("periodic"));
+        SampleClientNetworkStats();
 #endif
         return;
     }
@@ -1181,6 +1182,8 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 #if !UE_BUILD_SHIPPING
     const bool bScheduled = NavigationAcceptance.bRunning && NavigationAcceptance.Schedule != 0;
     const uint64 FirstStep = SimulationStepsExecuted;
+    const bool bMeasureNetwork = IsNetworkSession();
+    if (bMeasureNetwork) ServerFrameMillis.Add(DeltaSeconds * 1000.0f);
     if (bScheduled)
         DeltaSeconds = PolitikaNavigationObstacleFixture::ScheduleDelta(
             NavigationAcceptance.Schedule, NavigationAcceptance.OuterUpdates);
@@ -1190,12 +1193,16 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
     if (StepAccumulator >= SimulationStepSeconds) PublishedEvents.Reset();
     while (Lifecycle.IsActive() && StepAccumulator >= SimulationStepSeconds && Steps < 5)
     {
+#if !UE_BUILD_SHIPPING
+        const double StepStartSeconds = FPlatformTime::Seconds();
+#endif
         PendingGameplayEvents.Reset();
         AdmitPendingOrders();
         RunSimulationStep(SimulationStepSeconds);
         StepAccumulator -= SimulationStepSeconds;
         ++Steps;
 #if !UE_BUILD_SHIPPING
+        if (bMeasureNetwork) StepCostMicros.Add(static_cast<float>((FPlatformTime::Seconds() - StepStartSeconds) * 1.0e6));
         // Stop capture exactly at arrival + 20, including multi-step updates.
         // No additional scheduler: the ordinary Tick loop is the only driver.
         if (bScheduled && !NavigationAcceptance.bRunning) break;
@@ -1212,7 +1219,14 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
             FirstStep, SimulationStepsExecuted, StepAccumulator, Steps == 5 ? 1 : 0);
     }
     TickAcceptanceHarness(DeltaSeconds);
-    if (IsNetworkSession()) SampleMultiplayerState(TEXT("periodic"));
+    if (bMeasureNetwork)
+    {
+        CatchUpCapFrames += Steps == 5 ? 1 : 0;
+        SampleMultiplayerState(TEXT("periodic"));
+        // The result commits inside a step; report after the loop so that step is counted.
+        if (CommittedResult.IsSet()) ReportNetworkMeasurements(TEXT("result"));
+        else SampleNetworkStats(TEXT("periodic"));
+    }
 #endif
 }
 
