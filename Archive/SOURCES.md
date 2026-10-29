@@ -1,6 +1,6 @@
 # POLITIKA — Yugoslavia 1980–1989: Source Guide
 
-Research collection: **194 catalogue records**, including **69 political developments** researched through 29 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Maps](MAPS_1980_1989.md) | [Map catalogue](MAP_CATALOG.csv) | [Map acquisition](MAP_ACQUISITION_GUIDE.md) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
+Research collection: **247 catalogue records**, including **69 political developments** researched through 29 October 2026. [Master catalogue](CATALOG.csv) | [Reference-only index](media/reference-only/INDEX.md) | [Chronology](HISTORICAL_CHRONOLOGY_1980_1989.md) | [Political History](POLITICAL_HISTORY_1980_1989.md) | [Political Events CSV](POLITICAL_EVENTS.csv) | [Maps](MAPS_1980_1989.md) | [Map catalogue](MAP_CATALOG.csv) | [Map acquisition](MAP_ACQUISITION_GUIDE.md) | [Regional Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) | [Design atlas](DESIGN_REFERENCE_ATLAS.md). The political chronology is wide-ranging but not an exhaustive documentary history of each community, institution, republic and province; the period-media catalogue remains selective.
 
 ## Political-history source collection (69 indexed developments)
 
@@ -24,7 +24,7 @@ The [political-history narrative](POLITICAL_HISTORY_1980_1989.md) and [machine-r
 
 **External political and diplomatic:** [Non-Aligned summit documents](https://www.nam.go.ug/previous-chairmanship-documents), [UN 1989 Belgrade summit records](https://digitallibrary.un.org/record/80583), [CSCE/OSCE Madrid–Vienna conference timelines](https://www.osce.org/mc/43198), [1989 CSCE Vienna final document](https://www.osce.org/mc/40881), [European Communities 1980s history](https://european-union.europa.eu/principles-countries-history/history-eu/1980-89_en), [NATO INF Treaty](https://www.nato.int/en/what-we-do/wider-activities/nato-and-the-inf-treaty), [German federal archive history of the Berlin Wall opening](https://www.bundesarchiv.de/themen-entdecken/online-entdecken/storys/die-stasi-im-jahr-1989/november-1989/), [German account of the Hungarian–Austrian border opening](https://www.bundesregierung.de/breg-de/schwerpunkte/deutsche-einheit/ungarn-oeffnet-seine-grenze-337804), [Bulgarian News Agency's Zhivkov chronology](https://www.bta.bg/en/news/archives/1005141-november-10-1989-todor-zhivkov-is-ousted-as-bulgarian-communist-party-chief), [Human Rights Watch on Bulgaria's Turkish minority](https://www.hrw.org/reports/1989/WR89/Bulgaria.htm), [Albanian leadership history](https://enciklopedija.hr/clanak/hoxha-enver) and [Romanian December 1989 history](https://www.history.com/this-day-in-history/december-22/romanian-government-falls).
 
-## Yugoslav historical map research — 94 indexed map references
+## Yugoslav historical map research — 147 indexed map references
 
 The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) and [map-only index](media/reference-only/maps/INDEX.md) document three contemporary original maps from 1981, one 1981-revised aeronautical compilation, earlier Yugoslav road atlases, later/undated topographic series, and 44 individual geographical sheet leads.
 
@@ -52,6 +52,16 @@ The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) an
 - [Serbian Military Geographical Institute former-Yugoslavia holdings](https://www.vgi.mod.gov.rs/lat/221/karte-bivse-jugoslavije-221) document eight map scales; individual edition dates and digital availability remain pending.
 
 [Map acquisition guide](MAP_ACQUISITION_GUIDE.md) documents exact access and permission stages. This archive has not mirrored third-party map binaries.
+
+### Additional cartographic evidence and modern basemap rights
+
+**Genuine 1982–1983 original cartography:** [CIA *World Factbook* map of Yugoslavia, 1982](https://commons.wikimedia.org/wiki/File:World_Factbook_(1982)_Yugoslavia.jpg), [CIA 1982 global political map](https://www.loc.gov/item/82690356/), [CIA 1983 global political map](https://www.loc.gov/item/2011589550/).
+
+**Earlier coastal and tourism baseline:** [Admiralty Chart 3675 (1953)](https://commons.wikimedia.org/wiki/File:Admiralty_Chart_No_3675_Ports_and_Anchorages_in_Yugoslavia,_Published_1953.jpg), [Chart 1561 (1955)](https://commons.wikimedia.org/wiki/File:Admiralty_Chart_No_1561_Ports_Anchorages_and_Channels_in_Yugoslavia,_Published_1955.jpg), [Chart 3906 (1963)](https://commons.wikimedia.org/wiki/File:Admiralty_Chart_No_3906_Krilo_and_Igrane_to_Otok_Lastovo,_Published_1963.jpg), and [Kopač's illustrated Yugoslav tourist map (1954)](https://commons.wikimedia.org/wiki/File:Jugoslavija_turisti%C4%8Dka_mapa.jpg).
+
+**Modern licensed geographic basemaps:** [NordNordWest 2011 location SVG](https://commons.wikimedia.org/wiki/File:Yugoslavia_(1946-1990)_location_map.svg) (CC BY-SA 3.0 DE), [Gap 2011 general SFRY map](https://commons.wikimedia.org/wiki/File:General_map_of_Yugoslavia_(1945-1991)_(EN_labels).png) (CC BY-SA 3.0), and [2024 republic/province diagram](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) (CC BY-SA 3.0). All are **modern reconstructions of historic borders** rather than original 1980s publications. [The 2008 map erroneously tagged as 1988](https://commons.wikimedia.org/wiki/File:1988Yugoslavia_map_detail.gif) is separately documented with its real creation year.
+
+**Regional expansion:** the [regional atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) links the new 36 UT Austin topographic sheet leads (80 in total) to the six republics and the two autonomous provinces, while flagging missing 1980s Ljubljana/Maribor city plans and other unfilled source gaps.
 
 ## High-value primary artefacts and original imagery
 
