@@ -1,6 +1,6 @@
 # POLITIKA — Historical Cartographic Acquisition and Map-Production Guide
 
-**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **94 source records**, including **29 period-original, institutional series or period-revision references**, **44 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
+**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **147 source records**, including **32 contemporary-issued or period-series records**, **80 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
 
 ## What has actually been acquired?
 
@@ -9,6 +9,16 @@ This archive has *verified metadata and clickable original-source locations*. It
 - **Digitized original period map:** a period-printed map visible through the source site, such as the 1988 railway map on Wikimedia Commons and on Spomenik Database, or the 1986 monuments tourist map. Check the original publication line and scan-reproduction rights separately.
 - **Period original, physical-copy identified:** a museum or catalog confirms an item was printed in 1981–1989, but a usable download or its redistribution rights have not been established, such as the 1988 Geokarta Belgrade plan and 1988 Yugoslav road map held by the University of Maribor Library.
 - **Historical topographic series / prospective acquisition:** a library/institution describes a series or holds sheet indexes, but a particular sheet edition, rights, download and geo-accuracy are unverified. Croatian TK100/TK200 production-series records are not 55/18 individually catalogued map binaries.
+
+## Newly identified digital source families (29 October 2026)
+
+**Contemporary U.S. maps:** the [1982 Yugoslavia *World Factbook* map](https://commons.wikimedia.org/wiki/File:World_Factbook_(1982)_Yugoslavia.jpg) is a genuinely period CIA print illustration and its Commons page identifies the U.S. government public-domain basis. The [CIA 1982 global political map](https://www.loc.gov/item/82690356/) and [1983 global map](https://www.loc.gov/item/2011589550/) are contemporary archive items for international diplomacy UI, not national city planning.
+
+**Modern re-usable foundations:** the [2011 NordNordWest SVG](https://commons.wikimedia.org/wiki/File:Yugoslavia_(1946-1990)_location_map.svg) explicitly states geographic limits of 13.2°E–23.3°E and 40.7°N–47.0°N, with CC BY-SA 3.0 Germany. The [2024/2025 republic/province map](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) is CC BY-SA 3.0. These are useful for preliminary UI mockups only after attribution/share-alike compliance, and should not be shown as archival scans from 1984. Four versions of a [2011 linguistic map design](https://commons.wikimedia.org/wiki/File:General_map_of_Yugoslavia_(1945-1991)_(EN_labels).png) can inform localization without falsely multiplying the number of independent historical maps.
+
+**Earlier coastal/graphic examples:** 1953–1963 British Admiralty maritime charts and Vlasto Kopač's [1954 illustrated tourist map](https://commons.wikimedia.org/wiki/File:Jugoslavija_turisti%C4%8Dka_mapa.jpg) support original coastal and poster art direction; their historical age and reuse permissions must remain visible.
+
+**Data QA:** `Archive/MAP_CATALOG.csv` represents source references rather than 147 independently licensed image binaries; the latest seed added 36 more UT Austin M709 named quadrangles, totaling 80, without making unverified claims about printing/survey years. Details are in the [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md).
 
 ## High-priority originals and source-specific next steps
 
