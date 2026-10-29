@@ -1,6 +1,6 @@
 # POLITIKA — Historical Cartographic Acquisition and Map-Production Guide
 
-**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **147 source records**, including **32 contemporary-issued or period-series records**, **80 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
+**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **147 source records**, including **32 contemporary-issued or period-series records**, **80 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [Map relationships](MAP_RELATIONSHIPS.csv) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
 
 ## What has actually been acquired?
 
@@ -45,6 +45,10 @@ This archive has *verified metadata and clickable original-source locations*. It
 - **[COBISS Slovenia historical cartographic search](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0)** returns 1981, 1982, 1984, 1986, 1987 and 1989 *Socialistična federativna republika Jugoslavija* map items, including a reissued map still crediting Ivan Selan after his 1981 death. Determine whether multiple entries are editions, reproductions or copies of one design.
 - **[COBISS Serbian-language catalogue](https://plus-legacy.cobiss.net/cobiss/sr/sr_latn/bib/204791815)** documents 1980, 1982, 1985 and 1986 foreign-language tourist map editions; some may share a base design and should be linked as related editions in future normalization.
 - **[Croatian History Museum cartographic editions](https://kartevgi.hismus.hr/en/editions/)** documents historical domestic topographic mapping and the Sisak 1981/82 assembly as its most recent map in that collection.
+
+## Catalogue provenance and duplicate-source relationships
+
+The [Map Relationships CSV](MAP_RELATIONSHIPS.csv) explicitly identifies the genuine 1988 JŽ railway map found at two separate hosts, the four 2011 language-labelled map variants based on the same drawing, companion 1981 CIA shaded/political maps that are **different** contemporary originals, and the 2008 modern map whose filename mentions 1988. This prevents raw catalogue counts from being mistaken for 147 independently produced cartographic works. Run `python3 Archive/tools/validate_catalogues.py` for source-identifier and index consistency; this does not confirm source URLs are live or licences remain valid.
 
 ## A consistent source-ingestion lifecycle
 
