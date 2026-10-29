@@ -80,7 +80,7 @@ The failure was not reproduced live in 20 runs. It needs nudges that cancel exac
 | `cargo test --locked --manifest-path tools/version/Cargo.toml --all-targets` | PASS (7 + 14 tests, including new `input_bindings_reject_order_keys_on_pan_axes`); `cargo fmt -- --check` clean |
 | `cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- audit` | PASS, including `input.bindings` |
 | `cargo test --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_interaction` | PASS, 11/11 (new `pan_keys_must_not_send_a_command_intent`); `cargo fmt --check` clean; clippy: the 5 existing warnings only |
-| Linux Development package, `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash Tools/Shell/package-multiplayer.sh development` | PASS: UAT exit 0, multiplayer manifest verified. Archive `Saved/PAC10HotkeyBindings20261029/cf37df6/Development/Linux` in the worktree. `BuildIdentity.json` `cf37df6a840c-dirty`: the dirt was uncommitted documentation only. Executable SHA-256 `456cbe49bf6d860a67693ddf04c339682af320b573944ab728582a4c3d81fc6a` |
+| Linux Development package, `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash Tools/Shell/package-multiplayer.sh development` | PASS: UAT exit 0, multiplayer manifest verified. Archive moved after the worktree was removed to `/mnt/data/politika-qualification/PAC10-HotkeyBindings-20261029/package-cf37df6`. `BuildIdentity.json` `cf37df6a840c-dirty`: the dirt was uncommitted documentation only. Executable SHA-256 `456cbe49bf6d860a67693ddf04c339682af320b573944ab728582a4c3d81fc6a` |
 
 **Packaged PAC-10 loops** (`/mnt/data/politika-qualification/PAC10-HotkeyBindings-20261029/`):
 

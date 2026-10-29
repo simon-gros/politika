@@ -89,4 +89,4 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
 
 - **Evidence limits.** Loopback on one Linux host; Xvfb with virtual input; Development builds; one scripted choreography per layout, in which team A always takes the objective.
 - **Audit register.** F42 is closed for both hosting modes. No new finding.
-- **Still open for MP-2:** F43 (facing-only endpoint, needs an owner decision), AI-filled seats (no skirmish AI exists yet), unit-scale bandwidth/step budgets, and F35 (disconnect policy beyond ending the match).
+- **Still open for MP-2:** ~~F43~~ *(closed in `f6c354b`, see the [engagement record](RTS_MULTIPLAYER_MP2_UNALIGNED_ENGAGEMENT_ACCEPTANCE.md) §F)*, AI-filled seats (no skirmish AI exists yet), unit-scale bandwidth/step budgets, and F35 (disconnect policy beyond ending the match).
