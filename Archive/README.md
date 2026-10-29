@@ -35,21 +35,24 @@ Give particular attention to RTS production uses: terrain and map design; archit
 
 ## Populated archive — first research seed
 
-**Research updated: 29 October 2026.** The archive now contains **247 indexed historical, political and cartographic reference records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
+**Research updated: 29 October 2026.** The archive now contains **288 indexed historical, political and cartographic reference records** and live item/collection links covering real Yugoslav history from 1980–1989. The records explicitly distinguish primary photographs and publications, historical secondary analysis, curated museum objects and research-only leads, with date reliability, creator, region, rights, evidence grade and application to the game.
 
 Start with the [Master Catalogue](CATALOG.csv), then use the [Reference-only Index](media/reference-only/INDEX.md) for human browsing. The most concrete period-visual seed currently includes four individually dated Sarajevo tram/urban photographs from 1982 under file-specific CC BY-SA 4.0 licences; museum and periodical records of Sarajevo's 1984 Olympics, its visual identity, the 1987 Day of Youth material, and 1984–1988 press; an early-1980 Belgrade street negative; and a collection of independently sourced economic, political and diplomatic contextual studies.
 
 The October 2026 political-history expansion adds **69 source-linked political developments** across 1980–1989. It covers federal succession and executive governance, the economy and debt, party and constitutional reform, Kosovo and Vojvodina, specific developments in all six republics, the non-aligned diplomatic network, the European Communities, neighboring Albania/Bulgaria/Romania/Hungary and the wider Cold War. Year-by-year narratives explain their historical significance and suggested game-system relevance; political changes after 1984 require an explicit alternate-history review.
 
-**Expanded cartographic research:** 147 indexed map and map-series records, including authentic CIA Yugoslav maps from 1981, a 1981 Zagreb city map, older Military Geographical Institute road maps, and 44 selected named topographic sheets. The records distinguish verified period originals from older baselines, post-1989 maps, and undated collection leads. Map scans are not mirrored.
+**October 2026 evidence expansion:** the latest pass adds **41 new records**, of which **25 are map-source leads** and **16 are period visual/document/collection references**. The **Prvi maj Pirot** photographic files (1983 and 1985) document five separate industrial and worker-life settings and are sourced from the Historical Archive in Pirot through Commons VRTS permission. Additional sources cover a 1983 TAM truck, a 1985 Belgrade small-business card, a municipal portrait, concert-venue photography, the original Sarajevo '84 report and the 1981 census volume published in 1991. All retain source/scan dates and reuse qualifications; no third-party binaries were imported. See [Industry and Civic Life](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md).
+
+**Expanded cartographic research:** 172 indexed map and map-series records, including authentic CIA Yugoslav maps from 1981, a 1981 Zagreb city map, older Military Geographical Institute road maps, and 96 selected named topographic sheets. The records distinguish verified period originals from older baselines, post-1989 maps, and undated collection leads. Map scans are not mirrored.
 
 **New documents and their roles:**
 
 | Path | Active content |
 | --- | --- |
-| [`CATALOG.csv`](CATALOG.csv) | Master index with **247** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
+| [`CATALOG.csv`](CATALOG.csv) | Master index with **288** linked rows, stable `POL-` IDs, creator/date/area, research confidence and rights. |
 | [`MAPS_1980_1989.md`](MAPS_1980_1989.md) | Source-based political, physical, topographic, city and road mapping guide with chronology and asset-use rules. |
-| [`MAP_CATALOG.csv`](MAP_CATALOG.csv) | 147 cartographic source records: contemporary originals, historical baselines, modern licensed reconstructions, institutional collections and 80 named M709 quadrangles. |
+| [`INDUSTRY_AND_CIVIC_LIFE_1980_1989.md`](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md) | New authenticated 1983–1985 industrial photography, 1980s civilian/business/transport photographs and 1984 Olympic institutional material; source-specific licences. |
+| [`MAP_CATALOG.csv`](MAP_CATALOG.csv) | 172 cartographic source references: period originals and publication leads, modern reconstructions, institutional collections and 96 named M709 quadrangles. |
 | [`MAP_RELATIONSHIPS.csv`](MAP_RELATIONSHIPS.csv) | Relationships among related map editions, mirror hosts, translations and genuinely separate originals, preventing misleading duplicate source counts. |
 | [`tools/validate_catalogues.py`](tools/validate_catalogues.py) | Dependency-free archival CSV and index cross-reference integrity check; run with `python3 Archive/tools/validate_catalogues.py`. |
 | [`REGIONAL_CARTOGRAPHIC_ATLAS.md`](REGIONAL_CARTOGRAPHIC_ATLAS.md) | Research-oriented regional map design for the six republics, Kosovo and Vojvodina, with dated evidence and playable-RTS hypotheses. |
