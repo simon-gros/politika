@@ -51,6 +51,7 @@ pub fn build(
         "Cargo.toml",
         "Cargo.lock",
         "src/main.rs",
+        "src/crosswalk.rs",
         "src/registry.rs",
         "src/tags.rs",
         "src/manifest.rs",
@@ -113,7 +114,7 @@ pub fn hash_inputs(inputs: &[PathBuf]) -> Result<String, String> {
     Ok(lines)
 }
 
-fn hash_file(path: &Path) -> Result<String, String> {
+pub fn hash_file(path: &Path) -> Result<String, String> {
     let output = Command::new("sha256sum")
         .arg(path)
         .output()

@@ -19,3 +19,16 @@ cargo run --locked --manifest-path Tools/TempestReference/Cargo.toml -- \
 ```
 
 Outputs are restricted to the external UM transfer directory: `asset-index.csv`, `tag-index.csv`, `inputs.sha256`, and `run-manifest.json`. Re-run after changing any input or filter; compare hashes before treating generated rows as a reviewed subset.
+
+TR-2 crosswalk files live beside those generated catalogs as `category-crosswalk.csv` and `relationship-crosswalk.csv`. Asset source references use `asset|side|class|exact-package-path`; tag references use `tag|side|exact-config-path|exact-tag`. Crosswalks contain explicit POLITIKA-owned dispositions, owner/gap rationale, evidence limits, and hashes for the exact source manifest and catalogs. Validate them read-only after editing:
+
+The current crosswalk is an agent-prepared draft for project-owner review, not Simon-approved implementation authority. `redefine` rows express bounded design comparisons only; they do not schedule or authorize runtime work.
+
+```sh
+cargo run --locked --manifest-path Tools/TempestReference/Cargo.toml -- validate-crosswalk \
+  --asset-index /mnt/data/CommandAndConquer/UM/Tempest/politika-transfer/asset-index.csv \
+  --tag-index /mnt/data/CommandAndConquer/UM/Tempest/politika-transfer/tag-index.csv \
+  --manifest /mnt/data/CommandAndConquer/UM/Tempest/politika-transfer/run-manifest.json \
+  --categories /mnt/data/CommandAndConquer/UM/Tempest/politika-transfer/category-crosswalk.csv \
+  --relationships /mnt/data/CommandAndConquer/UM/Tempest/politika-transfer/relationship-crosswalk.csv
+```

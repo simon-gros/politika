@@ -1,3 +1,4 @@
+mod crosswalk;
 mod manifest;
 mod registry;
 mod tags;
@@ -5,13 +6,20 @@ mod tags;
 use std::{env, path::PathBuf, process::ExitCode};
 
 fn run() -> Result<(), String> {
+    let all_args: Vec<_> = env::args_os().skip(1).collect();
+    if all_args
+        .first()
+        .is_some_and(|arg| arg == "validate-crosswalk")
+    {
+        return crosswalk::run(&all_args[1..]);
+    }
     let mut client_registry = None;
     let mut server_registry = None;
     let mut client_config = None;
     let mut server_config = None;
     let mut queries = None;
     let mut output = None;
-    let mut args = env::args_os().skip(1);
+    let mut args = all_args.into_iter();
     while let Some(key) = args.next() {
         if key == "--help" || key == "-h" {
             println!(

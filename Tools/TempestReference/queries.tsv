@@ -7,4 +7,5 @@ map_metadata	TedMapInfo	/Maps/	Which map metadata families expose slots, starts,
 objective	TedObjectiveObj	/Maps/	Which authored objective families expose map/objective authoring relationships?
 build_order	AIDefinition_BuildOrder	/AI/BuildOrders/	Which AI build-order assets are discoverable without inferring behavior?
 navigation	InfluenceMapQueryPreset	/	Which navigation-adjacent query preset families warrant POLITIKA map-validation questions?
+movement_filter	TedNavFilterSelector	/	Which movement-filter selector assets illustrate unit-side navigation authoring surfaces? Registry paths alone do not prove filter semantics.
 effects_selected	TedEffectAppliedToAttackerConfigAsset	/	Which effect configuration family could inform generic presentation authoring without asset reuse?
