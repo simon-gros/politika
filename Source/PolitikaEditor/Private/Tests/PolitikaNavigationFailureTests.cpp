@@ -311,4 +311,70 @@ bool FPolitikaProjectionDisplacementAutomationTest::RunTest(const FString& Param
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaRecastStraightPathResultProbe,
+    "Politika.RTS.Navigation.StraightPathResultProbe",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaRecastStraightPathResultProbe::RunTest(const FString& Parameters)
+{
+    // Bounded ER-01 feasibility observer: issue genuine synchronous queries against the
+    // existing saved static Recast fixture. No result/path state is modified and the
+    // production route resolver is not replaced or bypassed by an injected result.
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(PolitikaNavigationFailureFixture::Level);
+    if (!TestNotNull(TEXT("Existing static-navigation fixture loads"), World)) return false;
+    UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    ANavigationData* Data = Nav ? Nav->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+    if (!TestTrue(TEXT("Static Recast NavData is ready"), Nav && Data && !Nav->IsNavigationBuildInProgress())) return false;
+
+    FNavLocation ProjectedOrigin;
+    if (!TestTrue(TEXT("Probe origin projects to the saved NavMesh"),
+        Nav->ProjectPointToNavigation(PolitikaNavigationFailureFixture::Start, ProjectedOrigin,
+            FVector(80, 80, 180), Data))) return false;
+    APolitikaPrototypeUnit* QueryOwner = World->SpawnActor<APolitikaPrototypeUnit>(
+        PolitikaNavigationFailureFixture::Start, FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("Production query-owner unit is available"), QueryOwner)) return false;
+    QueryOwner->Configure(9915, 1, FText::FromString(TEXT("Straight-path probe")), 100, 210,
+        250, 10, 0.5f, true, nullptr, FVector(0.85f), FLinearColor::White);
+
+    struct FProbeCase
+    {
+        const TCHAR* Name;
+        FVector RequestedEnd;
+    };
+    const FProbeCase Cases[] = {
+        { TEXT("SP-01-coincident"), ProjectedOrigin.Location },
+        { TEXT("SP-02-one-centimeter"), ProjectedOrigin.Location + FVector(1, 0, 0) },
+        { TEXT("SP-03-one-meter"), ProjectedOrigin.Location + FVector(100, 0, 0) },
+        { TEXT("SP-04-two-point-five-meters"), ProjectedOrigin.Location + FVector(0, 250, 0) },
+    };
+
+    for (const FProbeCase& Probe : Cases)
+    {
+        FNavLocation ProjectedEnd;
+        const bool bProjected = Nav->ProjectPointToNavigation(Probe.RequestedEnd, ProjectedEnd,
+            FVector(80, 80, 180), Data);
+        if (!TestTrue(FString::Printf(TEXT("%s endpoint projects on the existing NavMesh"), Probe.Name), bProjected))
+            continue;
+
+        FPathFindingQuery Query(QueryOwner, *Data, ProjectedOrigin.Location, ProjectedEnd.Location);
+        Query.SetAllowPartialPaths(false);
+        Query.SetRequireNavigableEndLocation(true);
+        const FPathFindingResult Result = Nav->FindPathSync(Query);
+        const bool bSharedPath = Result.Path.IsValid();
+        const bool bPathObjectValid = bSharedPath && Result.Path->IsValid();
+        const bool bPartial = Result.IsPartial();
+        const int32 PointCount = bSharedPath ? Result.Path->GetPathPoints().Num() : 0;
+        const FString Record = FString::Printf(
+            TEXT("ER01_STRAIGHT_PATH_PROBE case=%s nav=%s origin=%.6f,%.6f,%.6f requested_end=%.6f,%.6f,%.6f projected_end=%.6f,%.6f,%.6f projected_delta=%.6f result=%u shared_path_valid=%d path_object_valid=%d partial=%d points=%d"),
+            Probe.Name, *Data->GetPathName(), ProjectedOrigin.Location.X, ProjectedOrigin.Location.Y,
+            ProjectedOrigin.Location.Z, Probe.RequestedEnd.X, Probe.RequestedEnd.Y, Probe.RequestedEnd.Z,
+            ProjectedEnd.Location.X, ProjectedEnd.Location.Y, ProjectedEnd.Location.Z,
+            FVector::Distance(ProjectedOrigin.Location, ProjectedEnd.Location),
+            static_cast<uint32>(Result.Result), bSharedPath ? 1 : 0, bPathObjectValid ? 1 : 0,
+            bPartial ? 1 : 0, PointCount);
+        AddInfo(Record);
+    }
+    return true;
+}
+
 #endif
