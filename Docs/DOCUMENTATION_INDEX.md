@@ -36,6 +36,7 @@
 - [Structures, Production and Technology](RTS_PRODUCTION_AND_TECHNOLOGY.md) — proposed one-resource Stage 4B reinforcement flow, ledger, placement checks, producer queues and deferred prerequisite graphs.
 - [Bounded Skirmish Opponent AI](RTS_OPPONENT_AI.md) — proposed deterministic, authority-respecting, observation-scoped Stage 4D opponent with acceptance tests.
 - [Match Persistence, Replay and Determinism](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) — proposed snapshot/replay ownership, compatibility, integrity and repeatability boundaries; **deferred** beyond first skirmish.
+- [Tempest Rising — Engine Architecture Reference](TEMPEST_RISING_ENGINE_REFERENCE.md) — primary contemporary RTS reference; first-party editor/API evidence, verified-versus-inferred architecture, POLITIKA adaptation rules, and bounded acceptance proposals (**research only**, not acceptance).
 - [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and POLITIKA-specific application; extracted local reference material is optional evidence, not a portable repository dependency.
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
 - [C&C Visual/Audio Reference Study](ART_AUDIO_REFERENCE_STUDY.md) — observations from local texture, model, UI and sound references, with original POLITIKA concept and sound prototypes.
