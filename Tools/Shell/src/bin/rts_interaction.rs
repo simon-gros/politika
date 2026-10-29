@@ -569,6 +569,8 @@ fn main() -> Result<(), String> {
             "RTS_ORDER_ADMITTED order=Stop",
             Duration::from_secs(5),
         )?;
+        // Sprint duration continues through Stop; allow it to expire before grenade admission.
+        thread::sleep(Duration::from_millis(4100));
         input(&window, &["key", "g"])?;
         wait_for(
             &mut child,
@@ -623,6 +625,26 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
             grenade_log_start,
         )?;
+        let attack_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
+        input(
+            &window,
+            &["mousemove", "--sync", "577", "323", "click", "3"],
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "RTS_ORDER_ADMITTED order=Attack",
+            Duration::from_secs(5),
+            attack_log_start,
+        )?;
+        wait_for_since(
+            &mut child,
+            &log,
+            "RTS_HEALTH_CHANGED unit=3",
+            Duration::from_secs(10),
+            attack_log_start,
+        )?;
+        capture(&window, &evidence, "05-health-damage")?;
         let reload_log_start = fs::read_to_string(&log).map_err(|e| e.to_string())?.len();
         input(&window, &["key", "r"])?;
         wait_for_since(
@@ -639,23 +661,6 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
             reload_log_start,
         )?;
-        input(
-            &window,
-            &["mousemove", "--sync", "577", "323", "click", "3"],
-        )?;
-        wait_for(
-            &mut child,
-            &log,
-            "RTS_ORDER_ADMITTED order=Attack",
-            Duration::from_secs(5),
-        )?;
-        wait_for(
-            &mut child,
-            &log,
-            "RTS_HEALTH_CHANGED unit=3",
-            Duration::from_secs(10),
-        )?;
-        capture(&window, &evidence, "05-health-damage")?;
         wait_for(
             &mut child,
             &log,
