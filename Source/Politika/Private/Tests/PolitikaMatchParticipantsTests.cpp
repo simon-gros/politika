@@ -353,6 +353,20 @@ bool FPolitikaMatchParticipantsAuthorityAutomationTest::RunTest(const FString& P
     TestNull(TEXT("Dead selected unit is lazily removed from match selection"), Match->GetSelectedUnitForPlayer(LocalPlayerId));
     TestFalse(TEXT("Dead selected unit is no longer cached by PlayerController"), Controller->SelectedUnit.IsValid());
     TestEqual(TEXT("Ordinary input cannot submit against dead cached selection"), Match->PublishedEvents.Num(), BeforeDeadInputEvents);
+    const int32 BeforeDeadAbilityInput = Match->PublishedEvents.Num();
+    Controller->SelectedUnit = DeadUnit;
+    Controller->GrenadeSelected();
+    TestTrue(TEXT("Grenade input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestTrue(TEXT("Grenade input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
+    Controller->SelectedUnit = DeadUnit;
+    Controller->ReloadSelected();
+    TestTrue(TEXT("Reload input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestTrue(TEXT("Reload input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
+    Controller->SelectedUnit = DeadUnit;
+    Controller->SprintSelected();
+    TestTrue(TEXT("Sprint input retires dead cached selection before submission"), !Controller->SelectedUnit.IsValid());
+    TestTrue(TEXT("Sprint input cannot queue work for a dead cached selection"), Match->PendingOrders.IsEmpty());
+    TestEqual(TEXT("Stale ability inputs publish no command outcomes"), Match->PublishedEvents.Num(), BeforeDeadAbilityInput);
     TestTrue(TEXT("Explicit queued dead-issuer request enters typed admission"),
         Match->SubmitLocalControllerCommand(Controller, DeadUnit, nullptr, GuardOrder{}));
     Match->Tick(0.05f);

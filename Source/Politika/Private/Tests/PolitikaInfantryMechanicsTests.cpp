@@ -23,13 +23,16 @@ bool FPolitikaInfantryMechanicsTest::RunTest(const FString& Parameters)
     auto Spawn = [&](uint64 Id, uint32 Owner, FVector Position)
     {
         auto* Unit = World->SpawnActor<APolitikaPrototypeUnit>(Position, FRotator::ZeroRotator);
+        const FName Faction = Owner == 1 ? FName(TEXT("faction.player"))
+            : Owner == 2 ? FName(TEXT("faction.opposition")) : FName(TEXT("faction.unaligned"));
         Unit->Configure(Id, Owner, FText::FromString(TEXT("Test infantry")), 1000, 210, 650, 8, 0.05f,
-            true, Mesh, FVector(0.45f, 0.45f, 0.84f), FLinearColor::White);
+            true, Mesh, FVector(0.45f, 0.45f, 0.84f), FLinearColor::White, Faction);
         return Unit;
     };
     auto* Shooter = Spawn(1, 1, FVector(0,0,42));
     auto* Target = Spawn(2, 2, FVector(200,0,42));
     auto* Ally = Spawn(3, 1, FVector(210,30,42));
+    auto* SystemInfantry = Spawn(4, 0, FVector(1800,1800,42));
     auto* Behavior = NewObject<UPolitikaInfantryBehaviorDefinition>();
     TestTrue(TEXT("Default behavior validates"), Behavior->Validate());
     Behavior->SprintMultiplier = NAN;
@@ -83,7 +86,49 @@ bool FPolitikaInfantryMechanicsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Activate test setup"), Match->Lifecycle.TransitionTo(MatchPhase::Active));
     Match->bContentReady = true;
     Match->PlayableMin = FVector2D(-1000,-1000); Match->PlayableMax = FVector2D(1000,1000);
-    Match->Units = {Shooter, Target, Ally};
+    Match->LocalRuntimePlayerId = 1;
+    Match->RuntimeParticipants = {
+        {1, 1, FName(TEXT("faction.player")), EPolitikaPrototypeControllerKind::LocalHuman},
+        {2, 2, FName(TEXT("faction.opposition")), EPolitikaPrototypeControllerKind::AssignedOpponent}
+    };
+    Match->UnalignedSystemAuthority = {FName(TEXT("faction.unaligned")), true};
+    Match->Units = {Shooter, Target, Ally, SystemInfantry};
+    SystemInfantry->ConfigureInfantryBehavior(Behavior);
+    Shooter->SetAttackOrder(Target);
+    const auto AssertRejectedAbilityIsSideEffectFree = [&](uint32 PlayerId, APolitikaPrototypeUnit* Issuer,
+        const Order& Intent, const TCHAR* Label)
+    {
+        const EPolitikaPrototypeOrder IssuerOrder = Issuer->GetCurrentOrder();
+        const int32 IssuerAmmo = Issuer->GetAmmo();
+        const float IssuerGrenadeCooldown = Issuer->GrenadeCooldown;
+        const float IssuerSprintCooldown = Issuer->SprintCooldown;
+        const int32 TargetHealth = Target->GetHealth();
+        const int32 EventStart = Match->PublishedEvents.Num();
+        Match->SubmitCommand(PlayerId, Issuer, Target, Intent);
+        TestEqual(FString::Printf(TEXT("%s is rejected immediately"), Label), Match->PublishedEvents.Num(), EventStart + 1);
+        if (Match->PublishedEvents.Num() > EventStart)
+        {
+            const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Match->PublishedEvents.Last());
+            TestNotNull(FString::Printf(TEXT("%s publishes typed outcome"), Label), Outcome);
+            if (Outcome)
+            {
+                TestFalse(FString::Printf(TEXT("%s is not accepted"), Label), Outcome->accepted);
+                TestEqual(FString::Printf(TEXT("%s reports ownership rejection"), Label),
+                    Outcome->rejection, OrderRejection::NotOwned);
+            }
+        }
+        TestEqual(FString::Printf(TEXT("%s preserves issuer order"), Label), Issuer->GetCurrentOrder(), IssuerOrder);
+        TestEqual(FString::Printf(TEXT("%s preserves magazine ammunition"), Label), Issuer->GetAmmo(), IssuerAmmo);
+        TestEqual(FString::Printf(TEXT("%s preserves grenade cooldown"), Label), Issuer->GrenadeCooldown, IssuerGrenadeCooldown);
+        TestEqual(FString::Printf(TEXT("%s preserves sprint cooldown"), Label), Issuer->SprintCooldown, IssuerSprintCooldown);
+        TestEqual(FString::Printf(TEXT("%s preserves target health"), Label), Target->GetHealth(), TargetHealth);
+        TestTrue(FString::Printf(TEXT("%s leaves no pending command"), Label), Match->PendingOrders.IsEmpty());
+    };
+    AssertRejectedAbilityIsSideEffectFree(2, Shooter, GrenadeOrder{Target->GetStableId()}, TEXT("Foreign grenade ability"));
+    AssertRejectedAbilityIsSideEffectFree(2, Shooter, ReloadOrder{}, TEXT("Foreign reload ability"));
+    AssertRejectedAbilityIsSideEffectFree(2, Shooter, SprintOrder{}, TEXT("Foreign sprint ability"));
+    AssertRejectedAbilityIsSideEffectFree(1, SystemInfantry, GrenadeOrder{Target->GetStableId()},
+        TEXT("System-owned infantry grenade ability"));
     Match->SubmitCommand(2, Shooter, Target, GrenadeOrder{Target->StableId});
     Match->AdmitPendingOrders();
     TestEqual(TEXT("Wrong owner cannot begin grenade"), Shooter->GrenadeWindup, 0.0f);

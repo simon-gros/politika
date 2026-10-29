@@ -120,22 +120,25 @@ void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
 void APolitikaPrototypePlayerController::GrenadeSelected()
 {
     auto* ActiveMatch = ResolveMatch();
-    if (!ActiveMatch || !SelectedUnit.IsValid()) return;
+    APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch);
+    if (!Unit) return;
     FHitResult Hit;
     GetHitResultUnderCursor(ECC_Visibility, false, Hit);
     auto* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor());
-    ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), Target,
+    ActiveMatch->SubmitLocalControllerCommand(this, Unit, Target,
         politika::rules::GrenadeOrder{Target ? Target->GetStableId() : 0});
 }
 
 void APolitikaPrototypePlayerController::ReloadSelected()
 {
-    if (auto* ActiveMatch = ResolveMatch(); ActiveMatch && SelectedUnit.IsValid())
-        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr, politika::rules::ReloadOrder{});
+    auto* ActiveMatch = ResolveMatch();
+    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
+        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::ReloadOrder{});
 }
 
 void APolitikaPrototypePlayerController::SprintSelected()
 {
-    if (auto* ActiveMatch = ResolveMatch(); ActiveMatch && SelectedUnit.IsValid())
-        ActiveMatch->SubmitLocalControllerCommand(this, SelectedUnit.Get(), nullptr, politika::rules::SprintOrder{});
+    auto* ActiveMatch = ResolveMatch();
+    if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
+        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::SprintOrder{});
 }
