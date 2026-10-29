@@ -15,11 +15,19 @@ namespace politika::unitscale {
 
 // The fixture keeps each seat's two authored placements, so a seat never has fewer.
 inline constexpr long long kMinUnitsPerSeat = 2;
-// The U-12 owner decision (300 per participant); seats never interleave (see PlanSeatCandidates).
-inline constexpr long long kMaxUnitsPerSeat = 300;
+// U-12 owner decision: the absolute game-wide limit per participant, for the largest maps.
+// No fixture map may exceed it.
+inline constexpr long long kGameMaxUnitsPerParticipant = 300;
+// U-12 owner decision: the small multiplayer skirmish test map holds at most 20 units per
+// participant. The fixture only runs on that map, so this is its limit.
+inline constexpr long long kMaxUnitsPerSeat = 20;
+static_assert(kMaxUnitsPerSeat <= kGameMaxUnitsPerParticipant);
 inline constexpr double kSpacingCm = 100.0;
 // Candidates closer than this to an authored placement are skipped.
 inline constexpr double kClearanceCm = 60.0;
+// Opposing units must spawn at least this far apart: the infantry idle acquisition range
+// (800 cm) plus a margin, so the idle phase never starts the fight early (F46).
+inline constexpr double kMinOpposingGapCm = 900.0;
 
 struct Point {
     double x = 0.0;

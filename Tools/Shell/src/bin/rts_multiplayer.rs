@@ -5404,8 +5404,10 @@ type DedicatedSession = fn(&DedicatedOptions, &mut Report) -> Result<(), String>
 /// Runs one packaged dedicated-server session (`--fog-memory`, `--engagement`) and writes
 /// its evidence file; exits 1 on any failed verdict.
 // ---------------------------------------------------------------------------------------
-// MP-2 unit-scale budgets (U-12): `--unit-scale SERVER CLIENT [--layouts 1v1,2v2]
-// [--units 25,50,100,200] [--engage-seconds 45] [--evidence DIR] [--port N]`.
+// MP-2 unit-scale budgets (U-12): `--unit-scale SERVER CLIENT [--layouts 1v1,2v2,3v1]
+// [--units 5,10,20] [--engage-seconds 45] [--evidence DIR] [--port N]`. The skirmish test map
+// holds at most 20 units per participant (owner decision); 300 is the game-wide limit for
+// larger maps and is not exercised here.
 //
 // For each layout and per-seat count, one headless server hosts the multiplayer skirmish
 // with `-PolitikaMPUnitScale=N`; seat 1's client renders on Xvfb, the others run -nullrhi
@@ -5414,6 +5416,9 @@ type DedicatedSession = fn(&DedicatedOptions, &mut Report) -> Result<(), String>
 // step cost by phase and checks spawn, order admission, replication completeness, step
 // budget, send-rate headroom and fog-safe shot cues at that scale.
 // ---------------------------------------------------------------------------------------
+
+/// Mirrors `politika::unitscale::kMaxUnitsPerSeat`: the skirmish test map limit.
+const MAX_UNITS_PER_SEAT: u32 = 20;
 
 struct UnitScaleOptions {
     server: PathBuf,
@@ -5427,7 +5432,7 @@ struct UnitScaleOptions {
 
 fn parse_unit_scale_options() -> Result<UnitScaleOptions, String> {
     let usage = "usage: rts_multiplayer --unit-scale SERVER_BINARY CLIENT_BINARY \
-                 [--layouts 1v1,2v2] [--units 25,50,100,200] [--engage-seconds 45] \
+                 [--layouts 1v1,2v2,3v1] [--units 5,10,20] [--engage-seconds 45] \
                  [--evidence DIR] [--port N]";
     let mut args = env::args().skip(2);
     let server = PathBuf::from(args.next().ok_or(usage)?)
@@ -5436,8 +5441,8 @@ fn parse_unit_scale_options() -> Result<UnitScaleOptions, String> {
     let client = PathBuf::from(args.next().ok_or(usage)?)
         .canonicalize()
         .map_err(|e| format!("client binary: {e}"))?;
-    let mut layouts = vec!["1v1".to_owned(), "2v2".to_owned()];
-    let mut units = vec![25, 50, 100, 200];
+    let mut layouts = vec!["1v1".to_owned(), "2v2".to_owned(), "3v1".to_owned()];
+    let mut units = vec![5, 10, 20];
     let mut engage_seconds = 45;
     let mut evidence = None;
     let mut port = 19200u16;
@@ -5455,9 +5460,12 @@ fn parse_unit_scale_options() -> Result<UnitScaleOptions, String> {
                     .split(',')
                     .map(|v| v.parse::<u32>().map_err(|e| format!("--units {v}: {e}")))
                     .collect::<Result<_, _>>()?;
-                if let Some(bad) = units.iter().find(|n| !(2..=300).contains(*n)) {
+                if let Some(bad) = units
+                    .iter()
+                    .find(|n| !(2..=MAX_UNITS_PER_SEAT).contains(*n))
+                {
                     return Err(format!(
-                        "--units {bad}: the fixture accepts 2..=300 per seat"
+                        "--units {bad}: the skirmish test map accepts 2..={MAX_UNITS_PER_SEAT} per seat"
                     ));
                 }
             }
@@ -5915,10 +5923,12 @@ fn unit_scale_run(
 
 /// An out-of-range per-seat count must fail admission closed (exit 3, no session).
 fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result<(), String> {
-    let evidence = options.evidence.join("invalid-301");
+    let evidence = options
+        .evidence
+        .join(format!("invalid-{}", MAX_UNITS_PER_SEAT + 1));
     fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
     let mut args = server_args(options.port + 2, "1v1");
-    args.push("-PolitikaMPUnitScale=301".into());
+    args.push(format!("-PolitikaMPUnitScale={}", MAX_UNITS_PER_SEAT + 1));
     let mut server =
         Game::launch_server(&options.server, "server-invalid-scale", &evidence, &args)?;
     let start = Instant::now();
@@ -5936,7 +5946,10 @@ fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result
     report.verdict(
         "UNITSCALE-INVALID-REFUSED",
         status.and_then(|s| s.code()) == Some(3)
-            && text.contains("MP_UNIT_SCALE_INVALID value=301")
+            && text.contains(&format!(
+                "MP_UNIT_SCALE_INVALID value={}",
+                MAX_UNITS_PER_SEAT + 1
+            ))
             && text.contains("reason=MP.UNIT_SCALE.INVALID")
             && text.contains("MP_DEDICATED_ADMISSION_FAILED")
             && no_session,

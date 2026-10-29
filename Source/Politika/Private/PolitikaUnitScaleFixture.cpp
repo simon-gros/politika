@@ -182,12 +182,21 @@ bool APolitikaPrototypeMatch::ResolveUnitScale(TArray<FPolitikaPrototypeUnitPlac
         for (int32 B = A + 1; B < Spawned.Num(); ++B)
             if (Spawned[A].Key != Spawned[B].Key)
                 MinOpposingGap = FMath::Min(MinOpposingGap, FVector2D::Distance(Spawned[A].Value, Spawned[B].Value));
-    InOutPlacements.Append(Added);
     UnitScalePerSeat = static_cast<int32>(PerSeat);
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("MP_UNIT_SCALE_FIXTURE per_seat=%d seats=%d seat_units=%d added=%d spacing_cm=%.0f max_radius_cm=%.1f min_opposing_gap_cm=%.1f"),
         UnitScalePerSeat, Seats.Num(), UnitScalePerSeat * Seats.Num(), Added.Num(), kSpacingCm, MaxRadius,
         MinOpposingGap == TNumericLimits<double>::Max() ? -1.0 : MinOpposingGap);
+    // Fail closed rather than measure a fight that started during the idle window (F46).
+    if (MinOpposingGap < kMinOpposingGapCm)
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MP_UNIT_SCALE_OPPOSING_GAP min_opposing_gap_cm=%.1f required_cm=%.0f"),
+            MinOpposingGap, kMinOpposingGapCm);
+        UnitScalePerSeat = 0;
+        OutFailure = TEXT("MP.UNIT_SCALE.OPPOSING_GAP");
+        return false;
+    }
+    InOutPlacements.Append(Added);
     return true;
 }
 
