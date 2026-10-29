@@ -1,6 +1,6 @@
 # POLITIKA — Regional cartographic atlas for alternate-history Yugoslavia, 1984–1989
 
-**Research date:** 29 October 2026. This is a source-driven *production-facing index* to real regional geography, political administration and transportation, **not a playable level roster or a declaration that the game already contains these maps**. The [map catalogue](MAP_CATALOG.csv) contains **147 distinct source references**, including **80 named M709 topographic sheet leads**, period maps, older nautical and road cartography, and modern reference maps. [Reference index](media/reference-only/maps/INDEX.md) · [Acquisition and provenance](MAP_ACQUISITION_GUIDE.md) · [POLITIKA story](../Docs/STORY_OUTLINE.md).
+**Research date:** 29 October 2026. This is a source-driven *production-facing index* to real regional geography, political administration and transportation, **not a playable level roster or a declaration that the game already contains these maps**. The [map catalogue](MAP_CATALOG.csv) contains **172 distinct source references**, including **96 named M709 topographic sheet leads**, period maps, older nautical and road cartography, and modern reference maps. [Reference index](media/reference-only/maps/INDEX.md) · [Acquisition and provenance](MAP_ACQUISITION_GUIDE.md) · [POLITIKA story](../Docs/STORY_OUTLINE.md).
 
 ## Provenance baseline
 
@@ -17,6 +17,14 @@ For a starting geographical UI, [NordNordWest's modern equirectangular SVG of Yu
 | Older original / historical chart | 1954 tourist poster, 1962 VGI roads, Admiralty coastal charts | Earlier coastlines, map design, some persistent topography | 1985 bridge, harbour or checkpoint condition |
 | Later topographic sheet | DMA M709 with mixed edition years | Persistent hills and drainage, candidate tile reference | 1980s street naming, factory boundaries, borders, military facilities |
 | Modern licensed historical reconstruction | Commons CC maps created 2011/2024 | Preliminary labels, vector geography, UI reference under exact licence | Independent proof that its depicted borders are correct or that it was made in 1984 |
+
+## Additional contemporary evidence for map production
+
+The period evidence archive now documents [five independently dated 1983–1985 Prvi maj Pirot industrial photographs](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md), a 1983 photograph of a TAM truck and 1985 Belgrade civic/commercial images, plus the original 1984 Sarajevo Olympic report. These support period styling and building layout verification, while their own source and licence obligations remain attached.
+
+The M709 source index expands to **96 named terrain sheets**, including Doboj, Kakanj, Foča, Lendava, Bovec, Kikinda, Kriva Palanka and other routes. Its individual GeoPDFs can contain post-1991 infrastructure and must not substitute for contemporary printed editions.
+
+The [1981 census data in a compilation with a 1991 introduction](https://publikacije.stat.gov.rs/G1981/Pdf/G19814001.pdf) may inform aggregate population density, but the publication date must be distinguished from enumeration date. Real ethnic categories do not determine fictional faction loyalty or military dispositions.
 
 ## Geographic and mission-research regions
 
