@@ -22,6 +22,12 @@ The Olympic Museum explicitly limits its website content to private, educational
 
 See [MAP_ACQUISITION_GUIDE.md](MAP_ACQUISITION_GUIDE.md) for the complete workflow.
 
+## Individually documented modern map licences
+
+[The 2011 NordNordWest location SVG](https://commons.wikimedia.org/wiki/File:Yugoslavia_(1946-1990)_location_map.svg) is identified as **CC BY-SA 3.0 Germany**, including named author and licence/link obligations. [The 2011 Gap general map](https://commons.wikimedia.org/wiki/File:General_map_of_Yugoslavia_(1945-1991)_(EN_labels).png) is identified as **CC BY-SA 3.0**, with language-variant images requiring their own licence page review. [The 2024/2025 republic/province diagram](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) is identified as **CC BY-SA 3.0**. The [CIA 1982 World Factbook illustration](https://commons.wikimedia.org/wiki/File:World_Factbook_(1982)_Yugoslavia.jpg) is described as **public domain (U.S. government)**. A digitized catalogue entry documenting a licence is *not* an instruction to copy every image into the repository; check item scope, credit, share-alike compatibility, embedded marks and actual derivative use before importing.
+
+The [map-source crosswalk](MAP_RELATIONSHIPS.csv) distinguishes 2011 language variants and the two hosts for the original 1988 railway map. A file whose title suggests 1988 but whose creator dates it to 2008 is not historical media.
+
 ## Cartographic rights, map dates and original game assets
 
 The [map catalogue](MAP_CATALOG.csv) records map publication or known revision date, geographic coverage, scale, source institution, edition/sheet identifier, period status and rights. A map printed in 1996 can be useful for persistent geography without providing reliable 1985 roads, jurisdiction or buildings.
