@@ -43,7 +43,7 @@ The front end should prioritize direct play:
 - Options for display, audio, controls, accessibility and gameplay settings;
 - Credits and Quit.
 
-No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. If optional online or LAN features are later chosen, they must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. Whether multiplayer is in scope is still a separate product decision.
+No menu should block on account login, entitlement checks requiring a network, or a connection to a publisher service. Saves, settings, campaign progress, and unlocks should be stored locally. If optional online or LAN features are later chosen, they must be additive: offline campaign/skirmish remains usable, and sign-in failure cannot strand the player outside local content. Future multiplayer (2–4 legal playable-faction slots, up to four human connections, player-hosted listen or dedicated-server hosting) is an adopted **design direction, not an implemented menu flow or first-release guarantee**. The [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) requires auditing all existing player-input/HUD/menu code for remote-client and server authority boundaries before networking; optional lobby/join/hosting UI remains deferred.
 
 ## 4. Campaign and narrative screens (no cinematics)
 
