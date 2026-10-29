@@ -80,7 +80,7 @@ Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_R
 
 **Flaky offline check, not caused by this slice.** PAC-10's first attempt failed its camera-pan assertion, and the immediate re-run on the same binary passed. This slice changes no camera, input or content code, and the cooked content containers hash identical to MP-3. The intermittent camera assertion is recorded for the camera/acceptance owner.
 
-**Finding — the 3v1 starts are not fully fogged.** The fixture comment says every side starts fogged, but in 3v1 seat 2 (team B, first unit at 1350, 600) and seat 4 (team A, first unit at 1350, −600) are exactly 1200 cm apart. That equals sight radius, and the vision test is inclusive. So entities 3 and 7 are mutually observed from activation. The runner derives the expected initial view from the server's own vision masks, so the packaged check is exact either way. The fixture is unchanged here, since moving it would change MP-1/MP-3 setup parity baselines. It is recorded for the fixture owner.
+**Finding — the 3v1 starts are not fully fogged.** The fixture comment says every side starts fogged, but in 3v1 seat 2 (team B, first unit at 1350, 600) and seat 4 (team A, first unit at 1350, −600) are exactly 1200 cm apart. That equals sight radius, and the vision test is inclusive. So entities 3 and 7 are mutually observed from activation. The runner derives the expected initial view from the server's own vision masks, so the packaged check is exact either way. The fixture is unchanged here, since moving it would change MP-1/MP-3 setup parity baselines. It is recorded for the fixture owner. **Resolved in §E3** (`abb734a`): every layout now starts fogged.
 
 ## E. Package and evidence identity
 
@@ -146,6 +146,56 @@ Only 3 Xvfb locks remained afterwards. Two belong to the operator's live session
 | `Politika-LinuxServer.utoc` / `.ucas`, `Politika-Linux.utoc` / `.ucas` | unchanged from MP-3 (`b33412c2…`, `d4702871…`, `405745e3…`, `cc5dbc9a…`) |
 
 The `c14a6c4` archive and `run-1/` (§D–E) remain as the initial, pre-rebase qualification; they are not the accepted artifact. Commands are those of §E with `Final-6a6b3a7` and ports 17900 (matrix), 17920 (dedicated) and 17930 (listen).
+
+## E3. Fixture fix: every layout starts fogged (`abb734a`)
+
+Branch `codex/mp-fixture-fog-20261029`. This fixes the §D finding. `CreateMultiplayerSkirmishFixture` moves seat 3 from (−1300, 700) to (−1500, 1150) and seat 4 from (1300, −700) to (1500, −1150). Seats 1 and 2 and the Unaligned placements are unchanged. The canonical `RTSVerticalSlice.umap` is unchanged (`8e8b8bba…`).
+
+The generator also refuses to save if any layout (1v1, 2v1, 3v1, 2v2) starts with a unit inside an opposing side's sight, Unaligned included. It uses the runtime rule `politika::rules::IsObservedBy` (inclusive) and logs `TEST_FIXTURE_INITIAL_CONTACT`. With the old placements it refused with commandlet result 17, reporting exactly the recorded 3v1 pair: (1350, −600) ↔ (1350, 600), 1200.0 cm, sight 1200, in both directions.
+
+Evidence root: `build/diagnostics/mp-fixture-fog/` in the branch worktree; durable copy at `/mnt/data/politika-qualification/MP-Fixture-Fog-20261029/`.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Guard on old placements | Refused, result 17, only the 3v1 pair | `logs/fixture-negative.log` |
+| Regeneration with new placements (spatial NavMesh validation gates the save) | Result 0, `TEST_FIXTURE_CREATED seats=4 units=8 unaligned_units=2`, no contact | `logs/fixture-generate.log` |
+| `PolitikaEditor` build | PASS | `logs/editor-build.log` |
+| Automation, full `Politika` suite | PASS 35/35 (environment warnings only) | `automation-all/index.json` |
+| `package-multiplayer.sh server` / `development` | ExitCode 0, manifests verified | `logs/package-{server,development}.log` |
+| `--dedicated-layouts` 2v1/3v1/2v2 + legacy protocol | **PASS 60/60**. Shot cues: exact 171 / 228 / 228, facing 0, none 0 | `matrix/`, `matrix.out` |
+| `--dedicated` 1v1 | PASS 23/23; `MP3-PARITY-SETUP` 10/10 lines, no differences | `regression-dedicated-1v1/` |
+| Listen 1v1 | PASS 18/18 | `regression-listen-1v1/` |
+
+On the first attempt the Development package was started at the same time as the server package. UBT refused it (`ConflictingInstance`, UAT exit 10), and nothing was built. It was rerun alone and succeeded. The failed log is kept as `logs/package-development-conflicting-instance.log`.
+
+**FOG-INITIAL — no cross-team contact in any layout.** Each server activation sample `(entity, participant, observer mask)` now carries only its own side's bit (team A = 2, team B = 4, Unaligned = 8):
+- 3v1 before (`6a6b3a7`): `(3, 2, 6)` and `(7, 4, 6)`.
+- 3v1 now: `(3, 2, 4)` and `(7, 4, 2)`. Team B's client receives only `[3, 4]`.
+- 2v1 and 2v2 are likewise own-side only.
+
+The 3v1 exact-cue count fell from 232 to 228 because the opening contact is gone.
+
+Setup parity is computed live: the listen and dedicated setup signatures are compared on the same build. No baseline file is stored, so none needed editing. The MP-1 and MP-3 records keep the old `DA_MultiplayerSkirmish` hash as the identity of their own builds.
+
+Matrix processes:
+- 2v1: server 1105370; clients 1105386–1105831.
+- 3v1: server 1107182; clients 1107199–1107529.
+- 2v2: server 1109413; clients 1109429–1109790.
+
+Afterwards one stale Xvfb lock, `:100`, was left behind; its process (1106778, inside this run's PID range) was dead. The lock was removed. The remaining `:0` and `:1` belong to the operator's live session.
+
+Both packages: `git_revision=abb734aa316f`, `git_dirty=false`, `network_protocol=2`. Archive: `Saved/MPFixtureFog20261029/Final-abb734a/{Server/LinuxServer,Development/Linux}`.
+
+| Artifact | SHA-256 |
+|---|---|
+| `DA_MultiplayerSkirmish.uasset` (new; was `20e9d37d…`) | `9aa1099321608eddc17c84f93a1fe1d9ff8cdc153f6b97bccdc99457c3eef295` |
+| `DA_MultiplayerCatalog.uasset` (unchanged) | `42f3453197a4ebbf305a6bfd7b5afb1f1dde2b010e9b75fc6e3960daca3d4568` |
+| `PolitikaServer` | `df46fb44fac043000130760bfa30cb54f80ddb6bf900fcb6a866e33a6131c51b` |
+| Development `Politika` | `913327a3116e434b4b32327cbad95d9787747e017cbe52763d7c04f0f5637085` |
+| `Politika-LinuxServer.utoc` / `.ucas` | `ff70cc8d38c975ef441d6b3901adf4e0753036545f27e773a1dcbe988d70776c` / `ad58ea12494534a707438dae9d5dff2e438af977b4c89c556250b419f4dc1ef1` |
+| `Politika-Linux.utoc` / `.ucas` | `de0b9cefd2e1f4befcbd9e313c2c6fd2ee6f9376475650cc6468711a07d240a2` / `bf906d9608237d9a292640668c869efd56c613685d10a1b02c802124309118d4` |
+
+The commands are those of §E, with `Final-abb734a` and ports 17940 (matrix), 17960 (dedicated) and 17970 (listen).
 
 ## F. Limitations and next work
 
