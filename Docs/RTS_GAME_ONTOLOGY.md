@@ -5,6 +5,8 @@
 **Scope:** General RTS ontology, classical Command & Conquer, StarCraft, genre counterexamples, and architectural implications for POLITIKA.  
 **Document role:** Defines vocabulary and relationships; authoritative gameplay rules belong in [Concepts Outline](CONCEPTS_OUTLINE.md) and specialist design documents, while implementation ownership belongs in [Engine Outline](ENGINE_OUTLINE.md) and [Proposed Engine Layers](PROPOSED_ENGINE_LAYERS.md).
 
+**Specialized AI ontology (29 October 2026):** [RTS Artificial Intelligence Ontology and Architecture](RTS_AI_ARCHITECTURE.md) develops the agent/knowledge/goal/plan/intent distinctions into a proposed layered POLITIKA design, comparing C&C, StarCraft II, AoE II, OpenRA, Sorian AI and Tempest Rising. This general RTS ontology remains the shared vocabulary; that specialist document owns cross-system AI integration, while [Opponent AI](RTS_OPPONENT_AI.md) retains the first Stage 4D implementation and acceptance boundary. No autonomous AI is certified by these design documents.
+
 ## 1. Purpose and method
 
 POLITIKA draws particularly on the original *Command & Conquer* (C&C) tradition but should not mistake the conventions of one RTS series for the essential properties of the genre. This document distinguishes three levels:
