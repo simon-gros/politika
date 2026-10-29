@@ -394,6 +394,16 @@ bool APolitikaPrototypeUnit::ApplyLocalFogVisibility(bool bHidden)
     const bool bChanged = bLocalFogHidden != bHidden;
     SetLocalFogHidden(bHidden);
     if (!bHidden) LastLocalFogVisibleLocation = GetActorLocation();
+#if !UE_BUILD_SHIPPING
+    // The listen host's counterpart of MP_CLIENT_UNIT_RELEVANT/WITHDRAWN: a hidden unit
+    // reports where the host last saw it, which is where a last-known contact must sit.
+    if (bFirst || bChanged)
+    {
+        const FVector Location = bHidden ? LastLocalFogVisibleLocation : GetActorLocation();
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_HOST_UNIT_FOG entity=%llu owner=%u team=%u hidden=%d first=%d alive=%d x=%.1f y=%.1f"),
+            StableId, OwnerPlayer, TeamId, bHidden ? 1 : 0, bFirst ? 1 : 0, IsAlive() ? 1 : 0, Location.X, Location.Y);
+    }
+#endif
     return bChanged && !bFirst;
 }
 
@@ -1076,6 +1086,17 @@ void APolitikaPrototypeMatch::DistributeShotPresentation(APolitikaPrototypeUnit*
     const ShotCue LocalCue = bListen ? ResolveShotCue(Shooter, Target, LocalRuntimePlayerId, LocalPoint)
         : (LocalPoint = Target->GetActorLocation(), ShotCue::Exact);
     if (LocalCue != ShotCue::None) Shooter->InfantryPresentation->Shot(LocalPoint, Cooldown);
+#if !UE_BUILD_SHIPPING
+    if (bListen)
+    {
+        const FVector TargetLocation = Target->GetActorLocation();
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_HOST_SHOT_CUE sequence=%u participant=%u shooter=%llu target=%llu cue=%s target_x=%.1f target_y=%.1f point_x=%.1f point_y=%.1f generation=%llu"),
+            Sequence, LocalRuntimePlayerId, Shooter->GetStableId(), Target->GetStableId(),
+            *FString(politika::rules::ShotCueName(LocalCue).data()), TargetLocation.X, TargetLocation.Y,
+            LocalPoint.X, LocalPoint.Y, MatchGeneration);
+    }
+#endif
 #if WITH_DEV_AUTOMATION_TESTS
     if (bTestCaptureShotCues) TestShotCues.Add({0, LocalCue, LocalPoint});
 #endif
