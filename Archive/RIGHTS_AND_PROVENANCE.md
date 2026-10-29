@@ -22,6 +22,28 @@ The Olympic Museum explicitly limits its website content to private, educational
 
 See [MAP_ACQUISITION_GUIDE.md](MAP_ACQUISITION_GUIDE.md) for the complete workflow.
 
+## Individually documented modern map licences
+
+[The 2011 NordNordWest location SVG](https://commons.wikimedia.org/wiki/File:Yugoslavia_(1946-1990)_location_map.svg) is identified as **CC BY-SA 3.0 Germany**, including named author and licence/link obligations. [The 2011 Gap general map](https://commons.wikimedia.org/wiki/File:General_map_of_Yugoslavia_(1945-1991)_(EN_labels).png) is identified as **CC BY-SA 3.0**, with language-variant images requiring their own licence page review. [The 2024/2025 republic/province diagram](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) is identified as **CC BY-SA 3.0**. The [CIA 1982 World Factbook illustration](https://commons.wikimedia.org/wiki/File:World_Factbook_(1982)_Yugoslavia.jpg) is described as **public domain (U.S. government)**. A digitized catalogue entry documenting a licence is *not* an instruction to copy every image into the repository; check item scope, credit, share-alike compatibility, embedded marks and actual derivative use before importing.
+
+The [map-source crosswalk](MAP_RELATIONSHIPS.csv) distinguishes 2011 language variants and the two hosts for the original 1988 railway map. A file whose title suggests 1988 but whose creator dates it to 2008 is not historical media.
+
+## Additional period media sources and digitization restrictions
+
+**Prvi maj Pirot:** five named 1983/1985 historical photographs have file-specific **CC BY-SA 3.0** under Historical Archive in Pirot Commons VRTS ticket `2018102410001786`. Retain individual source file URL, stated original year, source institution, the photographer-unknown status, licence link and attribution/share-alike conditions. Modern upload time (2018) is not the image's scene date.
+
+**1983 TAM truck:** Chris Jantsch photo is **CC BY-SA 4.0**, but the vehicle maker's name and mark may have separate restrictions. Treat photos as reference imagery and do not assume real manufacturer logos can be used as game emblems.
+
+**1985 Belgrade grocery card:** this is claimed period-printed ephemera photographed using a modern camera in **2019**, licensed CC BY 4.0. The historical paper object and newly licensed digital photo have separate dates.
+
+**1985 Belgrade civic portrait:** CC BY-SA 3.0 Serbia; preserve credited photographer Stevan Kragujević and family permission. Do not confuse portraits with the photographed person's current office status at the date.
+
+**Sarajevo 1984 official report:** the Sarajevo library bibliographic page includes a general public-domain field but its digitization usage terms limit downloading/copying and commercial use without permission. Respect those service-specific restrictions; the separate LA84-hosted report states it is digitally published with IOC permission and should not be equated with an unrestricted source.
+
+**1981 census compilation:** the particular tables are published with a **1991** introduction using historical **1981** enumerated data, and remain copyright/translation/sensitivity research material. Real population characteristics must never determine fictional hostility or automatic unit ownership.
+
+See [Industry and Civic Life, 1980–1989](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md) and the [Master Catalogue](CATALOG.csv).
+
 ## Cartographic rights, map dates and original game assets
 
 The [map catalogue](MAP_CATALOG.csv) records map publication or known revision date, geographic coverage, scale, source institution, edition/sheet identifier, period status and rights. A map printed in 1996 can be useful for persistent geography without providing reliable 1985 roads, jurisdiction or buildings.

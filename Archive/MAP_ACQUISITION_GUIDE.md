@@ -1,6 +1,6 @@
 # POLITIKA — Historical Cartographic Acquisition and Map-Production Guide
 
-**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **94 source records**, including **29 period-original, institutional series or period-revision references**, **44 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
+**Research updated:** 29 October 2026. [MAP_CATALOG.csv](MAP_CATALOG.csv) contains **172 source records**, including **35 contemporary-issued or period-series records**, **96 selected topographic sheet leads**, and additional older or later materials. [Map-only index](media/reference-only/maps/INDEX.md) · [Map relationships](MAP_RELATIONSHIPS.csv) · [period overview](MAPS_1980_1989.md) · [rights](RIGHTS_AND_PROVENANCE.md).
 
 ## What has actually been acquired?
 
@@ -9,6 +9,28 @@ This archive has *verified metadata and clickable original-source locations*. It
 - **Digitized original period map:** a period-printed map visible through the source site, such as the 1988 railway map on Wikimedia Commons and on Spomenik Database, or the 1986 monuments tourist map. Check the original publication line and scan-reproduction rights separately.
 - **Period original, physical-copy identified:** a museum or catalog confirms an item was printed in 1981–1989, but a usable download or its redistribution rights have not been established, such as the 1988 Geokarta Belgrade plan and 1988 Yugoslav road map held by the University of Maribor Library.
 - **Historical topographic series / prospective acquisition:** a library/institution describes a series or holds sheet indexes, but a particular sheet edition, rights, download and geo-accuracy are unverified. Croatian TK100/TK200 production-series records are not 55/18 individually catalogued map binaries.
+
+## Newly identified digital source families (29 October 2026)
+
+**Contemporary U.S. maps:** the [1982 Yugoslavia *World Factbook* map](https://commons.wikimedia.org/wiki/File:World_Factbook_(1982)_Yugoslavia.jpg) is a genuinely period CIA print illustration and its Commons page identifies the U.S. government public-domain basis. The [CIA 1982 global political map](https://www.loc.gov/item/82690356/) and [1983 global map](https://www.loc.gov/item/2011589550/) are contemporary archive items for international diplomacy UI, not national city planning.
+
+**Modern re-usable foundations:** the [2011 NordNordWest SVG](https://commons.wikimedia.org/wiki/File:Yugoslavia_(1946-1990)_location_map.svg) explicitly states geographic limits of 13.2°E–23.3°E and 40.7°N–47.0°N, with CC BY-SA 3.0 Germany. The [2024/2025 republic/province map](https://commons.wikimedia.org/wiki/File:Socialist_Republics_and_Autonomous_Provinces_of_the_Socialist_Federal_Republic_of_Yugoslavia_(1968-1990).png) is CC BY-SA 3.0. These are useful for preliminary UI mockups only after attribution/share-alike compliance, and should not be shown as archival scans from 1984. Four versions of a [2011 linguistic map design](https://commons.wikimedia.org/wiki/File:General_map_of_Yugoslavia_(1945-1991)_(EN_labels).png) can inform localization without falsely multiplying the number of independent historical maps.
+
+**Earlier coastal/graphic examples:** 1953–1963 British Admiralty maritime charts and Vlasto Kopač's [1954 illustrated tourist map](https://commons.wikimedia.org/wiki/File:Jugoslavija_turisti%C4%8Dka_mapa.jpg) support original coastal and poster art direction; their historical age and reuse permissions must remain visible.
+
+**Data QA:** `Archive/MAP_CATALOG.csv` represents source references rather than 172 independently licensed image binaries; the latest seed added 36 more UT Austin M709 named quadrangles, totaling 96, including the latest sources, without making unverified claims about printing/survey years. Details are in the [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md).
+
+## New source acquisition targets in the latest pass
+
+- [1984 Sarajevo Olympic official final report (LA84)](https://digital.la84.org/digital/collection/p17103coll8/id/11863/): original-period infrastructure and event source; published digitally with IOC permission, **not a general-purpose commercial licence**. Record map-plate page references before use.
+- [National Library of Serbia cartographic collection](https://nb.rs/en/cartographic-collection/): approximately 35,000 sheets across many eras. Request **dated 1980–1989** original maps and atlas volumes; do not multiply archive source count by the size of library holdings.
+- [Croatian History Museum's 154-unit map catalogue](https://kartevgi.hismus.hr/en/e-catalog/): identify actual sheets and contemporary dates individually; most items predate 1980.
+- [1980 Geološka karta Jugoslavije review](https://plus.cobiss.net/cobiss/si/sl/bib/17114722): original 1980 journal article, **not itself a scanned geological map**. Locate the actual map edition before promoting it from a literature lead.
+- [1989 geological map of Slovenia in a historic cave-research library listing](https://odl.dzrjl.si/publikacije/knjiznjica/): retrieve scale, producer and original sheet metadata.
+- [2018 visa-regime drawing of purported 1983 conditions](https://commons.wikimedia.org/wiki/File:Vizni_re%C5%BEim_za_gra%C4%91ane_SFR_Jugoslavije_%28stanje_1983._godine%29.jpg): Commons CC BY-SA 4.0, but independently authenticate visa-free travel rules before converting them into game-law or UI data.
+- [Official 1981 Yugoslav census publication with 1991 introduction](https://publikacije.stat.gov.rs/G1981/Pdf/G19814001.pdf): keep **data year 1981** distinct from **reference publication 1991**; no ethnic map can determine tactical allegiance.
+
+A full evidence-to-asset demonstration based on original 1983–1985 [factory and civilian photographs](INDUSTRY_AND_CIVIC_LIFE_1980_1989.md) is now available separately, with licence and scan-date checks.
 
 ## High-priority originals and source-specific next steps
 
@@ -35,6 +57,10 @@ This archive has *verified metadata and clickable original-source locations*. It
 - **[COBISS Slovenia historical cartographic search](https://plus-legacy.cobiss.net/cobiss/si/sl/bib/search?c=ar%3D7518819&r1=0)** returns 1981, 1982, 1984, 1986, 1987 and 1989 *Socialistična federativna republika Jugoslavija* map items, including a reissued map still crediting Ivan Selan after his 1981 death. Determine whether multiple entries are editions, reproductions or copies of one design.
 - **[COBISS Serbian-language catalogue](https://plus-legacy.cobiss.net/cobiss/sr/sr_latn/bib/204791815)** documents 1980, 1982, 1985 and 1986 foreign-language tourist map editions; some may share a base design and should be linked as related editions in future normalization.
 - **[Croatian History Museum cartographic editions](https://kartevgi.hismus.hr/en/editions/)** documents historical domestic topographic mapping and the Sisak 1981/82 assembly as its most recent map in that collection.
+
+## Catalogue provenance and duplicate-source relationships
+
+The [Map Relationships CSV](MAP_RELATIONSHIPS.csv) explicitly identifies the genuine 1988 JŽ railway map found at two separate hosts, the four 2011 language-labelled map variants based on the same drawing, companion 1981 CIA shaded/political maps that are **different** contemporary originals, and the 2008 modern map whose filename mentions 1988. This prevents raw catalogue counts from being mistaken for 147 independently produced cartographic works. Run `python3 Archive/tools/validate_catalogues.py` for source-identifier and index consistency; this does not confirm source URLs are live or licences remain valid.
 
 ## A consistent source-ingestion lifecycle
 

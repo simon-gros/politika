@@ -57,8 +57,8 @@ Final package identity is `7d6aab9d730a-dirty`, game `0.1.0-dev.0`, engine `5.8.
 | NAV-A11 Attack/Guard approach around blockers | INCONCLUSIVE | Shared code path exists; no target-behind-blocker fixture was run. |
 | NAV-A12 Stop cancellation | PASS (valid cooked route, identified Linux Development snapshot) | OI-01 below: post-step-40 typed Stop admitted at 41 before movement, route/identity cleared, one Stopped publication, stationary through 81 including duplicate Stop at 61; four packaged processes. |
 | NAV-A13 Replacement order invalidates old route | PASS (valid cooked route, identified Linux Development snapshot) | OI-02 below: one Replaced at 41, fresh complete return route installed/executed, one replacement arrival and no stale original arrival; four processes. OI-03 independently proves admission rejection preserves the executing route. |
-| NAV-A14 Unreachable destination failure | INCONCLUSIVE | No complete-route negative/disconnected-region fixture; missing NavMesh negative passes. |
-| NAV-A15 Missing/invalid/partial nav cannot silently succeed | INCONCLUSIVE | Missing data is tested; invalid projection/partial/no-path cases lack dedicated runtime assertions. |
+| NAV-A14 Unreachable destination failure | PASS (cooked Linux Development, 2026-10-29) | New isolated disconnected-region qualification below; valid endpoints, production no-complete-path query, retired route, exactly-once failure and 21 inert steps in two fresh processes. |
+| NAV-A15 Missing/invalid/partial nav cannot silently succeed | INCONCLUSIVE | DP-01 and DP-02 destination-projection subcases plus NQ-01/NQ-02 have scoped packaged evidence; empty/invalid route-result subcases remain unqualified. No silent fallback is observed in the qualified cases. |
 | NAV-A16 Replan behavior is bounded | INCONCLUSIVE | Source sets three target retries / 0.5 s cooldown; exhausted-target/replan tests not run. |
 | NAV-A17 Dead units stop routes | INCONCLUSIVE | Death/cleanup regression passes, but unit death while navigating a route is not isolated. |
 | NAV-A18 Inactive match stops routes | INCONCLUSIVE | Lifecycle and fail-closed movement regressions pass; active valid-route termination at phase exit is not isolated. |
@@ -498,3 +498,301 @@ Fresh INTERNAL archives, each actually boots MainMenu through the documented cop
 A second complete **22/22 fresh-process qualification PASS** belongs to this isolated source: twelve OI-01/02/03 runs (RS-02 and RS-05 twice), then ten existing five-schedule NAV-A20 runs, each independently NAV-A25 PASS. Interruption report: `Saved/Packages/INTMergeFixture20261029/Linux/navigation-interruption-1793231431926579706/`; regression: `navigation-repeatability-1793231481175564746/` beside it. All four OI-03 same-schedule uninterrupted-reference reports PASS. Maximum position/waypoint/length/travel deviation is 0/0/0/0 cm. Stop holds through81 including duplicate61; replacement arrives80/holds100; rejection preserves original arrival156/hold176. Existing frozen tolerances, collision/speed legality, event counts and command boundaries are unchanged.
 
 Authored fixture bytes remain exact: map SHA256 `86d86c2813fd9a912ae22ee1b70cbac43d635ef081103a93cc6d1f86403561e8`, definition `587121af4d281019efb14e3f56cf0c6aa6dc9950f4120973f3c0307b7b0b28fe`. No canonical content was modified by the merge. Historical reports/packages and the ordinary player-facing launcher remain preserved. This is still bounded Linux Development navigation acceptance, not Shipping, cross-platform, broad Stage 4A or First Playable qualification.
+
+## Unreachable and partial-path failure qualification — 2026-10-29
+
+This follow-on closes **NAV-A14** for the isolated Linux UE 5.8.3 Development scenario and independently exercises a genuine partial result. It does not promote every NAV-A15 failure subcase or Stage 4A. Prior NAV-A12/A13/A20/A25 records above retain their historical source and package identities.
+
+### Source, fixture and query evidence
+
+- Source branch: `codex/nav-unreachable-partial-20261029`; verified start `a4dcd64091ef5ce9fc9adcceb742c87362bd0b59` (reconciliation merge over `origin/main` `ed596024c4ed98581a884f41492b1c58ac278edd` and local `main` `5c9db959360f4d41ba693268126f9aac79f66164`). The shared primary checkout stayed on `main` and its staged/unstaged/untracked work was not altered. UE version/pin remains 5.8.3 / `396c9f059903aed5fec78ecd3d437a40c6415368`.
+- Isolated fixture assets: `/Game/Politika/TestFixtures/Navigation/W_DisconnectedNavigation`, `/Game/Politika/TestFixtures/Navigation/DA_DisconnectedNavigation`, stable map ID `map.test.disconnected_navigation`. They are not registered in the production catalog or permanent always-cook configuration. The optional target is distinct from required starts/objective, which remain reachable on the origin side.
+- The saved cooked Recast data is `PersistentLevel.RecastNavMesh-Default`, static (`runtime_generation=0`). The valid origin `(-700,-600,42)` and requested goal `(800,-600,42)` are within `[-2000,2000]` XY. Both project to `(-700,-600,-10)` and `(800,-600,-10)` with 52 cm offsets (within the 80 cm runtime tolerance). The static collision/navigation barrier bounds X `[-100,100]`, Y `[-5000,5000]`; it fully divides the playable region without a gap or route around its ends. Both endpoints were independently observed projectable in both packaged runs; the package passed shared content/spatial validation and reached Active.
+- Production remains complete-route-only: `allow_partial=0`, `require_navigable_end=1`. Actual `FindPathSync` returned `ENavigationQueryResult=2` (`Fail`), `partial=1`, valid diagnostic path with 2 points ending at `(-152,-988,-10)`. This is a failed/no-complete-path production result—not a successful complete route and not evidence that the diagnostic partial was installed. Failure classification was `NoCompletePath`; route installation was rejected and route state retired.
+- Separate NQ-02 query used the same real cooked nav data and `FindPathSync` with `allow_partial=1`. It returned `result=3` (`Success`), `partial=1`, valid 2-point partial path ending 1028.031128 cm from the requested projected goal. The same production `IsCompleteNavigationResult` gate rejected it as `PartialPath`; trace confirms `installed=0`. No partial flag or query result was fabricated.
+
+### Packaged results and reproducibility
+
+Final package roots are `Saved/Packages/NavigationUnreachableNormalMainMenu20261029/Linux/` and `Saved/Packages/NavigationUnreachableFixtureMainMenu20261029/Linux/`. The normal UFS manifest has no `TestFixtures/`; the isolated fixture manifest contains the disconnected map/definition and its generated `.ubulk`, alongside the existing navigation obstacle fixture. The two executable hashes are identical: `60dc37505953a04ec3a47d174171764df104cee05fb171d3d954ba6c0c0de94e`. `Politika-Linux.utoc` SHA-256 is `227b31cda6bd4c5097c37792e28a08250df1ddc43fa8149934a4c27120a25a88` (normal) and `8f1eaf4bc99423342fc9d0fb898a9017d33d5af73a30611c77494d39258744f0` (fixture). Package sidecars retain `BuildIdentity.json`, `QualificationSource.sha256` and `unreal-version.env`.
+
+The acceptance package used the established copied-config MainMenu overlay because the tracked development project default is `RTSVerticalSlice`; the isolated `Config/DefaultEngine.ini` was restored byte-for-byte after cooking. No canonical/default-map change is part of this slice. Both packages passed no-selector MainMenu startup; PC-01 also ran the existing complete static-obstacle route control and passed.
+
+Exact negative command:
+
+```sh
+cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_interaction -- \
+  Saved/Packages/NavigationUnreachableFixtureMainMenu20261029/Linux/Politika/Binaries/Linux/Politika \
+  --navigation-unreachable \
+  Saved/Packages/NavigationUnreachableNormalMainMenu20261029/Linux/Politika/Binaries/Linux/Politika
+```
+
+The final run's evidence directory is `Saved/Packages/NavigationUnreachableFixtureMainMenu20261029/Linux/navigation-unreachable-1793233889117661520/`. It contains two fresh process logs and copied runtime logs, unique user directories, `artifact-identity.txt` and `acceptance.tsv`. **NQ-01-A/B PASS**: both show one real production query (`result=2`, `partial=1`), one authorized typed Move outcome, exactly one `NavigationFailed` `OrderChangedEvent`, zero arrival, retired executable route/cursor/identities, and 21 fixed-step samples (failure step plus 20 further steps) at the unchanged start position. Match remains Active; unit remains alive and owned. **NQ-02-A/B PASS**: each fresh process's genuine partial diagnostic query was rejected by the production validator and never installed. The failed first packaging attempt (fixture definition was not resolved by the Development loader) is retained under the earlier `NavigationUnreachableFixture20261029` archive and is not counted as evidence.
+
+### Automation, quality and bounded verdicts
+
+- Focused `Politika.RTS.Navigation.SavedMapDisconnectedDestinationFailsClosed`: 1 discovered, 1 succeeded-with-warning, 0 failed/skipped. Full `Politika.RTS`: 12 discovered, 3 succeeded, 9 succeeded-with-warnings, 0 failed/skipped; includes the new test, command contract, participant authority, lifecycle and navigation regressions. `Politika.Content`: 7 discovered/passed, 0 failed/skipped. Warnings are the existing expected missing-navigation/rejection and transient Editor-world Recast cleanup diagnostics; exported JSON reports are under `build/diagnostics/navigation-failure/automation*`.
+- Pinned `tools/unreal.sh doctor`, Editor build, both final Linux Development UAT packages, portable C++ `quality -- core`, repository `quality -- audit`, Rust `cargo test --locked --manifest-path Tools/Shell/Cargo.toml` (6 passed) and `cargo fmt --manifest-path Tools/Shell/Cargo.toml -- --check` pass. `git diff --check` passes. Pre/post SHA-256 checks match for all inventoried canonical maps, definitions, catalog and existing fixture assets; only the two scoped disconnected fixture assets are new.
+- `NAV-A14 = PASS` for valid, in-bounds, individually projectable endpoints disconnected under the supported ground profile, production query failure, fail-closed execution and authoritative failure publication on the final cooked Development source.
+- NAV-A15 subcases: missing navigation = previously qualified PASS; invalid/unprojectable goal = not newly qualified; disconnected no-complete-path = PASS; genuine partial-result rejection = PASS twice; empty/invalid-path-specific query result = not separately constructed; no silent fallback = PASS for the missing-data, disconnected and real-partial exercised paths. Overall `NAV-A15 = INCONCLUSIVE` because invalid/unprojectable and empty/invalid-path cases remain outside this evidence.
+- The implementation changes no production movement algorithm or command/event contract; it adds shared result validation at the existing route boundary, Development-only fixture/probe instrumentation and the test observer. No Shipping, target-approach, death/lifecycle-route termination, dynamic/multi-unit, scale, Windows, SteamOS or Android claims are made.
+
+The scoped implementation is committed on the isolated task branch. Publication was intentionally not attempted: after qualification, `origin/main` advanced and no longer has a fast-forward relationship with the task branch, and advancing the shared dirty `main` would collide with pre-existing user changes in `README.md`, `Docs/ENGINE_OUTLINE.md`, navigation gameplay/content sources, the Editor commandlet and `Tools/Shell/src/bin/rts_interaction.rs`. The task branch and its accepted evidence are preserved for a later safe reconciliation; no force, reset, stash or shared-checkout mutation was used.
+
+## NAV-A15 DP-02 excessive projection displacement qualification — 2026-10-29
+
+This isolated follow-on qualifies only the successful-but-excessive destination projection boundary. It does not close empty/invalid path-result (ER-01/ER-02) cases or overall NAV-A15.
+
+### Baseline, source and feasibility
+
+- Canonical repository: `https://github.com/simon-gros/politika`. A read-only live `git ls-remote origin refs/heads/main` and fetched reference agreed at `3994baa5e2646adaefba9dda27645b4e6a1fa7d2`. The isolated branch `codex/nav-a15-projection-displacement-20261029` and worktree `/mnt/data/politika-nav-a15-projection-displacement-20261029` start exactly there. The shared `/mnt/data/politika` checkout remains at `5c9db959360f4d41ba693268126f9aac79f66164`, one ahead / 35 behind its fetched origin, with unrelated staged/unstaged/untracked user work; it was not edited. The protected DP-01 and path-results worktrees were inspected read-only and left unchanged.
+- Pinned UE is 5.8.3, source revision `396c9f059903aed5fec78ecd3d437a40c6415368`. Doctor passed. The engine installation was already dirty at preflight; none of its pre-existing changes was modified.
+- The production typed Move transmits map-relative XY. `SubmitCommand` reconstructs world XY by adding playable-min XY and uses the unchanged unit-center Z `42.0`. The saved test submits raw target `(1300,1300)` (inside `[-2000,2000]²`), map-relative XY `(3300,3300)`, and the actual production request `(1300,1300,42)`. It applies no height adjustment.
+- The separate collision trace hits authored raised ground at `(1300,1300,200)`, so the production-request-to-ground Z difference is `-158 cm` (requested center is below the collision top); this is not substituted into the navigation request. The connected, collision-bearing elevated surface resolves at projected NavMesh point `(1300,1300,210)`.
+- UE 5.8.3 source inspection followed `UNavigationSystemV1::ProjectPointToNavigation` into the pinned Recast `ProjectPoint` / `findNearestPoly2D` implementation, including vertical query bounds and returned nearest-poly location. The saved fixture's real Recast probe produced a complete path from the origin to the elevated surface; it is not a disconnected-path substitute or unsupported floating polygon.
+- Production remains unchanged at query extent `(80,80,180)` and strict guard `FVector::Dist(ProjectedGoal.Location, Destination) > 150.0f`. The measured horizontal delta is `0 cm`, vertical delta `168 cm`, and actual full 3D distance `168.000000000 cm`; `168 > 150` strictly. Both points are within the declared query extent. The correct `DestinationNotNavigable` branch returns before production `FindPathSync` construction/execution.
+
+### Saved fixture and packaged runtime
+
+- Only two new saved assets were authored: `/Game/Politika/TestFixtures/Navigation/W_ProjectionDisplacement` and `DA_ProjectionDisplacement`, selected by map ID `map.test.projection_displacement` and opt-in Development selector `-PolitikaTestFixture=ProjectionDisplacement`. The optional runtime destination is not a required start/objective. The fixture validates with zero map-check errors and reaches Active before command admission. A first ramp-orientation candidate failed the connected-path probe and was rejected; the corrected saved geometry was then reloaded and re-probed. Both candidate records remain under `Saved/Diagnostics/dp02-candidate-v1/` and the authoring report under `build/diagnostics/projection-displacement-authoring-v5.log`.
+- Two fresh independent cooked Linux Development fixture-package processes, each with its own `-UserDir` and runtime log, passed. Full logs and reports: `Saved/Packages/DP02Fixture/Linux/navigation-projection-displacement-1793241113774646052/acceptance.tsv` and `DP-02-A.log` / `DP-02-B.log` in that directory. Both measured request `(1300,1300,42)`, projected point `(1300,1300,210)`, ground hit `(1300,1300,200)`, and `168.000000000 cm`.
+- Both commands were admitted as authorized typed Moves against a ready static `RecastNavMesh-Default` and the supported `movement.prototype_ground` profile. Actual projection diagnostics record origin success, goal success, unchanged extent, requested/projected vectors, displacement and `query_executed=0`. The terminal state reports `DestinationNotNavigable`, query/path result fields `NA` (no path query occurred), no executable route, retired route identity/cursor, one accepted command, exactly one failure publication, zero arrival publications, and a living unit with unchanged ownership. Failure-step plus 20 subsequent authoritative fixed steps (21 recorded positions total) are stationary; no duplicate failure appears.
+- The focused saved-map Automation `Politika.RTS.Navigation.SavedMapExcessiveProjectionDisplacementFailsClosed` discovered and executed 1/1, passed with an expected Editor/Recast cleanup warning, 0 failed/skipped. Its actual measurements and report are in `build/diagnostics/dp02-automation/final.log` and `index.json`.
+
+### Controls, packages and checks
+
+- Packaged controls on the same executable/source identity: DP-01-A/B **PASS** (goal projection false, correctly not DP-02); NQ-01-A/B **PASS** (real disconnected query, result 2/partial); NQ-02-A/B **PASS** (real partial result rejected as `PartialPath`); PC-01 static obstacle route **PASS** (4 points, length 1632.748039 cm, 176 fixed steps, one arrival); PC-02 ordinary no-selector startup **PASS** in both archives. Evidence directories are retained under `Saved/Packages/DP02Fixture/Linux/navigation-destination-failure-*`, `navigation-unreachable-*`, and `navigation-obstacle-acceptance-*`.
+- Normal Linux Development UAT archive: `/mnt/data/politika-qualification/nav-a15-dp02-20261029-3994baa/Saved/Packages/DP02Normal/Linux`; fixture archive: matching `DP02Fixture/Linux`. Both UAT BuildCookRun operations exited 0. Their packaged executable SHA-256 is `2eac6f63dbaa70ccfcc685ab645a1bfcc9645960e07e970105cce967202f5586`. The normal UFS manifest excludes `TestFixtures/`; fixture UFS includes this map/definition and cooked `.ubulk` Recast data. Both archives boot MainMenu without a selector via the copied-project qualification overlay only; its `DefaultEngine.ini` SHA-256 is `f25e45739054d02c75a7f0c07c1ab5d320329ee097c2c578f9b3e65966f5abb9`. The tracked source config hash remains `2af4a7f33dd93f7b272faeb9fdd8083c2311f9cf724a60dcfc4271f3c2b2ac5c` and still selects RTSVerticalSlice; no canonical startup-default change is claimed.
+- Package hashes: normal UFS manifest `c0ce23dcb0e06aff640bf533d994d4411bb25da266e543c41dad333e7092620d`, `.pak` `532ff7cf0113cd7738953297745952ee37283d69a2e3e5cff6484999b7960728`, `.ucas` `fbb77d42e9810a490bfa20cb79070f9476e4c0b1b57087ee54a0b547d5f1054a`, `.utoc` `227b31cda6bd4c5097c37792e28a08250df1ddc43fa8149934a4c27120a25a88`; fixture UFS manifest `443d5fbf5c1f8f5b420dd4b27959a4c9e748c321c8cdd682c62a72bb47046c1e`, `.pak` `64148d2cb306641cb25acd65667e45c0c87a686fbf7b26931880acab3b1426aa`, `.ucas` `fa5a3bb0f2f43a287009362a15a4c7db038893bfad04ee96b2ad07ed633ffe69`, `.utoc` `d6912c16a0408cf27c5ac2559af71cb0fc9cb964247d8767a5d60ede798e820f`. The global IoStore containers match between archives.
+- `Politika.RTS.Navigation`: 7 discovered/executed, 0 ordinary successes, 7 warning-bearing successes, 0 failed/skipped. `Politika.RTS`: 14/14, 3 ordinary successes, 11 warning-bearing successes, 0 failed/skipped. `Politika.Content`: 7/7 ordinary successes, 0 warnings/failures/skips. Exported reports and logs are in `build/diagnostics/automation-nav-all/`, `automation-Politika-RTS/`, and `automation-Politika-Content/`. The expected warnings arise from negative-path or transient Editor/Recast cleanup.
+- Passed: pinned `tools/unreal.sh doctor`; Editor Linux Development build; Linux Game Development BuildCookRun; portable `quality -- core`; repository `quality -- audit`; Rust Shell tests (6/6); Rust format check; and `git diff --check`. UAT logs: `build/diagnostics/dp02-normal-uat.log` and `dp02-fixture-uat.log`. The fixture package is opt-in and no test fixtures leaked into the normal cook.
+- The normal/fixture UFS manifest check and executable identity passed. Canonical RTS map, map definition, content catalog, unit definition, existing static-obstacle/disconnected/DP-01 fixture hashes were inventoried before/after and unchanged. New DP-02 assets: definition SHA-256 `685c8df8b9a399b40c93b3179e6615095b25c49e6441486284d00c097caa1449`; map SHA-256 `fc195b468fb10df2399b918c087ab652d4ed8da9e0febe914b9150c7fb66e45b`.
+- Build sidecar identity: game version `0.1.0-dev.0`, build label `local-dp02-20261029`, source revision `3994baa5e264-dirty`, pinned engine revision above. The exact source-input manifest is retained at `build/diagnostics/dp02-final-source-inputs.sha256`, SHA-256 `44692db5a504ca146989c3e9a271214acdecd80d5745d299a4da5c36e1ecbb8a`; identical `QualificationSource.sha256` sidecars were placed beside both archives. Executable SHA-256 is identical across normal and fixture packages.
+
+### Scoped result and integration status
+
+`DP-02 = PASS` for this identified source/engine/package snapshot. This closes only the successful projection with displacement strictly above the existing 150 cm tolerance. `DP-01`, NQ-01, NQ-02 and PC-01/PC-02 controls pass; `ER-01` and `ER-02` remain `INCONCLUSIVE`; overall `NAV-A15 = INCONCLUSIVE`.
+
+A scoped implementation commit is recorded on the isolated branch. No publication was attempted: the branch is a child of `3994baa5...`, while local `main` is divergent (`5c9db959...`) and has dirty paths that overlap task source/docs/harness. A safe local-main fast-forward is impossible from its current ancestry/state, and publishing without satisfying the requested safe local synchronization gate is prohibited. No force-push, reset, stash, merge, overwrite or shared-checkout mutation was performed. Preserve this qualification worktree and its package/evidence artifacts for a later explicit reconciliation; do not mistake this qualification for a published release.
+
+### DP-02 implementation-gate ledger
+
+| Gate | Verdict | Evidence |
+|---|---|---|
+| DP2-A01–A05 | PASS | Shared/remote/protected-worktree preflight, dirty work preservation, fresh worktree at current `origin/main`, and pinned UE 5.8.3 revision recorded above. |
+| DP2-A06–A10 | PASS | Owning docs/source reviewed; typed XY/Z conversion, production extent/threshold, pinned Recast implementation and actual successful 168 cm probe recorded. |
+| DP2-A11–A16 | PASS | Isolated saved fixture validates/activates; origin and ground hit verified; typed target in bounds; goal projects successfully; displacement is strictly above 150 cm. |
+| DP2-A17–A21 | PASS | Actual guard is `DestinationNotNavigable`; query did not execute; route not installed and identity/cursor retired. |
+| DP2-A22–A25 | PASS | One failure, no arrival, failure step plus 20 inert authoritative steps; Active match and live owned unit retained. |
+| DP2-A26–A27 | PASS | Two fresh package processes agree exactly at serialized 1e-6 cm coordinates and 1e-9 cm displacement precision; no divergent step/field. |
+| DP2-A28–A31 | PASS | DP-01, NQ-01/NQ-02, PC-01 complete route, and PC-02 MainMenu startup controls pass. |
+| DP2-A32–A35 | PASS | Focused and broad Automation filters, Editor/Game builds, UAT, portable core/audit, Rust tests/fmt and diff checks pass. |
+| DP2-A36–A40 | PASS | Normal/fixture cook isolation, package/source/engine hashes and canonical asset preservation checked; owning docs updated. |
+| DP2-A41 | PASS | Scoped local commit recorded on the isolated task branch; no unrelated paths included. |
+| DP2-A42 | BLOCKED | Local `main` is divergent from this `origin/main` base and has overlapping dirty paths; no non-destructive synchronization path exists from the current state. |
+| DP2-A43 | BLOCKED | Conditional publication stopped because A42 cannot be established; no push attempted. |
+| DP2-A44 | BLOCKED | Shared local main left untouched; cannot safely fast-forward it while preserving the divergent history and dirty user work. |
+| DP2-A45 | SKIPPED | No remote publication or local-main movement was attempted, so no new integrated SHA exists to compare. |
+
+## NAV-A15 destination-projection and invalid-result qualification — 2026-10-29
+
+This isolated follow-on is based on fetched `origin/main` `2fe95b6e726a64a9e748381735abf429759c177f`, branch `codex/nav-a15-destination-20261029`, worktree `/mnt/data/politika-nav-a15-destination-20261029`. The shared checkout remained on `main` at `5c9db959360f4d41ba693268126f9aac79f66164`, ahead 1/behind 34, with its tracked/untracked dirty paths preserved. The previous NAV-A14 commit `cf56f4594ae3ed69aa018f2de58e491dcb9e8a30` was not merged: only its 13-file first-parent navigation delta was selectively applied. Its 237 other origin-to-commit paths, including unrelated environment assets and research, were excluded. The required obstacle fixture helper and existing movement/query infrastructure were already present at this upstream base.
+
+Pinned engine: Unreal 5.8.3, source revision `396c9f059903aed5fec78ecd3d437a40c6415368`; `tools/unreal.sh doctor` passed. The engine checkout was already dirty at preflight: 16 tracked third-party/build helper script paths and one untracked `Engine/Config/DefaultEngine.ini`; `git diff --binary` SHA-256 is `8206134d2318bde2dc2c13695c470985455932d4c4cc10755813ef2065231546`, and the untracked config SHA-256 is `2a20b23636bc31095df4bfd6770da4ea6f91b915667d9293b66c04c7af15e984`. None was modified by this task. Editor Development build, portable core, repository audit, six Rust tests, Rust format and `git diff --check` passed. The required Automation filters discovered/executed: Navigation 6/6 (0 ordinary successes, 6 warning-bearing successes, 0 failed/skipped), RTS 13/13 (3 successes, 10 warning-bearing successes, 0 failed/skipped), Content 7/7 (7 successes, 0 warnings, 0 failed/skipped). Their JSON indexes are under `Saved/NavA15Automation/Politika_RTS_Navigation/`, `Politika_RTS/` and `Politika_Content/`; the new `SavedMapUnprojectableDestinationFailsClosed` is in all applicable counts. Reported warnings are existing Editor/Recast and expected negative-path diagnostics.
+
+### DP-01 fixture and production evidence
+
+The Development-only selector is `-PolitikaTestFixture=UnprojectableDestination`, map ID `map.test.unprojectable_destination`, level `/Game/Politika/TestFixtures/Navigation/W_UnprojectableDestination`. The optional runtime Move target is not a required start or objective. Its XY is `(1300,1300)`, inside playable XY bounds `[-2000,2000]`; the authored ground collision trace hit the tagged ground at `(1300,1300,-14)` within 5 cm. A separate static `NavModifierVolume` with `UNavArea_Null` bounds `[1000,1600] x [1000,1600] x [-58,142]` excludes the NavMesh while leaving the ground collision query usable. The saved-level authoring commandlet and its reload check recorded origin projection success and destination projection failure with extent `(80,80,180)`; runtime Recast was ready and static (`runtime_generation=0`).
+
+The typed portable order carries XY only; the existing production adapter reconstructs its requested unit-center Z as 42 cm. Therefore the runtime `NAV_FAILURE_PROJECTION` requested vector is `(1300,1300,42)`, while the independent ground-surface check records `Z=-14`; this is the established unit-center conversion, not a different XY target or a fabricated projection point. On both fresh packaged runs the actual production branch logged `origin_projected=1`, `goal_projected=0`, `query_executed=0`, and `DestinationNotNavigable`. Query result, partial flag, path validity, point count, projected goal and displacement were explicitly `NA`, because `FindPathSync` did not execute.
+
+DP-01-A/B both passed in independent Linux Development processes from the same fixture package. Each log records one accepted typed Move, one `NavigationFailed` order event, no arrival, zero path queries, retired route/cursor/identity, stationary live owned unit, and 21 authoritative samples (the failed step plus 20 further fixed steps). The final result is `PASS`, `failure_classification=DestinationNotNavigable`, `queries=0`; the terminal record uses `NA` for every query/path field. No AI movement, retry, stale route or alternate projected target was observed. Runtime logs and unique `-UserDir` paths are retained in `Saved/Packages/NAVA15FixtureFinal/Linux/navigation-destination-failure-1793235847693472564/`.
+
+### Real-result investigation and final-source controls
+
+- `DP-02` excessive projection displacement: `INCONCLUSIVE`, not separately reproduced. No tolerance/extent was changed, and no floating or synthetic destination was used to claim this condition.
+- `ER-01` empty usable path and `ER-02` invalid path/waypoint: `INCONCLUSIVE`. The bounded genuine packaged queries exercised production complete-only (`allow_partial=0`: result `2`/Fail, `partial=1`, valid two-point diagnostic result) and an actual diagnostic partial-enabled query (`allow_partial=1`: result `3`/Success, `partial=1`, valid two-point partial, endpoint error 1028.031128 cm), plus the static-obstacle complete-route Success control. None returned an empty or malformed path. Source inspection confirms that the production route boundary rejects non-success, partial, invalid/empty-path and non-finite waypoint results; source inspection alone is not runtime qualification. No result was synthesized.
+- Final-source NQ-01 disconnected no-complete-path: **2/2 PASS**, actual production query result `2`, partial flag `1`, route rejected as `NoCompletePath`; each process had one failure publication and 21 samples. NQ-02 genuine partial-result rejection: **2/2 PASS**, actual result `3`, partial `1`, two points and production classification `PartialPath`, never installed. The same immutable fixture package also passed one packaged complete static-obstacle detour (`arrival_step=156`, final step 176, no failures).
+- PC-02 no-selector startup: fixture selection and acceptance mode were absent in both normal and fixture archive launches and no navigation acceptance markers appeared, but both actually loaded `/Game/Maps/RTSVerticalSlice` and reached Active. The tracked `origin/main` `Config/DefaultEngine.ini` sets `GameDefaultMap=/Game/Maps/RTSVerticalSlice`, contrary to this increment's required MainMenu startup. The separate dirty shared-checkout menu configuration was not imported, and this slice did not change the default startup configuration. Therefore PC-02 is **FAIL against the stated MainMenu requirement**, despite the normal UFS manifest excluding every `TestFixtures/` asset. This is an explicit publication blocker, not a MainMenu pass.
+
+### Package identity and verdict
+
+Final archives are `Saved/Packages/NAVA15NormalFinal/Linux/` and `Saved/Packages/NAVA15FixtureFinal/Linux/`. Both came from the same final executable SHA-256 `675d899857248d4c90656ca29c9f8340a41313270cde5991775de2c3de220590`; build identity is `2fe95b6e726a-dirty`, engine `5.8.3-0+UE5`. Scoped qualification source input manifest hash: `769108ec786c00a0eb1128bdb379052e9f5d9aa6bb6bd34603b4e55c49e2851a`. Normal UFS contains no `TestFixtures/`; fixture UFS contains DP-01, disconnected and static-obstacle fixtures. Pak/IoStore hashes: normal `.pak` `6ef0866cecc8ecb74152bcce67ccc8cb426f6060de303d6424127ec9f3463b59`, `.ucas` `fbb77d42e9810a490bfa20cb79070f9476e4c0b1b57087ee54a0b547d5f1054a`, `.utoc` `227b31cda6bd4c5097c37792e28a08250df1ddc43fa8149934a4c27120a25a88`; fixture `.pak` `f43c753589d0e0f8883381dae336d41b83eea970c4ddcc626ffbbfb622f260f4`, `.ucas` `f16a62179e3cf1fa47e052f852671f90b148289a5398f55b310bcf72ab171364`, `.utoc` `952351314f11bc3b7f119fc42d7df11483438d06a8b0c0327d139bb3f1d27a1d`. Cook logs are under `Saved/NavA15Packaging/`.
+
+Subcase verdicts: DP-01 **PASS**; DP-02 **INCONCLUSIVE**; NQ-01 **PASS**; NQ-02 **PASS**; ER-01/ER-02 **INCONCLUSIVE**; no-silent-fallback for DP-01 **PASS**; package fixture exclusion/inclusion **PASS**; PC-02 MainMenu startup **FAIL**. Overall **NAV-A15 INCONCLUSIVE**; do not claim complete closure. Because PC-02 failed and upstream/local-main reconciliation is unsafe (the shared main is divergent and dirty, with incoming conflicts in navigation sources, docs, config and Rust harness), no commit or push was made. The isolated worktree and evidence are preserved; no force/reset/stash/merge/rebase or shared-checkout edit was performed.
+
+### Final copied-config startup qualification and publication reconciliation — 2026-10-29
+
+The preceding PC-02 failure applies to the first `NAVA15NormalFinal` / `NAVA15FixtureFinal` archives, whose tracked source config defaults to RTSVerticalSlice. It is superseded by the final copied-config qualification archives below; the project checkout's default config was not changed.
+
+An isolated snapshot at `/mnt/data/politika-qualification/NAVA15-Destination-20261029` was copied from this exact source/content state. Only the snapshot's `Config/DefaultEngine.ini` changed `GameDefaultMap` from `/Game/Maps/RTSVerticalSlice` to `/Game/Maps/MainMenu`; `EditorStartupMap` remained RTSVerticalSlice. The authoritative worktree config remained SHA-256 `2af4a7f33dd93f7b272faeb9fdd8083c2311f9cf724a60dcfc4271f3c2b2ac5c`; the snapshot override is SHA-256 `f25e45739054d02c75a7f0c07c1ab5d320329ee097c2c578f9b3e65966f5abb9`. This is the documented qualification-only startup overlay, not a source/default-map change. Both archives were cooked/staged serially from the same copied project and exact already-built executable; UAT logs are `Saved/NavA15Packaging/normal-mainmenu-final.log` and `fixture-mainmenu-final.log`, both `BUILD SUCCESSFUL`, exit 0. The sidecars retain the source-input manifest hash `769108ec786c00a0eb1128bdb379052e9f5d9aa6bb6bd34603b4e55c49e2851a` and engine pin. The overlay hash is separately recorded in `Saved/NavA15Packaging/mainmenu-overlay-config.sha256`.
+
+Final archives: `Saved/Packages/NAVA15NormalMainMenuFinal/Linux/` and `Saved/Packages/NAVA15FixtureMainMenuFinal/Linux/`. Both executable SHA-256 values are `675d899857248d4c90656ca29c9f8340a41313270cde5991775de2c3de220590`. Normal UFS has zero `TestFixtures/` entries; fixture UFS includes the static-obstacle, disconnected and unprojectable-destination maps/definitions. Normal game Pak/IoStore SHA-256: `.pak` `a0cc583dcfba94abb50908cef552f713114329ed01e244d03c1b2a8c67ed4bb6`, `.ucas` `fbb77d42e9810a490bfa20cb79070f9476e4c0b1b57087ee54a0b547d5f1054a`, `.utoc` `227b31cda6bd4c5097c37792e28a08250df1ddc43fa8149934a4c27120a25a88`. Fixture game Pak/IoStore SHA-256: `.pak` `571d165370df9974e96b062433053a0170a4d49eb8812f2d55d21c1d41794426`, `.ucas` `f16a62179e3cf1fa47e052f852671f90b148289a5398f55b310bcf72ab171364`, `.utoc` `952351314f11bc3b7f119fc42d7df11483438d06a8b0c0327d139bb3f1d27a1d`; shared global IoStore hashes are `global.ucas` `75d53a95f496cdb12f519a135db424c0f99b4a9d4847467f2cf69cb0a3a8c1e5`, `global.utoc` `6ac326ab2c7910be85a12d071d7e3fa55785f52ee5e6995b390b784f68e5c5f2`. The Rust `--static-obstacle` acceptance mode launched both archives without map/fixture selectors and recorded `/Game/Maps/MainMenu` for each, then ran the explicit cooked complete-route fixture: `Saved/Packages/NAVA15FixtureMainMenuFinal/Linux/navigation-obstacle-acceptance-1793238213/results.tsv` is NAV-A25 **PASS**, four route points, 176 authoritative samples, 157 swept segments, one arrival at step 156 and 20 inert post-arrival steps.
+
+The mandatory two final-source negative runs were repeated against the copied-config archives: `Saved/Packages/NAVA15FixtureMainMenuFinal/Linux/navigation-destination-failure-1793238228712187666/acceptance.tsv` records DP-01-A/B **PASS**. Each fresh process reports ground hit at `(1300,1300,-14)`, in-bounds/static NavMesh exclusion, requested unit-center goal `(1300,1300,42)`, ready `RecastNavMesh-Default`, origin projection true, goal projection false, production extent `(80,80,180)`, query `NOT_EXECUTED` (serialized result fields `NA`), `DestinationNotNavigable`, one accepted Move, one failure publication, zero arrivals, retired route identity and 21 stationary authoritative samples. The terminal records are in `DP-01-A/B-runtime.log`; each process also has an isolated `-UserDir` and original command line. NQ-01 and NQ-02 were likewise rerun on these archives: `navigation-unreachable-1793238240072148615/acceptance.tsv` records two genuine disconnected failures and two real partial-path rejections, all **PASS**.
+
+Final verdicts: DP-01 **PASS**; PC-01 complete-route control **PASS**; PC-02 no-selector MainMenu startup **PASS with the explicit copied-config qualification overlay**; NQ-01/NQ-02 **PASS**; DP-02 and ER-01/ER-02 remain **INCONCLUSIVE**. Therefore `NAV-A15 — invalid/unprojectable-goal subcase = PASS`, while `NAV-A15 — empty/invalid-path-result subcase = INCONCLUSIVE` and `NAV-A15 — overall = INCONCLUSIVE`, as required. Do not use the first failed archives as final package evidence.
+
+### UG-A01–UG-A36 reconciliation
+
+| ID | Verdict | Evidence summary |
+|---|---|---|
+| UG-A01 | PASS | Accepted navigation commit `cf56f4594ae3ed69aa018f2de58e491dcb9e8a30`; exact first-parent navigation delta selectively carried to the verified `origin/main` base. |
+| UG-A02 | PASS | Shared dirty checkout remained untouched; initial status/inventory preserved in task preflight. |
+| UG-A03 | PASS | Isolated branch/worktree `codex/nav-a15-destination-20261029` at `/mnt/data/politika-nav-a15-destination-20261029`. |
+| UG-A04 | PASS | Local `main` was ahead 1/behind 34; remote history and non-fast-forward accepted branch ancestry inspected; unrelated merge/assets excluded. |
+| UG-A05 | PASS | UE 5.8.3 doctor passed against pinned revision `396c9f059903aed5fec78ecd3d437a40c6415368`. |
+| UG-A06 | PASS | Required owning and supporting acceptance/design/governance documents reviewed. |
+| UG-A07 | PASS | Production typed-admission/projection/query/route/event pathway audited; projection failure precedes `FindPathSync`. |
+| UG-A08 | PASS | Saved map `/Game/Politika/TestFixtures/Navigation/W_UnprojectableDestination`, ID `map.test.unprojectable_destination`; only isolated test assets added. |
+| UG-A09 | PASS | Cooked fixture validates and match reaches Active. |
+| UG-A10 | PASS | Active lifecycle observed in the packaged runtime trace. |
+| UG-A11 | PASS | Correct unit origin projects onto ready static Recast data. |
+| UG-A12 | PASS | Finite in-bounds goal on tagged collision-bearing ground; ground trace and bounds evidence recorded. |
+| UG-A13 | PASS | Actual production goal projection boolean is false. |
+| UG-A14 | PASS | Explicit diagnostic says `query_executed=0`; no query record exists for either projection-failure attempt. |
+| UG-A15 | PASS | One authorized typed Move is accepted. |
+| UG-A16 | PASS | No executable route is installed. |
+| UG-A17 | PASS | Waypoints/cursor and executable navigation generation/sequence retire. |
+| UG-A18 | PASS | One `NavigationFailed` publication per attempt. |
+| UG-A19 | PASS | No arrival publication. |
+| UG-A20 | PASS | Failure step plus 20 later authoritative steps remain stationary. |
+| UG-A21 | PASS | Match remains Active; unit remains alive, owned, and valid. |
+| UG-A22 | PASS | Two fresh packaged DP-01 runs pass. |
+| UG-A23 | PASS | Final copied-config package passes cooked complete-route static-obstacle control. |
+| UG-A24 | PASS | Final package disconnected NQ-01 2/2 and genuine partial NQ-02 2/2 pass. |
+| UG-A25 | PASS | Registered `SavedMapUnprojectableDestinationFailsClosed` discovered in Navigation 6/6 passing-with-warnings report. |
+| UG-A26 | PASS | RTS 13/13 and Content 7/7; zero failed/skipped. |
+| UG-A27 | PASS | Pinned Editor Development build and Linux Development Game/UAT packaging succeeded. |
+| UG-A28 | PASS | Normal and fixture UAT archives succeeded from final-source snapshot. |
+| UG-A29 | PASS | Normal manifest excludes fixtures; no-selector MainMenu verified in normal archive. |
+| UG-A30 | PASS | Fixture archive retains MainMenu overlay and includes intended cooked navigation fixture dependencies. |
+| UG-A31 | PASS | Core/audit, six Rust tests, Rust format, and source diff checks passed. |
+| UG-A32 | PASS | No canonical authored assets were modified; only the two scoped fixture assets were added. |
+| UG-A33 | PASS | Source-input manifest, engine pin, executable, Pak/IoStore and runtime evidence identities recorded. |
+| UG-A34 | PASS | Owning navigation record and outline reconciled without promoting overall NAV-A15. |
+| UG-A35 | PASS | The reviewed 15-file task patch was committed and fast-forward-published to GitHub main from its exact `origin/main` base; see the publication reconciliation below. No unrelated history or paths were included. |
+| UG-A36 | BLOCKED | GitHub main publication is verified. Shared local `main` remains at `5c9db959360f4d41ba693268126f9aac79f66164`, ahead/behind remote and carrying dirty overlapping user work; it was deliberately not advanced or cleaned. A separately reviewed local reconciliation is still required. |
+
+The DP-01 destination-projection qualification is published on GitHub main. The shared local checkout was not modified as part of publication: its branch and uncommitted work remain preserved pending a separate safe local-main reconciliation. The remaining technical gap is the empty/invalid-path-result subcase; overall NAV-A15 remains INCONCLUSIVE.
+
+### Scoped publication reconciliation — 2026-10-29
+
+After rechecking live `origin/main` at `2fe95b6e726a64a9e748381735abf429759c177f`, the isolated task branch was confirmed to be based exactly on that commit. The reviewed change set comprised only 15 navigation implementation, fixture, test/harness and owning documentation paths listed in the scoped commit. No unrelated history was imported. The commit was pushed as a normal fast-forward to GitHub main and the remote ref was independently verified at the resulting commit.
+
+The shared checkout `/mnt/data/politika` was intentionally left untouched. Its local `main` is `5c9db959360f4d41ba693268126f9aac79f66164` and has extensive pre-existing staged/unstaged/untracked work, including overlapping navigation source, commandlet, documentation and Rust harness files. It cannot be fast-forwarded safely in-place without a separate scoped reconciliation. No reset, clean, stash, merge, rebase, or force-push was performed. The task worktree is clean after the scoped commit; other pre-existing worktrees and branches were not modified.
+
+## NAV-A15 ER-01 genuine empty-path source feasibility — 2026-10-29
+
+This isolated continuation starts from the accepted DP-02 commit `0061531fc9a5d4f992b71ec9905627593e6a4020` (parent `3994baa5e2646adaefba9dda27645b4e6a1fa7d2`) in branch `codex/nav-a15-er01-empty-path-20261029`, worktree `/mnt/data/politika-nav-a15-er01-empty-path-20261029`. The worktree was initially clean. It records only this feasibility report; it contains no fixture, production-code change, injected result, or Automation placeholder.
+
+### Baseline and preservation
+
+- Refreshed `origin/main` is `3994baa5e2646adaefba9dda27645b4e6a1fa7d2`. Shared `/mnt/data/politika` remains at `5c9db959360f4d41ba693268126f9aac79f66164`, one commit ahead and 35 behind, with extensive staged, unstaged and untracked non-navigation work. Nothing in that checkout was edited, built, cleaned, stashed, switched or overwritten.
+- The accepted DP-02 worktree is clean at `0061531fc9a5d4f992b71ec9905627593e6a4020`; its single outgoing commit is the accepted excessive-projection qualification. Its parent is current remote `main`. The destination and path-results worktrees are clean; the protected path-results worktree has a pre-existing modification to its acceptance document and was left alone. The unprojectable-goal run-2 worktree is clean. The older unreachable-path worktree is three commits ahead and 13 behind its tracking base and was left untouched.
+- During preflight, a UE Editor-Cmd infantry import was actively running against the shared checkout. No UBT, UAT, Editor, Game or fixture-generation action was started for this investigation. The process was not interrupted.
+- UE installation `/mnt/data/unreal/5.8.3` is pinned at `396c9f059903aed5fec78ecd3d437a40c6415368`. Its pre-existing working tree contains modified third-party `.bat` scripts and untracked `Engine/Config/DefaultEngine.ini`; none was changed. The inspected NavigationSystem/Recast/Detour source files themselves are clean in Git. No source/build/package identity from a historical runtime was relabeled as fresh ER-01 evidence.
+- Inspected engine-source SHA-256: `NavigationSystem.cpp` `c1a7627988734d09b8fb73196d75da07c93658bd9f1443b9fa1bef26428b5035`; `NavigationPath.cpp` `dad5d5098f98b806183f2e81ab9c16f700ac020a7ef0cdaac60bb957e005dc87`; `NavigationData.h` `601bf1bf54e7797c09d2ad7d713f3adbd287115832259c848a3ee0c666af68f0`; `RecastNavMesh.cpp` `e93db68b6fc73c87224c2e76dd2aa8e3262312bfca15b9ffa4169fc1d755997f`; `PImplRecastNavMesh.cpp` `e65edd6bacf87cf6e3f13381f5a987c4af26ba0c2d74de6c878dcade4b7070e2`; `NavMeshPath.cpp` `af0cb3c7aac2e49713d302cf02147771e6fa868113d8ae2b8f7b54af0dfdbccc`; `DetourNavMeshQuery.cpp` `ba021719f76f531059443c06fea2c766fed2091983553f6122d3b3768afa02fa`.
+- Relevant POLITIKA source hashes at this base: `PolitikaPrototypeGameplay.cpp` `09c2713f4ea336b814c4878fa273211f031d2e413c6eb2c0c14f34fa8b4b4c9c`; `PolitikaPrototypeGameplay.h` `f43966d74aeb2cc827791b4b04158d556ac31f8860d2fe9b65832ed5c609ff18`. The pre-edit owner-document hash was `17e405aff7f1444abe293b121a405eeb41e04899d59875516ee581146cc5afd0`.
+
+### Production guard and validity semantics
+
+The isolated source confirms `APolitikaPrototypeMatch::IsCompleteNavigationResult` checks, in order: `Success` and non-null shared path pointer (`Result.Path.IsValid()`), non-partial path object, then non-empty `GetPathPoints()`, returning `EmptyPath` only at the final check (`Source/Politika/Private/PolitikaPrototypeGameplay.cpp:1371-1389`). Production `ResolveNavigationRoute` projects both endpoints using the unchanged `(80,80,180)` extent, uses the supported movement profile/default NavData, sets `allow_partial=false` and `require_navigable_end=true`, calls `FindPathSync`, then invokes this validator (`:1392-1497`). If the validator rejected an empty result, no waypoint copy or route install follows.
+
+The two `IsValid` calls must not be conflated:
+
+- `FNavPathSharedPtr::IsValid()` in `Result.Path.IsValid()` tests whether the shared pointer exists. The production guard does **not** call `Result.Path->IsValid()`.
+- Pinned `FNavigationPath::IsValid()` is `bIsReady && PathPoints.Num() > 1 && bUpToDate` (`Engine/Source/Runtime/NavigationSystem/Public/NavigationData.h:94-97`). Thus a zero-point object is invalid by the engine's path-object contract even if a shared pointer to it is non-null. `FPathFindingResult::IsPartial()` separately returns `(Result != Error) && Path.IsValid() && Path->IsPartial()` (`NavigationData.h:1176-1178`); partial status is not inferred from the point count.
+
+### Pinned engine result-construction audit
+
+`UNavigationSystemV1::FindPathSync` selects the query's NavData (or default data for the overload without explicit agent properties), dispatches to that NavData's synchronous `FindPath`, and returns its `FPathFindingResult` without replacing the path (`Engine/Source/Runtime/NavigationSystem/Private/NavigationSystem.cpp:1887-1932`). The production query names the default Recast data and does not change query settings.
+
+The pinned Recast construction has two relevant branches (`Engine/Source/Runtime/NavigationSystem/Private/NavMesh/RecastNavMesh.cpp:3853-3895`):
+
+1. When the projected query start and adjusted end are nearly equal, Recast resets the point array, adds exactly one `FNavPathPoint(AdjustedEndLocation)`, and sets `Result=Success`. It does not return zero points. This includes coincident and sufficiently near-coincident endpoints that enter this branch.
+2. Otherwise it calls `FPImplRecastNavMesh::FindPath`. A non-searchable query returns Error. A Detour partial result sets the path's partial bit; the Recast wrapper maps it to Success only if partial paths are allowed, otherwise Fail. Production disallows partial paths and requires a navigable end.
+
+For a successful non-degenerate Recast query, `PostProcessPathInternal` calls `PostProcessPath` and then marks the path ready (`PImplRecastNavMesh.cpp:1339-1388`). Detour `findPath` validates both polygon references and, when start and end refs match, adds the start ref to its result before returning Success (`Engine/Source/Runtime/Navmesh/Private/Detour/DetourNavMeshQuery.cpp:1625-1649`). On the normal success path, Recast only trims a terminal nav-link polygon when corridor size is greater than one (`PImplRecastNavMesh.cpp:1530-1543`), so it cannot reduce a one-polygon successful corridor to zero. With string pulling enabled (the `FNavMeshPath` default), `PerformStringPulling` calls `FindStraightPath`; Detour validates the first polygon and appends the closest start vertex before processing the corridor, then appends the end vertex on successful completion (`Engine/Source/Runtime/Navmesh/Private/Detour/DetourNavMeshQuery.cpp:2585-2610, 2915-2916`). The Recast adapter resets and fills `PathPoints` from those returned straight-path vertices (`PImplRecastNavMesh.cpp:1638-1675`). If string pulling is disabled, Recast explicitly appends both start and end points (`PImplRecastNavMesh.cpp:1612-1616`). Thus normal successful straight-path construction has at least one returned point (possibly one coalesced point for a degenerate path).
+
+There is, however, an important unchecked second-stage failure path: Detour `findStraightPath` can return failure if the first/last corridor polygon cannot be resolved (`DetourNavMeshQuery.cpp:2591-2603`). `FPImplRecastNavMesh::FindStraightPath` resets `PathPoints` before it checks the straight-path status, leaving it empty on such failure (`PImplRecastNavMesh.cpp:1646-1653`). `FNavMeshPath::PerformStringPulling` records that boolean, but its caller does not propagate it into the already-successful `FindPathStatus`; `PostProcessPathInternal` returns the original Detour route-search status (`PImplRecastNavMesh.cpp:1360-1388`). Therefore source alone does **not** exclude a Success/non-partial/zero-point result if a genuine query's route search succeeds and its subsequent straight-path extraction fails. The identified failure preconditions appear inconsistent with the valid corridor produced and consumed synchronously from the same static Recast data, but that invariant is not asserted at the call boundary. No supported ordinary geometry/setup that triggers this branch was established here.
+
+This conclusion is scoped to the pinned engine's normal `UNavigationSystemV1::FindPathSync` → default static `ARecastNavMesh` path with POLITIKA's unchanged settings. It is not a claim about custom `ANavigationData`, test-owned path mutation, corrupted Detour internals, other engine revisions, or fabricated results. The latter are outside ER-01's permitted reproduction conditions.
+
+### Feasibility and bounded-probe decision
+
+| Candidate | Source result under production-equivalent conditions | Runtime probe |
+|---|---|---|
+| Ordinary separated endpoints, same polygon, or short nonzero separation | Normal valid-corridor processing appends at least one string-path point. | Four genuine `FindPathSync` queries ran on the existing saved static Recast map; see results below. None returned zero points. |
+| Coincident/nearly coincident projected endpoints | Recast's explicit success fast path returns exactly one point. It cannot qualify as zero points. | SP-01 observed Success, non-partial, one point. |
+| Disconnected/partial route | No complete route returns non-success; a partial route is marked partial and production maps it to Fail with `allow_partial=false`. Neither meets the required signature. | Existing historical controls remain historical; not rerun or counted as ER-01 evidence. |
+| Missing/unready NavData or failed initialization | FindPathSync/Recast returns Error, not successful empty output. | Not a candidate for ER-01. |
+
+Classification: **`SOURCE_UNRESOLVED`**. The normal pinned Recast branches produce at least one point, but the unchecked string-path extraction failure leaves open a genuine engine-returned empty path if a real successful route corridor becomes invalid before extraction. No supported geometry or stable static-nav setup triggering that condition was identified. The separate `FNavigationPath::IsValid()` predicate would be false for a hypothetical zero-point object, while POLITIKA's production guard only requires a valid shared pointer. This distinction means `EmptyPath` is the later production branch if such a result is returned, but it is not evidence that Recast returns one.
+
+#### Bounded real-query probe
+
+A Development-only Editor Automation observer was added at `Politika.RTS.Navigation.StraightPathResultProbe`; it loads the existing `/Game/Politika/TestFixtures/Navigation/W_DisconnectedNavigation` map and its saved static `RecastNavMesh-Default`. It uses a real `APolitikaPrototypeUnit` as `FPathFindingQuery` owner and the production query settings (`allow_partial=false`, `require_navigable_end=true`), then calls `UNavigationSystemV1::FindPathSync` directly. It does not mutate query results, alter production navigation settings/code, admit a typed Move, install a route, or create a fixture. The four requested endpoints independently projected successfully; origin was `(-700,-600,-10)`. Runtime reports include the projected endpoint and actual separation:
+
+| Case | Projected separation | Result | Shared path | Path object `IsValid()` | Partial | Points |
+|---|---:|---|---|---|---:|---:|
+| SP-01 coincident | 0 cm | Success (3) | valid | false | false | 1 |
+| SP-02 short | 1 cm | Success (3) | valid | true | false | 2 |
+| SP-03 same-area separated | 100 cm | Success (3) | valid | true | false | 2 |
+| SP-04 same-area separated | 250 cm | Success (3) | valid | true | false | 2 |
+
+This demonstrates the distinction in the real engine: the coincident Success result has a non-null shared path and one point while the path object's own `IsValid()` is false; the three separated Success results have non-null, valid, non-partial paths and two points. **None** meets the ER-01 signature (Success + valid shared pointer + non-partial + zero points). This is bounded negative runtime evidence for these four supported static-nav queries only; it neither exercises the identified string-path extraction failure nor proves that branch unreachable. The Automation record reports one warning, `LogCrowdFollowing: Unable to find RecastNavMesh instance while trying to create UCrowdManager instance`; the focused test completed Success with zero errors.
+
+Evidence: Linux UE 5.8.3 Editor Development build succeeded using pinned engine revision `396c9f059903aed5fec78ecd3d437a40c6415368`; produced Editor executable SHA-256 `8c225784bffd4b9c9b7744541d4d8ca41b585a414b9b8f4c661c7b1d66d5c6df`. The focused Automation report is `build/diagnostics/er01-straight-path-probe/index.json` (SHA-256 `d6d05d3d48ff7f2a56f34cc4c3ef51e0b5eae546d57d924fdb99a7c75e373be6`); captured run log is adjacent `run.log`. Observer source SHA-256 is `27fa973908f82360493b095856cbe36636772c792e5b6f3b21e66255e9cfb8b1`. No Linux game build/cook/package, packaged runtime, normal-cook fixture exclusion test, or POLITIKA production resolver/typed-Move rejection was executed.
+
+### Verdicts and remaining work
+
+The source feasibility category is not an acceptance PASS. `ER-01 = INCONCLUSIVE` (no qualifying runtime result observed in the four bounded queries); `ER-02 = INCONCLUSIVE`; overall `NAV-A15 = INCONCLUSIVE`. No claim is made that packaged `EmptyPath` rejection, exactly-once event publication, stationary movement, fresh-process repetition, package controls, or full acceptance gates ER1-12 through ER1-40 passed. The smallest justified next dependency is a newly identified supported Unreal/Recast source branch or reproducible engine defect that can produce a successful complete result with no points without mutating the result; absent that, do not author a broader fixture suite or synthetic result. ER-02 remains separate future work.
+
+| Gate | Verdict | Evidence / boundary |
+|---|---|---|
+| ER1-01 | PASS | Shared checkout and every listed navigation worktree inspected. |
+| ER1-02 | PASS | Dirty shared checkout, dirty path-results doc, engine working-tree changes and active import process preserved. |
+| ER1-03 | PASS | Accepted DP-02 commit and parent verified against refreshed `origin/main`. |
+| ER1-04 | PASS | Unique ER-01 worktree created from exact DP-02 commit; initially clean. |
+| ER1-05 | PASS | UE 5.8.3 revision verified; inspected engine-source paths are clean. |
+| ER1-06 | PASS | Required owning/source/governance documents and current navigation status reviewed before recording this result. |
+| ER1-07 | PASS | Production validator order and query settings confirmed in isolated source. |
+| ER1-08 | PASS | FindPathSync, Recast, FPImplRecast and Detour construction/return flow inspected. |
+| ER1-09 | PASS | Shared-pointer validity, path-object validity and partial semantics distinguished. |
+| ER1-10 | PASS | Feasibility classified `SOURCE_UNRESOLVED`; unchecked string-pull failure remains unproven. |
+| ER1-11 | SKIPPED | The four ordinary static-nav queries below ran, but no supported geometry/query setup was identified for the unchecked corridor-extraction failure itself. |
+| ER1-12 | INCONCLUSIVE | No actual new successful zero-point query result was observed. |
+| ER1-13 | NOT_RUN | No qualifying typed Move or endpoint-projection trace. |
+| ER1-14 | NOT_RUN | No ER-01 typed Move admission. |
+| ER1-15 | PASS | Four direct synchronous `FindPathSync` calls ran against the genuine saved static Recast NavData with production owner/settings; they were not routed through POLITIKA's production order resolver. |
+| ER1-16 | PASS | All four observed `Success` (3). |
+| ER1-17 | PASS | All four observed a valid shared path pointer. |
+| ER1-18 | PASS | All four observed non-partial results. |
+| ER1-19 | PASS | Observed point counts: 1, 2, 2, 2; zero-point result not reproduced. |
+| ER1-20 | NOT_RUN | Production `EmptyPath` was not reached. |
+| ER1-21 | NOT_RUN | No ER-01 route-state outcome. |
+| ER1-22 | NOT_RUN | No ER-01 route identity/cursor evidence. |
+| ER1-23 | NOT_RUN | No ER-01 failure-event count. |
+| ER1-24 | NOT_RUN | No ER-01 arrival observation. |
+| ER1-25 | NOT_RUN | No 20-step ER-01 stationary trace. |
+| ER1-26 | NOT_RUN | No ER-01 post-failure operational-state check. |
+| ER1-27 | NOT_RUN | No fresh packaged ER-01 processes. |
+| ER1-28 | NOT_RUN | No ER-01 independent-run comparison. |
+| ER1-29 | PASS | Focused Development Editor query-observer Automation discovered and executed once; this is not packaged ER-01 acceptance. |
+| ER1-30 | NOT_RUN | No new RTS/content regression run. |
+| ER1-31 | NOT_RUN | Historical controls were not rerun against a new ER-01 source/package identity. |
+| ER1-32 | NOT_RUN | No new complete-route positive control. |
+| ER1-33 | NOT_RUN | No new MainMenu startup control. |
+| ER1-34 | PASS | Linux UE Editor Development build succeeded; no Game target build. |
+| ER1-35 | NOT_RUN | Core, audit, Rust tests and format were not run; `git diff --check` passed. |
+| ER1-36 | NOT_RUN | No normal/fixture UAT package. |
+| ER1-37 | NOT_RUN | No normal-cook fixture exclusion check. |
+| ER1-38 | NOT_RUN | No fixture-cook/NavMesh check. |
+| ER1-39 | PASS | Source, engine and pre-existing package identity limitations recorded; no new runtime/package identity claimed. |
+| ER1-40 | PASS | Canonical assets and protected work were not changed by this investigation. |
+| ER1-41 | PASS | ER-01, ER-02 and overall NAV-A15 verdicts remain accurate and unpromoted. |
+| ER1-42 | SKIPPED | No runtime-qualified implementation commit was created. |
+| ER1-43 | SKIPPED | No outgoing integration or remote publication attempted. |
+| ER1-44 | SKIPPED | No GitHub/local-main synchronization claimed. |
+
+These verdicts do not promote NAV-A15 or the Stage 4A milestone.
