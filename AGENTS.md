@@ -1,6 +1,6 @@
 # POLITIKA — Contributor and Coding-Agent Rules
 
-POLITIKA is an alternate-history RTS set in 1980s Yugoslavia. Unreal Engine 5.8.3 runs the initial native application shell; see Docs/SHELL_SKELETON.md for verified build/recovery evidence. The shell is not a playable RTS. Primary planned targets are Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple are possible later expansions.
+POLITIKA is an alternate-history RTS set in 1980s Yugoslavia. Unreal Engine 5.8.3 runs the native application shell and a bounded tactical RTS prototype. Shell recovery is documented in Docs/SHELL_SKELETON.md; scoped RTS acceptance is in Docs/RTS_VERTICAL_SLICE_MILESTONE.md and Docs/STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md. A complete skirmish or multi-platform release is not implemented. Primary planned targets are Linux, Windows, SteamOS/Steam Deck and Android; consoles and Apple are possible later expansions.
 
 The authoritative version lives in [version.json](version.json). Follow [Versioning & Release Management](Docs/VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md).
 
@@ -20,6 +20,12 @@ The authoritative version lives in [version.json](version.json). Follow [Version
 Use Rust/Cargo for offline asset-authoring tools; do not reintroduce Python authoring scripts.
 
 Keep POLITIKA's release process self-contained, with explicit game compatibility identities and no unrelated engine-specific assumptions.
+
+## Documentation and redistribution safety
+
+- Use [Documentation Index](Docs/DOCUMENTATION_INDEX.md) to find the owning rule and [Validation and Governance](Docs/VALIDATION_AND_GOVERNANCE.md) for evidence identity. Historical packaged PASS results do not verify later commits or packages; unrun checks remain NOT_RUN, BLOCKED or INCONCLUSIVE.
+- Before changing a checkout inspect status and preserve existing dirty work, authored content and other worktrees. Do not reset, clean, discard or overwrite another developer's files; use an isolated worktree for independent implementation.
+- There is no top-level LICENSE at this baseline. Git visibility, neutral filenames or re-encoding do not grant redistribution rights. Consult [Archive rights](Archive/RIGHTS_AND_PROVENANCE.md) and [Production Standards](Docs/PRODUCTION_STANDARDS.md); a project-wide license requires the rights holder's decision and external media requires separate permissions.
 
 ## Native shell recovery/build conventions
 

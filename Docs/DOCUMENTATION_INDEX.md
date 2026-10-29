@@ -35,7 +35,7 @@
 - [Structures, Production and Technology](RTS_PRODUCTION_AND_TECHNOLOGY.md) — proposed one-resource Stage 4B reinforcement flow, ledger, placement checks, producer queues and deferred prerequisite graphs.
 - [Bounded Skirmish Opponent AI](RTS_OPPONENT_AI.md) — proposed deterministic, authority-respecting, observation-scoped Stage 4D opponent with acceptance tests.
 - [Match Persistence, Replay and Determinism](RTS_MATCH_PERSISTENCE_AND_REPLAY.md) — proposed snapshot/replay ownership, compatibility, integrity and repeatability boundaries; **deferred** beyond first skirmish.
-- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and their POLITIKA-specific application; its local UM file-level reference catalog is at `/mnt/data/CommandAndConquer/UM/REFERENCE_CATALOG.md` (external to this repository).
+- [C&C Gameplay Comparative Study](CNC_GAMEPLAY_COMPARATIVE_STUDY.md) — cross-title design patterns and POLITIKA-specific application; extracted local reference material is optional evidence, not a portable repository dependency.
 - [Thyme Architecture Study](THYME_ARCHITECTURE_STUDY.md) — read-only patterns from a Generals: Zero Hour reimplementation, translated into POLITIKA-specific boundaries and current milestone guidance; no code reused.
 - [C&C Visual/Audio Reference Study](ART_AUDIO_REFERENCE_STUDY.md) — observations from local texture, model, UI and sound references, with original POLITIKA concept and sound prototypes.
 - [StarCraft Remastered Reference Analysis](STARCRAFT_REMASTERED_REFERENCE_ANALYSIS.md) — extraction-backed recommendations for POLITIKA command feedback, animation coverage, icon grammar, terrain authoring and data boundaries; assets remain reference-only.
@@ -47,6 +47,7 @@
 - [Development Foundations](DEVELOPMENT_FOUNDATIONS.md) — implemented local Rust/C++ foundations and staged possibilities.
 - [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) — change-scope testing policy and document ownership.
 - [Repository Implementation Audit — 29 October 2026](Reports/REPOSITORY_IMPLEMENTATION_AUDIT_20261029.md) — tracked-source inventory, verified versus unqualified milestones, prioritized risks, and Rust-free native core test fallback; an audit, not a new gameplay acceptance.
+- [Navigation Interruption Report — 29 October 2026](Reports/NAVIGATION_INTERRUPTION_20261029.md) — archived dirty-snapshot evidence; consult the owning navigation record for later publication qualification.
 - [Versioning and Release Management](VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) — canonical build/game version policy.
 - [Performance and Release Gates](PERFORMANCE_AND_RELEASE_GATES.md) — planned measurable RTS fixtures and release acceptance.
 
@@ -56,7 +57,8 @@
 - [Political history and chronology](../Archive/HISTORICAL_CHRONOLOGY_1980_1989.md), [Political Events Catalogue](../Archive/POLITICAL_EVENTS.csv) — factual historical references.
 - [Map research and sources](../Archive/MAPS_1980_1989.md), [Map Catalogue](../Archive/MAP_CATALOG.csv) — dated/uncertain cartographic references.
 - [Archive Rights and Provenance](../Archive/RIGHTS_AND_PROVENANCE.md) — licenses, attribution and evidence-versus-asset distinction.
-- [Production Standards](PRODUCTION_STANDARDS.md) — period decisions, source-to-map lineage, RTS model and visual/audio review.
+- [Production Standards](PRODUCTION_STANDARDS.md) — period decisions, source-to-map lineage, RTS model, licensing and visual/audio review.
+- [RTS Asset Resource Research](RTS_ASSET_RESOURCE_RESEARCH.md) — third-party acquisition leads, staged CC0 assets and UE import criteria; staging does not prove cooking or distribution clearance.
 
 ## Machine-readable design-stage registries
 
@@ -68,6 +70,10 @@
 - [Release readiness gates](../Data/release_matrix.json)
 
 The register entries marked `planned`, `research_only` or `blocked` are not shipped assets, completed tests, historical certifications or releases.
+
+## Status and evidence reading order
+
+Use the [Systems Completeness Matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) to locate an owning document; its assessment is a dated snapshot, not current-source acceptance. Then consult relevant [Stage 3](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md), [Stage 4A](STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md), [command](RTS_COMMAND_SIMULATION_CONTRACT.md) and [navigation](RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md) records, comparing **Git SHA, dirty status, engine pin, content identity and package hash**. [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) defines proposed unified evidence fields, whereas [release_matrix.json](../Data/release_matrix.json) is a release-gate ledger. Technical acceptance does not grant distribution rights: see [Archive Rights](../Archive/RIGHTS_AND_PROVENANCE.md) and [Production Standards](PRODUCTION_STANDARDS.md).
 
 ## Maintenance rule
 

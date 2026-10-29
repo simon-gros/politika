@@ -38,6 +38,14 @@ For significant code handoffs record exact Git SHA, files changed, commands exec
 
 **Decision on speed:** A documentation-only or archival commit does not require an Unreal build. A rules change gets a focused C++ test. A real map importer change requires its affected map fixtures and in-engine proof. A full suite is reserved for a release candidate or intentional milestone; do not freeze unrelated development because an unimplemented release gate is blocked.
 
+### Evidence identity and historical acceptance reconciliation
+
+Record **design/proposed**, **source implemented**, **locally tested**, **rendered packaged gameplay qualified**, and **real-device/platform qualified** as distinct capability states, with independent PASS/FAIL/BLOCKED/INCONCLUSIVE/NOT_RUN verdicts. A prior packaged PASS cannot qualify the current main commit or a different source/content/package identity.
+
+Each substantial gate should reference: stable requirement ID; owning specification, source and content; Git SHA and dirty state; engine revision; content/schema fingerprint; package configuration and hash if applicable; exact command and fixture; expected/observed outcome; log/report; date; blockers. Cross-link historical reports instead of reproducing long logs. A machine-readable **implementation/evidence register** is a future consolidation proposal, not an existing tested service. The [release ledger](../Data/release_matrix.json) is a distinct gate record.
+
+For documentation-only work run link/reference and canon/owner/status/rights checks; record Unreal and packaged tests as NOT_RUN if unexecuted. Historical evidence must retain its original source identity.
+
 ## 4. Documentation maintenance rules
 
 - [Documentation Index](DOCUMENTATION_INDEX.md) is the entry point for maintainers; group documents by gameplay, technical architecture, production and research.
