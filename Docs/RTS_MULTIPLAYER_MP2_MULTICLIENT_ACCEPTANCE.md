@@ -6,7 +6,7 @@
 
 Not qualified here:
 - Network emulation (latency, loss, reordering), bandwidth and server-step measurements (F36). **Done in the second increment:** see the [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md).
-- **The packaged runs exercised only exact shot cues.** In player-versus-player combat the target's team always sees the shooter, because weapon range (650 cm) is below sight (1200 cm). Facing-only and withheld cues only arise around the Unaligned side, and the fixture choreography does not fight it. Those two paths are **Automation-qualified only**.
+- **The packaged runs exercised only exact shot cues.** In player-versus-player combat the target's team always sees the shooter, because weapon range (650 cm) is below sight (1200 cm). Facing-only and withheld cues only arise around the Unaligned side, and the fixture choreography does not fight it. Those two paths are **Automation-qualified only**. *Update 29 Oct 2026: both are now packaged-qualified over sockets by the [Unaligned engagement record](RTS_MULTIPLAYER_MP2_UNALIGNED_ENGAGEMENT_ACCEPTANCE.md).*
 - Listen-server 3–4 process layouts, client fog shading/last-seen contacts (F33), AI-filled seats, reconnect, a Shipping server, other machines/platforms.
 
 ## A. What changed
@@ -14,7 +14,7 @@ Not qualified here:
 - **Shot cues follow team vision (F27).** The unreliable `MulticastShotPresentation(Target)` is gone. A multicast reaches every connection that has the shooter's channel open, so it carried an unseen target's exact position to the opposing team. For example, team B saw where team A was shooting an Unaligned unit that only team A could see.
   - The server now decides per connection (`APolitikaPrototypeMatch::DistributeShotPresentation`, core rule `politika::rules::ShotCueFor`):
     - **Exact.** The viewer's team observes the target: it receives the target point.
-    - **Facing only.** The viewer's team sees the shooter but not the target. It receives a point 600 cm along the shooter's facing. Facing is already public through the replicated rotation, and the fixed distance carries nothing about the target.
+    - **Facing only.** The viewer's team sees the shooter but not the target. It receives a point 600 cm along the shooter's facing. Facing is already public through the replicated rotation, and the fixed distance carries nothing about the target. *Update 29 Oct 2026: not quite. Attacks usually stop 550 cm from the target, so a 600 cm endpoint can land near it; see finding F43 in the [engagement record](RTS_MULTIPLAYER_MP2_UNALIGNED_ENGAGEMENT_ACCEPTANCE.md).*
     - **None.** The viewer's team cannot see the shooter: no cue is sent.
   - Delivery is `APolitikaPrototypePlayerController::ClientShotPresentation`: unreliable, owner-connection only, sent once per bound participant.
   - The listen host's own presentation uses the same rule for its seat. It no longer draws or *hears* shots from shooters its team cannot see.
@@ -69,7 +69,7 @@ Vocabulary: PASS / FAIL / BLOCKED / INFRA_ERROR / INCONCLUSIVE / SKIPPED / NOT_R
 | MP2-`<L>`-SHOT-CUES-FOG-SAFE | Every client cue matches a server decision for that participant (same kind and point within NetQuantize rounding); exact cues carry the target; nothing withheld was delivered; no multicast | Packaged | PASS ×3 (exact 171 / 236 / 228; facing 0; none 0) | `MP_SHOT_CUE_SENT` / `MP_CLIENT_SHOT_CUE` |
 | MP2-`<L>`-RESET-AFTER-RESULTS | All clients leave → `results_complete remaining=0` → same server process resets to generation 2 with the same layout | Packaged | PASS ×3 | |
 | MP2-PROTOCOL-LEGACY-REFUSED | MP-3 protocol-1 client → `MP_PRELOGIN REJECTED protocol=1 reason=MP.PROTOCOL.MISMATCH`; client shows the mismatch and returns to MainMenu; no seat bound | Packaged server + immutable MP-3 client `da3edfb4…` | PASS | `legacy-protocol/` |
-| Facing-only / withheld cues over sockets | Packaged | — | NOT_RUN | Needs an Unaligned engagement choreography; Automation covers both |
+| Facing-only / withheld cues over sockets | Packaged | — | NOT_RUN | Needs an Unaligned engagement choreography; Automation covers both. *Later PASS: [engagement record](RTS_MULTIPLAYER_MP2_UNALIGNED_ENGAGEMENT_ACCEPTANCE.md).* |
 | MP3 regression | `rts_multiplayer --dedicated` 1v1 on this build | Packaged | PASS 22/22 | `regression-dedicated-1v1/` |
 | MP1 regression | Two-process listen 1v1 on this build | Packaged | PASS 17/17 (first attempt BLOCKED: no free Xvfb display, see below) | `regression-listen-1v1/` |
 | OFFLINE-AUTHORITY | Rendered participant-authority replay | Packaged Development, Xvfb | PASS | `logs/offline-authority.log` |

@@ -5156,7 +5156,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::contact_memory_audit;
+    use super::{
+        ENGAGE_FACING_POST, ENGAGE_WITHHELD_POST, SIGHT_CM, contact_memory_audit, distance,
+        probe_screen,
+    };
 
     const RELEVANT: &str =
         "LogPolitikaStartup: Display: MP_CLIENT_UNIT_RELEVANT entity=11 owner=0 team=3";
@@ -5194,5 +5197,38 @@ mod tests {
         let own = LAST_KNOWN.replace("team=3 x", "team=1 x");
         let (_, _, problems) = contact_memory_audit(&[RELEVANT, WITHDRAWN, &own].join("\n"));
         assert_eq!(problems.len(), 1);
+    }
+
+    #[test]
+    fn ground_probe_reads_the_latest_on_screen_point_only() {
+        let line = |index: u32, on: u32, x: u32| {
+            format!(
+                "LogPolitikaStartup: Display: MP_CLIENT_GROUND_PROBE index={index} x=300.0 y=1300.0 z=-15.0 ground_hit=1 on_screen={on} screen_x={x} screen_y=196 viewer=1"
+            )
+        };
+        let text = [line(0, 1, 400), line(1, 1, 558), line(0, 1, 458)].join("\n");
+        assert_eq!(probe_screen(&text, 0), Some((458.0, 196.0)));
+        assert_eq!(probe_screen(&text, 1), Some((558.0, 196.0)));
+        assert_eq!(probe_screen(&[line(0, 0, 458)].join("\n"), 0), None);
+        assert_eq!(probe_screen(&text, 2), None);
+    }
+
+    #[test]
+    fn engagement_posts_match_the_fixture_vision_geometry() {
+        // Fixture placements: northern/southern militia, team B's start units.
+        let (north, south) = ((0.0, 1250.0), (0.0, -1050.0));
+        let team_b = [(1350.0, 600.0), (1220.0, 780.0)];
+        assert!(distance(ENGAGE_FACING_POST, north) < 650.0 - 100.0);
+        assert!(team_b.iter().any(|b| {
+            let d = distance(*b, ENGAGE_FACING_POST);
+            d > 800.0 + 100.0 && d < SIGHT_CM - 100.0
+        }));
+        assert!(team_b.iter().all(|b| distance(*b, north) > SIGHT_CM));
+        assert!(distance(ENGAGE_WITHHELD_POST, south) < SIGHT_CM - 300.0);
+        assert!(
+            team_b
+                .iter()
+                .all(|b| distance(*b, ENGAGE_WITHHELD_POST) > SIGHT_CM + 600.0)
+        );
     }
 }
