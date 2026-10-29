@@ -4,6 +4,8 @@
 
 **Evidence boundary:** UM extraction manifests establish which archives/files are available, not that every file was decoded or validated in-game. The classic Westwood formats expose more human-readable rules, map, and campaign data; later SAGE titles expose useful file taxonomies, map packages, UI manifests, and asset groupings, but much gameplay behavior is in proprietary/cooked formats. Conclusions below distinguish direct structural evidence from design synthesis. Paths are relative to `/mnt/data/CommandAndConquer/UM/` unless stated otherwise.
 
+**Broader comparison:** This C&C-specific, extraction-limited study remains the owner of local C&C source observations. For the wider genre taxonomy (StarCraft, Tempest Rising, large-scale RTS, tactical military games and political/economic hybrids), see [Cross-Genre RTS Comparative Study](RTS_CROSS_GENRE_COMPARATIVE_STUDY.md) and the proposed [Competitive Benchmark Register](RTS_COMPETITIVE_BENCHMARK_REGISTER.md). Those references do not verify local proprietary extraction data or qualify POLITIKA runtime behavior.
+
 ## 1. Comparative lenses
 
 | Title family | What the local extraction is especially good for studying | Design pattern to retain (at the level of principle) | POLITIKA application |
