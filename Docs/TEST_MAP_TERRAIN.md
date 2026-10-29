@@ -15,7 +15,8 @@ This merge contains terrain, source provenance and camera controls only. Uncommi
 
 ## Controls
 
-- A pans left; D pans right, using the ground-projected camera right vector rather than world +X. W/S bindings are unchanged.
+- W/A/S/D are camera-only (`Config/DefaultInput.ini` axes). A pans left; D pans right, using the ground-projected camera right vector rather than world +X. W/S pan forward/backward.
+- Order hotkeys are `DefaultInput.ini` action mappings: **Q Attack-Move**, **X Stop**, G Guard, E Grenade, R Reload, F Sprint. Before this change, A (Attack-Move) and S (Stop) also drove the pan axes, so every order press also moved the camera. Owner decision (29 October 2026): keep WASD pan and move the two orders. `quality -- audit` check `input.bindings` fails any action mapping or C++ `BindKey` that reuses a camera axis key.
 - Mouse wheel uses Unreal's `MouseWheelAxis`: up dollies closer, down farther. The centre ground focus and authored perspective are retained; view-ray distance is limited to 900–7500 cm. This replaces FOV-only zoom.
 - Escape returns to the existing menu; explicit menu/map launch overrides remain available.
 
@@ -59,4 +60,39 @@ The packaged `rts_interaction` replay intermittently failed PAC-10 with `camera 
 
 The failure was not reproduced live in 20 runs. It needs nudges that cancel exactly. The diagnosis rests on the exact recorded failing lines, which the new check accepts as a 23.3 cm right pan.
 
-**Open finding: the shared hotkey/pan keys also break the grenade step.** In fixed runs 3 and 4 (`content-acceptance-interaction-1793280363`, `-1793280385`), the grenade intent was sent with `target=0` and rejected (`That_target_is_no_longer_available`). In passing runs it is `target=3`, as in all 10 baseline runs. The replay video (`grenade-triage/tile-1793280363.png`, 2 fps crop around the aim point) shows the scene shifting about 15 px when `a` (AttackMove) is pressed. The fixed `577,323` grenade click then lands beside target #3. A passing run (`tile-1793280406.png`) shows no visible shift. The nudge grows with frame time, which is why it appeared under the concurrent build. This is a player-facing input conflict, not only a harness issue: pressing S (Stop) or A (AttackMove) also pans the camera, by up to one frame of pan speed. Changing the shared bindings or suppressing pan for command keys is an input-design decision. It needs a C++/config change and a new package, so it is not done here. PAC-10 can still flake on the grenade step on a loaded host until it is resolved.
+**Finding (resolved below): the shared hotkey/pan keys also break the grenade step.** In fixed runs 3 and 4 (`content-acceptance-interaction-1793280363`, `-1793280385`), the grenade intent was sent with `target=0` and rejected (`That_target_is_no_longer_available`). In passing runs it is `target=3`, as in all 10 baseline runs. The replay video (`grenade-triage/tile-1793280363.png`, 2 fps crop around the aim point) shows the scene shifting about 15 px when `a` (AttackMove) is pressed. The fixed `577,323` grenade click then lands beside target #3. A passing run (`tile-1793280406.png`) shows no visible shift. The nudge grows with frame time, which is why it appeared under the concurrent build. This is a player-facing input conflict, not only a harness issue: pressing S (Stop) or A (AttackMove) also pans the camera, by up to one frame of pan speed. Changing the shared bindings or suppressing pan for command keys is an input-design decision. It needed a C++/config change and a new package, so it was not done in that change.
+
+### PAC-10 hotkey/pan key separation (resolved)
+
+**Owner decision (29 October 2026):** keep W/A/S/D as camera pan only and move the two orders: **Q Attack-Move, X Stop**. The other options were arrow-key pan, or suppressing pan for keys consumed as orders.
+
+**Change** (branch `codex/pac10-pan-hotkey-bindings-20261029`; `f60ab59` input, `cf37df6` harness):
+
+- `Config/DefaultInput.ini` declares every tactical order as an action mapping: `PrototypeAttackMove`=Q, `PrototypeStop`=X, `PrototypeGuard`=G, `PrototypeGrenade`=E, `PrototypeReload`=R, `PrototypeSprint`=F. Pan and zoom axes are unchanged.
+- `APolitikaPrototypePlayerController::SetupInputComponent` binds those actions with `BindAction` instead of raw `BindKey(EKeys::A/S/...)`. Mouse buttons and Escape remain `BindKey`. `PanForward`/`PanRight` are unchanged: no order key reaches them any more. The HUD hints read "Q attack-move", "X stop", "Q + ground" and "X".
+- `quality -- audit` adds `input.bindings`. It fails if any action mapping or `Source/Politika/Private/*.cpp` `BindKey` uses a key that is also an axis mapping. Current result: PASS, 9 order bindings and 5 axis keys.
+- `rts_interaction` sends `x`/`q` for Stop/Attack-Move. After the camera check it holds `a`+`s` for 400 ms with unit 2 still selected. It then requires zero `RTS_COMMAND_INTENT_SENT` lines (`require_no_command_intent`). `rts_multiplayer` sends the same new keys; its live multiplayer replays are **NOT_RUN** for this change.
+
+**Validation:**
+
+| Check | Result |
+| --- | --- |
+| `cargo test --locked --manifest-path tools/version/Cargo.toml --all-targets` | PASS (7 + 14 tests, including new `input_bindings_reject_order_keys_on_pan_axes`); `cargo fmt -- --check` clean |
+| `cargo run --locked --quiet --manifest-path tools/version/Cargo.toml --bin quality -- audit` | PASS, including `input.bindings` |
+| `cargo test --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_interaction` | PASS, 11/11 (new `pan_keys_must_not_send_a_command_intent`); `cargo fmt --check` clean; clippy: the 5 existing warnings only |
+| Linux Development package, `UNREAL_ENGINE_DIR=/mnt/data/unreal/5.8.3 bash Tools/Shell/package-multiplayer.sh development` | PASS: UAT exit 0, multiplayer manifest verified. Archive `Saved/PAC10HotkeyBindings20261029/cf37df6/Development/Linux` in the worktree. `BuildIdentity.json` `cf37df6a840c-dirty`: the dirt was uncommitted documentation only. Executable SHA-256 `456cbe49bf6d860a67693ddf04c339682af320b573944ab728582a4c3d81fc6a` |
+
+**Packaged PAC-10 loops** (`/mnt/data/politika-qualification/PAC10-HotkeyBindings-20261029/`):
+
+- `loop.sh`, `analyze.sh`, per-run logs, `*-summary.tsv` and `*-analysis.tsv` are under `logs/`.
+- Every run used `env -u WAYLAND_DISPLAY SDL_VIDEODRIVER=x11 xvfb-run -a -s "-screen 0 1920x1080x24"`.
+- Loop harness: the cargo-built `rts_interaction` from `cf37df6` (`bin/rts_interaction-cf37df6`, SHA-256 `b2e6c41c…`).
+- Frame rate is inferred from the first pan step (1400 cm/s × frame time).
+
+| Loop | Runs | Verdict | Host condition | Per-run facts |
+| --- | --- | --- | --- | --- |
+| No added load (`unloaded`) | 10 | **10/10 PASS** | Other agents' work only; 1-min load 3.5–14 | First pan step 23.3–31.8 cm (~44–60 fps). Forward-pan baseline x=0.0 in all 10 (no A/D-axis nudge before the pan). Grenade intent target=3 in all 10. 0 command intents during the A+S hold |
+| CPU load, 24 `yes` workers on 24 threads (`loaded24`) | 10 | **10/10 PASS** | 1-min load ~20–32 from run 2 onward (run 1 started while the average was still ramping) | First pan step 28.7–84.3 cm (~17–49 fps; eight runs ≤26 fps, three of them below the ~21 fps minimum of the earlier failing loop). Forward x=0.0, grenade target=3 and 0 intents during the A+S hold in all 10 |
+| Literal `cargo run --locked --manifest-path Tools/Shell/Cargo.toml --bin rts_interaction -- <ARCHIVE>/Linux/Politika/Binaries/Linux/Politika` | 1 | PASS | No added load | `logs/cargo-run-literal.log` |
+
+Total: 21/21 packaged PAC-10 runs PASS, 0 FAIL. Before the change, runs under a concurrent build failed 2 of 10 at the grenade step, from the `a`-press camera shift. With the new keys the camera does not move before the deliberate pan in any run, including at ~17 fps. This qualifies only this Linux Development package and Xvfb replay. It does not establish the remappable keymap (UI-C), controller/touch profiles, multiplayer replays with the new keys, or other platforms. Version/schema counters are unchanged.

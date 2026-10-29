@@ -51,7 +51,7 @@ A player may keep the same antitank unit in hotkey groups 1 (combined arms) and 
 | Shift+right-click | **Deferred** waypoint order queue | No implicit queue in existing Order variant |
 | Formation-facing drag | **Deferred** explicit formation tool | Must not be an ordinary selection/right-click gesture |
 
-**Compatibility finding from actual POLITIKA source:** `Source/Politika/Private/PolitikaPrototypeGameplay.cpp` currently binds left mouse to `SelectUnderCursor`, right mouse to `OrderUnderCursor`, A to Attack-Move, S to Stop, G to Guard, E to Grenade, R to Reload and F to Sprint, while legacy pan axes still include A/S. The local selection currently addresses a **single unit**, and no ten-slot control-group system is qualified. The proposed final camera preset uses arrow keys + middle mouse pan, but no input configuration is changed by this research. Retain the existing E/R/F abilities and do not reassign F to camera focus without a conflict-resolved new profile.
+**Compatibility finding from actual POLITIKA source:** `Source/Politika/Private/PolitikaPrototypeGameplay.cpp` currently binds left mouse to `SelectUnderCursor`, right mouse to `OrderUnderCursor`, Q to Attack-Move, X to Stop, G to Guard, E to Grenade, R to Reload and F to Sprint; W/A/S/D drive only the pan axes. Until 29 October 2026 Attack-Move/Stop were A/S and shared the pan axes. The local selection currently addresses a **single unit**, and no ten-slot control-group system is qualified. The proposed final camera preset uses arrow keys + middle mouse pan, but no input configuration is changed by this research. Retain the existing E/R/F abilities and do not reassign F to camera focus without a conflict-resolved new profile.
 
 ## 4. Selection hit testing and gesture-state boundary
 
