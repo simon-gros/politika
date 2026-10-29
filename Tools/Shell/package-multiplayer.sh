@@ -9,6 +9,8 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 : "${UNREAL_ENGINE_DIR:?Set UNREAL_ENGINE_DIR to the pinned UE installation}"
 config="${1:?usage: package-multiplayer.sh development|shipping|server ARCHIVE_DIR}"
 archive_dir="${2:?usage: package-multiplayer.sh development|shipping|server ARCHIVE_DIR}"
+# UAT runs from the engine directory; a relative archive path would land there.
+archive_dir="$(realpath -m -- "$archive_dir")"
 cd "$project_root"
 maps="/Game/Maps/MainMenu+/Game/Maps/OfflineSandbox+/Game/Maps/RTSVerticalSlice"
 platform_dir=Linux
