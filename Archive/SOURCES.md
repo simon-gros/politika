@@ -63,6 +63,8 @@ The [cartographic guide](MAPS_1980_1989.md), [map catalogue](MAP_CATALOG.csv) an
 
 **Regional expansion:** the [regional atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) links the new 36 UT Austin topographic sheet leads (80 in total) to the six republics and the two autonomous provinces, while flagging missing 1980s Ljubljana/Maribor city plans and other unfilled source gaps.
 
+**Source relationship register:** [MAP_RELATIONSHIPS.csv](MAP_RELATIONSHIPS.csv) identifies duplicate source-hosts, versions and companion historical editions. [Regional Cartographic Atlas](REGIONAL_CARTOGRAPHIC_ATLAS.md) connects the evidence to map-gameplay research; [archive catalogue validator](tools/validate_catalogues.py) checks CSV/index consistency without accessing the internet.
+
 ## High-value primary artefacts and original imagery
 
 **[Visual Archive of Yugoslavia — Museum of Yugoslavia](https://vaju.muzej-jugoslavije.org/)** (first exact-period object indexed as `POL-1980-BEL-TERAZIJE-001`). Search by `1980`, `1984`, `1988`, object signature, person, city and photographer. It offers actual collection records, photographers, dates and rights fields; the photographic record for Milan Simić's early-1980 Terazije series is especially promising for transport, everyday city life and fuel rationing. Request authorization before reproduction.
