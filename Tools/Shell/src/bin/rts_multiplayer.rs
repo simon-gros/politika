@@ -3576,6 +3576,9 @@ fn dedicated_layout(
             ),
         }
     }
+    let mut launched: Vec<&Game> = vec![&server];
+    launched.extend(clients.iter());
+    launch_options_verdict(report, &id("DEV-LAUNCH-OPTIONS"), &launched);
     for client in &mut clients {
         client.stop();
         report.artifact(
