@@ -233,7 +233,10 @@ impl Game {
         let start = Instant::now();
         loop {
             let text = self.text();
-            if let Some(tail) = text.get(offset..) {
+            // Only complete lines: a line still being written can match its fragments before
+            // its remaining fields are flushed.
+            let complete = text.rfind('\n').map_or("", |end| &text[..=end]);
+            if let Some(tail) = complete.get(offset..) {
                 if let Some(line) = tail
                     .lines()
                     .find(|line| fragments.iter().all(|f| line.contains(f)))
