@@ -82,12 +82,15 @@ void LogConnectionStats(const TCHAR* Role, const TCHAR* Reason, uint64 Generatio
     uint32 Team, const UNetConnection& Connection, int32 VisibleUnits, double ElapsedSeconds)
 {
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("MP_NET_STATS role=%s reason=%s generation=%llu step=%llu participant=%u team=%u elapsed_s=%.3f in_bytes=%d out_bytes=%d in_packets=%d out_packets=%d in_lost=%d out_lost=%d ooo_recovered=%d ooo_lost=%d ooo_duplicate=%d in_bps=%d out_bps=%d avg_lag_ms=%.1f jitter_ms=%.1f visible_units=%d"),
+        TEXT("MP_NET_STATS role=%s reason=%s generation=%llu step=%llu participant=%u team=%u elapsed_s=%.3f in_bytes=%d out_bytes=%d in_packets=%d out_packets=%d in_lost=%d out_lost=%d ooo_recovered=%d ooo_lost=%d ooo_duplicate=%d in_bps=%d out_bps=%d avg_lag_ms=%.1f jitter_ms=%.1f visible_units=%d net_speed=%d channels=%d"),
         Role, Reason, Generation, Step, Participant, Team, ElapsedSeconds, Connection.InTotalBytes, Connection.OutTotalBytes,
         Connection.InTotalPackets, Connection.OutTotalPackets, Connection.InTotalPacketsLost, Connection.OutTotalPacketsLost,
         Connection.GetTotalOutOfOrderPacketsRecovered(), Connection.GetTotalOutOfOrderPacketsLost(),
         Connection.GetTotalOutOfOrderPacketsDuplicate(), Connection.InBytesPerSecond, Connection.OutBytesPerSecond,
-        Connection.AvgLag * 1000.0f, Connection.GetAverageJitterInMS(), VisibleUnits);
+        Connection.AvgLag * 1000.0f, Connection.GetAverageJitterInMS(), VisibleUnits,
+        // The configured send-rate cap and open channels: actor channels track how many
+        // units the connection is currently replicating.
+        Connection.CurrentNetSpeed, Connection.OpenChannels.Num());
 }
 #endif
 }
@@ -628,6 +631,7 @@ void APolitikaPrototypeMatch::TryActivateNetworkMatch()
     MeasurementStartSeconds = FPlatformTime::Seconds();
     LogNetworkEmulation();
     SampleNetworkStats(TEXT("activated"));
+    BeginUnitScaleMeasurement();
 #endif
 }
 
@@ -1499,6 +1503,14 @@ void APolitikaPrototypeMatch::SampleClientNetworkStats()
     for (const APolitikaPrototypeUnit* Unit : Units) Present += IsValid(Unit) ? 1 : 0;
     LogConnectionStats(TEXT("client"), TEXT("periodic"), MatchGeneration, 0, LocalRuntimePlayerId,
         GetLocalViewerTeam(), *Connection, Present, Now - MeasurementStartSeconds);
+    // Rendering cost of what this client holds; host-specific (software rendering under Xvfb).
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_CLIENT_FRAME_WINDOW generation=%llu participant=%u elapsed_s=%.3f frames=%d mean_ms=%.2f max_ms=%.2f present_units=%d"),
+        MatchGeneration, LocalRuntimePlayerId, Now - MeasurementStartSeconds, ClientWindowFrames,
+        ClientWindowFrames > 0 ? ClientWindowTotalMillis / ClientWindowFrames : 0.0, ClientWindowMaxMillis, Present);
+    ClientWindowFrames = 0;
+    ClientWindowTotalMillis = 0.0;
+    ClientWindowMaxMillis = 0.0f;
 }
 
 void APolitikaPrototypeMatch::ReportNetworkMeasurements(const TCHAR* Reason)
@@ -1526,6 +1538,7 @@ void APolitikaPrototypeMatch::ReportNetworkMeasurements(const TCHAR* Reason)
         static_cast<uint32>(politika::rules::SeatCount(SessionLayout)), Remote, Units.Num(), Steps.Num(),
         Total / Steps.Num(), Step(50), Step(95), Step(99), Step(100), SimulationStepSeconds * 1.0e6, Frames.Num(),
         Frame(50), Frame(95), Frame(100), CatchUpCapFrames, FPlatformTime::Seconds() - MeasurementStartSeconds);
+    ReportUnitScaleMeasurements(Reason);
 }
 
 void APolitikaPrototypePlayerController::SendProbeIntent(const TCHAR* Name, FPolitikaNetCommandIntent Intent,

@@ -34,6 +34,7 @@ namespace
         TEXT("-PolitikaMPRematchDelay="),
         TEXT("-PolitikaMPRematchAttempts="),
         TEXT("-PolitikaMPGroundProbe="),
+        TEXT("-PolitikaMPUnitScale="),
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),

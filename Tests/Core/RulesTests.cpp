@@ -1,6 +1,7 @@
 #include "Rules.h"
 #include "Metrics.h"
 #include "Fog.h"
+#include "UnitScale.h"
 
 #include <cassert>
 #include <iterator>
@@ -292,6 +293,32 @@ int main() {
             16.f, 17.f, 18.f, 19.f};
         static_assert(NearestRank(Twenty, 20, 95) == 18.f && NearestRank(Twenty, 20, 5) == 0.f);
         static_assert(RatePerSecond(5000, 2.0) == 2500.0 && RatePerSecond(10, 0.0) == 0.0 && RatePerSecond(-4, 1.0) == 0.0);
+    }
+
+    // Development unit-scale fixture: per-seat counts and candidate placement around a start.
+    {
+        using namespace politika::unitscale;
+        static_assert(!ValidUnitsPerSeat(1) && ValidUnitsPerSeat(2) && ValidUnitsPerSeat(200) && !ValidUnitsPerSeat(201));
+        static_assert(!ValidUnitsPerSeat(0) && !ValidUnitsPerSeat(-5));
+        const Bounds Map{{-2000.0, -2000.0}, {2000.0, 2000.0}};
+        const Point Own{0.0, 0.0};
+        // Alone: nearest first, the start itself, then its four neighbours in row/column order.
+        const auto Alone = PlanSeatCandidates(Own, {}, {}, Map, 100.0, 0.0, 5);
+        assert(Alone.size() == 5 && Alone[0].x == 0.0 && Alone[0].y == 0.0);
+        assert(Alone[1].y == -100.0 && Alone[2].x == -100.0 && Alone[3].x == 100.0 && Alone[4].y == 100.0);
+        // Another seat start: no candidate is as close to it as to our own start.
+        const Point Other{600.0, 0.0};
+        const auto Split = PlanSeatCandidates(Own, std::span(&Other, 1), {}, Map, 100.0, 0.0, 400);
+        assert(Split.size() == 400);
+        for (const Point& P : Split) assert(DistanceSquared(P, Own) < DistanceSquared(P, Other) && P.x < 300.0);
+        // Occupied points keep their clearance; bounds clip; the limit is exact.
+        const Point Taken{0.0, 0.0};
+        const auto Clear = PlanSeatCandidates(Own, {}, std::span(&Taken, 1), Map, 100.0, 60.0, 3);
+        assert(Clear.size() == 3 && !(Clear[0].x == 0.0 && Clear[0].y == 0.0));
+        const Bounds Tight{{-150.0, -150.0}, {150.0, 150.0}};
+        assert(PlanSeatCandidates(Own, {}, {}, Tight, 100.0, 0.0, 1000).size() == 9);
+        assert(PlanSeatCandidates(Own, {}, {}, Map, 0.0, 0.0, 10).empty());
+        assert(PlanSeatCandidates(Own, {}, {}, {{1.0, 1.0}, {0.0, 0.0}}, 100.0, 0.0, 10).empty());
     }
     TeamLayout Unparsed = TeamLayout::TwoVsOne;
     assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)

@@ -5403,6 +5403,614 @@ type DedicatedSession = fn(&DedicatedOptions, &mut Report) -> Result<(), String>
 
 /// Runs one packaged dedicated-server session (`--fog-memory`, `--engagement`) and writes
 /// its evidence file; exits 1 on any failed verdict.
+// ---------------------------------------------------------------------------------------
+// MP-2 unit-scale budgets (U-12): `--unit-scale SERVER CLIENT [--layouts 1v1,2v2]
+// [--units 25,50,100,200] [--engage-seconds 45] [--evidence DIR] [--port N]`.
+//
+// For each layout and per-seat count, one headless server hosts the multiplayer skirmish
+// with `-PolitikaMPUnitScale=N`; seat 1's client renders on Xvfb, the others run -nullrhi
+// so host contention stays bounded. The server holds a 10 s idle window, then attack-moves
+// every seated unit at the objective. The harness splits engine traffic and authoritative
+// step cost by phase and checks spawn, order admission, replication completeness, step
+// budget, send-rate headroom and fog-safe shot cues at that scale.
+// ---------------------------------------------------------------------------------------
+
+struct UnitScaleOptions {
+    server: PathBuf,
+    client: PathBuf,
+    layouts: Vec<String>,
+    units: Vec<u32>,
+    engage_seconds: u64,
+    evidence: PathBuf,
+    port: u16,
+}
+
+fn parse_unit_scale_options() -> Result<UnitScaleOptions, String> {
+    let usage = "usage: rts_multiplayer --unit-scale SERVER_BINARY CLIENT_BINARY \
+                 [--layouts 1v1,2v2] [--units 25,50,100,200] [--engage-seconds 45] \
+                 [--evidence DIR] [--port N]";
+    let mut args = env::args().skip(2);
+    let server = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("server binary: {e}"))?;
+    let client = PathBuf::from(args.next().ok_or(usage)?)
+        .canonicalize()
+        .map_err(|e| format!("client binary: {e}"))?;
+    let mut layouts = vec!["1v1".to_owned(), "2v2".to_owned()];
+    let mut units = vec![25, 50, 100, 200];
+    let mut engage_seconds = 45;
+    let mut evidence = None;
+    let mut port = 19200u16;
+    while let Some(flag) = args.next() {
+        let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--layouts" => {
+                layouts = value.split(',').map(str::to_owned).collect();
+                if let Some(bad) = layouts.iter().find(|l| layout_teams(l).is_none()) {
+                    return Err(format!("unknown layout {bad}"));
+                }
+            }
+            "--units" => {
+                units = value
+                    .split(',')
+                    .map(|v| v.parse::<u32>().map_err(|e| format!("--units {v}: {e}")))
+                    .collect::<Result<_, _>>()?;
+                if let Some(bad) = units.iter().find(|n| !(2..=200).contains(*n)) {
+                    return Err(format!(
+                        "--units {bad}: the fixture accepts 2..=200 per seat"
+                    ));
+                }
+            }
+            "--engage-seconds" => {
+                engage_seconds = value
+                    .parse()
+                    .map_err(|e| format!("--engage-seconds: {e}"))?
+            }
+            "--evidence" => evidence = Some(PathBuf::from(value)),
+            "--port" => port = value.parse().map_err(|e| format!("--port: {e}"))?,
+            other => return Err(format!("unknown option {other}\n{usage}")),
+        }
+    }
+    let epoch = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let evidence = evidence
+        .unwrap_or_else(|| PathBuf::from(format!("build/diagnostics/mp2-unit-scale/run-{epoch}")));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let evidence = evidence.canonicalize().map_err(|e| e.to_string())?;
+    Ok(UnitScaleOptions {
+        server,
+        client,
+        layouts,
+        units,
+        engage_seconds,
+        evidence,
+        port,
+    })
+}
+
+/// Wall-clock prefix of a UE log line (`[2026.10.29-20.57.41:274]`). It is fixed width,
+/// so lines from processes on the same host compare lexicographically.
+fn log_time(line: &str) -> Option<&str> {
+    (line.len() > 25 && line.starts_with('[') && line.as_bytes()[24] == b']').then(|| &line[1..24])
+}
+
+/// `MP_NET_STATS` samples for one role and generation with their wall-clock time and the
+/// connection's configured send rate (`net_speed`, bytes per second).
+fn timed_net_samples(text: &str, role: &str, generation: &str) -> Vec<(String, NetSample, f64)> {
+    text.lines()
+        .filter(|l| {
+            l.contains("MP_NET_STATS")
+                && field(l, "role") == Some(role)
+                && field(l, "generation") == Some(generation)
+        })
+        .filter_map(|l| {
+            let sample = net_samples(l, role, generation).pop()?;
+            Some((
+                log_time(l)?.to_owned(),
+                sample,
+                number(l, "net_speed").unwrap_or(0.0),
+            ))
+        })
+        .collect()
+}
+
+/// Bytes per second over a phase for one participant, from the server's view of that
+/// connection: `down` is server-to-client, `up` client-to-server, `peak_down` the highest
+/// one-sample interval. `begin`/`end` bound the phase in wall-clock time; the sample
+/// just before `begin` opens the interval so no traffic is lost at the boundary.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+struct PhaseTraffic {
+    down: f64,
+    up: f64,
+    peak_down: f64,
+    net_speed: f64,
+    seconds: f64,
+}
+
+fn phase_traffic(
+    samples: &[(String, NetSample, f64)],
+    participant: u32,
+    begin: Option<&str>,
+    end: Option<&str>,
+) -> Option<PhaseTraffic> {
+    let own: Vec<&(String, NetSample, f64)> = samples
+        .iter()
+        .filter(|(_, s, _)| s.participant == participant)
+        .collect();
+    let first = match begin {
+        Some(begin) => own.iter().rposition(|(t, _, _)| t.as_str() < begin)?,
+        None => 0,
+    };
+    let last = match end {
+        Some(end) => own.iter().rposition(|(t, _, _)| t.as_str() < end)?,
+        None => own.len().checked_sub(1)?,
+    };
+    if last <= first {
+        return None;
+    }
+    let window = &own[first..=last];
+    let (a, b) = (&window[0].1, &window[window.len() - 1].1);
+    let seconds = b.elapsed - a.elapsed;
+    if seconds <= 0.0 {
+        return None;
+    }
+    let peak_down = window
+        .windows(2)
+        .filter_map(|pair| {
+            let dt = pair[1].1.elapsed - pair[0].1.elapsed;
+            (dt > 0.2).then(|| (pair[1].1.get("out_bytes") - pair[0].1.get("out_bytes")) / dt)
+        })
+        .fold(0.0, f64::max);
+    Some(PhaseTraffic {
+        down: (b.get("out_bytes") - a.get("out_bytes")) / seconds,
+        up: (b.get("in_bytes") - a.get("in_bytes")) / seconds,
+        peak_down,
+        net_speed: window
+            .iter()
+            .map(|(_, _, speed)| *speed)
+            .fold(0.0, f64::max),
+        seconds,
+    })
+}
+
+/// Mean of `mean_ms` and the highest `max_ms` of a client's frame windows in a phase.
+fn frame_windows(text: &str, begin: Option<&str>, end: Option<&str>) -> Option<(f64, f64, usize)> {
+    let windows: Vec<(f64, f64)> = text
+        .lines()
+        .filter(|l| l.contains("MP_CLIENT_FRAME_WINDOW"))
+        .filter(|l| {
+            log_time(l).is_some_and(|t| begin.is_none_or(|b| t >= b) && end.is_none_or(|e| t < e))
+        })
+        .filter(|l| number(l, "frames").unwrap_or(0.0) > 0.0)
+        .filter_map(|l| Some((number(l, "mean_ms")?, number(l, "max_ms")?)))
+        .collect();
+    (!windows.is_empty()).then(|| {
+        (
+            windows.iter().map(|w| w.0).sum::<f64>() / windows.len() as f64,
+            windows.iter().map(|w| w.1).fold(0.0, f64::max),
+            windows.len(),
+        )
+    })
+}
+
+/// Send-rate headroom: the busiest one-second interval must stay below this share of the
+/// connection's configured rate, or the engine is starving replication.
+const UNIT_SCALE_HEADROOM: f64 = 0.8;
+
+#[allow(clippy::too_many_lines)]
+fn unit_scale_run(
+    options: &UnitScaleOptions,
+    report: &mut Report,
+    layout: &str,
+    per_seat: u32,
+    port: u16,
+    summary: &mut Vec<String>,
+) -> Result<(), String> {
+    let id = |name: &str| format!("{layout}_n{per_seat}_{name}");
+    let seats = layout_teams(layout).ok_or("unknown layout")?.len();
+    let evidence = options.evidence.join(format!("{layout}-n{per_seat}"));
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let load = |when: &str, report: &mut Report| {
+        if let Ok(value) = fs::read_to_string("/proc/loadavg") {
+            report.fact(&id(&format!("loadavg_{when}")), value.trim().to_owned());
+        }
+    };
+    load("start", report);
+    let mut args = server_args(port, layout);
+    args.push(format!("-PolitikaMPUnitScale={per_seat}"));
+    let mut server = Game::launch_server(&options.server, "server", &evidence, &args)?;
+    report.fact(&id("server_command"), server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+
+    let display = Display::start(&evidence, "client-a")?;
+    let client_options = Options {
+        binary: options.client.clone(),
+        layout: layout.into(),
+        evidence: evidence.clone(),
+        port,
+    };
+    let mut clients: Vec<Game> = Vec::new();
+    for seat in 0..seats {
+        let label = format!("client-{}", (b'a' + seat as u8) as char);
+        let rendered = seat == 0;
+        let client = Game::launch(
+            &options.client,
+            &label,
+            &evidence,
+            &client_args(&client_options, rendered, false, false),
+            rendered.then(|| display.name()).as_deref(),
+        )?;
+        report.fact(&id(&format!("{label}_command")), client.command.join(" "));
+        clients.push(client);
+        server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={}", seat + 1),
+                "remote=1",
+            ],
+            Duration::from_secs(90),
+        )?;
+    }
+    let active = server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    report.fact(&id("match_active"), active.trim().to_owned());
+    clients[0].wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    clients[0].attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+    if let Ok(path) = clients[0].screenshot(&evidence, "idle") {
+        report.artifact(&id("client_a_idle_png"), &path);
+    }
+    let engage = server.wait(
+        &[
+            "MP_UNIT_SCALE_PHASE phase=engage",
+            &format!("generation={generation}"),
+        ],
+        Duration::from_secs(60),
+    )?;
+    let engage_time = log_time(&engage).unwrap_or_default().to_owned();
+    let orders = server.wait(&["MP_UNIT_SCALE_ORDERS"], Duration::from_secs(20));
+    thread::sleep(Duration::from_secs(12));
+    if let Ok(path) = clients[0].screenshot(&evidence, "engage") {
+        report.artifact(&id("client_a_engage_png"), &path);
+    }
+    // Hold the engagement for the requested time unless the match ends first.
+    let deadline = Instant::now() + Duration::from_secs(options.engage_seconds.saturating_sub(12));
+    while Instant::now() < deadline && !server.text().contains("MATCH_RESULTS ") {
+        thread::sleep(Duration::from_millis(500));
+    }
+    // A participant leaving ends an unfinished match; either way the server reports once.
+    if let Some(last) = clients.last_mut() {
+        last.stop();
+    }
+    let admission = server.wait(&["MP_UNIT_SCALE_ADMISSION"], Duration::from_secs(30));
+    load("end", report);
+    let server_text = server.text();
+    for client in &mut clients {
+        client.stop();
+    }
+    server.stop();
+    drop(display);
+    report.artifact(&id("server_log"), &server.log);
+    for client in &clients {
+        report.artifact(&id(&format!("{}_log", client.label)), &client.log);
+    }
+    let admission = admission?;
+
+    // 1. Spawn: N units per seat plus the authored Unaligned side.
+    let fixture = server_text
+        .lines()
+        .find(|l| l.contains("MP_UNIT_SCALE_FIXTURE"))
+        .unwrap_or("no MP_UNIT_SCALE_FIXTURE line");
+    let unaligned = server_text
+        .lines()
+        .find(|l| l.contains("MP_ACCEPTANCE_FIXTURE"))
+        .and_then(|l| number(l, "unaligned_units"))
+        .unwrap_or(-1.0);
+    let content_units = server_text
+        .lines()
+        .find(|l| l.contains("MATCH_CONTENT_READY"))
+        .and_then(|l| number(l, "units"))
+        .unwrap_or(-1.0);
+    let seat_units = (seats as u32 * per_seat) as f64;
+    report.verdict(
+        &id("UNITSCALE-SPAWNED"),
+        number(fixture, "seat_units") == Some(seat_units)
+            && number(fixture, "per_seat") == Some(f64::from(per_seat))
+            && content_units == seat_units + unaligned
+            && unaligned >= 0.0,
+        format!(
+            "content units={content_units} expected={seat_units}+{unaligned} unaligned; max_radius_cm={} min_opposing_gap_cm={}",
+            field(fixture, "max_radius_cm").unwrap_or("?"),
+            field(fixture, "min_opposing_gap_cm").unwrap_or("?")
+        ),
+    );
+
+    // 2. Every seated unit's engagement order is admitted.
+    let issued = number(&engage, "issued").unwrap_or(-1.0);
+    let orders = orders.unwrap_or_default();
+    let (accepted, rejected) = (
+        number(&orders, "accepted").unwrap_or(-1.0),
+        number(&orders, "rejected").unwrap_or(-1.0),
+    );
+    report.verdict(
+        &id("UNITSCALE-ORDERS-ADMITTED"),
+        issued == seat_units && accepted == issued && rejected == 0.0,
+        format!(
+            "issued={issued} accepted={accepted} rejected={rejected} expected={seat_units}; admission step {} us",
+            field(&admission, "admission_step_us").unwrap_or("?")
+        ),
+    );
+
+    // 3. Idle replication completeness: each client holds exactly the units its team sees.
+    let server_samples = timed_net_samples(&server_text, "server", &generation);
+    let mut complete = true;
+    let mut detail = Vec::new();
+    for (index, client) in clients.iter().enumerate() {
+        let participant = index as u32 + 1;
+        let visible = server_samples
+            .iter()
+            .filter(|(t, s, _)| s.participant == participant && t.as_str() < engage_time.as_str())
+            .next_back()
+            .map(|(_, s, _)| s.get("visible_units"));
+        let client_text = client.text();
+        let present = timed_net_samples(&client_text, "client", &generation)
+            .into_iter()
+            .filter(|(t, _, _)| t.as_str() < engage_time.as_str())
+            .next_back()
+            .map(|(_, s, _)| s.get("visible_units"));
+        complete &= visible.is_some() && visible == present;
+        detail.push(format!(
+            "p{participant}: server_visible={visible:?} client_present={present:?}"
+        ));
+    }
+    report.verdict(
+        &id("UNITSCALE-REPLICATION-COMPLETE"),
+        complete,
+        detail.join("; "),
+    );
+
+    // 4. Authoritative step cost per phase against the 50 ms step.
+    let step_summary = |phase: &str| {
+        server_text
+            .lines()
+            .find(|l| l.contains("MP_UNIT_SCALE_STEP_SUMMARY") && field(l, "phase") == Some(phase))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    let (idle, engaged) = (step_summary("idle"), step_summary("engage"));
+    let overall = server_text
+        .lines()
+        .find(|l| l.contains("MP_SERVER_STEP_SUMMARY"))
+        .unwrap_or_default()
+        .to_owned();
+    let budget = number(&overall, "budget_us").unwrap_or(50_000.0);
+    let catchup = number(&overall, "catchup_cap_frames").unwrap_or(-1.0);
+    let p99 = |line: &str| number(line, "p99_us").unwrap_or(f64::INFINITY);
+    report.verdict(
+        &id("UNITSCALE-STEP-WITHIN-BUDGET"),
+        p99(&idle) < budget && p99(&engaged) < budget && catchup == 0.0,
+        format!(
+            "idle steps={} p99={}us max={}us; engage steps={} p99={}us max={}us; catch-up cap frames={catchup}; frame p95={}ms; budget={budget}us",
+            field(&idle, "steps").unwrap_or("?"),
+            field(&idle, "p99_us").unwrap_or("?"),
+            field(&idle, "max_us").unwrap_or("?"),
+            field(&engaged, "steps").unwrap_or("?"),
+            field(&engaged, "p99_us").unwrap_or("?"),
+            field(&engaged, "max_us").unwrap_or("?"),
+            field(&overall, "frame_p95_ms").unwrap_or("?")
+        ),
+    );
+
+    // 5. Bandwidth by phase and headroom under the configured send rate.
+    let mut measured = true;
+    let mut headroom = true;
+    let mut detail = Vec::new();
+    let (mut idle_down, mut engage_down, mut engage_peak, mut net_speed) =
+        (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for participant in 1..=seats as u32 {
+        let idle = phase_traffic(&server_samples, participant, None, Some(&engage_time));
+        let fight = phase_traffic(&server_samples, participant, Some(&engage_time), None);
+        match (idle, fight) {
+            (Some(i), Some(f)) => {
+                headroom &= f.net_speed > 0.0 && f.peak_down < UNIT_SCALE_HEADROOM * f.net_speed;
+                idle_down = idle_down.max(i.down);
+                engage_down = engage_down.max(f.down);
+                engage_peak = engage_peak.max(f.peak_down);
+                net_speed = net_speed.max(f.net_speed);
+                detail.push(format!(
+                    "p{participant}: idle down {:.0} up {:.0} B/s; engage down {:.0} up {:.0} peak {:.0} B/s over {:.1}s; net_speed {:.0}",
+                    i.down, i.up, f.down, f.up, f.peak_down, f.seconds, f.net_speed
+                ));
+            }
+            _ => {
+                measured = false;
+                detail.push(format!("p{participant}: missing samples"));
+            }
+        }
+    }
+    report.verdict(
+        &id("UNITSCALE-BANDWIDTH-MEASURED"),
+        measured,
+        detail.join("; "),
+    );
+    report.verdict(
+        &id("UNITSCALE-NET-HEADROOM"),
+        measured && headroom,
+        format!(
+            "busiest second {engage_peak:.0} B/s vs {:.0}% of net_speed {net_speed:.0} B/s",
+            UNIT_SCALE_HEADROOM * 100.0
+        ),
+    );
+
+    // 6. The engagement really happened, and shot cues stayed fog-safe at this scale.
+    let destroyed = number(&admission, "destroyed").or_else(|| {
+        server_text
+            .lines()
+            .rfind(|l| l.contains("MP_UNIT_SCALE_STEP_SUMMARY"))
+            .and_then(|l| number(l, "destroyed"))
+    });
+    let refs: Vec<&Game> = clients.iter().collect();
+    let (received, counts, problems) = shot_cue_consistency(&server, &refs);
+    let decisions: usize = counts.iter().sum();
+    report.verdict(
+        &id("UNITSCALE-ENGAGED"),
+        destroyed.unwrap_or(0.0) > 0.0 && decisions > 0,
+        format!("destroyed={destroyed:?}; shot-cue decisions={decisions}"),
+    );
+    report.verdict(
+        &id("UNITSCALE-SHOT-CUE-CONSISTENT"),
+        problems.is_empty() && decisions > 0,
+        format!(
+            "decisions exact/facing/none={counts:?}, received={received}; problems={}",
+            problems
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ),
+    );
+
+    // Client frame time is a host-specific fact (software rendering under Xvfb), not a gate.
+    let client_a = clients[0].text();
+    let frames = |phase: Option<(f64, f64, usize)>| {
+        phase.map_or("n/a".to_owned(), |(mean, max, n)| {
+            format!("{mean:.1}/{max:.1}ms over {n}s")
+        })
+    };
+    let idle_frames = frame_windows(&client_a, None, Some(&engage_time));
+    let engage_frames = frame_windows(&client_a, Some(&engage_time), None);
+    report.fact(
+        &id("client_a_frame_mean_max"),
+        format!(
+            "idle {}; engage {}",
+            frames(idle_frames),
+            frames(engage_frames)
+        ),
+    );
+    summary.push(format!(
+        "{layout}\t{per_seat}\t{content_units}\t{idle_down:.0}\t{engage_down:.0}\t{engage_peak:.0}\t{net_speed:.0}\t{}\t{}\t{}\t{}\t{catchup}\t{:.1}\t{:.1}\t{}\t{decisions}\t{}",
+        field(&idle, "p99_us").unwrap_or("?"),
+        field(&engaged, "p99_us").unwrap_or("?"),
+        field(&engaged, "max_us").unwrap_or("?"),
+        field(&admission, "admission_step_us").unwrap_or("?"),
+        idle_frames.map_or(f64::NAN, |f| f.0),
+        engage_frames.map_or(f64::NAN, |f| f.0),
+        destroyed.map_or("?".to_owned(), |d| d.to_string()),
+        field(fixture, "min_opposing_gap_cm").unwrap_or("?"),
+    ));
+    Ok(())
+}
+
+/// An out-of-range per-seat count must fail admission closed (exit 3, no session).
+fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.evidence.join("invalid-201");
+    fs::create_dir_all(&evidence).map_err(|e| e.to_string())?;
+    let mut args = server_args(options.port + 2, "1v1");
+    args.push("-PolitikaMPUnitScale=201".into());
+    let mut server =
+        Game::launch_server(&options.server, "server-invalid-scale", &evidence, &args)?;
+    let start = Instant::now();
+    let mut status = None;
+    while start.elapsed() < Duration::from_secs(180) {
+        if let Ok(Some(code)) = server.child.try_wait() {
+            status = Some(code);
+            break;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let text = server.text();
+    let no_session =
+        !text.contains("MP_MATCH_AWAITING_PARTICIPANTS") && !text.contains("MATCH_CONTENT_READY");
+    report.verdict(
+        "UNITSCALE-INVALID-REFUSED",
+        status.and_then(|s| s.code()) == Some(3)
+            && text.contains("MP_UNIT_SCALE_INVALID value=201")
+            && text.contains("reason=MP.UNIT_SCALE.INVALID")
+            && text.contains("MP_DEDICATED_ADMISSION_FAILED")
+            && no_session,
+        format!("exit={status:?}; no session/units={no_session}"),
+    );
+    report.artifact("invalid_scale_server_log", &server.log);
+    server.stop();
+    Ok(())
+}
+
+fn run_unit_scale() -> ! {
+    let options = match parse_unit_scale_options() {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
+    let mut report = Report {
+        schema: Some("politika.mp2.unit-scale-evidence.v1"),
+        ..Report::default()
+    };
+    for (name, binary) in [("server", &options.server), ("client", &options.client)] {
+        report.fact(&format!("{name}_binary"), binary.display().to_string());
+        if let Ok(digest) = sha256(binary) {
+            report.fact(&format!("{name}_executable_sha256"), digest);
+        }
+        if let Some(archive) = binary.ancestors().nth(4)
+            && let Ok(identity) = fs::read_to_string(archive.join("BuildIdentity.json"))
+        {
+            report.fact(
+                &format!("{name}_build_identity"),
+                identity.trim().to_owned(),
+            );
+        }
+    }
+    report.fact("engage_seconds", options.engage_seconds.to_string());
+    if let Err(error) = unit_scale_refusal(&options, &mut report) {
+        report.mark("SESSION-unit-scale-refusal", "FAIL", error);
+    }
+    let mut summary = vec![
+        "layout\tper_seat\tunits\tidle_down_Bps\tengage_down_Bps\tengage_peak_down_Bps\tnet_speed\tidle_p99_us\tengage_p99_us\tengage_max_us\tadmission_step_us\tcatchup_frames\tclient_a_idle_frame_ms\tclient_a_engage_frame_ms\tdestroyed\tshot_cues\tmin_opposing_gap_cm".to_owned(),
+    ];
+    let mut port = options.port;
+    for layout in &options.layouts {
+        for &per_seat in &options.units {
+            port += 10;
+            if let Err(error) =
+                unit_scale_run(&options, &mut report, layout, per_seat, port, &mut summary)
+            {
+                report.mark(
+                    &format!("{layout}_n{per_seat}_SESSION"),
+                    if error.starts_with("BLOCKED") {
+                        "BLOCKED"
+                    } else {
+                        "FAIL"
+                    },
+                    error,
+                );
+            }
+        }
+    }
+    let table = summary.join("\n") + "\n";
+    print!("{table}");
+    let _ = fs::write(options.evidence.join("unit-scale-summary.tsv"), &table);
+    let path = options.evidence.join("unit-scale-evidence.json");
+    if let Err(error) = report.write(&path) {
+        eprintln!("write evidence: {error}");
+        std::process::exit(2);
+    }
+    println!("evidence: {}", path.display());
+    std::process::exit(if report.failed() { 1 } else { 0 });
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -5485,6 +6093,9 @@ fn main() {
             "engagement",
             engagement_session,
         );
+    }
+    if env::args().nth(1).as_deref() == Some("--unit-scale") {
+        run_unit_scale();
     }
     if env::args().nth(1).as_deref() == Some("--dedicated") {
         run_dedicated();
@@ -5581,7 +6192,8 @@ fn main() {
 mod tests {
     use super::{
         ENGAGE_FACING_POST, ENGAGE_WITHHELD_POST, SIGHT_CM, contact_memory_audit, distance,
-        host_contact_audit, host_shot_cue_audit, probe_screen,
+        frame_windows, host_contact_audit, host_shot_cue_audit, log_time, phase_traffic,
+        probe_screen, timed_net_samples,
     };
 
     const HOST_SEEN: &str = "LogPolitikaStartup: Display: MP_HOST_UNIT_FOG entity=11 owner=2 team=2 hidden=0 first=0 alive=1 x=10.0 y=20.0";
@@ -5699,6 +6311,68 @@ mod tests {
         assert_eq!(probe_screen(&text, 1), Some((558.0, 196.0)));
         assert_eq!(probe_screen(&[line(0, 0, 458)].join("\n"), 0), None);
         assert_eq!(probe_screen(&text, 2), None);
+    }
+
+    fn stats(time: &str, participant: u32, elapsed: f64, out: u64, inb: u64) -> String {
+        format!(
+            "[2026.10.29-22.00.{time}][  1]LogPolitikaStartup: Display: MP_NET_STATS role=server reason=periodic generation=1 step=0 participant={participant} team=1 elapsed_s={elapsed:.3} in_bytes={inb} out_bytes={out} in_packets=0 out_packets=0 in_lost=0 out_lost=0 ooo_recovered=0 ooo_lost=0 ooo_duplicate=0 in_bps=0 out_bps=0 avg_lag_ms=0.0 jitter_ms=0.0 visible_units=4 net_speed=100000 channels=9"
+        )
+    }
+
+    #[test]
+    fn unit_scale_traffic_splits_at_the_engagement() {
+        assert_eq!(
+            log_time(&stats("01:000", 1, 0.0, 0, 0)),
+            Some("2026.10.29-22.00.01:000")
+        );
+        assert_eq!(log_time("MP_NET_STATS role=server"), None);
+        let text = [
+            stats("01:000", 1, 0.0, 0, 0),
+            stats("02:000", 1, 1.0, 1000, 100),
+            stats("02:000", 2, 1.0, 9999, 9999),
+            stats("03:000", 1, 2.0, 2000, 200),
+            stats("04:000", 1, 3.0, 8000, 500),
+            stats("05:000", 1, 4.0, 9000, 600),
+        ]
+        .join("\n");
+        let samples = timed_net_samples(&text, "server", "1");
+        assert_eq!(samples.len(), 6);
+        let engage = "2026.10.29-22.00.03:500";
+        let idle = phase_traffic(&samples, 1, None, Some(engage)).unwrap();
+        assert_eq!(
+            (idle.down, idle.up, idle.peak_down, idle.net_speed),
+            (1000.0, 100.0, 1000.0, 100000.0)
+        );
+        // The engagement opens at the last idle sample, so the 6000 B burst belongs to it.
+        let fight = phase_traffic(&samples, 1, Some(engage), None).unwrap();
+        assert_eq!(
+            (fight.down, fight.peak_down, fight.seconds),
+            (3500.0, 6000.0, 2.0)
+        );
+        assert!(phase_traffic(&samples, 3, None, None).is_none());
+        assert!(phase_traffic(&samples, 1, Some("2026.10.29-22.00.00:000"), None).is_none());
+    }
+
+    #[test]
+    fn client_frame_windows_split_by_phase_and_skip_empty_windows() {
+        let line = |time: &str, frames: u32, mean: f64, max: f64| {
+            format!(
+                "[2026.10.29-22.00.{time}][  1]LogPolitikaStartup: Display: MP_CLIENT_FRAME_WINDOW generation=1 participant=1 elapsed_s=1.000 frames={frames} mean_ms={mean:.2} max_ms={max:.2} present_units=4"
+            )
+        };
+        let text = [
+            line("01:000", 30, 10.0, 20.0),
+            line("02:000", 0, 0.0, 0.0),
+            line("03:000", 20, 30.0, 90.0),
+        ]
+        .join("\n");
+        let engage = Some("2026.10.29-22.00.02:500");
+        assert_eq!(frame_windows(&text, None, engage), Some((10.0, 20.0, 1)));
+        assert_eq!(frame_windows(&text, engage, None), Some((30.0, 90.0, 1)));
+        assert_eq!(
+            frame_windows(&text, Some("2026.10.29-22.00.09:000"), None),
+            None
+        );
     }
 
     #[test]

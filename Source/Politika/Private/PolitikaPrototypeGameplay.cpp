@@ -966,12 +966,24 @@ void APolitikaPrototypeMatch::BuildScenario()
         return true;
     };
 
+    TArray<FPolitikaPrototypeUnitPlacement> UnitPlacements = MapDefinition->UnitPlacements;
+#if !UE_BUILD_SHIPPING
+    // Development unit-scale fixture: extra seat units, placed after spatial validation.
+    if (FName ScaleFailure; !ResolveUnitScale(UnitPlacements, ScaleFailure))
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: the requested unit-scale fixture is invalid for this session.");
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED map=%s reason=%s participants=%d"),
+            *RequestedMapId.ToString(), *ScaleFailure.ToString(), RuntimeParticipants.Num());
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
+#endif
     // Placements for authored slots outside the session layout do not spawn.
     TArray<int32> SpawnedPlacementIndices;
     int32 ExpectedUnits = 0;
-    for (int32 Index = 0; Index < MapDefinition->UnitPlacements.Num(); ++Index)
+    for (int32 Index = 0; Index < UnitPlacements.Num(); ++Index)
     {
-        const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
+        const FPolitikaPrototypeUnitPlacement& Placement = UnitPlacements[Index];
         if (!RuntimeParticipants.ContainsByPredicate([&Placement](const FPolitikaPrototypeRuntimeParticipant& Candidate)
             { return Candidate.SlotId == Placement.SlotId; }))
             continue;
@@ -1045,7 +1057,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     for (int32 SpawnIndex = 0; SpawnIndex < SpawnedPlacementIndices.Num(); ++SpawnIndex)
     {
         const int32 Index = SpawnedPlacementIndices[SpawnIndex];
-        const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
+        const FPolitikaPrototypeUnitPlacement& Placement = UnitPlacements[Index];
         const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
         const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
         const FPolitikaPrototypeRuntimeParticipant* Slot = RuntimeParticipants.FindByPredicate(
@@ -1182,6 +1194,9 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
     {
         // Observer copies interpolate replicated state; they never simulate.
 #if !UE_BUILD_SHIPPING
+        ++ClientWindowFrames;
+        ClientWindowTotalMillis += DeltaSeconds * 1000.0;
+        ClientWindowMaxMillis = FMath::Max(ClientWindowMaxMillis, DeltaSeconds * 1000.0f);
         SampleObservedState(TEXT("periodic"));
         SampleClientNetworkStats();
 #endif
@@ -1231,6 +1246,7 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
     if (bMeasureNetwork)
     {
         CatchUpCapFrames += Steps == 5 ? 1 : 0;
+        TickUnitScaleDriver();
         SampleMultiplayerState(TEXT("periodic"));
         // The result commits inside a step; report after the loop so that step is counted.
         if (CommittedResult.IsSet()) ReportNetworkMeasurements(TEXT("result"));
@@ -2001,6 +2017,7 @@ void APolitikaPrototypeMatch::PublishGameplayEvent(politika::rules::GameplayEven
     }
 #endif
 #if !UE_BUILD_SHIPPING
+    ObserveUnitScaleEvent(Event);
     using namespace politika::rules;
     if (const auto* Outcome = std::get_if<CommandOutcomeEvent>(&Event))
     {

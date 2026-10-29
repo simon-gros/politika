@@ -564,6 +564,34 @@ private:
     void SampleNetworkStats(const TCHAR* Reason);
     void SampleClientNetworkStats();
     void ReportNetworkMeasurements(const TCHAR* Reason);
+    // Client frame time since the last client network sample (MP_CLIENT_FRAME_WINDOW).
+    int32 ClientWindowFrames = 0;
+    double ClientWindowTotalMillis = 0.0;
+    float ClientWindowMaxMillis = 0.0f;
+    // Development unit-scale fixture (-PolitikaMPUnitScale=N, MP-2 unit-scale budgets): N
+    // units per seat on the multiplayer skirmish map, an idle window, then one server-issued
+    // attack-move for every seated unit, with step cost split by phase. See
+    // PolitikaUnitScaleFixture.cpp.
+    enum class EUnitScalePhase : uint8 { Off, Idle, Engage };
+    int32 UnitScalePerSeat = 0;
+    EUnitScalePhase UnitScalePhase = EUnitScalePhase::Off;
+    uint64 UnitScaleActivationStep = 0;
+    int32 UnitScaleEngageIndex = INDEX_NONE;
+    int32 UnitScaleWindowIndex = 0;
+    double LastUnitScaleWindowSeconds = 0.0;
+    uint64 UnitScaleFirstOrderSequence = 0;
+    uint64 UnitScaleLastOrderSequence = 0;
+    int32 UnitScaleOrdersIssued = 0;
+    int32 UnitScaleOrdersAccepted = 0;
+    int32 UnitScaleOrdersRejected = 0;
+    bool bUnitScaleOrdersReported = false;
+    int32 UnitScaleDestroyed = 0;
+    // Adds the scaled placements after spatial validation; false fails admission.
+    bool ResolveUnitScale(TArray<struct FPolitikaPrototypeUnitPlacement>& InOutPlacements, FName& OutFailure);
+    void BeginUnitScaleMeasurement();
+    void TickUnitScaleDriver();
+    void ObserveUnitScaleEvent(const politika::rules::GameplayEvent& Event);
+    void ReportUnitScaleMeasurements(const TCHAR* Reason);
 #endif
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaMultiplayerParticipantBindingTest;
