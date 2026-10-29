@@ -2,6 +2,8 @@
 
 **Status: PROPOSED and NOT IMPLEMENTED, 29 October 2026.** The current runtime opponent slot represents participant assignment, not a thinking or acting opponent. This document owns the first autonomous *playable-faction* behavior boundary; [Engine Outline](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match) controls 4D sequencing, [Match Structure](MATCH_STRUCTURE.md) owns roster, [Visibility](RTS_VISIBILITY_AND_INTELLIGENCE.md) owns information projection, and [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md) owns later separate NPC administration.
 
+**Architecture relationship:** [RTS Artificial Intelligence Ontology and Architecture](RTS_AI_ARCHITECTURE.md) is the broader comparative design reference for local unit autonomy, formations, multi-step operations, strategic policy profiles, fair observations and the NPC-only Unaligned. This document remains the **single owner of Stage 4D first-opponent behavior and AI-01–AI-11 tests**. The proposed hierarchy does not enlarge the Stage 4D or Stage 4F gates.
+
 ## 1. Decision actor versus participant authority
 
 One AI brain is bound to one admitted non-human playable participant and one match generation. It never masquerades as local human, Unaligned, or another participant. It does not call actor mutators, modify resource ledgers, teleport units, read HUD widgets or directly set mission results. Its entire effect is to submit the **same typed command and economic requests** as any authorized participant, through the coordinator at legal boundaries. Rejection is normal input feedback, not permission to override the command path.
@@ -42,6 +44,12 @@ Epic documents [StateTree](https://dev.epicgames.com/documentation/unreal-engine
 
 [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) defines the future organization contract. After Stage 4D AI and FORM gates, an opponent can choose shapes, stances, adherence and legal regrouping using **the same** match-authorized requests and participant-scoped observations as the human. It must not receive mass Discipline from distant units or privileged enemy positions for tactical facing. Partial path failure requires bounded cooldown/recovery without per-frame queries. The NPC-only Unaligned continues under separate system authority. This is an optional later AI expansion, not a 4D completion claim.
 
+
+## 4B. Deferred strategic architecture (not Stage 4D)
+
+Once the ordinary first skirmish has passed, Stage 5C may introduce specialist goal proposals for defense, scouting, attack and withdrawal, one commitment manager to avoid competing orders, faction/personality profiles, and bounded utility or hierarchical planning when a tested operation needs them. Formation-aware choices wait for the owning FORM acceptance; fog-dependent intelligence waits for the authoritative visibility service; building-hosted technology decisions wait for real research prerequisites and completion events. A prospective adaptive personality must use only legitimate observations rather than the opponent's hidden economy, units or orders. Higher fair difficulty should change planning quality/cadence or coordination, not silently forge resources or vision. Distinctly disclosed unfair scenario modifiers are separate future design choices, not an ordinary difficulty entitlement.
+
+The Unaligned institutional authority remains outside a playable-participant brain: its patrol/protection, civil administration and security mandates are future Stage 5D/5E work governed by [Unaligned Counterintelligence](UNALIGNED_COUNTERINTELLIGENCE.md) and [Match Structure](MATCH_STRUCTURE.md). No faction AI receives privileged institutional data through this separation. Proposed later AI-X acceptance cases belong to the [AI architecture](RTS_AI_ARCHITECTURE.md#8-incremental-implementation-and-acceptance-ladder); they are not part of the first AI-01–AI-11 gate.
 
 ## 5. Candidate test ladder
 
