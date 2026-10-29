@@ -86,6 +86,8 @@ public:
     // Opt-in for imported textured presentation meshes; existing primitive art remains tinted.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") bool bUseAuthoredMeshMaterials = false;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") bool bAttackable = true;
+    // Horizontal fog-of-war vision radius shared with the owning team in networked sessions.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Vision", meta=(Units="cm", ClampMin="0")) float SightRadiusCm = 1200.0f;
 
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };
@@ -162,6 +164,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Camera") FVector2D CameraPanMax = FVector2D::ZeroVector;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Scenario") TArray<FPolitikaPrototypePlayerSlot> PlayerSlots;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Scenario") TArray<FPolitikaPrototypeUnitPlacement> UnitPlacements;
+    // Units of the Unaligned NPC side, present in every layout and never part of a player
+    // slot. SlotId must be 0 and the archetype must belong to faction.unaligned.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Scenario") TArray<FPolitikaPrototypeUnitPlacement> UnalignedPlacements;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Scenario") FPolitikaPrototypeObjectiveDefinition Objective;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Presentation") FPolitikaPrototypeLightingDefinition Lighting;
 

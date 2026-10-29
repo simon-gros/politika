@@ -1,7 +1,11 @@
 #include "PolitikaGameInstance.h"
 
 #include "Engine/Engine.h"
+#include "Engine/NetDriver.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GameMapsSettings.h"
+#include "TimerManager.h"
 #include "HAL/PlatformOutputDevices.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/EngineVersion.h"
@@ -43,7 +47,16 @@ void UPolitikaGameInstance::Init()
     if (GEngine)
     {
         TravelFailureHandle = GEngine->OnTravelFailure().AddUObject(this, &ThisClass::HandleTravelFailure);
+        NetworkFailureHandle = GEngine->OnNetworkFailure().AddUObject(this, &ThisClass::HandleNetworkFailure);
     }
+#if !UE_BUILD_SHIPPING
+    FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPRematch="), DevelopmentRematchUrl);
+    FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPRematchDelay="), DevelopmentRematchDelaySeconds);
+    DevelopmentRematchTravels = DevelopmentRematchUrl.IsEmpty() ? 0 : 1;
+    FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPRematchAttempts="), DevelopmentRematchTravels);
+    DevelopmentRematchDelaySeconds = FMath::Clamp(DevelopmentRematchDelaySeconds, 1.0f, 60.0f);
+    DevelopmentRematchTravels = DevelopmentRematchUrl.IsEmpty() ? 0 : FMath::Clamp(DevelopmentRematchTravels, 0, 5);
+#endif
     // Ready means local services are ready. PlayerController emits ui_ready after a world exists.
     SetPhase(EPolitikaBootPhase::Ready);
 }
@@ -53,6 +66,7 @@ void UPolitikaGameInstance::Shutdown()
     if (GEngine)
     {
         GEngine->OnTravelFailure().Remove(TravelFailureHandle);
+        GEngine->OnNetworkFailure().Remove(NetworkFailureHandle);
     }
     SetPhase(EPolitikaBootPhase::Shutdown);
     if (GLog) { GLog->Flush(); }
@@ -223,7 +237,104 @@ void UPolitikaGameInstance::OpenPrototypeSlice(APlayerController* Player)
 
 void UPolitikaGameInstance::ReturnToMenu(APlayerController* Player)
 {
+    if (Player && Player->GetNetMode() != NM_Standalone) bNetworkSessionEnded = true;
     Travel(Player, TEXT("/Game/Maps/MainMenu"), TEXT("main_menu"));
+}
+
+void UPolitikaGameInstance::OnStart()
+{
+    Super::OnStart();
+    // The initial route above is unchanged (GameDefaultMap, or an explicit map/URL).
+    // After boot, engine-driven recovery ("?closed" after a disconnect, failed joins)
+    // browses to the default map; it must land on the menu, never start an offline match.
+    if (!GIsEditor)
+    {
+        UGameMapsSettings::SetGameDefaultMap(TEXT("/Game/Maps/MainMenu"));
+        UE_LOG(LogPolitikaPlatform, Display, TEXT("SESSION_RECOVERY_DEFAULT_MAP map=/Game/Maps/MainMenu"));
+    }
+}
+
+EReplicationSystem UPolitikaGameInstance::GetDesiredReplicationSystem(FName InNetDriverDefinition) const
+{
+    return EReplicationSystem::Generic;
+}
+
+void UPolitikaGameInstance::NoteNetworkMatchObserved(uint64 Generation, uint8 InPhase, bool bResultCommitted,
+    uint32 Winner, FName Reason, uint32 LocalParticipant)
+{
+    ObservedNetworkMatch = {Generation, InPhase, bResultCommitted, Winner, Reason, LocalParticipant};
+}
+
+void UPolitikaGameInstance::NoteNetworkKick(const FText& Reason)
+{
+    PendingKickReason = Reason;
+}
+
+void UPolitikaGameInstance::ReportNetworkSessionEnded(const TCHAR* Code, const FText& Message)
+{
+    bNetworkSessionEnded = true;
+    AddIssue(Code, Message);
+}
+
+void UPolitikaGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
+    ENetworkFailure::Type FailureType, const FString& ErrorString)
+{
+    // A listen server keeps running when one of its clients fails; GameMode::Logout
+    // owns that policy. Only the client-side session loss is reported here.
+    if (!NetDriver || NetDriver->GetNetMode() != NM_Client) return;
+    bNetworkSessionEnded = true;
+    const FObservedNetworkMatch Observed = ObservedNetworkMatch;
+    UE_LOG(LogPolitikaPlatform, Warning,
+        TEXT("MP_CLIENT_NETWORK_FAILURE type=%s error=\"%s\" generation=%llu phase=%u result_observed=%d winner=%u reason=%s kicked=%d"),
+        ENetworkFailure::ToString(FailureType), *ErrorString, Observed.Generation, Observed.Phase,
+        Observed.bResultCommitted ? 1 : 0, Observed.Winner, *Observed.Reason.ToString(),
+        PendingKickReason.IsEmpty() ? 0 : 1);
+    if (!PendingKickReason.IsEmpty())
+    {
+        AddIssue(TEXT("NetworkRemovedByHost"), FText::Format(LOCTEXT("Kicked",
+            "The host removed this client from the session: {0} You have been returned to the main menu."),
+            PendingKickReason));
+    }
+    else if (Observed.bResultCommitted)
+    {
+        AddIssue(TEXT("NetworkMatchEnded"), FText::Format(LOCTEXT("MatchEnded",
+            "The network match ended ({0}; winning participant {1}) and the host closed the session."),
+            FText::FromName(Observed.Reason), FText::AsNumber(Observed.Winner)));
+    }
+    else if (FailureType == ENetworkFailure::PendingConnectionFailure || Observed.Generation == 0)
+    {
+        AddIssue(TEXT("NetworkJoinFailed"), FText::Format(LOCTEXT("JoinFailed",
+            "Could not join the host ({0}). Check the address and port, that both players run the same build, and that the session is not already full or in progress."),
+            FText::FromString(ErrorString.IsEmpty() ? FString(ENetworkFailure::ToString(FailureType)) : ErrorString)));
+    }
+    else
+    {
+        AddIssue(TEXT("NetworkConnectionLost"), FText::Format(LOCTEXT("ConnectionLost",
+            "The connection to the host was lost ({0}) before the match finished. The match cannot continue; you have been returned to the main menu. Ask the host to start a new session."),
+            FText::FromString(ENetworkFailure::ToString(FailureType))));
+    }
+    ObservedNetworkMatch = {};
+    PendingKickReason = FText::GetEmpty();
+}
+
+void UPolitikaGameInstance::OnShellReady(APlayerController* Player)
+{
+#if !UE_BUILD_SHIPPING
+    if (!bNetworkSessionEnded || DevelopmentRematchTravels <= 0 || !Player || !Player->GetWorld()) return;
+    bNetworkSessionEnded = false;
+    --DevelopmentRematchTravels;
+    bDevelopmentTestFixtureConsumed = false;
+    UE_LOG(LogPolitikaPlatform, Display, TEXT("MP_REMATCH_SCHEDULED url=%s delay=%.1f remaining=%d"),
+        *DevelopmentRematchUrl, DevelopmentRematchDelaySeconds, DevelopmentRematchTravels);
+    TWeakObjectPtr<UWorld> WeakWorld = Player->GetWorld();
+    Player->GetWorld()->GetTimerManager().SetTimer(DevelopmentRematchTimer,
+        FTimerDelegate::CreateWeakLambda(this, [this, WeakWorld]
+        {
+            if (!WeakWorld.IsValid() || !GEngine) return;
+            UE_LOG(LogPolitikaPlatform, Display, TEXT("MP_REMATCH_TRAVEL url=%s"), *DevelopmentRematchUrl);
+            GEngine->SetClientTravel(WeakWorld.Get(), *DevelopmentRematchUrl, TRAVEL_Absolute);
+        }), DevelopmentRematchDelaySeconds, false);
+#endif
 }
 
 void UPolitikaGameInstance::ReportMatchAdmissionRejected(FName MapId)

@@ -5,6 +5,8 @@
 // production content schema or a complete economy/AI/fog/combat rules model.
 #include <cmath>
 #include <cstdint>
+#include <span>
+#include <string_view>
 #include <variant>
 
 namespace politika::rules {
@@ -81,7 +83,82 @@ struct Entity {
     bool attackable = true;
     bool alive = true;
     bool operational = true;
+    // Appended fields keep existing positional initializers valid.
+    std::uint8_t team = 0; // zero = no alliance; only the owner is friendly
+    // Requester-relative knowledge: false when fog of war hides this entity from the
+    // requesting participant's team. Callers set it; the default keeps fog-free rules.
+    bool observed = true;
 };
+
+// Teams and seat layouts. A networked match has 2-4 playable seats split into two
+// teams, plus the Unaligned NPC side that is present in every match (so "1v1" is one
+// player vs one player vs the Unaligned). The Unaligned is never a seat, never allied
+// to a player team and is controlled only by the server. Seats alternate teams until
+// the smaller team is full, so seat 0 (the listen-server host) and seat 1 are always
+// opposed and adding a seat never moves an existing participant to another team.
+enum class TeamLayout : std::uint8_t { OneVsOne, TwoVsOne, ThreeVsOne, TwoVsTwo };
+inline constexpr std::uint8_t kNoTeam = 0;
+inline constexpr std::uint8_t kTeamA = 1;
+inline constexpr std::uint8_t kTeamB = 2;
+inline constexpr std::uint8_t kUnalignedTeam = 3;
+inline constexpr std::uint8_t kMaxPlayableSeats = 4;
+
+[[nodiscard]] constexpr std::uint8_t SeatCount(TeamLayout layout) noexcept {
+    switch (layout) {
+        case TeamLayout::OneVsOne: return 2;
+        case TeamLayout::TwoVsOne: return 3;
+        case TeamLayout::ThreeVsOne: return 4;
+        case TeamLayout::TwoVsTwo: return 4;
+    }
+    return 0;
+}
+
+[[nodiscard]] constexpr std::uint8_t TeamForSeat(TeamLayout layout, std::uint8_t seat) noexcept {
+    constexpr std::uint8_t kTeams[4][kMaxPlayableSeats] = {
+        {kTeamA, kTeamB, kNoTeam, kNoTeam},
+        {kTeamA, kTeamB, kTeamA, kNoTeam},
+        {kTeamA, kTeamB, kTeamA, kTeamA},
+        {kTeamA, kTeamB, kTeamA, kTeamB},
+    };
+    const auto index = static_cast<std::uint8_t>(layout);
+    if (index >= 4 || seat >= SeatCount(layout)) return kNoTeam;
+    return kTeams[index][seat];
+}
+
+// Session option text ("1v1", "2v1", "3v1", "2v2"); anything else fails closed.
+[[nodiscard]] constexpr bool ParseTeamLayout(std::string_view text, TeamLayout& out) noexcept {
+    if (text == "1v1") { out = TeamLayout::OneVsOne; return true; }
+    if (text == "2v1") { out = TeamLayout::TwoVsOne; return true; }
+    if (text == "3v1") { out = TeamLayout::ThreeVsOne; return true; }
+    if (text == "2v2") { out = TeamLayout::TwoVsTwo; return true; }
+    return false;
+}
+
+[[nodiscard]] constexpr std::string_view LayoutName(TeamLayout layout) noexcept {
+    switch (layout) {
+        case TeamLayout::OneVsOne: return "1v1";
+        case TeamLayout::TwoVsOne: return "2v1";
+        case TeamLayout::ThreeVsOne: return "3v1";
+        case TeamLayout::TwoVsTwo: return "2v2";
+    }
+    return "invalid";
+}
+
+// Allied entities never target each other. Different owners without a shared team
+// (including the owner-0 Unaligned authority) are hostile.
+[[nodiscard]] constexpr bool AreAllied(std::uint32_t owner_a, std::uint8_t team_a,
+    std::uint32_t owner_b, std::uint8_t team_b) noexcept {
+    return owner_a == owner_b || (team_a != kNoTeam && team_a == team_b);
+}
+
+// The Unaligned is normally neutral: explicit orders may still target its units, but
+// neither it nor a player side acquires the other automatically (attack-move, guard,
+// idle response). Its exceptional hostilities need faction identities and its AI.
+[[nodiscard]] constexpr bool CanAutoEngage(std::uint32_t owner_a, std::uint8_t team_a,
+    std::uint32_t owner_b, std::uint8_t team_b) noexcept {
+    return !AreAllied(owner_a, team_a, owner_b, team_b)
+        && team_a != kUnalignedTeam && team_b != kUnalignedTeam;
+}
 
 // Stable, presentation-independent player/AI intent. Coordinates are prototype
 // map-space values; Unreal adapters translate world hits into this domain type.
@@ -89,6 +166,27 @@ struct Position {
     double x = 0.0;
     double y = 0.0;
 };
+
+// Fog of war: a team observes a position when any of its living vision sources is
+// within that source's sight radius (inclusive, horizontal distance). A team always
+// observes its own entities; callers apply that rule before asking about others.
+struct VisionSource {
+    std::uint8_t team = kNoTeam;
+    Position position;
+    double sight_radius = 0.0;
+};
+
+[[nodiscard]] inline bool IsObservedBy(std::uint8_t team, Position target,
+    std::span<const VisionSource> sources) noexcept {
+    if (team == kNoTeam || !std::isfinite(target.x) || !std::isfinite(target.y)) return false;
+    for (const VisionSource& source : sources) {
+        if (source.team != team || !(source.sight_radius > 0.0)) continue;
+        const double dx = source.position.x - target.x;
+        const double dy = source.position.y - target.y;
+        if (dx * dx + dy * dy <= source.sight_radius * source.sight_radius) return true;
+    }
+    return false;
+}
 
 struct MoveOrder { Position destination; };
 struct AttackOrder { std::uint64_t target_id = 0; };
@@ -146,6 +244,13 @@ enum class OrderRejection : std::uint8_t {
     MatchInactive,
     StaleMatch,
     AbilityUnavailable,
+    // Network intake rejections. Appended so existing numeric codes stay stable.
+    MalformedCommand,
+    DuplicateCommand,
+    RateLimited,
+    // Fog of war: the target is not currently observed by the requester's team. Also
+    // returned for unknown IDs while fog is enforced, so it is not an existence oracle.
+    TargetNotVisible,
 };
 
 struct OrderResult {
@@ -215,10 +320,14 @@ struct MapBounds {
         if (!IsValidPosition(bounds, attack_move->destination)) return {OrderRejection::InvalidTarget};
     } else if (const auto* attack = std::get_if<AttackOrder>(&order)) {
         if (!issuer.can_attack) return {OrderRejection::CannotAttack};
-        if (attack->target_id == 0 || target == nullptr || target->id != attack->target_id || !target->alive)
+        if (attack->target_id == 0 || target == nullptr || target->id != attack->target_id)
             return {OrderRejection::MissingTarget};
+        if (!target->observed) return {OrderRejection::TargetNotVisible};
+        if (!target->alive) return {OrderRejection::MissingTarget};
         if (!target->attackable) return {OrderRejection::TargetNotAttackable};
-        if (target->owner_player == requesting_player) return {OrderRejection::FriendlyTarget};
+        if (target->owner_player == requesting_player
+            || AreAllied(issuer.owner_player, issuer.team, target->owner_player, target->team))
+            return {OrderRejection::FriendlyTarget};
     } else if (const auto* grenade = std::get_if<GrenadeOrder>(&order)) {
         return AdmitOrder(issuer, requesting_player, bounds, AttackOrder{grenade->target_id}, target);
     } else if (std::holds_alternative<ReloadOrder>(order)) {
@@ -246,6 +355,77 @@ struct MapBounds {
         return {OrderRejection::Unauthorized};
     return AdmitOrder(*issuer, request.participant_id, bounds, request.intent, target);
 }
+
+// Bounded remote intent shape. A transport adapter supplies only the order
+// variant index and its parameters; participant, generation and ownership are
+// resolved by the authoritative server, never taken from this payload.
+struct IntentPayload {
+    std::uint8_t order_kind = 0;
+    std::uint64_t target_id = 0;
+    double x = 0.0;
+    double y = 0.0;
+};
+
+inline constexpr std::uint8_t kOrderKindCount =
+    static_cast<std::uint8_t>(std::variant_size_v<Order>);
+
+// Converts a remote payload into the existing typed order. Fields that do not
+// belong to the selected variant must be zero, so a forged payload cannot carry
+// ambiguous parameters. Range checks against map bounds remain in AdmitOrder.
+[[nodiscard]] inline OrderResult DecodeIntent(const IntentPayload& payload, Order& out) noexcept {
+    if (payload.order_kind >= kOrderKindCount) return {OrderRejection::MalformedCommand};
+    if (!std::isfinite(payload.x) || !std::isfinite(payload.y)) return {OrderRejection::MalformedCommand};
+    const bool has_target = payload.target_id != 0;
+    const bool has_position = payload.x != 0.0 || payload.y != 0.0;
+    switch (static_cast<OrderKind>(payload.order_kind)) {
+        case OrderKind::Move:
+            if (has_target) return {OrderRejection::MalformedCommand};
+            out = MoveOrder{{payload.x, payload.y}};
+            return {};
+        case OrderKind::AttackMove:
+            if (has_target) return {OrderRejection::MalformedCommand};
+            out = AttackMoveOrder{{payload.x, payload.y}};
+            return {};
+        case OrderKind::Attack:
+            if (has_position) return {OrderRejection::MalformedCommand};
+            out = AttackOrder{payload.target_id};
+            return {};
+        case OrderKind::Grenade:
+            if (has_position) return {OrderRejection::MalformedCommand};
+            out = GrenadeOrder{payload.target_id};
+            return {};
+        case OrderKind::Stop:
+            if (has_target || has_position) return {OrderRejection::MalformedCommand};
+            out = StopOrder{};
+            return {};
+        case OrderKind::Guard:
+            if (has_target || has_position) return {OrderRejection::MalformedCommand};
+            out = GuardOrder{};
+            return {};
+        case OrderKind::Reload:
+            if (has_target || has_position) return {OrderRejection::MalformedCommand};
+            out = ReloadOrder{};
+            return {};
+        case OrderKind::Sprint:
+            if (has_target || has_position) return {OrderRejection::MalformedCommand};
+            out = SprintOrder{};
+            return {};
+    }
+    return {OrderRejection::MalformedCommand};
+}
+
+// Per-connection freshness. Every client sequence is consumed once, accepted or
+// rejected, so duplicated, replayed or reordered submissions cannot repeat an effect.
+struct ClientSequenceGuard {
+    std::uint32_t last_seen = 0;
+
+    [[nodiscard]] constexpr OrderResult Consume(std::uint32_t sequence) noexcept {
+        if (sequence == 0) return {OrderRejection::MalformedCommand};
+        if (sequence <= last_seen) return {OrderRejection::DuplicateCommand};
+        last_seen = sequence;
+        return {};
+    }
+};
 
 // One authoritative update has a deliberately visible order; the UE
 // coordinator executes this sequence and publishes the resulting typed events last.

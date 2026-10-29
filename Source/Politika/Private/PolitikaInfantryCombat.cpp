@@ -6,6 +6,17 @@
 #include "EngineUtils.h"
 #include "DrawDebugHelpers.h"
 
+namespace
+{
+// Blast damage spares the thrower and its allies, exactly as direct fire does.
+template <typename ProjectileT>
+bool AreAllied(const APolitikaPrototypeUnit* Candidate, const ProjectileT& Projectile)
+{
+    return politika::rules::AreAllied(Candidate->GetOwnerPlayer(), Candidate->GetTeamId(),
+        Projectile.Owner, Projectile.Team);
+}
+}
+
 void APolitikaPrototypeUnit::ConfigureInfantryBehavior(UPolitikaInfantryBehaviorDefinition* Definition)
 {
     InfantryBehavior = Definition;
@@ -28,7 +39,7 @@ bool APolitikaPrototypeUnit::CanSprint() const
 bool APolitikaPrototypeUnit::CanUseGrenade(const APolitikaPrototypeUnit* Target) const
 {
     return IsAlive() && InfantryBehavior && Target && Target != this && Target->IsAlive()
-        && Target->IsAttackable() && Target->OwnerPlayer != OwnerPlayer
+        && Target->IsAttackable() && IsHostileTo(Target)
         && GrenadeCooldown <= 0 && GrenadeWindup <= 0 && SprintRemaining <= 0
         && ReloadRemaining <= 0
         && FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) <= InfantryBehavior->GrenadeRangeCm;
@@ -36,19 +47,22 @@ bool APolitikaPrototypeUnit::CanUseGrenade(const APolitikaPrototypeUnit* Target)
 
 void APolitikaPrototypeUnit::BeginReload()
 {
-    if (!CanReload()) return;
+    if (!HasAuthority() || !CanReload()) return;
     ReloadRemaining = InfantryBehavior->ReloadSeconds;
     InfantryPresentation->Reload(ReloadRemaining);
+    MulticastAbilityPresentation(0, ReloadRemaining);
     UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_BEGIN unit=%llu ammo=%d seconds=%.2f"),
         StableId, Ammo, ReloadRemaining);
 }
 
 void APolitikaPrototypeUnit::BeginGrenade(APolitikaPrototypeUnit* Target)
 {
+    if (!HasAuthority()) return;
     StopOrder();
     GrenadeTarget = Target;
     GrenadeWindup = InfantryBehavior->GrenadeWindupSeconds;
     InfantryPresentation->Grenade(GrenadeWindup);
+    MulticastAbilityPresentation(1, GrenadeWindup);
     UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_GRENADE_WINDUP unit=%llu target=%llu"), StableId, Target->StableId);
 }
 
@@ -72,17 +86,20 @@ void APolitikaPrototypeMatch::LaunchGrenade(APolitikaPrototypeUnit* Unit, const 
     P.Duration = FMath::Max(0.05f, static_cast<float>(FVector::Dist2D(P.Start, P.End)) / Data->GrenadeSpeedCmPerSecond);
     P.Height = Data->GrenadeArcHeightCm;
     P.Owner = Unit->OwnerPlayer;
+    P.Team = Unit->TeamId;
     P.Damage = Data->GrenadeDamage;
     P.Radius = Data->GrenadeRadiusCm;
     P.Generation = MatchGeneration;
     InfantryProjectiles.Add(P);
     Unit->InfantryPresentation->Grenade(0.2f);
+    Unit->MulticastAbilityPresentation(1, 0.2f);
     UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_GRENADE_LAUNCHED unit=%llu duration=%.3f radius=%.1f"),
         Unit->StableId, P.Duration, P.Radius);
 }
 
 void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
 {
+    if (!HasAuthority()) return;
     for (int32 Index = InfantryProjectiles.Num() - 1; Index >= 0; --Index)
     {
         auto& P = InfantryProjectiles[Index];
@@ -104,7 +121,7 @@ void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
         for (APolitikaPrototypeUnit* Candidate : Units)
         {
             if (!Candidate || !Candidate->IsAlive() || !Candidate->IsAttackable()
-                || Candidate->OwnerPlayer == P.Owner || FVector::Dist(Candidate->GetActorLocation(), Position) > P.Radius) continue;
+                || AreAllied(Candidate, P) || FVector::Dist(Candidate->GetActorLocation(), Position) > P.Radius) continue;
             Candidate->PendingDamage += P.Damage;
             Candidate->bPendingBlastDamage = true;
             ++Victims;
@@ -125,20 +142,19 @@ void APolitikaPrototypePlayerController::GrenadeSelected()
     FHitResult Hit;
     GetHitResultUnderCursor(ECC_Visibility, false, Hit);
     auto* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor());
-    ActiveMatch->SubmitLocalControllerCommand(this, Unit, Target,
-        politika::rules::GrenadeOrder{Target ? Target->GetStableId() : 0});
+    SubmitIntent(ActiveMatch, Unit, Target, politika::rules::GrenadeOrder{Target ? Target->GetStableId() : 0});
 }
 
 void APolitikaPrototypePlayerController::ReloadSelected()
 {
     auto* ActiveMatch = ResolveMatch();
     if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::ReloadOrder{});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::ReloadOrder{});
 }
 
 void APolitikaPrototypePlayerController::SprintSelected()
 {
     auto* ActiveMatch = ResolveMatch();
     if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::SprintOrder{});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::SprintOrder{});
 }

@@ -74,6 +74,11 @@ FPolitikaBootstrap& FPolitikaBootstrap::Get()
     return Instance;
 }
 
+int64 FPolitikaBootstrap::NetworkProtocol() const
+{
+    return politika::version::NETWORK_PROTOCOL;
+}
+
 void FPolitikaBootstrap::Initialize()
 {
     if (bInitialized)

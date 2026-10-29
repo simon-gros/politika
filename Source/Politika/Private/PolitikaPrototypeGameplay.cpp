@@ -88,6 +88,11 @@ APolitikaPrototypeUnit::APolitikaPrototypeUnit()
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterial(TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
     PrimaryActorTick.bCanEverTick = false;
+    // Server-authoritative transform and public state reach observers whose team
+    // currently sees the unit; IsNetRelevantFor applies the match's fog-of-war policy.
+    bReplicates = true;
+    bAlwaysRelevant = false;
+    SetReplicatingMovement(true);
     InfantryPresentation = CreateDefaultSubobject<UPolitikaInfantryPresentationComponent>(TEXT("InfantryPresentation"));
     Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
     SetRootComponent(Body);
@@ -148,6 +153,54 @@ void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const 
     NavigationReplanAttempts = 0;
 }
 
+void APolitikaPrototypeUnit::ApplyObservedArchetypePresentation(const UPolitikaUnitArchetypeDefinition* Definition)
+{
+    // Observer-side mirror of Configure's presentation half. Gameplay values arrive
+    // through replication from authority and are never derived here.
+    if (HasAuthority() || bObservedPresentationApplied || !Definition) return;
+    bObservedPresentationApplied = true;
+    Body->SetStaticMesh(Definition->VisualMesh);
+    SetActorScale3D(Definition->VisualScale);
+    if (Definition->bUseAuthoredMeshMaterials) Body->SetMaterial(0, nullptr);
+    else ApplyPrototypeColor(Body, Definition->FactionTint);
+    const FVector Scale = Definition->VisualScale;
+    SelectionIndicator->SetStaticMesh(LoadPrototypeMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
+    SelectionIndicator->SetRelativeLocation(FVector(0, 0, -34.0f / Scale.Z));
+    SelectionIndicator->SetRelativeScale3D(FVector(2.1f / Scale.X, 2.1f / Scale.Y, 0.025f / Scale.Z));
+    ApplyPrototypeColor(SelectionIndicator, FLinearColor(0.96f, 0.83f, 0.30f));
+    // Read-only capability data for the local HUD (ammunition row); never simulated here.
+    InfantryBehavior = Definition->InfantryBehavior;
+    ConfigureInfantryPresentation(Definition->InfantryPresentation);
+    if (!IsAlive() && MaxHealth > 0) BeginDeathPresentation();
+}
+
+bool APolitikaPrototypeObjective::HasMarkerPresentation() const
+{
+    return Marker && Marker->GetStaticMesh();
+}
+
+void APolitikaPrototypeMatch::ApplyMapPresentation()
+{
+    // Ground tint and the map sun are local, non-replicated presentation on every
+    // rendering process; a dedicated server has nothing to light.
+    if (bMapPresentationApplied || !MapDefinition || !GetWorld() || GetNetMode() == NM_DedicatedServer) return;
+    bMapPresentationApplied = true;
+    for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+    {
+        if (It->ActorHasTag(MapDefinition->GroundActorTag))
+        {
+            ApplyPrototypeColor(It->GetStaticMeshComponent(), MapDefinition->Lighting.GroundTint);
+            break;
+        }
+    }
+    if (ADirectionalLight* Sun = GetWorld()->SpawnActor<ADirectionalLight>(MapDefinition->Lighting.SunLocation, MapDefinition->Lighting.SunRotation))
+    {
+        Sun->GetLightComponent()->SetMobility(EComponentMobility::Movable);
+        Sun->GetLightComponent()->SetIntensity(MapDefinition->Lighting.SunIntensity);
+        Sun->GetLightComponent()->SetLightColor(MapDefinition->Lighting.SunColor);
+    }
+}
+
 void APolitikaPrototypeUnit::ConfigureInfantryPresentation(UPolitikaInfantryPresentationDefinition* Definition)
 {
     if (!Definition) return;
@@ -160,7 +213,16 @@ void APolitikaPrototypeUnit::ConfigureInfantryPresentation(UPolitikaInfantryPres
 
 void APolitikaPrototypeUnit::BeginDeathPresentation()
 {
-    if (!InfantryPresentation->GetVisual()) { Destroy(); return; }
+    if (bDeathPresented) return;
+    bDeathPresented = true;
+    if (!InfantryPresentation->GetVisual())
+    {
+        // Authority retires the actor; observers hide their copy until the
+        // replicated destruction arrives.
+        if (HasAuthority()) Destroy();
+        else SetActorHiddenInGame(true);
+        return;
+    }
     SetActorEnableCollision(false);
     SelectionIndicator->SetVisibility(false);
     InfantryPresentation->Die(bBlastDeath);
@@ -173,7 +235,7 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
     GrenadeTarget.Reset();
     InfantryPresentation->CancelGrenade();
     CurrentOrder = Kind;
-    InfantryPresentation->Acknowledge(TEXT("move"));
+    PlayLocalAcknowledgement(TEXT("move"));
     OrderDestination = Destination;
     ResolvedNavigationDestination = ResolvedDestination;
     NavigationWaypoints = MoveTemp(Route);
@@ -191,7 +253,7 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
     GrenadeWindup = 0;
     GrenadeTarget.Reset();
     InfantryPresentation->CancelGrenade();
-    InfantryPresentation->Acknowledge(TEXT("attack"));
+    PlayLocalAcknowledgement(TEXT("attack"));
     NavigationWaypoints.Reset();
     NavigationWaypointIndex = 0;
     NavigationMatchGeneration = 0;
@@ -248,6 +310,8 @@ void APolitikaPrototypeUnit::SetSelectedVisual(bool bSelected)
 
 politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float DeltaSeconds)
 {
+    // Replicated observers never advance navigation; only the match authority does.
+    if (!HasAuthority()) return politika::rules::OrderEndReason::None;
     StepStartPosition = GetActorLocation();
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
     if (InfantryBehavior && SprintRemaining <= 0 && CurrentOrder == EPolitikaPrototypeOrder::AttackMove)
@@ -255,7 +319,7 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
         if (!OrderTarget.IsValid()) AutoAcquireForAttackMove();
         const auto* Candidate = OrderTarget.Get();
         if (Candidate && Candidate->IsAlive() && Candidate->IsAttackable()
-            && Candidate->GetOwnerPlayer() != OwnerPlayer
+            && IsHostileTo(Candidate)
             && FlatDistance(GetActorLocation(), Candidate->GetActorLocation()) <= WeaponRange
             && HasLineOfFire(Candidate))
             return politika::rules::OrderEndReason::None;
@@ -430,13 +494,19 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
 
 void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
 {
+    if (!HasAuthority()) return;
     APolitikaPrototypeUnit* Nearest = nullptr;
     float NearestDistance = InfantryBehavior ? InfantryBehavior->AcquisitionRangeCm : 800.0f;
+    const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+    const bool bFog = Match && Match->IsFogOfWarEnabled();
     for (TActorIterator<APolitikaPrototypeUnit> It(GetWorld()); It; ++It)
     {
         APolitikaPrototypeUnit* Candidate = *It;
-        if (!Candidate || Candidate == this || !Candidate->IsAlive()
-            || Candidate->GetOwnerPlayer() == OwnerPlayer || !Candidate->IsAttackable()) continue;
+        // Automatic acquisition never crosses the (normally neutral) Unaligned boundary.
+        if (!Candidate || Candidate == this || !Candidate->IsAlive() || !Candidate->IsAttackable()
+            || !politika::rules::CanAutoEngage(OwnerPlayer, TeamId, Candidate->OwnerPlayer, Candidate->TeamId)) continue;
+        // Under fog, only enemies the owning team currently observes can be acquired.
+        if (bFog && !Candidate->IsObservedByTeam(TeamId)) continue;
         const float Distance = FlatDistance(GetActorLocation(), Candidate->GetActorLocation());
         if (Distance < NearestDistance)
         {
@@ -449,7 +519,7 @@ void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
 
 void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
 {
-    if (!IsAlive()) return;
+    if (!HasAuthority() || !IsAlive()) return;
     if (InfantryBehavior)
     {
         bMovedThisStep = FVector::DistSquared2D(StepStartPosition, GetActorLocation()) > 0.01;
@@ -470,7 +540,9 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         if (GrenadeWindup > 0)
         {
             auto* Victim = GrenadeTarget.Get();
-            if (!Victim || !Victim->IsAlive() || !Victim->IsAttackable() || Victim->OwnerPlayer == OwnerPlayer
+            const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+            if (!Victim || !Victim->IsAlive() || !Victim->IsAttackable() || !IsHostileTo(Victim)
+                || (Match && Match->IsFogOfWarEnabled() && !Victim->IsObservedByTeam(TeamId))
                 || FlatDistance(GetActorLocation(), Victim->GetActorLocation()) > InfantryBehavior->GrenadeRangeCm || bMovedThisStep)
             { GrenadeWindup = 0; GrenadeTarget.Reset(); return; }
             GrenadeWindup = FMath::Max(0.0f, GrenadeWindup - DeltaSeconds);
@@ -504,12 +576,16 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     }
 
     APolitikaPrototypeUnit* Target = OrderTarget.Get();
-    if (!Target || !Target->IsAlive() || Target->GetOwnerPlayer() == OwnerPlayer)
+    if (!Target || !Target->IsAlive() || !IsHostileTo(Target))
     {
         if (CurrentOrder == EPolitikaPrototypeOrder::Attack) CurrentOrder = EPolitikaPrototypeOrder::Idle;
         OrderTarget.Reset();
         return;
     }
+    // Never fire at a target the owning team cannot see; cleanup reports it as lost.
+    if (const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+        Match && Match->IsFogOfWarEnabled() && !Target->IsObservedByTeam(TeamId))
+        return;
     if (InfantryBehavior)
     {
         const FRotator Aim = (Target->GetActorLocation() - GetActorLocation()).Rotation();
@@ -524,12 +600,13 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         CooldownRemaining = WeaponCooldown;
         if (InfantryBehavior) --Ammo;
         InfantryPresentation->Shot(Target->GetActorLocation(), WeaponCooldown);
+        MulticastShotPresentation(Target->GetActorLocation(), WeaponCooldown);
     }
 }
 
 int32 APolitikaPrototypeUnit::ApplyPendingDamage()
 {
-    if (PendingDamage <= 0.0f || !IsAlive()) return 0;
+    if (!HasAuthority() || PendingDamage <= 0.0f || !IsAlive()) return 0;
     const int32 HealthBefore = Health;
     Health = FMath::Max(0, Health - FMath::CeilToInt(PendingDamage));
     PendingDamage = 0.0f;
@@ -546,7 +623,10 @@ int32 APolitikaPrototypeUnit::ApplyPendingDamage()
 
 uint64 APolitikaPrototypeUnit::CleanupDeadTarget()
 {
-    if (APolitikaPrototypeUnit* Target = OrderTarget.Get(); Target && !Target->IsAlive())
+    if (!HasAuthority()) return 0;
+    const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+    if (APolitikaPrototypeUnit* Target = OrderTarget.Get(); Target && (!Target->IsAlive()
+        || (Match && Match->IsFogOfWarEnabled() && !Target->IsObservedByTeam(TeamId))))
     {
         const uint64 LostTargetId = Target->GetStableId();
         OrderTarget.Reset();
@@ -559,6 +639,8 @@ uint64 APolitikaPrototypeUnit::CleanupDeadTarget()
 APolitikaPrototypeObjective::APolitikaPrototypeObjective()
 {
     PrimaryActorTick.bCanEverTick = false;
+    bReplicates = true;
+    bAlwaysRelevant = true;
     Marker = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlPointMarker"));
     SetRootComponent(Marker);
     Marker->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -570,6 +652,11 @@ void APolitikaPrototypeObjective::ConfigureFromDefinition(const FPolitikaPrototy
     CaptureDuration = Definition.CaptureDurationSeconds;
     LocalRuntimePlayerId = InLocalPlayerId;
     SetActorLocation(Definition.Location);
+    ConfigurePresentation(Definition);
+}
+
+void APolitikaPrototypeObjective::ConfigurePresentation(const FPolitikaPrototypeObjectiveDefinition& Definition)
+{
     Marker->SetStaticMesh(Definition.MarkerMesh);
     Marker->SetWorldScale3D(Definition.MarkerScale);
     ApplyPrototypeColor(Marker, Definition.MarkerTint);
@@ -577,38 +664,63 @@ void APolitikaPrototypeObjective::ConfigureFromDefinition(const FPolitikaPrototy
 
 void APolitikaPrototypeObjective::UpdateCapture(const TArray<APolitikaPrototypeUnit*>& Units, float DeltaSeconds)
 {
-    if (bComplete) return;
+    if (!HasAuthority() || bComplete) return;
 #if !UE_BUILD_SHIPPING
     const bool bWasContested = bContested;
     const bool bWasComplete = bComplete;
     const bool bWasCapturing = Progress > 0.0f;
 #endif
-    bool bPlayerPresent = false;
-    bool bEnemyPresent = false;
+    // Presence is evaluated per side: a team, or an owner without a team (the Unaligned
+    // and team-less fixtures). One eligible side alone in the radius captures; any second
+    // side contests; allies never contest each other. Offline every participant is its own
+    // team and only the local human's team is eligible, which is the original rule.
+    auto SideOf = [](const APolitikaPrototypeUnit* Unit)
+    {
+        return Unit->GetTeamId() != politika::rules::kNoTeam
+            ? static_cast<uint64>(Unit->GetTeamId()) : (uint64(1) << 32) | Unit->GetOwnerPlayer();
+    };
+    auto IsEligible = [this](const APolitikaPrototypeUnit* Unit)
+    {
+        return EligibleTeams.IsEmpty()
+            ? Unit->GetOwnerPlayer() != 0 && Unit->GetOwnerPlayer() == LocalRuntimePlayerId
+            : Unit->GetTeamId() != politika::rules::kNoTeam && EligibleTeams.Contains(Unit->GetTeamId());
+    };
+    TArray<uint64, TInlineAllocator<4>> PresentSides;
+    const APolitikaPrototypeUnit* FirstEligible = nullptr;
     for (const APolitikaPrototypeUnit* Unit : Units)
     {
         if (!Unit || !Unit->IsAlive() || FlatDistance(Unit->GetActorLocation(), GetActorLocation()) > CaptureRadius) continue;
-        bPlayerPresent |= Unit->GetOwnerPlayer() == LocalRuntimePlayerId;
-        bEnemyPresent |= Unit->GetOwnerPlayer() != LocalRuntimePlayerId;
+        PresentSides.AddUnique(SideOf(Unit));
+        if (!FirstEligible && IsEligible(Unit)) FirstEligible = Unit;
     }
-    bContested = bPlayerPresent && bEnemyPresent;
-    if (bPlayerPresent && !bEnemyPresent)
+    bContested = FirstEligible && PresentSides.Num() > 1;
+    if (PresentSides.Num() == 1 && FirstEligible)
     {
+        if (CapturingPlayerId == 0 || CapturingTeamId != FirstEligible->GetTeamId())
+        {
+            // A different side starts from zero; progress is not transferable.
+            if (CapturingPlayerId != 0) Progress = 0.0f;
+            CapturingPlayerId = FirstEligible->GetOwnerPlayer();
+            CapturingTeamId = FirstEligible->GetTeamId();
+        }
         Progress = FMath::Min(1.0f, Progress + DeltaSeconds / CaptureDuration);
         bComplete = Progress >= 1.0f;
     }
 #if !UE_BUILD_SHIPPING
     if (bContested != bWasContested || bComplete != bWasComplete || (!bWasCapturing && Progress > 0.0f))
-        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_OBJECTIVE_STATE contested=%d progress_milli=%d complete=%d"),
-            bContested ? 1 : 0, FMath::RoundToInt(Progress * 1000.0f), bComplete ? 1 : 0);
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_OBJECTIVE_STATE contested=%d progress_milli=%d complete=%d capturer=%u team=%u"),
+            bContested ? 1 : 0, FMath::RoundToInt(Progress * 1000.0f), bComplete ? 1 : 0, CapturingPlayerId, CapturingTeamId);
 #endif
 }
 
 FText APolitikaPrototypeObjective::GetStatusText() const
 {
-    if (bComplete) return FText::FromString(TEXT("SECURED"));
+    // Networked sessions name the capturing team; the offline text is unchanged.
+    const bool bNamed = GetNetMode() != NM_Standalone && CapturingTeamId != 0;
+    const FString By = bNamed ? FString::Printf(TEXT("  ·  TEAM %c"), TCHAR('A' + CapturingTeamId - 1)) : FString();
+    if (bComplete) return FText::FromString(TEXT("SECURED") + By);
     if (bContested) return FText::FromString(TEXT("CONTESTED"));
-    if (Progress > 0.0f) return FText::FromString(FString::Printf(TEXT("CAPTURING %d%%"), FMath::RoundToInt(Progress * 100.0f)));
+    if (Progress > 0.0f) return FText::FromString(FString::Printf(TEXT("CAPTURING %d%%%s"), FMath::RoundToInt(Progress * 100.0f), *By));
     return FText::FromString(TEXT("NEUTRAL"));
 }
 
@@ -616,15 +728,30 @@ APolitikaPrototypeMatch::APolitikaPrototypeMatch()
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickGroup = TG_PrePhysics;
+    // The coordinator replicates only its explicit public match state (map identity,
+    // generation, lifecycle, result, roster, unit/objective references). Simulation
+    // never runs on an observer copy; see Tick and BeginPlay.
+    bReplicates = true;
+    bAlwaysRelevant = true;
+    SetReplicatingMovement(false);
 }
 
 void APolitikaPrototypeMatch::BeginPlay()
 {
     Super::BeginPlay();
+    if (!HasAuthority())
+    {
+        // Remote observer: adopt unit actors that arrived first, then initialize
+        // presentation from replicated content identity.
+        for (TActorIterator<APolitikaPrototypeUnit> It(GetWorld()); It; ++It) RegisterObservedUnit(*It);
+        InitializeObservedMatch();
+        return;
+    }
     MatchGeneration = NextPrototypeMatchGeneration++;
     BuildScenario();
 #if !UE_BUILD_SHIPPING
-    if (bContentReady) BeginAcceptanceHarness();
+    if (bContentReady && !IsNetworkSession()) BeginAcceptanceHarness();
+    if (bContentReady && IsNetworkSession()) BeginMultiplayerAcceptance();
 #endif
 }
 
@@ -704,6 +831,7 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
                 if (Unit && Unit->CanMove()) Unit->StopOrder();
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
+    SyncReplicatedLifecycle();
     return true;
 }
 
@@ -723,6 +851,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         else if (FixtureId == TEXT("UnprojectableDestination")) RequestedMapId = TEXT("map.test.unprojectable_destination");
         else if (FixtureId == TEXT("ProjectionDisplacement")) RequestedMapId = TEXT("map.test.projection_displacement");
         else if (FixtureId == TEXT("RifleInfantry")) RequestedMapId = TEXT("map.test.rifle_infantry");
+        else if (FixtureId == TEXT("MultiplayerSkirmish")) RequestedMapId = TEXT("map.test.multiplayer_skirmish");
         else
         {
             UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_SELECTION_FAILED fixture=%s reason=unknown_fixture"), *FixtureId);
@@ -770,6 +899,15 @@ void APolitikaPrototypeMatch::BuildScenario()
         TEXT("MATCH_PARTICIPANTS_ADMITTED map=%s playable=%d local_player=%u local_faction=%s unaligned_system=1"),
         *RequestedMapId.ToString(), RuntimeParticipants.Num(), LocalRuntimePlayerId,
         LocalParticipant ? *LocalParticipant->FactionId.ToString() : TEXT("invalid"));
+    // Session layout selects the playing seats and their teams before anything spawns.
+    if (FName LayoutFailure; !ResolveSessionLayout(LayoutFailure))
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: the requested session layout is not supported by this map.");
+        UE_LOG(LogPolitikaStartup, Error, TEXT("MATCH_ADMISSION_REJECTED map=%s reason=%s participants=%d"),
+            *RequestedMapId.ToString(), *LayoutFailure.ToString(), RuntimeParticipants.Num());
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
 
     Diagnostics.Reset();
     if (!UPolitikaPrototypeContentValidator::ValidateMapSpatial(GetWorld(), MapDefinition, Diagnostics))
@@ -790,44 +928,70 @@ void APolitikaPrototypeMatch::BuildScenario()
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("CONTENT_VALIDATION_PASSED map=%s movement=%s"),
         *MapDefinition->StableId.ToString(), *MapDefinition->MovementProfileId.ToString());
+    ApplyMapPresentation();
 
-    for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
-    {
-        if (It->ActorHasTag(MapDefinition->GroundActorTag))
-        {
-            ApplyPrototypeColor(It->GetStaticMeshComponent(), MapDefinition->Lighting.GroundTint);
-            break;
-        }
-    }
-    if (ADirectionalLight* Sun = GetWorld()->SpawnActor<ADirectionalLight>(MapDefinition->Lighting.SunLocation, MapDefinition->Lighting.SunRotation))
-    {
-        Sun->GetLightComponent()->SetMobility(EComponentMobility::Movable);
-        Sun->GetLightComponent()->SetIntensity(MapDefinition->Lighting.SunIntensity);
-        Sun->GetLightComponent()->SetLightColor(MapDefinition->Lighting.SunColor);
-    }
-
-    auto SpawnUnit = [this](const FPolitikaPrototypeUnitPlacement& Placement)
+    // Player-slot units take the slot's participant/faction/team; Unaligned units are
+    // owned by the system authority (owner 0) on its own NPC side in every layout.
+    auto SpawnUnit = [this](const FPolitikaPrototypeUnitPlacement& Placement, bool bUnaligned)
     {
         const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
         const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
-        const FPolitikaPrototypeRuntimeParticipant* Slot = RuntimeParticipants.FindByPredicate([&](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
-        if (!Definition || !Weapon || !Slot) return;
+        const FPolitikaPrototypeRuntimeParticipant* Slot = bUnaligned ? nullptr : RuntimeParticipants.FindByPredicate(
+            [&](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
+        if (!Definition || !Weapon || (!Slot && !bUnaligned)) return false;
+        if (bUnaligned && Definition->FactionId != UnalignedSystemAuthority.FactionId) return false;
         APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Placement.Location, Placement.Rotation);
-        if (!Unit) return;
-        Unit->Configure(NextStableId++, Slot->RuntimePlayerId, Definition->DisplayName, Definition->MaxHealth,
+        if (!Unit) return false;
+        Unit->Configure(NextStableId++, Slot ? Slot->RuntimePlayerId : 0u, Definition->DisplayName, Definition->MaxHealth,
             Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
             Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint,
-            Slot->FactionId, Definition->bUseAuthoredMeshMaterials);
+            Slot ? Slot->FactionId : UnalignedSystemAuthority.FactionId, Definition->bUseAuthoredMeshMaterials);
         Unit->ConfigureInfantryPresentation(Definition->InfantryPresentation);
         Unit->ConfigureInfantryBehavior(Definition->InfantryBehavior);
+        Unit->SetArchetypeId(Definition->StableId);
+        Unit->SetTeamId(Slot ? Slot->TeamId : politika::rules::kUnalignedTeam);
+        Unit->SetSightRadius(Definition->SightRadiusCm);
+        Unit->AuthorityMatch = this;
         Units.Add(Unit);
+        return true;
     };
 
-    for (const FPolitikaPrototypeUnitPlacement& Placement : MapDefinition->UnitPlacements) SpawnUnit(Placement);
+    // Placements for authored slots outside the session layout do not spawn.
+    TArray<int32> SpawnedPlacementIndices;
+    int32 ExpectedUnits = 0;
+    for (int32 Index = 0; Index < MapDefinition->UnitPlacements.Num(); ++Index)
+    {
+        const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
+        if (!RuntimeParticipants.ContainsByPredicate([&Placement](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+            { return Candidate.SlotId == Placement.SlotId; }))
+            continue;
+        ++ExpectedUnits;
+        if (SpawnUnit(Placement, false)) SpawnedPlacementIndices.Add(Index);
+    }
+    // The Unaligned side is present regardless of the player layout.
+    int32 UnalignedUnits = 0;
+    for (const FPolitikaPrototypeUnitPlacement& Placement : MapDefinition->UnalignedPlacements)
+    {
+        ++ExpectedUnits;
+        UnalignedUnits += SpawnUnit(Placement, true) ? 1 : 0;
+    }
+    if (!MapDefinition->UnalignedPlacements.IsEmpty())
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_UNALIGNED_SIDE units=%d faction=%s system_controlled=1 team=%u"),
+            UnalignedUnits, *UnalignedSystemAuthority.FactionId.ToString(), politika::rules::kUnalignedTeam);
 
     Objective = GetWorld()->SpawnActor<APolitikaPrototypeObjective>(MapDefinition->Objective.Location, FRotator::ZeroRotator);
     if (Objective) Objective->ConfigureFromDefinition(MapDefinition->Objective, LocalRuntimePlayerId);
-    bContentReady = Units.Num() == MapDefinition->UnitPlacements.Num() && Objective != nullptr;
+    if (Objective)
+    {
+        // Offline only the local human's team captures (opponents contest); networked
+        // sessions let every human seat's team capture.
+        TArray<uint8> CapturingTeams;
+        for (const FPolitikaPrototypeRuntimeParticipant& Participant : RuntimeParticipants)
+            if (IsNetworkSession() || Participant.RuntimePlayerId == LocalRuntimePlayerId)
+                CapturingTeams.AddUnique(Participant.TeamId);
+        Objective->SetEligibleTeams(CapturingTeams);
+    }
+    bContentReady = Units.Num() == ExpectedUnits && Objective != nullptr;
     if (!bContentReady)
     {
         for (APolitikaPrototypeUnit* Unit : Units) if (Unit) Unit->Destroy();
@@ -835,26 +999,48 @@ void APolitikaPrototypeMatch::BuildScenario()
         if (Objective) Objective->Destroy();
         Objective = nullptr;
         LastCommandFeedback = TEXT("Prototype setup failed: validated content could not be instantiated.");
-        UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_INITIALIZATION_FAILED map=%s expected_units=%d actual_units=%d"), *MapDefinition->StableId.ToString(), MapDefinition->UnitPlacements.Num(), Units.Num());
+        UE_LOG(LogPolitikaStartup, Error, TEXT("CONTENT_INITIALIZATION_FAILED map=%s expected_units=%d actual_units=%d"), *MapDefinition->StableId.ToString(), ExpectedUnits, Units.Num());
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
-    if (!TransitionLifecycle(politika::rules::MatchPhase::Starting)
-        || !TransitionLifecycle(politika::rules::MatchPhase::Active))
+    ReplicatedMapId = MapDefinition->StableId;
+    SyncReplicatedParticipants();
+    // Initial team vision before any connection is considered for replication.
+    UpdateTeamVisibility();
+    if (!TransitionLifecycle(politika::rules::MatchPhase::Starting))
     {
         LastCommandFeedback = TEXT("Prototype setup failed: match could not enter active play.");
         RecoverToShellAfterAdmissionFailure(RequestedMapId);
         return;
     }
-#if !UE_BUILD_SHIPPING
-    for (int32 Index = 0; Index < MapDefinition->UnitPlacements.Num(); ++Index)
+    if (IsNetworkSession())
     {
+        // A networked match starts only when every human seat is bound to a live
+        // connection; it does not admit late joiners once Active.
+        bAwaitingNetworkParticipants = true;
+        LastCommandFeedback = FString::Printf(TEXT("Hosting %s: waiting for %u remote participant(s) to join."),
+            UTF8_TO_TCHAR(politika::rules::LayoutName(SessionLayout).data()), GetMaxRemoteHumans());
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_MATCH_AWAITING_PARTICIPANTS generation=%llu map=%s port=%d layout=%s remote_seats=%u"),
+            MatchGeneration, *MapDefinition->StableId.ToString(), GetWorld()->URL.Port,
+            UTF8_TO_TCHAR(politika::rules::LayoutName(SessionLayout).data()), GetMaxRemoteHumans());
+    }
+    else if (!TransitionLifecycle(politika::rules::MatchPhase::Active))
+    {
+        LastCommandFeedback = TEXT("Prototype setup failed: match could not enter active play.");
+        RecoverToShellAfterAdmissionFailure(RequestedMapId);
+        return;
+    }
+    BindExistingControllers();
+#if !UE_BUILD_SHIPPING
+    for (int32 SpawnIndex = 0; SpawnIndex < SpawnedPlacementIndices.Num(); ++SpawnIndex)
+    {
+        const int32 Index = SpawnedPlacementIndices[SpawnIndex];
         const FPolitikaPrototypeUnitPlacement& Placement = MapDefinition->UnitPlacements[Index];
         const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
         const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
         const FPolitikaPrototypeRuntimeParticipant* Slot = RuntimeParticipants.FindByPredicate(
             [&Placement](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
-        const APolitikaPrototypeUnit* Unit = Units.IsValidIndex(Index) ? Units[Index] : nullptr;
+        const APolitikaPrototypeUnit* Unit = Units.IsValidIndex(SpawnIndex) ? Units[SpawnIndex] : nullptr;
         if (Unit && Definition && Weapon && Slot)
         {
             const FVector Location = Unit->GetActorLocation();
@@ -892,6 +1078,12 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
     bContentReady = false;
     PendingOrders.Reset();
     InfantryProjectiles.Reset();
+    for (FParticipantBinding& Binding : ParticipantBindings)
+        if (auto* Prototype = Cast<APolitikaPrototypePlayerController>(Binding.Controller.Get()))
+            Prototype->ClearServerAssignment();
+    ParticipantBindings.Reset();
+    OutcomeRoutes.Reset();
+    bAwaitingNetworkParticipants = false;
     if (Lifecycle.phase != politika::rules::MatchPhase::AdmissionRejected)
         TransitionLifecycle(politika::rules::MatchPhase::AdmissionRejected);
     UWorld* World = GetWorld();
@@ -928,6 +1120,8 @@ void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
 
 void APolitikaPrototypeMatch::BeginReturnToMenu()
 {
+    // Observers leave by travelling; only authority mutates the match it owns.
+    if (!HasAuthority()) return;
     PendingOrders.Reset();
     if (Lifecycle.phase == politika::rules::MatchPhase::Active
         || Lifecycle.phase == politika::rules::MatchPhase::Results)
@@ -940,8 +1134,17 @@ void APolitikaPrototypeMatch::BeginReturnToMenu()
                 PrototypePlayer->SelectedUnit.Reset();
                 PrototypePlayer->bMapCameraApplied = false;
             }
+        // Revoke every connection binding and outstanding outcome route so nothing
+        // from this generation can reach a later match.
+        for (FParticipantBinding& Binding : ParticipantBindings)
+            if (auto* Prototype = Cast<APolitikaPrototypePlayerController>(Binding.Controller.Get()))
+                Prototype->ClearServerAssignment();
+        ParticipantBindings.Reset();
+        OutcomeRoutes.Reset();
+        bAwaitingNetworkParticipants = false;
         SelectionByPlayer.Reset();
         RuntimeParticipants.Reset();
+        SyncReplicatedParticipants();
         LocalRuntimePlayerId = 0;
         UnalignedSystemAuthority = {};
         bContentReady = false;
@@ -955,6 +1158,14 @@ void APolitikaPrototypeMatch::BeginReturnToMenu()
 void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    if (!HasAuthority())
+    {
+        // Observer copies interpolate replicated state; they never simulate.
+#if !UE_BUILD_SHIPPING
+        SampleObservedState(TEXT("periodic"));
+#endif
+        return;
+    }
     if (!bContentReady || !Lifecycle.IsActive()) return;
 #if !UE_BUILD_SHIPPING
     const bool bScheduled = NavigationAcceptance.bRunning && NavigationAcceptance.Schedule != 0;
@@ -990,6 +1201,7 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
             FirstStep, SimulationStepsExecuted, StepAccumulator, Steps == 5 ? 1 : 0);
     }
     TickAcceptanceHarness(DeltaSeconds);
+    if (IsNetworkSession()) SampleMultiplayerState(TEXT("periodic"));
 #endif
 }
 
@@ -1464,7 +1676,10 @@ bool APolitikaPrototypeMatch::IsCommandableUnit(const APolitikaPrototypeUnit* Un
     const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
         [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate)
         { return Candidate.RuntimePlayerId == PlayerId; });
-    return Participant && Participant->ControllerKind == EPolitikaPrototypeControllerKind::LocalHuman
+    // Human seats (local or connection-bound remote) are selectable; assigned
+    // opponents and the Unaligned system authority never are.
+    return Participant && (Participant->ControllerKind == EPolitikaPrototypeControllerKind::LocalHuman
+            || Participant->ControllerKind == EPolitikaPrototypeControllerKind::RemoteHuman)
         && Participant->FactionId == Unit->GetFactionId();
 }
 
@@ -1502,7 +1717,8 @@ void APolitikaPrototypeMatch::SetSelection(uint32 PlayerId, APolitikaPrototypeUn
     {
         const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
             [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == PlayerId; });
-        if (!Participant || Participant->ControllerKind != EPolitikaPrototypeControllerKind::LocalHuman)
+        if (!Participant || (Participant->ControllerKind != EPolitikaPrototypeControllerKind::LocalHuman
+            && Participant->ControllerKind != EPolitikaPrototypeControllerKind::RemoteHuman))
         {
             if (APolitikaPrototypeUnit* Previous = GetSelectedUnitForPlayer(PlayerId)) Previous->SetSelectedVisual(false);
             SelectionByPlayer.Remove(PlayerId);
@@ -1546,41 +1762,17 @@ void APolitikaPrototypeMatch::SubmitGuard(uint32 PlayerId, APolitikaPrototypeUni
     SubmitCommand(PlayerId, Unit, nullptr, politika::rules::GuardOrder{});
 }
 
-bool APolitikaPrototypeMatch::IsLocalControllerBound(const APlayerController* Source) const
-{
-    if (!Source || !GetWorld() || Source != GetWorld()->GetFirstPlayerController() || LocalRuntimePlayerId == 0)
-        return false;
-    const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
-        [this](const FPolitikaPrototypeRuntimeParticipant& Candidate)
-        {
-            return Candidate.RuntimePlayerId == LocalRuntimePlayerId
-                && Candidate.ControllerKind == EPolitikaPrototypeControllerKind::LocalHuman;
-        });
-    return Participant != nullptr;
-}
-
-bool APolitikaPrototypeMatch::SubmitLocalControllerCommand(APlayerController* Source,
-    APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent)
-{
-    if (!IsLocalControllerBound(Source))
-    {
-        LastCommandFeedback = TEXT("This controller is not bound to a playable participant.");
-        return false;
-    }
-    SubmitCommand(LocalRuntimePlayerId, Unit, Target, Intent);
-    return true;
-}
-
-void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit,
-    APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent)
+uint64 APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit,
+    APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent, uint64 RequestedIssuerId,
+    uint64 CorrelationId, TOptional<uint64> GenerationHint)
 {
     APolitikaPrototypeUnit* ValidUnit = IsValid(Unit) ? Unit : nullptr;
     FPendingOrder Pending;
-    Pending.Request.match_generation = MatchGeneration;
+    Pending.Request.match_generation = GenerationHint.Get(MatchGeneration);
     Pending.Request.sequence = NextCommandSequence++;
     Pending.Request.participant_id = PlayerId;
-    Pending.Request.issuer_entity_id = ValidUnit ? ValidUnit->GetStableId() : 0;
-    Pending.Request.correlation_id = Pending.Request.sequence;
+    Pending.Request.issuer_entity_id = ValidUnit ? ValidUnit->GetStableId() : RequestedIssuerId;
+    Pending.Request.correlation_id = CorrelationId != 0 ? CorrelationId : Pending.Request.sequence;
     Pending.Request.intent = Intent;
     if (!Lifecycle.IsActive())
     {
@@ -1589,16 +1781,16 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
             SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
             politika::rules::OrderRejection::MatchInactive});
-        return;
+        return Pending.Request.sequence;
     }
-    if (Unit && !ValidUnit)
+    if ((Unit && !ValidUnit) || (!ValidUnit && RequestedIssuerId != 0))
     {
         LastCommandFeedback = TEXT("The selected unit no longer exists.");
         PublishGameplayEvent(politika::rules::CommandOutcomeEvent{
             SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
             politika::rules::OrderRejection::MissingIssuer});
-        return;
+        return Pending.Request.sequence;
     }
     if (!RuntimeParticipants.IsEmpty())
     {
@@ -1611,7 +1803,7 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
                 SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
                 Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
                 politika::rules::OrderRejection::Unauthorized});
-            return;
+            return Pending.Request.sequence;
         }
         if (ValidUnit && (ValidUnit->GetOwnerPlayer() != PlayerId || ValidUnit->GetFactionId() != Participant->FactionId))
         {
@@ -1620,7 +1812,7 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
                 SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
                 Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
                 politika::rules::OrderRejection::NotOwned});
-            return;
+            return Pending.Request.sequence;
         }
     }
     if (ValidUnit && !Units.Contains(ValidUnit))
@@ -1630,7 +1822,7 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
             SimulationStepsExecuted, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), false,
             politika::rules::OrderRejection::MissingIssuer});
-        return;
+        return Pending.Request.sequence;
     }
     Pending.Unit = ValidUnit;
     Pending.Target = Target;
@@ -1650,7 +1842,9 @@ void APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeU
     else if (std::holds_alternative<politika::rules::ReloadOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Reload;
     else if (std::holds_alternative<politika::rules::SprintOrder>(Intent)) Pending.Kind = EPolitikaPrototypeOrder::Sprint;
     else Pending.Kind = EPolitikaPrototypeOrder::Stop;
+    const uint64 Sequence = Pending.Request.sequence;
     PendingOrders.Add(MoveTemp(Pending));
+    return Sequence;
 }
 
 politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendingOrder& Pending) const
@@ -1672,7 +1866,8 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
     politika::rules::Entity IssuerRules;
     if (Issuer) { IssuerRules.id = Issuer->GetStableId(); IssuerRules.owner_player = Issuer->GetOwnerPlayer();
         IssuerRules.movable = Issuer->CanMove(); IssuerRules.can_attack = Issuer->CanAttack();
-        IssuerRules.alive = Issuer->IsAlive(); IssuerRules.operational = Issuer->IsAlive(); }
+        IssuerRules.alive = Issuer->IsAlive(); IssuerRules.operational = Issuer->IsAlive();
+        IssuerRules.team = Issuer->GetTeamId(); }
 
     politika::rules::Entity TargetRules;
     const APolitikaPrototypeUnit* Target = Pending.Target.Get();
@@ -1682,11 +1877,21 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
         TargetRules.owner_player = Target->GetOwnerPlayer();
         TargetRules.attackable = Target->IsAttackable();
         TargetRules.alive = Target->IsAlive();
+        TargetRules.team = Target->GetTeamId();
+        TargetRules.observed = IsUnitObservedByParticipant(Target, Pending.Request.participant_id);
     }
+    // Under fog an unresolvable target ID is indistinguishable from a hidden one, so a
+    // client cannot probe whether an unseen entity exists.
+    uint64 RequestedTargetId = 0;
+    if (const auto* Attack = std::get_if<politika::rules::AttackOrder>(&Pending.Request.intent)) RequestedTargetId = Attack->target_id;
+    else if (const auto* Grenade = std::get_if<politika::rules::GrenadeOrder>(&Pending.Request.intent)) RequestedTargetId = Grenade->target_id;
+    const bool bHiddenUnknownTarget = bFogOfWar && !Target && RequestedTargetId != 0;
+    if (bHiddenUnknownTarget) { TargetRules.id = RequestedTargetId; TargetRules.observed = false; }
     const auto Admission = politika::rules::AdmitCommand(Pending.Request, MatchGeneration,
         bContentReady && Lifecycle.IsActive(),
         Issuer ? &IssuerRules : nullptr,
-        {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y}, Target ? &TargetRules : nullptr);
+        {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y},
+        Target || bHiddenUnknownTarget ? &TargetRules : nullptr);
     if (!Admission) return Admission;
     if ((Pending.Kind == EPolitikaPrototypeOrder::Grenade && !Issuer->CanUseGrenade(Target))
         || (Pending.Kind == EPolitikaPrototypeOrder::Reload && !Issuer->CanReload())
@@ -1713,6 +1918,10 @@ static FString DescribeRejection(politika::rules::OrderRejection Rejection)
         case politika::rules::OrderRejection::MatchInactive: return TEXT("The match is not accepting commands.");
         case politika::rules::OrderRejection::StaleMatch: return TEXT("That command belongs to an earlier match.");
         case politika::rules::OrderRejection::AbilityUnavailable: return TEXT("Ability unavailable: check range, ammunition or cooldown.");
+        case politika::rules::OrderRejection::MalformedCommand: return TEXT("The command was malformed and was not applied.");
+        case politika::rules::OrderRejection::DuplicateCommand: return TEXT("That command was already processed.");
+        case politika::rules::OrderRejection::RateLimited: return TEXT("Too many pending commands; try again.");
+        case politika::rules::OrderRejection::TargetNotVisible: return TEXT("That target is not visible to your team.");
         case politika::rules::OrderRejection::None: return TEXT("Order rejected.");
     }
     return TEXT("Order rejected.");
@@ -1793,6 +2002,11 @@ void APolitikaPrototypeMatch::PublishGameplayEvent(politika::rules::GameplayEven
     }
 #endif
     PublishedEvents.Add(MoveTemp(Event));
+    if (const auto* Outcome = std::get_if<politika::rules::CommandOutcomeEvent>(&PublishedEvents.Last()))
+    {
+        const politika::rules::CommandOutcomeEvent Routed = *Outcome;
+        RouteCommandOutcome(Routed);
+    }
     GameplayEventPublished.Broadcast(PublishedEvents.Last());
 }
 
@@ -1993,9 +2207,10 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
             LastCommandFeedback = Reason;
 #if !UE_BUILD_SHIPPING
             const APolitikaPrototypeUnit* RejectedUnit = Pending.Unit.Get();
-            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_REJECTED unit=%llu sequence=%llu outcome=%u reason=%s"),
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_REJECTED unit=%llu sequence=%llu outcome=%u reason=%s participant=%u correlation=%llu"),
                 RejectedUnit ? RejectedUnit->GetStableId() : 0, Pending.Request.sequence,
-                static_cast<uint32>(Result.rejection), *Reason.Replace(TEXT(" "), TEXT("_")));
+                static_cast<uint32>(Result.rejection), *Reason.Replace(TEXT(" "), TEXT("_")),
+                Pending.Request.participant_id, Pending.Request.correlation_id);
 #endif
             QueueGameplayEvent(politika::rules::CommandOutcomeEvent{
                 SimulationStepsExecuted + 1, Pending.Request.sequence, Pending.Request.correlation_id,
@@ -2089,9 +2304,10 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
         const APolitikaPrototypeUnit* AdmittedTarget = Pending.Target.Get();
         static const TCHAR* OrderNames[] = { TEXT("Idle"), TEXT("Move"), TEXT("Attack"), TEXT("AttackMove"), TEXT("Stop"), TEXT("Guard"), TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint") };
         const int32 OrderIndex = static_cast<int32>(Pending.Kind);
-        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_ADMITTED order=%s unit=%llu target=%llu sequence=%llu"),
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_ADMITTED order=%s unit=%llu target=%llu sequence=%llu participant=%u correlation=%llu generation=%llu"),
             OrderNames[OrderIndex], AdmittedUnit ? AdmittedUnit->GetStableId() : 0,
-            AdmittedTarget ? AdmittedTarget->GetStableId() : 0, Pending.Request.sequence);
+            AdmittedTarget ? AdmittedTarget->GetStableId() : 0, Pending.Request.sequence,
+            Pending.Request.participant_id, Pending.Request.correlation_id, Pending.Request.match_generation);
 #endif
     }
     PendingOrders.Reset();
@@ -2137,6 +2353,9 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
             QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted,
                 Unit->GetStableId(), ToExecutionOrder(PreviousOrder), ToExecutionOrder(Unit->GetCurrentOrder()), EndReason});
     }
+    // Team vision follows movement so acquisition, firing and target loss use current
+    // positions; offline (no fog) this marks every unit observed and changes nothing.
+    UpdateTeamVisibility();
     for (APolitikaPrototypeUnit* Unit : Units) if (IsValid(Unit)) Unit->ResolveCombat(DeltaSeconds);
     AdvanceGrenades(DeltaSeconds);
     for (APolitikaPrototypeUnit* Unit : Units)
@@ -2204,11 +2423,17 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
                 && TransitionLifecycle(politika::rules::MatchPhase::Results)
                 && !CommittedResult.IsSet())
             {
-                CommittedResult.Emplace(FPolitikaPrototypeMatchResult{
-                    LocalRuntimePlayerId, TEXT("objective_secured")});
+                // The capturing participant wins; offline this is always the local human.
+                const uint32 Winner = Objective->GetCapturingPlayerId() != 0
+                    ? Objective->GetCapturingPlayerId() : LocalRuntimePlayerId;
+                const uint8 WinningTeam = Objective->GetCapturingTeamId() != politika::rules::kNoTeam
+                    ? Objective->GetCapturingTeamId() : GetTeamForParticipant(Winner);
+                CommittedResult.Emplace(FPolitikaPrototypeMatchResult{Winner, TEXT("objective_secured"), WinningTeam});
                 LastCommandFeedback = TEXT("Objective secured. Match results are ready; press Escape to return to menu.");
-                UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_RESULTS outcome=%s player=%u committed=1"),
-                    *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId);
+                UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_RESULTS outcome=%s player=%u committed=1 generation=%llu step=%llu team=%u"),
+                    *CommittedResult->Reason.ToString(), CommittedResult->WinningPlayerId, MatchGeneration,
+                    SimulationStepsExecuted, WinningTeam);
+                SyncReplicatedLifecycle();
             }
         }
     }
@@ -2231,6 +2456,8 @@ APolitikaPrototypeCameraPawn::APolitikaPrototypeCameraPawn()
     SetRootComponent(SceneRoot);
     Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
     Camera->SetupAttachment(SceneRoot);
+    // The RTS camera is client-local; its transform is never server state.
+    SetReplicatingMovement(false);
 }
 
 void APolitikaPrototypePlayerController::BeginPlay()
@@ -2239,12 +2466,20 @@ void APolitikaPrototypePlayerController::BeginPlay()
     ResolveMatch();
     bShowMouseCursor = true;
     SetInputMode(FInputModeGameAndUI());
+#if !UE_BUILD_SHIPPING
+    bHostileProbeEnabled = IsLocalController() && FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPProbe"));
+#endif
+    if (IsLocalController() && GetNetMode() == NM_Client)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_CLIENT_CONNECTED controller=%s"), *GetName());
 }
 
 void APolitikaPrototypePlayerController::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     if (!bMapCameraApplied) ResolveMatch();
+#if !UE_BUILD_SHIPPING
+    if (bHostileProbeEnabled && IsLocalController()) TickHostileProbe();
+#endif
 }
 
 APolitikaPrototypeMatch* APolitikaPrototypePlayerController::ResolveMatch()
@@ -2260,6 +2495,8 @@ APolitikaPrototypeMatch* APolitikaPrototypePlayerController::ResolveMatch()
     TActorIterator<APolitikaPrototypeMatch> MatchIt(GetWorld());
     if (!MatchIt) return nullptr;
     Match = *MatchIt;
+    // An observer match learns its local participant from this connection's assignment.
+    if (!Match->HasAuthority() && IsLocalController()) Match->SetLocalViewerParticipant(AssignedRuntimePlayerId);
     if (APolitikaPrototypeHUD* PrototypeHUD = Cast<APolitikaPrototypeHUD>(GetHUD()))
         PrototypeHUD->AttachMatch(Match.Get());
     ApplyMapCameraIfReady();
@@ -2273,9 +2510,23 @@ void APolitikaPrototypePlayerController::ApplyMapCameraIfReady()
     if (!Definition || !Match->GetObjective()) return;
     APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn());
     if (!CameraPawn || !CameraPawn->GetCamera()) return;
+    FVector Focus = Match->GetObjective()->GetActorLocation();
+    if (GetNetMode() != NM_Standalone)
+    {
+        // Networked seats start looking at their own authored start, not the shared
+        // objective. The camera pawn is client-local; moving it is never server state.
+        const uint32 Participant = GetCommandPlayerId();
+        if (Participant == 0) return;
+        const FPolitikaPrototypeRuntimeParticipant* Seat = Match->GetRuntimeParticipants().FindByPredicate(
+            [Participant](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == Participant; });
+        const FPolitikaPrototypePlayerSlot* Slot = Seat ? Definition->PlayerSlots.FindByPredicate(
+            [Seat](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Seat->SlotId; }) : nullptr;
+        if (!Slot) return;
+        Focus = Slot->StartLocation;
+        CameraPawn->SetActorLocation(FVector(Focus.X, Focus.Y, CameraPawn->GetActorLocation().Z));
+    }
     CameraPawn->GetCamera()->SetRelativeLocation(Definition->CameraOffset);
     CameraPawn->GetCamera()->SetFieldOfView(Definition->CameraFieldOfView);
-    const FVector Focus = Match->GetObjective()->GetActorLocation();
     CameraPawn->GetCamera()->SetWorldRotation((Focus - CameraPawn->GetCamera()->GetComponentLocation()).Rotation());
     bMapCameraApplied = true;
 }
@@ -2388,20 +2639,18 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
     FHitResult Hit;
     if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
-        ActiveMatch->ReportRejectedCommand(TEXT("Order rejected: click valid map ground or a hostile unit."));
+        ShowLocalFeedback(TEXT("Order rejected: click valid map ground or a hostile unit."));
         return;
     }
     if (APolitikaPrototypeUnit* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor()))
     {
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, Target,
-            politika::rules::AttackOrder{Target->GetStableId()});
+        SubmitIntent(ActiveMatch, Unit, Target, politika::rules::AttackOrder{Target->GetStableId()});
     }
     else
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr,
-            politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
     }
 }
 
@@ -2409,14 +2658,14 @@ void APolitikaPrototypePlayerController::StopSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::StopOrder{});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::StopOrder{});
 }
 
 void APolitikaPrototypePlayerController::GuardSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch))
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr, politika::rules::GuardOrder{});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::GuardOrder{});
 }
 
 void APolitikaPrototypePlayerController::AttackMoveSelected()
@@ -2429,16 +2678,18 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        ActiveMatch->SubmitLocalControllerCommand(this, Unit, nullptr,
-            politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitIntent(ActiveMatch, Unit, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
     }
     else
-        ActiveMatch->ReportRejectedCommand(TEXT("Attack-move rejected: click valid map ground."));
+        ShowLocalFeedback(TEXT("Attack-move rejected: click valid map ground."));
 }
 
 void APolitikaPrototypePlayerController::ReturnToMenu()
 {
-    if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch()) ActiveMatch->BeginReturnToMenu();
+    // The host/standalone authority ends its match; a remote client only leaves.
+    // The server observes that departure through Logout.
+    if (APolitikaPrototypeMatch* ActiveMatch = ResolveMatch(); ActiveMatch && ActiveMatch->HasAuthority())
+        ActiveMatch->BeginReturnToMenu();
     if (UPolitikaGameInstance* Game = GetGameInstance<UPolitikaGameInstance>()) Game->ReturnToMenu(this);
 }
 
@@ -2522,34 +2773,31 @@ void APolitikaPrototypePlayerController::Zoom(float Value)
     }
 }
 
+APolitikaPrototypeHUD::APolitikaPrototypeHUD()
+{
+    // Map music is a local-viewer cosmetic, so it lives with the HUD that exists on
+    // each rendering player (host and remote) rather than on the server-only GameMode.
+    CreateDefaultSubobject<UPolitikaTestMapMusicComponent>(TEXT("TestMapMusic"));
+}
+
 void APolitikaPrototypeHUD::AttachMatch(APolitikaPrototypeMatch* InMatch)
 {
     if (Match.Get() == InMatch) return;
-    if (APolitikaPrototypeMatch* PreviousMatch = Match.Get(); PreviousMatch && GameplayEventHandle.IsValid())
-        PreviousMatch->OnGameplayEventPublished().Remove(GameplayEventHandle);
     Match = InMatch;
-    GameplayEventHandle.Reset();
     CommandFeedback.Reset();
-    if (InMatch)
-        GameplayEventHandle = InMatch->OnGameplayEventPublished().AddUObject(
-            this, &APolitikaPrototypeHUD::HandleGameplayEvent);
 }
 
-void APolitikaPrototypeHUD::HandleGameplayEvent(const politika::rules::GameplayEvent& Event)
+void APolitikaPrototypeHUD::ShowCommandOutcome(const FPolitikaNetCommandOutcome& Outcome)
 {
-    using namespace politika::rules;
-    const CommandOutcomeEvent* Outcome = std::get_if<CommandOutcomeEvent>(&Event);
-    if (!Outcome) return;
-
     static const TCHAR* OrderNames[] = {
         TEXT("Move"), TEXT("Attack"), TEXT("Attack-move"), TEXT("Stop"), TEXT("Guard"),
         TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint")
     };
-    const uint8 OrderIndex = static_cast<uint8>(Outcome->order);
+    const uint8 OrderIndex = Outcome.OrderKind;
     const TCHAR* OrderName = OrderIndex < UE_ARRAY_COUNT(OrderNames) ? OrderNames[OrderIndex] : TEXT("Command");
-    if (Outcome->accepted)
+    if (Outcome.bAccepted)
     {
-        CommandFeedback = FString::Printf(TEXT("%s order accepted  ·  #%llu"), OrderName, Outcome->correlation_id);
+        CommandFeedback = FString::Printf(TEXT("%s order accepted  ·  #%u"), OrderName, Outcome.CorrelationId);
         return;
     }
 
@@ -2561,13 +2809,17 @@ void APolitikaPrototypeHUD::HandleGameplayEvent(const politika::rules::GameplayE
         TEXT("The selected unit no longer exists."), TEXT("That unit is unavailable."),
         TEXT("You cannot command that unit."), TEXT("The match is not accepting commands."),
         TEXT("That command belongs to an earlier match."),
-        TEXT("Ability unavailable: check range, ammunition or cooldown.")
+        TEXT("Ability unavailable: check range, ammunition or cooldown."),
+        TEXT("The command was malformed and was not applied."),
+        TEXT("That command was already processed."),
+        TEXT("Too many pending commands; try again."),
+        TEXT("That target is not visible to your team.")
     };
-    const uint8 RejectionIndex = static_cast<uint8>(Outcome->rejection);
+    const uint8 RejectionIndex = Outcome.Rejection;
     const TCHAR* Reason = RejectionIndex < UE_ARRAY_COUNT(RejectionNames)
         ? RejectionNames[RejectionIndex] : TEXT("Order rejected.");
-    CommandFeedback = FString::Printf(TEXT("%s rejected: %s  ·  #%llu"),
-        OrderName, Reason, Outcome->correlation_id);
+    CommandFeedback = FString::Printf(TEXT("%s rejected: %s  ·  #%u"),
+        OrderName, Reason, Outcome.CorrelationId);
 }
 
 void APolitikaPrototypeHUD::DrawHUD()
@@ -2589,20 +2841,57 @@ void APolitikaPrototypeHUD::DrawHUD()
     {
         for (const APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
         {
-            if (!Unit || !Unit->IsAlive()) continue;
+            // A listen host keeps every unit in memory; labels follow its team's fog view.
+            if (!Unit || !Unit->IsAlive() || Unit->IsLocalFogHidden()) continue;
             FVector2D Screen;
             if (!Controller->ProjectWorldLocationToScreen(Unit->GetActorLocation() + FVector(0,0,100), Screen, true)) continue;
-            const bool bFriendly = Unit->GetOwnerPlayer() == ActiveMatch->GetLocalRuntimePlayerId();
-            const FLinearColor TeamColor = bFriendly ? FLinearColor(0.35f,0.9f,0.65f) : FLinearColor(1,0.4f,0.3f);
+            const uint32 Viewer = ActiveMatch->GetLocalRuntimePlayerId();
+            const bool bFriendly = Unit->GetOwnerPlayer() == Viewer || politika::rules::AreAllied(
+                Unit->GetOwnerPlayer(), Unit->GetTeamId(), Viewer, ActiveMatch->GetLocalViewerTeam());
+            const bool bUnaligned = Unit->GetTeamId() == politika::rules::kUnalignedTeam;
+            const FLinearColor TeamColor = bFriendly ? FLinearColor(0.35f,0.9f,0.65f)
+                : bUnaligned ? FLinearColor(0.85f,0.82f,0.62f) : FLinearColor(1,0.4f,0.3f);
             const float LabelX = Screen.X - 65 * UiScale;
             const float LabelY = Screen.Y - 18 * UiScale;
             DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, 135*UiScale, 22*UiScale);
-            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d"), bFriendly ? TEXT("ALLY") : TEXT("TARGET"),
+            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d"),
+                bFriendly ? TEXT("ALLY") : bUnaligned ? TEXT("UNALIGNED") : TEXT("TARGET"),
                 Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth()), TeamColor,
                 LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
         }
     }
     DrawText(TEXT("POLITIKA  /  RTS DEVELOPMENT SLICE"), Ink, Left, Y, nullptr, 1.5f * UiScale); Y += 34.0f * UiScale;
+    const ENetMode NetMode = GetNetMode();
+    if (NetMode != NM_Standalone)
+    {
+        // Session identity and authoritative lifecycle, from server-owned replicated state.
+        const uint32 Viewer = ActiveMatch->GetLocalRuntimePlayerId();
+        const TCHAR* Role = NetMode == NM_Client ? TEXT("NETWORK CLIENT") : TEXT("LISTEN HOST");
+        const uint8 ViewerTeam = ActiveMatch->GetLocalViewerTeam();
+        FString Session = FString::Printf(TEXT("%s  ·  PLAYER %u  ·  TEAM %c  ·  %s + UNALIGNED  ·  MATCH %llu"), Role, Viewer,
+            ViewerTeam != 0 ? TCHAR('A' + ViewerTeam - 1) : TCHAR('-'),
+            UTF8_TO_TCHAR(politika::rules::LayoutName(ActiveMatch->GetSessionLayout()).data()),
+            ActiveMatch->GetMatchGeneration());
+        if (ActiveMatch->IsFogOfWarEnabled()) Session += TEXT("  ·  FOG");
+        switch (ActiveMatch->GetMatchPhase())
+        {
+            case politika::rules::MatchPhase::Starting: Session += TEXT("  ·  WAITING FOR PARTICIPANTS"); break;
+            case politika::rules::MatchPhase::Active: Session += TEXT("  ·  ACTIVE"); break;
+            case politika::rules::MatchPhase::Results:
+            case politika::rules::MatchPhase::Terminal: Session += TEXT("  ·  MATCH OVER"); break;
+            default: break;
+        }
+        DrawText(Session, FLinearColor(0.55f, 0.82f, 0.95f), Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+        if (const TOptional<FPolitikaPrototypeMatchResult>& Result = ActiveMatch->GetCommittedResult(); Result.IsSet())
+        {
+            const FString Outcome = Result->WinningTeamId == 0
+                ? FString::Printf(TEXT("MATCH ENDED: %s  ·  Esc returns to menu"), *Result->Reason.ToString())
+                : FString::Printf(TEXT("%s  ·  TEAM %c (PLAYER %u) %s  ·  Esc returns to menu"),
+                    Result->WinningTeamId == ViewerTeam ? TEXT("VICTORY") : TEXT("DEFEAT"),
+                    TCHAR('A' + Result->WinningTeamId - 1), Result->WinningPlayerId, *Result->Reason.ToString());
+            DrawText(Outcome, FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale); Y += 32.0f * UiScale;
+        }
+    }
     DrawText(TEXT("LMB select  ·  RMB move / attack  ·  A attack-move  ·  G guard  ·  S stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     {
         APolitikaPrototypeUnit* Selected = ActiveMatch->GetSelectedUnitForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
@@ -2643,8 +2932,11 @@ void APolitikaPrototypeHUD::DrawHUD()
             FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale);
         Y += 30.0f * UiScale;
     }
-    const FString& Feedback = CommandFeedback.IsEmpty()
-        ? ActiveMatch->GetLastCommandFeedback() : CommandFeedback;
+    // Networked processes show only this controller's own correlated feedback; the
+    // server-wide string would otherwise expose another participant's commands.
+    const FString DefaultHint = TEXT("Select a friendly unit; right-click ground or an enemy to issue an order.");
+    const FString& Feedback = !CommandFeedback.IsEmpty() ? CommandFeedback
+        : NetMode == NM_Standalone ? ActiveMatch->GetLastCommandFeedback() : DefaultHint;
     DrawText(Feedback, Ink, Left, Y, nullptr, UiScale);
 
     // Original text/glyph placeholders keep this prototype independent of reference-game art.
@@ -2686,7 +2978,6 @@ void APolitikaPrototypeHUD::DrawHUD()
 
 APolitikaPrototypeGameMode::APolitikaPrototypeGameMode()
 {
-    CreateDefaultSubobject<UPolitikaTestMapMusicComponent>(TEXT("TestMapMusic"));
     PlayerControllerClass = APolitikaPrototypePlayerController::StaticClass();
     DefaultPawnClass = APolitikaPrototypeCameraPawn::StaticClass();
     HUDClass = APolitikaPrototypeHUD::StaticClass();
@@ -2696,5 +2987,8 @@ void APolitikaPrototypeGameMode::StartPlay()
 {
     Super::StartPlay();
     if (GetWorld() && !GetWorld()->GetAuthGameMode<APolitikaPrototypeGameMode>()) return;
-    GetWorld()->SpawnActor<APolitikaPrototypeMatch>(FVector::ZeroVector, FRotator::ZeroRotator);
+    ActiveMatch = GetWorld()->SpawnActor<APolitikaPrototypeMatch>(FVector::ZeroVector, FRotator::ZeroRotator);
+    if (GetNetMode() == NM_ListenServer)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_LISTEN_SERVER_READY port=%d net_driver=%d protocol=%lld"),
+            GetWorld()->URL.Port, GetWorld()->GetNetDriver() ? 1 : 0, FPolitikaBootstrap::Get().NetworkProtocol());
 }

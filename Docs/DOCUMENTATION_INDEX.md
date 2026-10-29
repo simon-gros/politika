@@ -19,7 +19,8 @@
 - [Test-map terrain and camera controls](TEST_MAP_TERRAIN.md) — grass/elevation provenance, material-only import, camera pan/zoom fixes and scoped package evidence.
 
 - [Engine Outline](ENGINE_OUTLINE.md) — **the single authoritative implementation sequence**, including incomplete Stage 4A closure and the dependency-ordered First Playable Skirmish milestone; owns implementation order and promotion boundaries.
-- [RTS Multiplayer Architecture and Retrofit Audit](RTS_MULTIPLAYER_ARCHITECTURE.md) — **IMMEDIATE PRIORITY, not implemented:** begin mandatory whole-code audit/retrofit (MP-0) **now**, implement a true two-human listen-server vertical slice next (MP-1), then dedicated parity and 2–4-human validation (MP-3/MP-2); public-service polish follows (MP-4). Owns per-symbol source audit and MP-T01–T12 acceptance.
+- [RTS Multiplayer Architecture and Retrofit Audit](RTS_MULTIPLAYER_ARCHITECTURE.md) — server-authoritative model and MP gates. **MP-0 audit complete; MP-1 implemented**: listen server, connection-bound seats, one command intake, team fog of war, 1v1/2v1/3v1/2v2 + Unaligned layouts. The packaged qualification is two-process 1v1 loopback only. Dedicated server parity (MP-3) and 3–4-process / network-emulation qualification (MP-2) come next; public services are MP-4.
+- [MP-1 Multiplayer Foundation Acceptance](RTS_MULTIPLAYER_FOUNDATION_ACCEPTANCE.md) — per-test verdicts, package identity, evidence paths, reference checkpoint and limitations for the first networked slice.
 - [Prototype Gameplay Content Authoring](GAMEPLAY_CONTENT.md) — typed asset IDs, map schema v1, validator/tool usage, and known limits of the first content-driven RTS slice.
 - [Rifle-infantry reference import](CNC3_RIFLEMEN_IMPORT.md) — neutral-named mesh/animation/MP3 import, source provenance, interrupted-package recovery and scoped local audio playtest evidence.
 - [Stage 3 Data/Content/Map Acceptance](STAGE3_DATA_CONTENT_MAP_ACCEPTANCE.md) — scoped ST3-01–ST3-18 verdicts, exact evidence identities, and remaining acceptance gaps.
@@ -58,6 +59,7 @@
 - [UI Overview](POLITIKA_UI_OVERVIEW.md) — main menu, faction HUD, commands, accessibility and input design.
 - [Development Foundations](DEVELOPMENT_FOUNDATIONS.md) — implemented local Rust/C++ foundations and staged possibilities.
 - [Validation and Governance](VALIDATION_AND_GOVERNANCE.md) — change-scope testing policy and document ownership.
+- [MP-0 Multiplayer Code Audit — 29 October 2026](Reports/RTS_MULTIPLAYER_CODE_AUDIT_20261029.md) — whole-source inventory, path trace, mutation/exposure inventories and the F01–F42 findings register with remediations and deferred owners.
 - [Repository Implementation Audit — 29 October 2026](Reports/REPOSITORY_IMPLEMENTATION_AUDIT_20261029.md) — tracked-source inventory, verified versus unqualified milestones, prioritized risks, and Rust-free native core test fallback; an audit, not a new gameplay acceptance.
 - [Navigation Interruption Report — 29 October 2026](Reports/NAVIGATION_INTERRUPTION_20261029.md) — archived dirty-snapshot evidence; consult the owning navigation record for later publication qualification.
 - [Versioning and Release Management](VERSIONING_RELEASE_MANAGEMENT_ROADMAP.md) — canonical build/game version policy.

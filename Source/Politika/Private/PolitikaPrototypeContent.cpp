@@ -267,6 +267,8 @@ void UPolitikaPrototypeContentValidator::ValidateCatalog(
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.VALUE.REQUIRED"), Unit->StableId, TEXT("DisplayName"), TEXT("A unit display name is required."), TEXT("non-empty localized name"), TEXT("empty"), TEXT("Set a localized display name."));
         if (Unit->MaxHealth <= 0)
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.VALUE.RANGE"), Unit->StableId, TEXT("MaxHealth"), TEXT("Maximum health must be positive."), TEXT("> 0 health"), LexToString(Unit->MaxHealth), TEXT("Set positive maximum health."));
+        if (!FMath::IsFinite(Unit->SightRadiusCm) || Unit->SightRadiusCm <= 0.0f)
+            AddDiagnostic(OutDiagnostics, TEXT("CONTENT.VALUE.RANGE"), Unit->StableId, TEXT("SightRadiusCm"), TEXT("A unit needs a positive finite sight radius for team vision."), TEXT("> 0 cm"), LexToString(Unit->SightRadiusCm), TEXT("Set a positive finite sight radius."));
         if (!FMath::IsFinite(Unit->MovementSpeedCmPerSecond) || Unit->MovementSpeedCmPerSecond <= 0.0f)
             AddDiagnostic(OutDiagnostics, TEXT("CONTENT.VALUE.RANGE"), Unit->StableId, TEXT("MovementSpeedCmPerSecond"), TEXT("This prototype movement profile requires a positive finite movement speed."), TEXT("> 0 cm/s"), LexToString(Unit->MovementSpeedCmPerSecond), TEXT("Set a positive finite movement speed."));
         if (Unit->WeaponId.IsNone() || !Catalog->FindWeapon(Unit->WeaponId))
@@ -405,6 +407,21 @@ void UPolitikaPrototypeContentValidator::ValidateMapStructure(
             AddDiagnostic(OutDiagnostics, TEXT("MAP.UNIT.OUT_OF_BOUNDS"), Id, Prefix + TEXT("Location"), TEXT("The unit placement is outside playable bounds or has non-finite coordinates."), FString::Printf(TEXT("XY inside %s..%s"), *Map->PlayableMin.ToString(), *Map->PlayableMax.ToString()), Placement.Location.ToString(), TEXT("Move the placement into legal playable bounds."));
         if (!Placement.Rotation.IsNearlyZero() && (!FMath::IsFinite(Placement.Rotation.Pitch) || !FMath::IsFinite(Placement.Rotation.Yaw) || !FMath::IsFinite(Placement.Rotation.Roll)))
             AddDiagnostic(OutDiagnostics, TEXT("MAP.UNIT.ROTATION_NONFINITE"), Id, Prefix + TEXT("Rotation"), TEXT("Unit rotation contains a non-finite value."), TEXT("finite rotation"), Placement.Rotation.ToString(), TEXT("Correct the authored rotation."));
+    }
+
+    for (int32 Index = 0; Index < Map->UnalignedPlacements.Num(); ++Index)
+    {
+        const FPolitikaPrototypeUnitPlacement& Placement = Map->UnalignedPlacements[Index];
+        const FString Prefix = FString::Printf(TEXT("UnalignedPlacements[%d]."), Index);
+        const UPolitikaUnitArchetypeDefinition* Unit = Catalog ? Catalog->FindUnit(Placement.UnitArchetypeId) : nullptr;
+        if (Placement.UnitArchetypeId.IsNone() || !Unit)
+            AddDiagnostic(OutDiagnostics, TEXT("CONTENT.REFERENCE.UNRESOLVED"), Id, Prefix + TEXT("UnitArchetypeId"), TEXT("The Unaligned placement does not resolve to a unit in the catalog."), TEXT("catalog unit ID"), Placement.UnitArchetypeId.ToString(), TEXT("Correct the ID or include the unit definition in the catalog."));
+        else if (Unit->FactionId != FName(TEXT("faction.unaligned")))
+            AddDiagnostic(OutDiagnostics, TEXT("CONTENT.FACTION.MISMATCH"), Id, Prefix + TEXT("UnitArchetypeId"), TEXT("Unaligned placements must use an archetype owned by the Unaligned system faction."), TEXT("faction.unaligned"), Unit->FactionId.ToString(), TEXT("Use an Unaligned archetype or move the placement to a player slot."));
+        if (Placement.SlotId != 0)
+            AddDiagnostic(OutDiagnostics, TEXT("MAP.UNALIGNED.SLOT_ASSIGNED"), Id, Prefix + TEXT("SlotId"), TEXT("The Unaligned is not a player slot; its placements cannot reference one."), TEXT("0"), LexToString(Placement.SlotId), TEXT("Set SlotId to 0."));
+        if (!InBounds(*Map, Placement.Location))
+            AddDiagnostic(OutDiagnostics, TEXT("MAP.UNIT.OUT_OF_BOUNDS"), Id, Prefix + TEXT("Location"), TEXT("The unit placement is outside playable bounds or has non-finite coordinates."), FString::Printf(TEXT("XY inside %s..%s"), *Map->PlayableMin.ToString(), *Map->PlayableMax.ToString()), Placement.Location.ToString(), TEXT("Move the placement into legal playable bounds."));
     }
 
     ValidateStableId(Map->Objective.StableId, Id, TEXT("Objective.StableId"), OutDiagnostics);
@@ -546,6 +563,16 @@ bool UPolitikaPrototypeContentValidator::ValidateMapSpatial(
                 TEXT("The unit placement does not project onto the built NavMesh for its map movement profile."),
                 Map->MovementProfileId.ToString(), Placement.Location.ToString(), TEXT("Place the unit on traversable ground and rebuild navigation."));
     }
+    for (int32 Index = 0; Index < Map->UnalignedPlacements.Num(); ++Index)
+    {
+        FNavLocation Projected;
+        const FPolitikaPrototypeUnitPlacement& Placement = Map->UnalignedPlacements[Index];
+        if (!ProjectToNav(NavSystem, NavData, Placement.Location, Projected))
+            AddDiagnostic(OutDiagnostics, TEXT("MAP.UNIT.NOT_TRAVERSABLE"), Id,
+                FString::Printf(TEXT("UnalignedPlacements[%d].Location"), Index),
+                TEXT("The Unaligned placement does not project onto the built NavMesh for its map movement profile."),
+                Map->MovementProfileId.ToString(), Placement.Location.ToString(), TEXT("Place the unit on traversable ground and rebuild navigation."));
+    }
     return !HasErrors(OutDiagnostics);
 }
 
@@ -603,6 +630,21 @@ bool FPolitikaPrototypeContentLoader::LoadAndValidate(
         // Explicit development fixture; never register its catalog under the production primary ID.
         Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
             TEXT("/Game/Politika/Prototypes/Infantry/RifleInfantry/DA_InfantryCatalog.DA_InfantryCatalog"));
+    }
+    else if (MapId == FName(TEXT("map.test.multiplayer_skirmish")))
+    {
+        // Development-only four-seat + Unaligned fixture for networked layouts. Host and
+        // client resolve the same isolated catalog from the replicated map identity.
+        Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+            TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+        if (!Catalog)
+        {
+            AddDiagnostic(OutDiagnostics, TEXT("TEST_FIXTURE.ASSET.MISSING"), MapId, TEXT("FixtureCatalog"),
+                TEXT("The multiplayer test catalog is not cooked into this package."),
+                TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog"), TEXT("missing"),
+                TEXT("Build the Development package with the multiplayer fixture cook directory."));
+            return false;
+        }
     }
     else
 #endif

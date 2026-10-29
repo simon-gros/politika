@@ -68,6 +68,140 @@ bool SaveDefinitionAsset(UObject* Asset)
     return UPackage::SavePackage(Package, Asset, *Filename, Args);
 }
 
+bool CreateMultiplayerSkirmishFixture()
+{
+    // Isolated development fixture for networked layouts (1v1, 2v1, 3v1, 2v2), each played
+    // against the Unaligned NPC side. The canonical catalog/map are only read. Four playable
+    // seats get distinct factions/archetypes (copies of the canonical rifle infantry); the
+    // Unaligned side gets its own archetype and placements. Spatial validation against the
+    // real level gates the save, so every start and placement is on the built NavMesh.
+    const UPolitikaPrototypeContentCatalog* Canonical = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/Definitions/DA_PrototypeContentCatalog.DA_PrototypeContentCatalog"));
+    const UPolitikaPrototypeMapDefinition* ValidMap = Canonical
+        ? Canonical->FindMap(UPolitikaPrototypeContentValidator::PrototypeMapAssetId) : nullptr;
+    const UPolitikaUnitArchetypeDefinition* Soldier = Canonical
+        ? Canonical->FindUnit(TEXT("unit.playtest.rifle_infantry")) : nullptr;
+    if (!ValidMap || !Soldier || ValidMap->PlayerSlots.Num() < 2 || !Canonical->FindWeapon(Soldier->WeaponId))
+        return false;
+    const FString Root = TEXT("/Game/Politika/TestFixtures/Multiplayer/");
+    struct FSeatSpec
+    {
+        const TCHAR* Asset;
+        const TCHAR* UnitId;
+        const TCHAR* Name;
+        FName Faction;
+        FLinearColor Tint;
+        FVector Start;
+    };
+    // Seats alternate teams (politika::rules::TeamForSeat): slot 1 team A west-south,
+    // slot 2 team B east-north, slot 3 team A (2v1/3v1/2v2) west-north, slot 4 east-south
+    // (team B in 2v2, team A in 3v1). Distances exceed sight so sides begin fogged.
+    const FSeatSpec Seats[] = {
+        {nullptr, nullptr, nullptr, ValidMap->PlayerSlots[0].FactionId, FLinearColor::White, FVector(-1300, -700, 42)},
+        {TEXT("DA_MultiplayerOppositionRifleInfantry"), TEXT("unit.test.multiplayer_opposition_rifle_infantry"),
+            TEXT("Rifle Infantry [Seat 2 Test Fixture]"), ValidMap->PlayerSlots[1].FactionId, FLinearColor(0.8f, 0.1f, 0.07f), FVector(1300, 700, 42)},
+        {TEXT("DA_MultiplayerThirdRifleInfantry"), TEXT("unit.test.multiplayer_third_rifle_infantry"),
+            TEXT("Rifle Infantry [Seat 3 Test Fixture]"), TEXT("faction.test_third"), FLinearColor(0.15f, 0.62f, 0.62f), FVector(-1300, 700, 42)},
+        {TEXT("DA_MultiplayerFourthRifleInfantry"), TEXT("unit.test.multiplayer_fourth_rifle_infantry"),
+            TEXT("Rifle Infantry [Seat 4 Test Fixture]"), TEXT("faction.test_fourth"), FLinearColor(0.9f, 0.55f, 0.1f), FVector(1300, -700, 42)},
+    };
+    auto* Map = CreateDefinitionAsset<UPolitikaPrototypeMapDefinition>(
+        Root + TEXT("DA_MultiplayerSkirmish"), TEXT("DA_MultiplayerSkirmish"));
+    auto* Catalog = CreateDefinitionAsset<UPolitikaPrototypeContentCatalog>(
+        Root + TEXT("DA_MultiplayerCatalog"), TEXT("DA_MultiplayerCatalog"));
+    auto* Unaligned = CreateDefinitionAsset<UPolitikaUnitArchetypeDefinition>(
+        Root + TEXT("DA_MultiplayerUnalignedMilitia"), TEXT("DA_MultiplayerUnalignedMilitia"));
+    if (!Map || !Catalog || !Unaligned) return false;
+
+    TArray<UPolitikaUnitArchetypeDefinition*> SeatUnits = {const_cast<UPolitikaUnitArchetypeDefinition*>(Soldier)};
+    for (int32 Index = 1; Index < UE_ARRAY_COUNT(Seats); ++Index)
+    {
+        auto* Copy = CreateDefinitionAsset<UPolitikaUnitArchetypeDefinition>(Root + Seats[Index].Asset, Seats[Index].Asset);
+        if (!Copy) return false;
+        // Copy fields through UE serialization rather than a second schema.
+        UEngine::CopyPropertiesForUnrelatedObjects(const_cast<UPolitikaUnitArchetypeDefinition*>(Soldier), Copy);
+        Copy->StableId = Seats[Index].UnitId;
+        Copy->FactionId = Seats[Index].Faction;
+        Copy->DisplayName = FText::FromString(Seats[Index].Name);
+        Copy->FactionTint = Seats[Index].Tint;
+        Copy->MarkPackageDirty();
+        SeatUnits.Add(Copy);
+    }
+    UEngine::CopyPropertiesForUnrelatedObjects(const_cast<UPolitikaUnitArchetypeDefinition*>(Soldier), Unaligned);
+    Unaligned->StableId = TEXT("unit.test.multiplayer_unaligned_militia");
+    Unaligned->FactionId = TEXT("faction.unaligned");
+    Unaligned->DisplayName = FText::FromString(TEXT("Unaligned Militia [Test Fixture]"));
+    Unaligned->FactionTint = FLinearColor(0.62f, 0.6f, 0.5f);
+    Unaligned->MarkPackageDirty();
+
+    UEngine::CopyPropertiesForUnrelatedObjects(const_cast<UPolitikaPrototypeMapDefinition*>(ValidMap), Map);
+    Map->StableId = TEXT("map.test.multiplayer_skirmish");
+    Map->PlayerSlots.Reset();
+    Map->UnitPlacements.Reset();
+    Map->UnalignedPlacements.Reset();
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Seats); ++Index)
+    {
+        FPolitikaPrototypePlayerSlot& Slot = Map->PlayerSlots.AddDefaulted_GetRef();
+        Slot.SlotId = Index + 1;
+        Slot.RuntimePlayerId = Index + 1;
+        Slot.FactionId = Seats[Index].Faction;
+        // Slot 1 is the authored local human (standalone player or listen host); other
+        // seats are bound by the server to admitted connections in seat order.
+        Slot.bHumanControlled = Index == 0;
+        Slot.StartLocation = Seats[Index].Start;
+        const float FacingYaw = (FVector(0, 150, 0) - Seats[Index].Start).Rotation().Yaw;
+        const FVector Side(FMath::Sign(Seats[Index].Start.X), FMath::Sign(Seats[Index].Start.Y), 0);
+        Map->UnitPlacements.Add({SeatUnits[Index]->StableId, Slot.SlotId, Seats[Index].Start + FVector(Side.X * 50, Side.Y * -100, 0), FRotator(0, FacingYaw, 0)});
+        Map->UnitPlacements.Add({SeatUnits[Index]->StableId, Slot.SlotId, Seats[Index].Start + FVector(Side.X * -80, Side.Y * 80, 0), FRotator(0, FacingYaw, 0)});
+    }
+    // The Unaligned side is present in every layout, off the capture radius so it is met
+    // (and fogged) without silently contesting the objective.
+    Map->UnalignedPlacements.Add({Unaligned->StableId, 0, FVector(0, 1250, 42), FRotator(0, -90, 0)});
+    Map->UnalignedPlacements.Add({Unaligned->StableId, 0, FVector(0, -1050, 42), FRotator(0, 90, 0)});
+    // A shorter hold keeps packaged networked objective tests bounded.
+    Map->Objective.CaptureDurationSeconds = 8.0f;
+    Map->MarkPackageDirty();
+
+    Catalog->StableId = UPolitikaPrototypeContentCatalog::CatalogAssetId;
+    Catalog->SchemaVersion = UPolitikaPrototypeContentCatalog::CurrentSchemaVersion;
+    Catalog->Weapons = Canonical->Weapons;
+    Catalog->Units = Canonical->Units;
+    for (int32 Index = 1; Index < SeatUnits.Num(); ++Index) Catalog->Units.Add(SeatUnits[Index]);
+    Catalog->Units.Add(Unaligned);
+    Catalog->Maps = {Map};
+    Catalog->MarkPackageDirty();
+
+    TArray<FPolitikaContentDiagnostic> Diagnostics;
+    UPolitikaPrototypeContentValidator::ValidateCatalog(Catalog, Diagnostics);
+    UPolitikaPrototypeContentValidator::ValidateMapStructure(Map, Catalog, Diagnostics);
+    UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(FPackageName::LongPackageNameToFilename(
+        Map->LevelAsset.GetLongPackageName(), FPackageName::GetMapPackageExtension()));
+    UNavigationSystemV1* NavSystem = World ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World) : nullptr;
+    if (!World || !NavSystem)
+    {
+        UE_LOG(LogPolitikaStartup, Error, TEXT("TEST_FIXTURE_SPATIAL_UNAVAILABLE level=%s"), *Map->LevelAsset.ToString());
+        return false;
+    }
+    NavSystem->RemoveNavigationBuildLock(ENavigationBuildLock::AsyncLoadLock, UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+    NavSystem->ReleaseInitialBuildingLock();
+    NavSystem->Build();
+    int32 WaitIterations = 0;
+    while (NavSystem->IsNavigationBuildInProgress() && WaitIterations++ < 600) FPlatformProcess::Sleep(0.1f);
+    UPolitikaPrototypeContentValidator::ValidateMapSpatial(World, Map, Diagnostics);
+    for (const FPolitikaContentDiagnostic& Diagnostic : Diagnostics)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("TEST_FIXTURE_DIAGNOSTIC %s"),
+            *UPolitikaPrototypeContentValidator::FormatDiagnostic(Diagnostic));
+    if (UPolitikaPrototypeContentValidator::HasErrors(Diagnostics)) return false;
+    for (UPolitikaUnitArchetypeDefinition* Unit : SeatUnits)
+        if (Unit != Soldier && !SaveDefinitionAsset(Unit)) return false;
+    if (!SaveDefinitionAsset(Unaligned) || !SaveDefinitionAsset(Map) || !SaveDefinitionAsset(Catalog)) return false;
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("TEST_FIXTURE_CREATED map=%s catalog=%s seats=%d units=%d unaligned_units=%d source=%s"),
+        *Map->StableId.ToString(), *Catalog->GetPathName(), Map->PlayerSlots.Num(), Map->UnitPlacements.Num(),
+        Map->UnalignedPlacements.Num(), *ValidMap->GetPathName());
+    return true;
+}
+
 bool CreateInvalidMapSchemaFixture()
 {
     const UPolitikaPrototypeMapDefinition* ValidMap = LoadObject<UPolitikaPrototypeMapDefinition>(nullptr,
@@ -740,6 +874,8 @@ int32 UPolitikaCreateShellCommandlet::Main(const FString& Params)
         return CreateProjectionDisplacementFixture() ? 0 : 16;
     if (FParse::Param(*Params, TEXT("CreateInvalidParticipantFactionFixture")))
         return CreateInvalidParticipantFactionFixture() ? 0 : 12;
+    if (FParse::Param(*Params, TEXT("CreateMultiplayerSkirmishFixture")))
+        return CreateMultiplayerSkirmishFixture() ? 0 : 17;
     if (FParse::Param(*Params, TEXT("ValidateBlockedRoute")))
     {
         UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(FPackageName::LongPackageNameToFilename(

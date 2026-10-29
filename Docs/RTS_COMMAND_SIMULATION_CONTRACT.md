@@ -34,4 +34,20 @@ The development HUD subscribes to the match's native delegate and displays corre
 
 No save, content, world or network schema changed. The portable `Order` alternatives remain the canonical intent payload; UE’s `EPolitikaPrototypeOrder` remains only the current execution/presentation state. Legacy `SubmitMove`, `SubmitAttack`, `SubmitStop` and `SubmitGuard` adapters are retained and delegate to common intake. Typed events now drive HUD command outcome feedback; pre-admission input errors still use a presentation string. The HUD integration was build- and package-qualified in the Linux rendered Development interaction run; this does not qualify other platforms or physical displays.
 
-The request accepts one issuer per call and is suitable for future per-entity dispatch. Multi-selection, formation semantics, group atomicity, AI, production and networking remain deferred. The scoped Linux milestone is accepted; platform expansion, physical-device qualification and the follow-on multi-unit/formation milestone remain separate work.
+**Network input (MP-1, 29 October 2026).** There is exactly one server-side intake, `APolitikaPrototypeMatch::SubmitControllerIntent`.
+- **Who calls it.** A standalone or listen-host controller calls it in-process; a remote client calls it through the owning `ServerSubmitCommandIntent` reliable RPC. Both send the same versioned `FPolitikaNetCommandIntent`: order kind, issuer and target entity IDs, map-space destination, client sequence, correlation, generation hint and protocol version. It has no participant, owner or faction field.
+- **Intake checks, in order.**
+  1. Resolve the sender's server-side connection binding.
+  2. Check `ProtocolVersion`.
+  3. Consume the single-use `ClientSequenceGuard` sequence.
+  4. `DecodeIntent` (bounded variant and shape, finite coordinates).
+  5. Enforce the 16-command per-participant queue bound.
+  6. Resolve entity IDs in the current match only.
+  7. Enter the unchanged `SubmitCommand` → `AdmitPendingOrders` → `AdmitCommand` pipeline.
+- **Teams and fog.** `AdmitOrder` now also treats allied targets as `FriendlyTarget`. Under networked fog it treats unobserved or unknown targets as `TargetNotVisible`.
+- **Outcomes.** New rejection codes are appended: `MalformedCommand=15`, `DuplicateCommand=16`, `RateLimited=17`, `TargetNotVisible=18`. Outcomes go only to the issuing connection (`ClientReceiveCommandOutcome`).
+- **Phase order.** The fixed-step order gains one read-mostly phase, team vision after movement and before combat. Offline it marks everything observed and does not change any existing event.
+
+See the [MP-1 acceptance record](RTS_MULTIPLAYER_FOUNDATION_ACCEPTANCE.md).
+
+The request accepts one issuer per call and is suitable for future per-entity dispatch. Multi-selection, formation semantics, group atomicity, AI and production remain deferred. The scoped Linux milestone is accepted; platform expansion, physical-device qualification and the follow-on multi-unit/formation milestone remain separate work.

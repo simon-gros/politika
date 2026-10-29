@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/HUD.h"
@@ -29,9 +30,17 @@ struct FPolitikaPrototypeMatchResult
 {
 	uint32 WinningPlayerId = 0;
 	FName Reason;
+	// Team of the winning participant (each standalone participant is its own team).
+	uint8 WinningTeamId = 0;
 };
 
-enum class EPolitikaPrototypeControllerKind : uint8 { LocalHuman, AssignedOpponent };
+// Default horizontal sight radius for units configured without an archetype value.
+inline constexpr float PolitikaDefaultSightRadiusCm = 1200.0f;
+
+// LocalHuman is the authored human slot on this process (standalone player or
+// listen-server host). RemoteHuman is a seat bound by the server to one admitted
+// remote connection; it is never inferred from client-provided data.
+enum class EPolitikaPrototypeControllerKind : uint8 { LocalHuman, AssignedOpponent, RemoteHuman };
 
 struct FPolitikaPrototypeRuntimeParticipant
 {
@@ -39,6 +48,9 @@ struct FPolitikaPrototypeRuntimeParticipant
     uint32 RuntimePlayerId = 0;
     FName FactionId;
     EPolitikaPrototypeControllerKind ControllerKind = EPolitikaPrototypeControllerKind::AssignedOpponent;
+    // Alliance team (politika::rules::kTeamA/kTeamB in networked layouts; one team per
+    // participant offline). Assigned by the server from the session layout.
+    uint8 TeamId = 0;
 };
 
 struct FPolitikaPrototypeSystemFactionAuthority
@@ -50,12 +62,76 @@ struct FPolitikaPrototypeSystemFactionAuthority
 UENUM(BlueprintType)
 enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard, Grenade, Reload, Sprint };
 
+// Versioned remote command intent (network_protocol in version.json). It carries
+// no participant, owner, faction or object pointer: the server derives authority
+// from the sending connection and resolves entity IDs in the current match.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetCommandIntent
+{
+    GENERATED_BODY()
+    UPROPERTY() int32 ProtocolVersion = 0;
+    UPROPERTY() uint8 OrderKind = 0;
+    UPROPERTY() uint64 IssuerEntityId = 0;
+    UPROPERTY() uint64 TargetEntityId = 0;
+    // Rules-domain map coordinates, relative to the playable minimum (cm).
+    UPROPERTY() double DestinationX = 0.0;
+    UPROPERTY() double DestinationY = 0.0;
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint32 CorrelationId = 0;
+    // Client-observed match generation; checked by the shared AdmitCommand guard.
+    UPROPERTY() uint64 MatchGeneration = 0;
+};
+
+// Sanitized, correlation-linked result returned only to the issuing connection.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetCommandOutcome
+{
+    GENERATED_BODY()
+    UPROPERTY() uint32 CorrelationId = 0;
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint64 IssuerEntityId = 0;
+    UPROPERTY() uint64 MatchGeneration = 0;
+    UPROPERTY() uint64 Step = 0;
+    UPROPERTY() uint8 OrderKind = 0;
+    UPROPERTY() uint8 Rejection = 0;
+    UPROPERTY() bool bAccepted = false;
+};
+
+// Public roster entry (slot, participant, faction, controller kind) for observers.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetParticipantInfo
+{
+    GENERATED_BODY()
+    UPROPERTY() int32 SlotId = 0;
+    UPROPERTY() uint32 RuntimePlayerId = 0;
+    UPROPERTY() FName FactionId;
+    UPROPERTY() uint8 ControllerKind = 0;
+    UPROPERTY() uint8 TeamId = 0;
+};
+
 UCLASS()
 class POLITIKA_API APolitikaPrototypeUnit final : public AActor
 {
     GENERATED_BODY()
 public:
     APolitikaPrototypeUnit();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    // Fog of war: when the match enforces it, a connection receives this unit only while
+    // its participant's team observes it (own and allied units are always observed).
+    virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
+    // Authority-assigned alliance and vision. Hostility is derived from owner and team.
+    void SetTeamId(uint8 InTeamId) { TeamId = InTeamId; }
+    uint8 GetTeamId() const { return TeamId; }
+    void SetSightRadius(float InSightRadiusCm) { SightRadius = FMath::Max(0.0f, InSightRadiusCm); }
+    float GetSightRadius() const { return SightRadius; }
+    bool IsHostileTo(const APolitikaPrototypeUnit* Other) const;
+    // Server-computed bitmask of teams currently observing this unit (bit = 1 << team).
+    bool IsObservedByTeam(uint8 Team) const { return Team < 8 && (ObservedByTeams & (1u << Team)) != 0; }
+    // Local presentation only (listen-server host view of fog); never replicated.
+    void SetLocalFogHidden(bool bHidden);
+    bool IsLocalFogHidden() const { return bLocalFogHidden; }
     void Configure(uint64 InStableId, uint32 InOwner, const FText& InName, int32 InHealth,
         float InMoveSpeed, float InWeaponRange, float InDamage, float InCooldown,
         bool bInAttackable, UStaticMesh* InMesh, const FVector& InMeshScale, const FLinearColor& InColor,
@@ -67,10 +143,19 @@ public:
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
     void ConfigureInfantryPresentation(UPolitikaInfantryPresentationDefinition* Definition);
+    // Shared content identity used by remote observers to resolve the same authored
+    // presentation locally. Authority sets it at spawn; it never grants control.
+    void SetArchetypeId(FName InArchetypeId) { ArchetypeId = InArchetypeId; }
+    FName GetArchetypeId() const { return ArchetypeId; }
+    // Client-side presentation only: mesh, scale, tint and infantry visuals.
+    void ApplyObservedArchetypePresentation(const class UPolitikaUnitArchetypeDefinition* Definition);
+    bool HasObservedPresentation() const { return bObservedPresentationApplied; }
+    void PlayLocalAcknowledgement(FName Event);
     void BeginDeathPresentation();
     void ConfigureInfantryBehavior(UPolitikaInfantryBehaviorDefinition* Definition);
     int32 GetAmmo() const { return Ammo; }
     bool IsReloading() const { return ReloadRemaining > 0; }
+    bool IsSprinting() const { return SprintRemaining > 0; }
     bool HasInfantryBehavior() const { return InfantryBehavior != nullptr; }
     bool CanUseGrenade(const APolitikaPrototypeUnit* Target) const;
     bool CanReload() const;
@@ -99,15 +184,39 @@ private:
     friend class APolitikaPrototypeMatch;
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaInfantryMechanicsTest;
+    friend class FPolitikaMultiplayerParticipantBindingTest;
+    friend class FPolitikaMultiplayerCommandIntakeTest;
+    friend class FPolitikaMultiplayerAuthorityOnlySimulationTest;
+    friend class FPolitikaMultiplayerResultAndCleanupTest;
+    friend class FPolitikaMultiplayerFogOfWarTest;
+    friend struct FPolitikaMultiplayerFixture;
 #endif
+    UFUNCTION() void OnRep_ArchetypeId();
+    UFUNCTION() void OnRep_Health();
+    // Coordinator that spawned this unit (authority only); supplies fog/relevancy policy.
+    TWeakObjectPtr<APolitikaPrototypeMatch> AuthorityMatch;
+    float SightRadius = PolitikaDefaultSightRadiusCm;
+    uint8 ObservedByTeams = 0;
+    bool bLocalFogHidden = false;
+    // Public alliance (friend/foe presentation); authority is still server-side.
+    UPROPERTY(Replicated) uint8 TeamId = 0;
+    // Cosmetic fan-out of authoritative events. Authority already presented them
+    // locally; remote observers only animate/play audio and never change rules state.
+    UFUNCTION(NetMulticast, Unreliable) void MulticastShotPresentation(FVector_NetQuantize Target, float Cooldown);
+    UFUNCTION(NetMulticast, Unreliable) void MulticastAbilityPresentation(uint8 Cue, float Seconds);
+    void TryApplyObservedPresentation();
     UPROPERTY(Transient) TObjectPtr<UPolitikaInfantryBehaviorDefinition> InfantryBehavior;
-    int32 Ammo = 0;
-    float ReloadRemaining = 0;
+    // Owner-only HUD state (ammunition/reload); other connections never receive it.
+    UPROPERTY(Replicated) int32 Ammo = 0;
+    UPROPERTY(Replicated) float ReloadRemaining = 0;
     float GrenadeCooldown = 0;
     float GrenadeWindup = 0;
-    float SprintRemaining = 0;
+    UPROPERTY(Replicated) float SprintRemaining = 0;
     float SprintCooldown = 0;
-    bool bBlastDeath = false;
+    UPROPERTY(Replicated) bool bBlastDeath = false;
+    UPROPERTY(ReplicatedUsing=OnRep_ArchetypeId) FName ArchetypeId;
+    bool bObservedPresentationApplied = false;
+    bool bDeathPresented = false;
     bool bPendingBlastDamage = false;
     bool bMovedThisStep = false;
     TWeakObjectPtr<APolitikaPrototypeUnit> GrenadeTarget;
@@ -137,20 +246,23 @@ private:
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UPolitikaInfantryPresentationComponent> InfantryPresentation;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionIndicator;
-    UPROPERTY() FText UnitName;
-    UPROPERTY() int32 Health = 0;
-    UPROPERTY() int32 MaxHealth = 0;
-    UPROPERTY() uint64 StableId = 0;
-    UPROPERTY() uint32 OwnerPlayer = 0;
-    UPROPERTY() FName FactionId;
-    UPROPERTY() float MoveSpeed = 0.0f;
-    UPROPERTY() float WeaponRange = 0.0f;
-    UPROPERTY() float WeaponDamage = 0.0f;
-    UPROPERTY() float WeaponCooldown = 0.0f;
+    // Public observation: identity, allegiance, health and capability flags.
+    UPROPERTY(Replicated) FText UnitName;
+    UPROPERTY(ReplicatedUsing=OnRep_Health) int32 Health = 0;
+    UPROPERTY(Replicated) int32 MaxHealth = 0;
+    UPROPERTY(Replicated) uint64 StableId = 0;
+    UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
+    UPROPERTY(Replicated) FName FactionId;
+    UPROPERTY(Replicated) float MoveSpeed = 0.0f;
+    UPROPERTY(Replicated) float WeaponRange = 0.0f;
+    UPROPERTY(Replicated) float WeaponDamage = 0.0f;
+    UPROPERTY(Replicated) float WeaponCooldown = 0.0f;
+    // Authority-only simulation internals below are never replicated.
     UPROPERTY() float CooldownRemaining = 0.0f;
     UPROPERTY() float PendingDamage = 0.0f;
-    UPROPERTY() bool bAttackable = false;
-    UPROPERTY() EPolitikaPrototypeOrder CurrentOrder = EPolitikaPrototypeOrder::Idle;
+    UPROPERTY(Replicated) bool bAttackable = false;
+    // Owner-only: an opponent sees movement and fire, not the issued order.
+    UPROPERTY(Replicated) EPolitikaPrototypeOrder CurrentOrder = EPolitikaPrototypeOrder::Idle;
     UPROPERTY() FVector OrderDestination = FVector::ZeroVector;
     // Route state belongs to this unit's current order and is advanced only by
     // APolitikaPrototypeMatch's authoritative fixed-step movement phase.
@@ -174,11 +286,20 @@ class POLITIKA_API APolitikaPrototypeObjective final : public AActor
     GENERATED_BODY()
 public:
     APolitikaPrototypeObjective();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     void ConfigureFromDefinition(const struct FPolitikaPrototypeObjectiveDefinition& Definition, uint32 LocalPlayerId);
+    // Presentation only (marker mesh, scale and tint); used by authority and observers.
+    void ConfigurePresentation(const struct FPolitikaPrototypeObjectiveDefinition& Definition);
+    // Teams allowed to capture. Offline this is only the local human's team (opponents
+    // contest); networked sessions allow every human seat's team.
+    void SetEligibleTeams(const TArray<uint8>& InTeams) { EligibleTeams = InTeams; }
     void UpdateCapture(const TArray<APolitikaPrototypeUnit*>& Units, float DeltaSeconds);
     float GetProgress() const { return Progress; }
     bool IsContested() const { return bContested; }
     bool IsComplete() const { return bComplete; }
+    uint32 GetCapturingPlayerId() const { return CapturingPlayerId; }
+    uint8 GetCapturingTeamId() const { return CapturingTeamId; }
+    bool HasMarkerPresentation() const;
     FText GetStatusText() const;
 #if !UE_BUILD_SHIPPING
     void SetAcceptanceCaptureDuration(float Seconds) { CaptureDuration = FMath::Max(Seconds, KINDA_SMALL_NUMBER); }
@@ -196,14 +317,20 @@ private:
     friend class FPolitikaProjectionDisplacementAutomationTest;
     friend class FPolitikaNavigationScheduleAutomationTest;
     friend class FPolitikaNavigationInterruptionAutomationTest;
+    friend class FPolitikaMultiplayerResultAndCleanupTest;
+    friend class FPolitikaMultiplayerFogOfWarTest;
 #endif
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Marker;
     UPROPERTY() float CaptureRadius = 0.0f;
     UPROPERTY() float CaptureDuration = 0.0f;
     UPROPERTY() uint32 LocalRuntimePlayerId = 0;
-    UPROPERTY() float Progress = 0.0f;
-    UPROPERTY() bool bContested = false;
-    UPROPERTY() bool bComplete = false;
+    TArray<uint8> EligibleTeams;
+    UPROPERTY(Replicated) float Progress = 0.0f;
+    UPROPERTY(Replicated) bool bContested = false;
+    UPROPERTY(Replicated) bool bComplete = false;
+    // First participant of the capturing team present when the capture began (attribution).
+    UPROPERTY(Replicated) uint32 CapturingPlayerId = 0;
+    UPROPERTY(Replicated) uint8 CapturingTeamId = 0;
 };
 
 UCLASS()
@@ -212,15 +339,50 @@ class POLITIKA_API APolitikaPrototypeMatch final : public AActor
     GENERATED_BODY()
 public:
     APolitikaPrototypeMatch();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaSeconds) override;
     const TArray<TObjectPtr<APolitikaPrototypeUnit>>& GetUnits() const { return Units; }
     APolitikaPrototypeObjective* GetObjective() const { return Objective; }
     APolitikaPrototypeUnit* GetSelectedUnitForPlayer(uint32 PlayerId);
     void SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
+    // Pointer adapter for the local controller and trusted test fixtures; it builds
+    // the same versioned intent and calls SubmitControllerIntent.
     bool SubmitLocalControllerCommand(APlayerController* Source, APolitikaPrototypeUnit* Unit,
         APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent);
+    // The single server-side command intake for host-local and remote input. Authority
+    // is derived from the connection binding; payload, freshness and entity IDs are
+    // validated before the existing typed admission pipeline. Returns false only when
+    // the source has no participant binding (no typed command is created).
+    bool SubmitControllerIntent(APlayerController* Source, const FPolitikaNetCommandIntent& Intent);
     bool IsLocalControllerBound(const APlayerController* Source) const;
+    // Server connection lifecycle. A binding is the only source of command authority.
+    bool BindController(APlayerController* Controller, FName& OutFailure);
+    void HandleControllerLogout(AController* Exiting);
+    bool CanAdmitRemoteParticipant(FName& OutReason) const;
+    uint32 GetBoundParticipantId(const APlayerController* Controller) const;
+    bool IsNetworkSession() const;
+    uint64 GetMatchGeneration() const { return MatchGeneration; }
+    APolitikaPrototypeUnit* FindUnitByStableId(uint64 StableId) const;
+    const class UPolitikaPrototypeContentCatalog* GetContentCatalog() const { return ContentCatalog; }
+    const TArray<FPolitikaNetParticipantInfo>& GetReplicatedParticipants() const { return ReplicatedParticipants; }
+    // Remote observer only: the participant assigned to this process by its server.
+    void SetLocalViewerParticipant(uint32 PlayerId);
+    // Session layout and alliances. Standalone matches give every participant its own team.
+    politika::rules::TeamLayout GetSessionLayout() const { return SessionLayout; }
+    int32 GetSessionSeatCount() const { return SessionSeatCount; }
+    uint8 GetTeamForParticipant(uint32 PlayerId) const;
+    uint8 GetLocalViewerTeam() const { return GetTeamForParticipant(LocalRuntimePlayerId); }
+    // Fog of war is enforced in networked sessions: server-computed team vision filters
+    // replication, target admission and acquisition. Offline play keeps full vision.
+    bool IsFogOfWarEnabled() const { return bFogOfWar; }
+    bool IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
+    // Relevancy query used by APolitikaPrototypeUnit::IsNetRelevantFor (server only).
+    bool IsUnitRelevantToViewer(const APolitikaPrototypeUnit* Unit, const AActor* RealViewer) const;
+    // Observer-side unit registry: clients only hold units their team currently observes.
+    void RegisterObservedUnit(APolitikaPrototypeUnit* Unit);
+    void UnregisterObservedUnit(APolitikaPrototypeUnit* Unit);
     void ReportRejectedCommand(const FString& Reason) { LastCommandFeedback = Reason; }
     FString GetLastCommandFeedback() const { return LastCommandFeedback; }
     const TArray<politika::rules::GameplayEvent>& GetPublishedEvents() const { return PublishedEvents; }
@@ -245,13 +407,89 @@ private:
     {
         FVector Start, End, Previous;
         uint32 Owner = 0;
+        uint8 Team = 0;
         float Elapsed = 0, Duration = 0, Height = 0, Damage = 0, Radius = 0;
         uint64 Generation = 0;
     };
     TArray<FInfantryProjectile> InfantryProjectiles;
     void LaunchGrenade(APolitikaPrototypeUnit* Unit, const FVector& Destination);
     void AdvanceGrenades(float DeltaSeconds);
+    // Server-only connection bindings. Never replicated; clients receive only their
+    // own owner-only assignment and the public roster.
+    struct FParticipantBinding
+    {
+        TWeakObjectPtr<APlayerController> Controller;
+        uint32 RuntimePlayerId = 0;
+        bool bRemote = false;
+        politika::rules::ClientSequenceGuard Sequence;
+    };
+    TArray<FParticipantBinding> ParticipantBindings;
+    struct FOutcomeRoute
+    {
+        TWeakObjectPtr<APlayerController> Controller;
+        uint32 ClientSequence = 0;
+        uint32 CorrelationId = 0;
+        uint64 Generation = 0;
+        uint8 RawOrderKind = 0;
+    };
+    TMap<uint64, FOutcomeRoute> OutcomeRoutes;
+    FParticipantBinding* FindBinding(const APlayerController* Controller);
+    const FParticipantBinding* FindBinding(const APlayerController* Controller) const;
+    FParticipantBinding* ResolveCommandBinding(APlayerController* Source);
+    void BindExistingControllers();
+    void RefreshUnitNetOwnership(uint32 PlayerId, APlayerController* Controller);
+    void SyncReplicatedParticipants();
+    void SyncReplicatedLifecycle();
+    void TryActivateNetworkMatch();
+    void TerminateForParticipantDisconnect(uint32 PlayerId);
+    void RouteCommandOutcome(const politika::rules::CommandOutcomeEvent& Outcome);
+    void RejectIntentAtIntake(APlayerController* Source, const FPolitikaNetCommandIntent& Intent,
+        uint32 ParticipantId, politika::rules::OrderRejection Rejection);
+    void ApplyMapPresentation();
+    bool ResolveSessionLayout(FName& OutFailure);
+    void UpdateTeamVisibility();
+    void ApplyLocalFogPresentation();
+    uint32 GetMaxRemoteHumans() const;
+    void InitializeObservedMatch();
+    void ApplyObservedPresentationToUnits();
+    UFUNCTION() void OnRep_MapDefinitionId();
+    UFUNCTION() void OnRep_Objective();
+    UFUNCTION() void OnRep_Lifecycle();
+    UFUNCTION() void OnRep_Participants();
+    UPROPERTY(ReplicatedUsing=OnRep_MapDefinitionId) FName ReplicatedMapId;
+    UPROPERTY(ReplicatedUsing=OnRep_Lifecycle) uint8 ReplicatedPhase = 0;
+    UPROPERTY(ReplicatedUsing=OnRep_Lifecycle) bool bReplicatedResultCommitted = false;
+    UPROPERTY(ReplicatedUsing=OnRep_Lifecycle) uint32 ReplicatedResultWinner = 0;
+    UPROPERTY(ReplicatedUsing=OnRep_Lifecycle) FName ReplicatedResultReason;
+    UPROPERTY(ReplicatedUsing=OnRep_Lifecycle) uint8 ReplicatedResultTeam = 0;
+    UPROPERTY(ReplicatedUsing=OnRep_Participants) TArray<FPolitikaNetParticipantInfo> ReplicatedParticipants;
+    // Session policy mirrored to observers for presentation (HUD layout/fog labels).
+    UPROPERTY(ReplicatedUsing=OnRep_Participants) uint8 ReplicatedLayout = 0;
+    UPROPERTY(ReplicatedUsing=OnRep_Participants) bool bReplicatedFogOfWar = false;
+    politika::rules::TeamLayout SessionLayout = politika::rules::TeamLayout::OneVsOne;
+    int32 SessionSeatCount = 0;
+    bool bFogOfWar = false;
+    bool bAwaitingNetworkParticipants = false;
+    bool bObservedContentReady = false;
+    bool bMapPresentationApplied = false;
+    FTimerHandle NetworkReturnTimer;
+#if !UE_BUILD_SHIPPING
+    // Development multiplayer acceptance: server-side fixture actors and sampling.
+    bool bMultiplayerAcceptance = false;
+    bool bMultiplayerFixtureSpawned = false;
+    uint64 LastMultiplayerSampleStep = 0;
+    double LastObserverSampleSeconds = 0.0;
+    void BeginMultiplayerAcceptance();
+    void SampleMultiplayerState(const TCHAR* Reason);
+    void SampleObservedState(const TCHAR* Reason);
+#endif
 #if WITH_DEV_AUTOMATION_TESTS
+    friend class FPolitikaMultiplayerParticipantBindingTest;
+    friend class FPolitikaMultiplayerCommandIntakeTest;
+    friend class FPolitikaMultiplayerAuthorityOnlySimulationTest;
+    friend class FPolitikaMultiplayerResultAndCleanupTest;
+    friend class FPolitikaMultiplayerFogOfWarTest;
+    friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaGameplayEventPublicationAutomationTest;
     friend class FPolitikaDefaultInfantryAutomationTest;
     friend class FPolitikaCommandCoordinatorAcceptanceAutomationTest;
@@ -278,8 +516,11 @@ private:
         FVector Destination = FVector::ZeroVector;
         EPolitikaPrototypeOrder Kind = EPolitikaPrototypeOrder::Idle;
     };
+    // Authority: every live match unit. Observer: only units its connection currently
+    // receives (fog-filtered); membership follows unit BeginPlay/EndPlay. Not replicated,
+    // so the array size cannot reveal hidden enemy counts.
     UPROPERTY() TArray<TObjectPtr<APolitikaPrototypeUnit>> Units;
-    UPROPERTY() TObjectPtr<APolitikaPrototypeObjective> Objective;
+    UPROPERTY(ReplicatedUsing=OnRep_Objective) TObjectPtr<APolitikaPrototypeObjective> Objective;
     UPROPERTY() TMap<uint32, TWeakObjectPtr<APolitikaPrototypeUnit>> SelectionByPlayer;
     UPROPERTY() FString LastCommandFeedback = TEXT("Select a friendly unit; right-click ground or an enemy to issue an order.");
     TArray<FPolitikaContentDiagnostic> LastAdmissionDiagnostics;
@@ -302,15 +543,18 @@ private:
     FPolitikaPrototypeGameplayEventPublished GameplayEventPublished;
     uint64 NextStableId = 1;
     uint64 NextCommandSequence = 1;
-    uint64 MatchGeneration = 1;
+    UPROPERTY(Replicated) uint64 MatchGeneration = 1;
     void BuildScenario();
     // Trusted coordinator/test entry points; ordinary input must use the controller-bound method above.
     void SubmitMove(uint32 PlayerId, APolitikaPrototypeUnit* Unit, const FVector& Destination, bool bAttackMove = false);
     void SubmitAttack(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target);
     void SubmitStop(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
     void SubmitGuard(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
-    void SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
-        const politika::rules::Order& Intent);
+    // Returns the assigned server sequence. RequestedIssuerId/CorrelationId and the
+    // generation hint are supplied by the controller intake; trusted callers omit them.
+    uint64 SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
+        const politika::rules::Order& Intent, uint64 RequestedIssuerId = 0, uint64 CorrelationId = 0,
+        TOptional<uint64> GenerationHint = {});
     bool IsCommandableUnit(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
     static bool BuildRuntimeParticipantsFromSlots(const UPolitikaPrototypeMapDefinition& Definition,
         TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants, uint32& OutLocalRuntimePlayerId,
@@ -461,6 +705,33 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class APolitikaPrototypeMatch;
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaMatchParticipantsAuthorityAutomationTest;
+    friend class FPolitikaMultiplayerParticipantBindingTest;
+    friend class FPolitikaMultiplayerCommandIntakeTest;
+    friend class FPolitikaMultiplayerAuthorityOnlySimulationTest;
+    friend class FPolitikaMultiplayerResultAndCleanupTest;
+    friend class FPolitikaMultiplayerFogOfWarTest;
+    friend struct FPolitikaMultiplayerFixture;
+#endif
+public:
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    // Owner-only replicated assignment, written by the server when it binds this
+    // connection. It labels the local view; the server never trusts it for authority.
+    uint32 GetAssignedRuntimePlayerId() const { return AssignedRuntimePlayerId; }
+    int32 GetAssignedSlotId() const { return AssignedSlotId; }
+    FName GetAssignedFactionId() const { return AssignedFactionId; }
+    void SetServerAssignment(uint32 RuntimePlayerId, int32 SlotId, FName FactionId, uint64 Generation);
+    void ClearServerAssignment();
+    // The only network command ingress. Host-local calls execute directly on authority.
+    UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
+    UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    virtual void ClientWasKicked_Implementation(const FText& KickReason) override;
+    // The host/standalone seat controller (has a ULocalPlayer on this process).
+    bool IsLocalSeatController() const;
+#if WITH_DEV_AUTOMATION_TESTS
+    // Automation-only: a spawned controller in a listen world is remote unless marked as
+    // the host's local seat (a real host gets this from its ULocalPlayer).
+    void MarkLocalControllerForTest() { bTestLocalSeat = true; }
+    bool bTestLocalSeat = false;
 #endif
 protected:
     virtual void BeginPlay() override;
@@ -469,6 +740,25 @@ protected:
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> SelectedUnit;
+    UPROPERTY(ReplicatedUsing=OnRep_Assignment) uint32 AssignedRuntimePlayerId = 0;
+    UPROPERTY(Replicated) int32 AssignedSlotId = 0;
+    UPROPERTY(Replicated) FName AssignedFactionId;
+    UPROPERTY(Replicated) uint64 AssignedMatchGeneration = 0;
+    UFUNCTION() void OnRep_Assignment();
+    uint32 NextClientSequence = 1;
+    uint32 NextCorrelationId = 1;
+    bool SubmitIntent(APolitikaPrototypeMatch* ActiveMatch, APolitikaPrototypeUnit* Unit,
+        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order);
+    void ShowLocalFeedback(const FString& Feedback);
+#if !UE_BUILD_SHIPPING
+    // Development-only hostile-input probe: sends forged intents through the real RPC.
+    bool bHostileProbeEnabled = false;
+    bool bHostileProbeSent = false;
+    bool bPostTerminalProbeSent = false;
+    double HostileProbeArmedSeconds = 0.0;
+    void TickHostileProbe();
+    void SendProbeIntent(const TCHAR* Name, FPolitikaNetCommandIntent Intent, bool bAdvanceSequence = true);
+#endif
     bool bMapCameraApplied = false;
 #if !UE_BUILD_SHIPPING
     bool bAcceptancePanForwardLogged = false;
@@ -490,7 +780,7 @@ private:
     void Zoom(float Value);
     void ApplyMapCameraIfReady();
     APolitikaPrototypeMatch* ResolveMatch();
-    uint32 GetCommandPlayerId() const { return Match.IsValid() ? Match->GetLocalRuntimePlayerId() : 0; }
+    uint32 GetCommandPlayerId() const;
 };
 
 UCLASS()
@@ -498,13 +788,15 @@ class POLITIKA_API APolitikaPrototypeHUD final : public AHUD
 {
     GENERATED_BODY()
 public:
+    APolitikaPrototypeHUD();
     void AttachMatch(APolitikaPrototypeMatch* InMatch);
     virtual void DrawHUD() override;
+    // Only the owning controller's own correlated outcomes reach this HUD.
+    void ShowCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    void ShowLocalFeedback(const FString& Feedback) { CommandFeedback = Feedback; }
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
-    FDelegateHandle GameplayEventHandle;
     FString CommandFeedback;
-    void HandleGameplayEvent(const politika::rules::GameplayEvent& Event);
 };
 
 UCLASS()
@@ -514,4 +806,12 @@ class POLITIKA_API APolitikaPrototypeGameMode final : public AGameModeBase
 public:
     APolitikaPrototypeGameMode();
     virtual void StartPlay() override;
+    // Listen-server admission: version and capacity are checked before a
+    // PlayerController exists; PostLogin binds, Logout revokes.
+    virtual void PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId,
+        FString& ErrorMessage) override;
+    virtual void PostLogin(APlayerController* NewPlayer) override;
+    virtual void Logout(AController* Exiting) override;
+private:
+    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> ActiveMatch;
 };

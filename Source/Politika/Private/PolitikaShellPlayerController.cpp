@@ -45,6 +45,7 @@ void APolitikaShellPlayerController::BeginPlay()
     FSlateApplication::Get().SetKeyboardFocus(PrimaryAction, EFocusCause::SetDirectly);
     FPolitikaBootstrap::Get().LogEvent(TEXT("ui_ready"), TEXT("Ready"), TEXT("ok"), TEXT("None"),
         GetWorld()->GetAuthGameMode<APolitikaOfflineGameMode>() ? TEXT("offline_sandbox") : TEXT("main_menu"));
+    if (UPolitikaGameInstance* Game = GetGameInstance<UPolitikaGameInstance>()) Game->OnShellReady(this);
 }
 
 void APolitikaShellPlayerController::EndPlay(const EEndPlayReason::Type Reason)

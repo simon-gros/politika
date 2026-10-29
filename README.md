@@ -98,7 +98,12 @@ The planned campaign presents faction-specific missions within a shared 1984–1
 
 Skirmish is intended to provide self-contained battles against AI opponents, independent of the campaign's fixed ending. Matches include a persistent Unaligned world authority alongside the selected playable factions. Match composition and faction-slot rules are covered in [Match Structure](Docs/MATCH_STRUCTURE.md).
 
-**Multiplayer is an immediate development priority**: the team will audit and adapt existing RTS code for server authority, build an early two-client networked vertical slice, and then support up to four humans through player-hosted and dedicated-server modes. Multiplayer is **not yet implemented, verified or promised for a particular release**. The audit is the first required implementation task, with a playable two-client proof targeted before the complete skirmish/campaign (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. Offline-first campaign and skirmish must remain available without mandatory internet access, external accounts, or sign-in. This constraint does not postpone the parallel networking work.
+**Multiplayer is an immediate development priority**: the team will audit and adapt existing RTS code for server authority, build an early two-client networked vertical slice, and then support up to four humans through player-hosted and dedicated-server modes. **Current evidence (29 October 2026):** the MP-1 networked foundation is implemented.
+- **What it is.** A listen server plus remote clients over Unreal IP networking, server-only simulation, connection-bound seats, one command intake, and team fog of war.
+- **Layouts.** 1v1, 2v1, 3v1 and 2v2, each with the Unaligned NPC side.
+- **Qualified so far.** Two packaged Linux Development processes over loopback (1v1). Larger layouts are Automation-tested only.
+
+Public multiplayer is **not released, verified across machines, or promised for a particular release**; see the [MP-1 acceptance record](Docs/RTS_MULTIPLAYER_FOUNDATION_ACCEPTANCE.md). *Earlier wording, kept for history:* Multiplayer is **not yet implemented, verified or promised for a particular release**. The audit is the first required implementation task, with a playable two-client proof targeted before the complete skirmish/campaign (see [Multiplayer Architecture](Docs/RTS_MULTIPLAYER_ARCHITECTURE.md)). Scenario/editor support remains a possible later extension. Offline-first campaign and skirmish must remain available without mandatory internet access, external accounts, or sign-in. This constraint does not postpone the parallel networking work.
 
 ## Technology and interface
 

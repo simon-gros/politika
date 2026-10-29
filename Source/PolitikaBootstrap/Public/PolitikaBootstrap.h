@@ -33,6 +33,8 @@ public:
     const TArray<FPolitikaStartupIssue>& Issues() const { return StartupIssues; }
     const FString& RunId() const { return CorrelationId; }
     const FString& GameVersion() const { return Version; }
+    /** network_protocol from version.json; the on-wire compatibility key for sessions. */
+    int64 NetworkProtocol() const;
     bool UsesTransientSettings() const { return bTransientSettings; }
     bool IsApplicationRun() const { return bApplicationRun; }
     void AddIssue(const TCHAR* Code, const FText& Message);

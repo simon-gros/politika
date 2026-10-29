@@ -165,6 +165,134 @@ int main() {
     for (std::size_t Index = 0; Index < std::size(kSimulationPhases); ++Index)
         assert(kSimulationPhases[Index] == ExpectedPhases[Index]);
 
+    // Remote intent payloads decode to exactly one existing typed order. They
+    // carry no participant/owner field; malformed shapes fail before admission.
+    static_assert(kOrderKindCount == 8);
+    static_assert(static_cast<std::uint8_t>(OrderRejection::AbilityUnavailable) == 14);
+    static_assert(static_cast<std::uint8_t>(OrderRejection::MalformedCommand) == 15);
+    static_assert(static_cast<std::uint8_t>(OrderRejection::DuplicateCommand) == 16);
+    static_assert(static_cast<std::uint8_t>(OrderRejection::RateLimited) == 17);
+    Order decoded = StopOrder{};
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Move), 0, 40, 70}, decoded));
+    assert(std::holds_alternative<MoveOrder>(decoded) && std::get<MoveOrder>(decoded).destination.x == 40);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::AttackMove), 0, 5, 6}, decoded)
+        && std::holds_alternative<AttackMoveOrder>(decoded));
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Attack), 9, 0, 0}, decoded)
+        && std::get<AttackOrder>(decoded).target_id == 9);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Grenade), 9, 0, 0}, decoded)
+        && std::get<GrenadeOrder>(decoded).target_id == 9);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Stop), 0, 0, 0}, decoded)
+        && std::holds_alternative<StopOrder>(decoded));
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Guard), 0, 0, 0}, decoded)
+        && std::holds_alternative<GuardOrder>(decoded));
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Reload), 0, 0, 0}, decoded)
+        && std::holds_alternative<ReloadOrder>(decoded));
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Sprint), 0, 0, 0}, decoded)
+        && std::holds_alternative<SprintOrder>(decoded));
+    const Order beforeRejectedDecode = decoded;
+    assert(DecodeIntent({kOrderKindCount, 0, 0, 0}, decoded).rejection == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({250, 0, 0, 0}, decoded).rejection == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Move), 0, std::nan(""), 1}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Move), 0, 1, INFINITY}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Move), 3, 1, 1}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Attack), 3, 1, 0}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Stop), 3, 0, 0}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Guard), 0, 0, 2}, decoded).rejection
+        == OrderRejection::MalformedCommand);
+    assert(decoded.index() == beforeRejectedDecode.index());
+    // A decoded, finite but out-of-map destination is still rejected by the shared bounds rule.
+    assert(DecodeIntent({static_cast<std::uint8_t>(OrderKind::Move), 0, 1.0e6, 1.0e6}, decoded));
+    assert(AdmitOrder(own, 2, {100, 100}, decoded).rejection == OrderRejection::InvalidTarget);
+
+    // Client sequences are single-use and monotonic per bound connection.
+    ClientSequenceGuard guard;
+    assert(guard.Consume(0).rejection == OrderRejection::MalformedCommand && guard.last_seen == 0);
+    assert(guard.Consume(1) && guard.last_seen == 1);
+    assert(guard.Consume(1).rejection == OrderRejection::DuplicateCommand);
+    assert(guard.Consume(5) && guard.last_seen == 5);
+    assert(guard.Consume(4).rejection == OrderRejection::DuplicateCommand && guard.last_seen == 5);
+    assert(guard.Consume(6));
+
+    // Team layouts: 2-4 seats, two teams, host seat 0 and seat 1 always opposed.
+    static_assert(static_cast<std::uint8_t>(OrderRejection::TargetNotVisible) == 18);
+    static_assert(SeatCount(TeamLayout::OneVsOne) == 2 && SeatCount(TeamLayout::TwoVsOne) == 3);
+    static_assert(SeatCount(TeamLayout::ThreeVsOne) == 4 && SeatCount(TeamLayout::TwoVsTwo) == 4);
+    constexpr TeamLayout AllLayouts[] = {TeamLayout::OneVsOne, TeamLayout::TwoVsOne,
+        TeamLayout::ThreeVsOne, TeamLayout::TwoVsTwo};
+    constexpr int ExpectedTeamA[] = {1, 2, 3, 2};
+    constexpr int ExpectedTeamB[] = {1, 1, 1, 2};
+    for (std::size_t Index = 0; Index < std::size(AllLayouts); ++Index) {
+        const TeamLayout Layout = AllLayouts[Index];
+        assert(SeatCount(Layout) <= kMaxPlayableSeats);
+        assert(TeamForSeat(Layout, 0) == kTeamA && TeamForSeat(Layout, 1) == kTeamB);
+        int TeamA = 0, TeamB = 0;
+        for (std::uint8_t Seat = 0; Seat < kMaxPlayableSeats + 2; ++Seat) {
+            const std::uint8_t Team = TeamForSeat(Layout, Seat);
+            if (Seat >= SeatCount(Layout)) { assert(Team == kNoTeam); continue; }
+            assert(Team == kTeamA || Team == kTeamB);
+            (Team == kTeamA ? TeamA : TeamB) += 1;
+        }
+        assert(TeamA == ExpectedTeamA[Index] && TeamB == ExpectedTeamB[Index]);
+        TeamLayout Parsed = TeamLayout::TwoVsTwo;
+        assert(ParseTeamLayout(LayoutName(Layout), Parsed) && Parsed == Layout);
+    }
+    assert(TeamForSeat(static_cast<TeamLayout>(9), 0) == kNoTeam);
+    TeamLayout Unparsed = TeamLayout::TwoVsOne;
+    assert(!ParseTeamLayout("", Unparsed) && !ParseTeamLayout("4v1", Unparsed) && !ParseTeamLayout("1v1 ", Unparsed)
+        && !ParseTeamLayout("3v2", Unparsed) && Unparsed == TeamLayout::TwoVsOne);
+
+    // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.
+    static_assert(AreAllied(1, kTeamA, 1, kTeamA) && AreAllied(1, kTeamA, 3, kTeamA));
+    static_assert(!AreAllied(1, kTeamA, 2, kTeamB) && !AreAllied(1, kNoTeam, 2, kNoTeam));
+    static_assert(!AreAllied(1, kTeamA, 0, kNoTeam) && AreAllied(2, kNoTeam, 2, kNoTeam));
+    // The Unaligned is its own side in every layout: never allied to a seat team,
+    // explicitly attackable, but never auto-engaged in either direction.
+    static_assert(!AreAllied(1, kTeamA, 0, kUnalignedTeam) && !AreAllied(0, kUnalignedTeam, 2, kTeamB));
+    static_assert(AreAllied(0, kUnalignedTeam, 0, kUnalignedTeam));
+    static_assert(CanAutoEngage(1, kTeamA, 2, kTeamB) && !CanAutoEngage(1, kTeamA, 3, kTeamA));
+    static_assert(!CanAutoEngage(1, kTeamA, 0, kUnalignedTeam) && !CanAutoEngage(0, kUnalignedTeam, 2, kTeamB));
+    static_assert(CanAutoEngage(1, kNoTeam, 0, kNoTeam)); // team-less legacy fixtures keep owner rules
+    for (const TeamLayout Layout : AllLayouts)
+        for (std::uint8_t Seat = 0; Seat < kMaxPlayableSeats; ++Seat)
+            assert(TeamForSeat(Layout, Seat) != kUnalignedTeam);
+    Entity HostUnit{11, 1}; HostUnit.team = kTeamA;
+    Entity AllyUnit{12, 3}; AllyUnit.team = kTeamA;
+    Entity EnemyUnit{13, 2}; EnemyUnit.team = kTeamB;
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{12}, &AllyUnit).rejection == OrderRejection::FriendlyTarget);
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, GrenadeOrder{12}, &AllyUnit).rejection == OrderRejection::FriendlyTarget);
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{13}, &EnemyUnit));
+    assert(AdmitOrder(AllyUnit, 1, {100, 100}, StopOrder{}).rejection == OrderRejection::NotOwned);
+    Entity UnalignedUnit{14, 0}; UnalignedUnit.team = kUnalignedTeam;
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{14}, &UnalignedUnit));
+    assert(AdmitOrder(UnalignedUnit, 1, {100, 100}, StopOrder{}).rejection == OrderRejection::NotOwned);
+    assert(AdmitOrder(UnalignedUnit, 0, {100, 100}, StopOrder{}).rejection == OrderRejection::NotOwned);
+
+    // Fog of war: an unobserved target is rejected before liveness, so a hidden live
+    // unit and a hidden dead/unknown unit are indistinguishable to the requester.
+    Entity HiddenEnemy = EnemyUnit; HiddenEnemy.observed = false;
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{13}, &HiddenEnemy).rejection == OrderRejection::TargetNotVisible);
+    HiddenEnemy.alive = false;
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{13}, &HiddenEnemy).rejection == OrderRejection::TargetNotVisible);
+    Entity DeadVisible = EnemyUnit; DeadVisible.alive = false;
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, AttackOrder{13}, &DeadVisible).rejection == OrderRejection::MissingTarget);
+    // Move/stop orders never depend on target knowledge.
+    assert(AdmitOrder(HostUnit, 1, {100, 100}, MoveOrder{{10, 10}}, &HiddenEnemy));
+
+    const VisionSource Sources[] = {
+        {kTeamA, {0, 0}, 100.0}, {kTeamA, {500, 0}, 0.0}, {kTeamB, {1000, 0}, 300.0}};
+    assert(IsObservedBy(kTeamA, {60, 80}, Sources));           // exactly on the radius
+    assert(!IsObservedBy(kTeamA, {60, 81}, Sources));
+    assert(!IsObservedBy(kTeamA, {500, 0}, Sources));          // zero-radius source sees nothing
+    assert(IsObservedBy(kTeamB, {800, 0}, Sources) && !IsObservedBy(kTeamA, {800, 0}, Sources));
+    assert(!IsObservedBy(kNoTeam, {0, 0}, Sources));           // no team, no shared vision
+    assert(!IsObservedBy(kTeamA, {std::nan(""), 0}, Sources));
+    assert(!IsObservedBy(kTeamA, {0, 0}, std::span<const VisionSource>{}));
+
     // Spending is atomic, never accepts negative costs, and never overdrafts.
     ResourcePool balance{10, 5, 1};
     assert(TrySpend(balance, {3, 2, 0}));

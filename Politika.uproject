@@ -5,7 +5,8 @@
   "Description": "POLITIKA offline-first RTS",
   "DisableEnginePluginsByDefault": true,
   "Plugins": [
-    { "Name": "InterchangeEditor", "Enabled": true }
+    { "Name": "InterchangeEditor", "Enabled": true },
+    { "Name": "OnlineSubsystemUtils", "Enabled": true }
   ],
   "Modules": [
     { "Name": "PolitikaBootstrap", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
