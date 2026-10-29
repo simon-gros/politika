@@ -3,6 +3,7 @@
 **Date:** 29 October 2026 · **Scope:** the sixth MP-2 increment of [Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) §9. The [network conditions record](RTS_MULTIPLAYER_MP2_NETWORK_CONDITIONS_ACCEPTANCE.md) closed audit finding F36 at fixture scale only (5–9 units) and left "unit-scale budgets" open. This increment measures per-connection bandwidth and authoritative step cost at RTS unit counts (52 to 802 units) in packaged dedicated sessions. It also supplies the measurement that [Unit Specification Framework](UNIT_SPECIFICATION_FRAMEWORK.md) decision **U-12** (technical per-participant entity cap) waits for.
 
 **Outcome: IMPLEMENTED; packaged measurement PASS for the stated scope. Finding F44 was found and mitigated the same day (§G); F45 is open.**
+- **Map scope (owner clarification, §I):** the multiplayer skirmish test map holds at most **20 units per participant**. The 25–300 per-seat runs in §C, §G and §H pack far more onto it than it is meant to carry. They remain valid as synthetic replication and step-cost stress data, not as evidence for the 300-per-participant game limit, which needs a large map.
 - Every run spawned the requested units, admitted every order, replicated exactly what each team sees, kept shot cues fog-safe, and stayed inside the 50 ms step budget at p99, with no catch-up frames.
 - **F44 (mitigated in `af643d0`):** per-unit movement replication filled the engine's default 100 KB/s per-connection send rate at about 400 units in a converged fight. The headroom gate failed at 1v1 × 200, 2v2 × 100 and 2v2 × 200 per seat (the three FAIL rows in §D). With the send rate raised to 400 KB/s, all 65 checks pass, up to 802 units (§G). Listen-host upload and per-unit cost remain open.
 - **F45 (open):** the step that admits a whole-army order spends about 30–70 µs per order on route queries. At 800 orders that one step takes 56 ms, longer than one 50 ms step.
@@ -147,6 +148,8 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
   --unit-scale $S $C --layouts 1v1,2v2 --units 25,50,100,200 --evidence <DIR> --port 19200
 ```
 
+Since `cf60cc9` the fixture and harness accept at most 20 per seat (the skirmish test map cap); the 25–300 commands above no longer run. Current form: `--unit-scale $S $C --layouts 1v1,2v2,3v1 --units 5,10,20` (§I).
+
 `$Q/after-package.sh` runs the identity check and the sweep. `$Q/automation-and-matrix.sh` runs Automation and the regression matrix in `$Q/run-matrix.sh`.
 
 ## F. Findings, U-12 and next work
@@ -165,6 +168,7 @@ cargo run --locked --release --manifest-path Tools/Shell/Cargo.toml --bin rts_mu
   - A real multi-unit command (see below) would hit the same spike.
   - Candidate remedies: spread route resolution over several steps with an ordered budget per step, or share one route per group with formation offsets.
 - **U-12 measurement (owner decision).**
+  - *Superseded by §I: 300 per participant is the game-wide limit for large maps; this skirmish test map holds at most 20 per participant and is qualified at that cap.*
   - With current replication, a match whose armies converge stays under 80 % of the send rate at about 260 units in total. Measured passing points: 1v1 at 100 per seat (202 units, 54 %) and 2v2 at 50 per seat (202 units, 61 %).
   - Proposed provisional technical cap until F44 is fixed: **50 units per participant**. That keeps 2v2 and 3v1 at or below about 200 units total. 3v1 and 2v1 are not run here (inferred from total units). *Superseded by §G: with the 400 KB/s send rate, the proposal is 100 per participant.*
   - The step budget is not the binding limit at these counts. Bandwidth is.
@@ -209,6 +213,8 @@ The owner chose to raise the bandwidth cap. `Config/DefaultEngine.ini` now sets 
 
 ## H. 300 per participant (`f8d86ed`)
 
+*Superseded by §I. The owner clarified that 300 per participant is the absolute game-wide limit for the largest maps, not a target for this small skirmish test map, which holds at most 20 per participant. The runs below are over-density stress data on the wrong map, not U-12 qualification evidence. F46 is resolved by the 20-per-seat cap and a fail-closed spawn-gap guard (§I).*
+
 The owner set U-12 to **300 units per participant**. `f8d86ed` raises the fixture limit (`kMaxUnitsPerSeat` 200 → 300) so the packaged sweep can measure that cap. The harness range and the out-of-range refusal (now 301) follow. No gameplay code, config or replicated state changed; `network_protocol` stays 2.
 
 **Identity:** packages from clean commit `f8d86ed`, `git_dirty=false`, protocol 2. Client `dev-f8d86ed/…/Politika` `08524c16f076dee04e923d6c2f61e41d2212d3cbcb1cf474caec00be60b28f5c`; server `server-f8d86ed/…/PolitikaServer` `e2e066cbd26ac179f05f6f06e8e3a47603f094d8928fc14bf2d34ead2b771514`. Every connection logged `net_speed=400000`. Evidence: `final-f8d86ed/unit-scale/`. Editor build and both packages exit 0.
@@ -238,3 +244,34 @@ The owner set U-12 to **300 units per participant**. `f8d86ed` raises the fixtur
 - The owner decision stands as the design target. The technical evidence supports 300 per participant only for 1v1 today, and 100 per participant for four-seat layouts (§G).
 
 **Next.** Fix F46 (fail-closed gap guard, room for 300 per seat in four-seat layouts) and rerun 2v2 and 3v1. Then profile the 1 200-unit engage step, and address F45 (spread route resolution over steps, or one route per group).
+
+## I. Skirmish test map at its 20-per-participant cap (`cf60cc9`)
+
+**Owner clarification (U-12).** 300 units per participant is the **absolute game-wide limit**, intended for the largest maps. The multiplayer skirmish test map is small and holds **at most 20 units per participant**. §H wrongly used the game limit as the test map's target.
+
+**Change (`cf60cc9`, Development fixture and harness only).**
+- `UnitScale.h`: `kMaxUnitsPerSeat` is now **20**, the test map limit and the only map the fixture runs on. A separate `kGameMaxUnitsPerParticipant = 300` records the game limit, and a `static_assert` keeps the fixture cap at or below it.
+- **F46 closed.** The fixture now fails closed (`MP.UNIT_SCALE.OPPOSING_GAP`, no units added) when any two opposing units would spawn closer than `kMinOpposingGapCm` = 900 cm, the 800 cm infantry idle acquisition range plus a margin. At 20 per seat the smallest gap is 1 450 cm (3v1), so the guard does not trigger in this sweep; the rejection path is not exercised by a packaged run.
+- Harness defaults: `--layouts 1v1,2v2,3v1 --units 5,10,20`. `--units` rejects anything above 20. The out-of-range refusal now uses 21.
+- No gameplay code, config or replicated state changed; `network_protocol` stays 2.
+
+**Identity.** Client `dev-cf60cc9/…/Politika` `2bbd03726eb3f79dd2d355f29fd921c03721d6ea39d854ecf836487180da8caf`; server `server-cf60cc9/…/PolitikaServer` `a39d22754f08e778e7062dd0f3e4ec24f3059ac32aa6c40c80b54704f57816d5`; protocol 2. `BuildIdentity.json` records `cf60cc943c19-dirty`: the only uncommitted change while packaging was this Markdown record, so the packaged source equals `cf60cc9`. Editor build, both packages, `tools/core-test.sh` and the quality audit exit 0. Evidence: `final-cf60cc9/unit-scale/`.
+
+**Automation at `cf60cc9`: 36/36** (all succeeded with warnings, as before), `automation-cf60cc9/`.
+
+**Sweep: 73 PASS, 0 other** (`final-cf60cc9/unit-scale.out`). 21 per seat is refused (exit 3, no session or units).
+
+| Layout × per seat | Units | Min opposing gap | Busiest second | Idle p99 | Engage p99 / max | Admission step | Destroyed before order |
+|---|---|---|---|---|---|---|---|
+| 1v1 × 5 / 10 / 20 | 12 / 22 / 42 | 2 837 / 2 642 / 2 506 cm | 4.9 / 7.5 / 13.3 KB/s | 0.04 / 0.05 / 0.08 ms | 0.4 / 0.8 / 1.2 ms (max 2.0) | 0.3 / 0.6 / 1.2 ms | 0 |
+| 2v2 × 5 / 10 / 20 | 22 / 42 / 82 | 2 639 / 2 524 / 2 413 cm | 8.0 / 13.7 / 25.4 KB/s | 0.06 / 0.11 / 0.75 ms | 0.6 / 1.2 / 1.5 ms (max 2.2) | 0.6 / 0.9 / 2.2 ms | 0 |
+| 3v1 × 5 / 10 / 20 | 22 / 42 / 82 | 1 662 / 1 553 / 1 450 cm | 8.0 / 13.4 / 24.9 KB/s | 0.05 / 0.08 / 0.32 ms | 0.5 / 0.9 / 1.4 ms (max 2.3) | 0.6 / 1.2 / 2.3 ms | 0 |
+
+- At its cap (82 units in four-seat layouts) the test map uses at most 6 % of the 400 KB/s send rate and under 5 % of the 50 ms step budget. No catch-up frames; the rendered client's frame p95 stays at about 33 ms (Xvfb, fact only).
+- F45 is negligible at this scale (2.3 ms for 80 orders) but remains open for large maps.
+
+**U-12 status.**
+- **Skirmish test map, 20 per participant: packaged-qualified** in 1v1, 2v2 and 3v1 on a dedicated server over loopback.
+- **Game limit, 300 per participant: design limit, not qualified.** It needs a large map. The over-density runs in §C, §G and §H (up to 1 202 units packed onto this map) are only synthetic stress data: they suggest bandwidth is not binding at the 400 KB/s rate, and that server step cost (2v2 engage p99 54.7 ms at 1 202 units) and F45 will be the limits to address before large-map qualification.
+
+**Next.** A large-map fixture for the 300-per-participant limit once a large map exists; F45 remedy before then.

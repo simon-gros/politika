@@ -68,7 +68,7 @@ Priority reflects what blocks implementation or the first playtest of the Core r
 | U-02 | Armor and damage taxonomy acceptance | Adopt framework §6 for Core; tune by playtest | Gameplay |
 | U-03 | Nav-agent profiles and terrain classes | FOOT, WHEEL, TRACKED, TRACKED_HEAVY plus water layers; terrain areas in map schema v2 | Navigation |
 | U-05 | Food shortage penalty | −20 % cooldown speed and no Discipline recovery | Economy |
-| U-12 | Per-participant entity cap | Measured: 802 units pass on a dedicated server at the 400 KB/s send rate; proposed provisional 100 per participant ([record](../RTS_MULTIPLAYER_MP2_UNIT_SCALE_ACCEPTANCE.md)) | Performance / MP |
+| U-12 | Per-participant entity cap | Owner decision: 300 per participant game-wide (large maps, not yet qualified); skirmish test map 20 per participant, packaged-qualified at `cf60cc9` ([record](../RTS_MULTIPLAYER_MP2_UNIT_SCALE_ACCEPTANCE.md)) | Performance / MP |
 | U-14 | Commander eligibility of IA-INF-13 and MP-INF-13 | Approve both; fallbacks U-IA-05 and U-MP-08 | Design |
 
 **P2: needed before the Extended roster and multiplayer balance**
