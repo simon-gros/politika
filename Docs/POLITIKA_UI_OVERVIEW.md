@@ -9,6 +9,8 @@ Platform targets: Linux, Windows, SteamOS/Steam Deck and Android; console/Apple 
 
 **Detailed settings/input implementation guide (29 October 2026):** [Practical RTS UI, Settings and Keymap](RTS_UI_SETTINGS_AND_KEYMAP.md) records the exact source-backed current controls (including the current A/S camera-and-order collisions), suggested conflict-free default profile, real video preview/revert transactions, UI versus render scale, audio bus categories, input mapping/help, menu hierarchy, and staged tests. This document remains the authority for overall UI product design and faction presentation; the linked guide is a proposed engineering contract, **not a working settings screen or remappable keymap**.
 
+**HUD-specific design authority (29 October 2026):** [RTS HUD Architecture](RTS_HUD_ARCHITECTURE.md) defines the comparative RTS design rationale, HUD semantic ontology, module/widget contracts, participant-safe presentation, technical seams and HUD-01–HUD-11 implementation slices with HUD-01–HUD-13 proposed test IDs. It is **design-only**; this overview retains product/visual direction and does not imply a UMG-based interactive HUD is built.
+
 **Cross-system boundary (29 October 2026):** The [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) specification owns authoritative selection membership, per-unit group submission and rejected-order semantics. [Visibility and Intelligence](RTS_VISIBILITY_AND_INTELLIGENCE.md) owns per-participant observable state; this UI must render that view rather than unfiltered simulation truth. [RTS Systems Completeness Matrix](RTS_SYSTEMS_COMPLETENESS_MATRIX.md) records which behaviors remain design-only. These links do not qualify a new UI feature or plugin.
 
 ## 1. Product direction
@@ -172,6 +174,8 @@ This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTL
 ## 9. UI implementation baseline and staged slices
 
 **Verified baseline (27 October 2026):** the [First RTS Vertical Slice](RTS_VERTICAL_SLICE_MILESTONE.md) has scoped Linux Development package acceptance for a camera, single-unit selection, move/attack (and related guard/stop) orders, two visible archetypes, health/death, command feedback, a read-only objective/selection HUD, and a default main-menu route. Its rendered checks include 3840×2160 keyboard/mouse interaction and selected negative-command/objective cases. This evidence **does not** establish a complete minimap, multi-selection, control groups, production HUD, fog-of-war, native UMG/CommonUI implementation, working campaign save/load, controller/touch gameplay, or Windows/SteamOS/Android qualification. The existing shell/early tactical UI may remain Slate/C++ until a measured migration is justified.
+
+**HUD implementation coordination:** The [dedicated HUD contract](RTS_HUD_ARCHITECTURE.md#8-dependency-ordered-hud-roadmap-new-work-packages-not-established-milestone-names) proposes read-only and command-card parity before advanced panels. These are cross-cutting *design work packages*, not new accepted engine milestones or retroactive changes to Stage 4F/4C-G scope.
 
 **Current roadmap:** Stage 3 content/map validation is accepted within its recorded Linux scope. The next product goal is the [First Playable Skirmish](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match); the tactical shell does **not** yet expose an integrated economy, production or AI match. UI implementation must follow the corresponding authoritative gameplay increment and remain a projection/intent layer.
 
