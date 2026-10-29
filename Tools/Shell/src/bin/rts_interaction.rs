@@ -236,9 +236,9 @@ fn require_render_difference(before: &Path, after: &Path) -> Result<(), String> 
         .split_whitespace()
         .next()
         .ok_or("image comparison returned no pixel difference")?
-        .parse::<u64>()
+        .parse::<f64>()
         .map_err(|e| format!("invalid ImageMagick difference: {e}"))?;
-    if pixels < 100 {
+    if !pixels.is_finite() || pixels < 100.0 {
         return Err(format!(
             "camera controls did not produce a meaningful rendered change ({pixels} pixels)"
         ));
