@@ -86,6 +86,28 @@ def main() -> int:
         "POLITICAL_EVENTS.csv", *SCHEMA["POLITICAL_EVENTS.csv"], problems
     )
 
+    try:
+        with (ARCHIVE / "MAP_RELATIONSHIPS.csv").open(
+            encoding="utf-8-sig", newline=""
+        ) as file:
+            relationships = list(csv.DictReader(file))
+        for index, rel in enumerate(relationships, start=2):
+            if None in rel or any(value is None for value in rel.values()):
+                problems.append(
+                    f"MAP_RELATIONSHIPS.csv:{index}: malformed CSV row"
+                )
+            for field in ("map_id", "related_map_id"):
+                if rel.get(field) not in maps:
+                    problems.append(
+                        f"MAP_RELATIONSHIPS.csv:{index}: unresolved {field}"
+                    )
+            if rel.get("map_id") == rel.get("related_map_id"):
+                problems.append(
+                    f"MAP_RELATIONSHIPS.csv:{index}: self-reference"
+                )
+    except (OSError, UnicodeError, csv.Error) as exc:
+        problems.append(f"MAP_RELATIONSHIPS.csv: failed to read: {exc}")
+
     check_sets("Master versus map catalogue", maps, master & maps, problems)
     check_sets("Master versus political catalogue", political, master & political, problems)
 
