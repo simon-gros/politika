@@ -123,6 +123,10 @@ POLITIKA's documented engine architecture separates authored definitions and vis
 8. **Licensing:** block unapproved source redistribution before import/commit. Keep third-party license notices, provenance and asset hashes.
 9. **Verification:** test cooked Linux Development builds first, then expand platform claims only after device/packaged acceptance. Verify selection, hover, movement, combat, destruction and objective behavior unchanged.
 
+### Clearance versus playtest-qualification boundary
+
+The implemented `RifleInfantry` is technically useful as a controlled local reference for preserving selection, orders, animation and packaged playback, but [its provenance](CNC3_RIFLEMEN_IMPORT.md) documents external commercial game mesh/audio conversion. **Technical acceptance is not permission to redistribute** the derived source, committed intermediates or cooked media. For a publicly downloadable playable build, require documented rights-holder authorization or an original/independently cleared replacement with comparable rig, motion and audio integration tests; verify no restricted assets remain in release packages. The [archive rights policy](../Archive/RIGHTS_AND_PROVENANCE.md#repository-wide-copyright-and-distribution-separation-29-october-2026) and [production standards](PRODUCTION_STANDARDS.md#asset-intake-technical-qualification-and-release-clearance) own the checks. No asset removal or implementation change is performed by this documentation update.
+
 ## 7. Suggested bounded first milestone: environment and unit visual integration
 
 **Objective:** raise the visual quality of the already accepted RTS slice without expanding the gameplay systems or faction rosters.

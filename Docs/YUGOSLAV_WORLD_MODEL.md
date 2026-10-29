@@ -182,6 +182,12 @@ These are *proposed fixtures for later design review*, not approved maps, missio
 
 No proposed fixture may borrow a particular documented real protest or historical person's identity to stand for a fictional extremist operation. Likewise, a fictional nuclear research facility does not become a historical Yugoslav installation through a map label.
 
+### Candidate scenario-to-source crosswalk (production proposal)
+
+Before turning any of the four environment sketches above into an Unreal fixture, require a small map/mission brief with: (1) stable reference IDs and dated source claims from the [archive](../Archive/README.md), (2) selected geographic extent, transport topology, administrative jurisdiction and the limits of source accuracy, (3) the story-act knowledge available to each participant rather than omniscient campaign spoilers, (4) explicitly **approved** historical divergence from [Story Outline](STORY_OUTLINE.md), (5) proposed playable faction/Unaligned roles and objectives, (6) protected civilian/neutral interactions where relevant, (7) legal starts and navigation reachability for named movement classes, (8) necessary research/asset permissions, and (9) editor + packaged acceptance IDs. Never let an archive CSV row alone create a fictional plot event, an authored UE asset, a verified period map, or a gameplay resource deposit.
+
+The first production crosswalk should be bounded to a single fixture, such as the proposed crossing or broadcast network. The [map-source registry](../Data/map_production.json) and [historical-decision registry](../Data/historical_decisions.json) are not yet filled with approved production decisions; retain existing schemas and validate any future expansion before code uses the data. Proposed geography and institutional behavior remain out of scope for the first complete skirmish unless they directly support an accepted test. [Production Standards](PRODUCTION_STANDARDS.md) owns artifact and review gates; the [Engine Outline](ENGINE_OUTLINE.md) owns implementation sequence.
+
 ## 9. Concrete engine and content boundaries
 
 Only these **general-purpose hooks** need to be preserved from the historical mapping while the data-driven prototype is being developed:

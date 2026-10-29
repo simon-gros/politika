@@ -59,7 +59,7 @@ The October 2026 political-history expansion adds **69 source-linked political d
 | [`MAP_ACQUISITION_GUIDE.md`](MAP_ACQUISITION_GUIDE.md) | Map-by-map access, original publication proof, reuse permissions, provenance, georeferencing and proposed RTS map-production workflow. |
 | [`media/reference-only/maps/INDEX.md`](media/reference-only/maps/INDEX.md) | Browsable map-source links with no unauthorized copies. |
 | [`POLITICAL_HISTORY_1980_1989.md`](POLITICAL_HISTORY_1980_1989.md) | 69 sourced political developments: comprehensive year-by-year register, implications, uncertainty, political context and proposed RTS applications. |
-| [`POLITICAL_EVENTS.csv`](POLITICAL_EVENTS.csv) | Structured index of the 68 political developments for searching, validation and future engine/tool ingestion. |
+| [`POLITICAL_EVENTS.csv`](POLITICAL_EVENTS.csv) | Structured index of the 69 researched political developments for searching, validation and future engine/tool ingestion. |
 | [`SOURCES.md`](SOURCES.md) | Curated source institutions, verified artefacts, search terms, geographical gaps and acquisition methods. |
 | [`HISTORICAL_CHRONOLOGY_1980_1989.md`](HISTORICAL_CHRONOLOGY_1980_1989.md) | Decade chronology and historical-vs-alternate-history divergence ledger. |
 | [`DESIGN_REFERENCE_ATLAS.md`](DESIGN_REFERENCE_ATLAS.md) | Visual grammar, cultural atmosphere, environmental assets, proposed mission hooks and traceability to the existing story and systems. |
@@ -86,6 +86,14 @@ Assign each entry a stable identifier (for example, `POL-1984-SARAJEVO-001`) and
 Keep original-language names and scripts where useful, including Latin- and Cyrillic-script forms, with searchable transliterations. Do not generalize from one city, republic, social group or year to all Yugoslavia.
 
 For significant historical claims, distinguish direct evidence, well-supported inference, contextual analogy and speculative reconstruction. Important decisions should ideally be supported by more than one independent source.
+
+### Research-to-production handoff (proposed; no approved missions/maps implied)
+
+The archive is an **evidence repository**, not a game map importer or a replacement for [story canon](../Docs/STORY_OUTLINE.md). For each selected scene, mission location, road/rail route, institution, industrial site or environmental asset, construct an explicit handoff recording: one or more stable `CATALOG.csv`/`MAP_CATALOG.csv`/`POLITICAL_EVENTS.csv` references; original creator/publisher and differentiated publication/depicted/survey dates; geographic and period confidence; duplicate/mirror relationships; verified reuse rights; the **observed** facts; the proposed fictional departure; and the gameplay/visual use. Reject any implied 1980s authenticity for a later map or undated collection lead. Do not combine independent claims into one apparently corroborated source when they share an original.
+
+Proposed promotion stages: **catalogued lead → item verified → historical interpretation reviewed → alternate-history ruling approved → game-production brief approved → authored map/asset → editor validation → packaged visual/gameplay acceptance**. A research record never automatically advances to fiction canon, to an Unreal content asset or to release permission. [Historical decisions](../Data/historical_decisions.json) remains a design-stage register with no approved entries at this baseline; [map production](../Data/map_production.json) holds source candidates, not certified playable maps. Add reviewed rulings through their own validation process rather than writing fictional changes back into historical source rows.
+
+Start with one small, source-grounded **road/rail crossing, industrial neighborhood or broadcast/archive facility** from the [Yugoslav World Model](../Docs/YUGOSLAV_WORLD_MODEL.md#8-four-concrete-scenario-sketches-for-environment-validation). A handoff brief should identify a real-world reference location, gameplay-authored topology (passable routes, bridge/chokepoint, building power, objective and neutral jurisdiction), one missing/uncertain source note, and a reversible validation fixture. Do not add full Yugoslav political simulation, protected photographs, or invented historical events to Stage 4B simply to fill the archive.
 
 ## Research-to-production workflow
 
