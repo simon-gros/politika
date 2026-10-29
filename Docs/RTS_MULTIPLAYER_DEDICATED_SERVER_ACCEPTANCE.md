@@ -158,7 +158,7 @@ The canonical-map launch above was checked as a **boot-only smoke**. It reached 
   - A server-side match-rotation choice other than "reload the same map".
 - **Resolved (29 October 2026).** In the run above, Development-only switches with values (`-PolitikaMPRematch=…`) caused an `InvalidLaunchOptions` recovery notice on clients (MP-1 behavior). It did not affect gameplay evidence. Section G covers the fix.
 - **Next.**
-  - MP-2: packaged 3–4-client runs on the dedicated server for 2v1/3v1/2v2, network emulation, bandwidth and server-step measurements, F27/F33.
+  - MP-2: packaged 3–4-client runs on the dedicated server for 2v1/3v1/2v2, network emulation, bandwidth and server-step measurements, F27/F33. *Update 29 Oct 2026: the 3–4-client dedicated layouts and F27 are done in the [MP-2 record](RTS_MULTIPLAYER_MP2_MULTICLIENT_ACCEPTANCE.md); network emulation, bandwidth and F33 remain.*
   - A Shipping `PolitikaServer` package with a Shipping-safe default fixture policy.
 
 ## G. Follow-up: Development-only multiplayer launch switches (29 October 2026)

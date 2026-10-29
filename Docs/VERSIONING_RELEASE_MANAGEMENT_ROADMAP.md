@@ -28,6 +28,8 @@ One hand-maintained root [version.json](../version.json) contains:
 | persistence_schema | 1 | Incompatible durable profile/progression or later database storage |
 | world_schema | 1 | Incompatible map, mission, generated world, or gameplay content-data format |
 
+**Current counters:** `network_protocol` is **2** since 29 October 2026. The MP-2 shot-cue change replaced a replicated multicast with a per-connection client RPC, an incompatible on-wire replication contract; `PreLogin` refuses protocol-1 clients with `MP.PROTOCOL.MISMATCH`, verified against the MP-3 package ([MP-2 record](RTS_MULTIPLAYER_MP2_MULTICLIENT_ACCEPTANCE.md)). The other counters remain 1.
+
 The initial integer values reserve version-one contracts, **not implementations** of networking, saving, databases or map serialization. Bump counters only when corresponding implemented contracts change incompatibly, never to follow game_version; never reuse or decrease published counters. POLITIKA is offline-first: networking is optional future architecture, not a login requirement.
 
 Content *format* and content *revision* are different. Future build tooling should derive a gameplay content hash from a canonical manifest of packaged maps, missions, unit/faction definitions, rules and resources, not manually edit another version. Replays may eventually need a separate replay_schema if their serialized contract changes independently.

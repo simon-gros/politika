@@ -124,8 +124,22 @@ impl Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
+        // SIGTERM lets Xvfb remove its /tmp/.X<n>-lock and socket; SIGKILL leaks both and
+        // eventually exhausts the display range for later runs.
+        let _ = Command::new("kill")
+            .args(["-TERM", &self.child.id().to_string()])
+            .status();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            if let Ok(Some(_)) = self.child.try_wait() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let _ = fs::remove_file(format!("/tmp/.X{}-lock", self.number));
+        let _ = fs::remove_file(format!("/tmp/.X11-unix/X{}", self.number));
     }
 }
 
