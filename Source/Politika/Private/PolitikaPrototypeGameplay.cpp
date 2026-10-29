@@ -9,6 +9,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
+#include "UnrealClient.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/DirectionalLight.h"
@@ -2643,6 +2646,7 @@ void APolitikaPrototypePlayerController::BeginSelectPress()
     if (!ResolveMatch() || !GetMousePosition(Cursor.X, Cursor.Y)) return;
     bSelectPressed = true;
     bBoxSelecting = false;
+    SelectReleaseSeenSeconds = -1.0;
     SelectPressPosition = Cursor;
     SelectDragPosition = Cursor;
 }
@@ -2650,11 +2654,20 @@ void APolitikaPrototypePlayerController::BeginSelectPress()
 void APolitikaPrototypePlayerController::UpdateSelectDrag()
 {
     if (!bSelectPressed) return;
-    // A release this controller never received (focus loss, modal capture) cancels the
-    // stroke; it never turns into a click.
-    if (!IsInputKeyDown(EKeys::LeftMouseButton))
+    // The key state turns up as soon as the release arrives, but its IE_Released binding
+    // runs later in the frame. Only a release that never reaches the binding (modal capture,
+    // a dropped event) cancels the stroke, after a short grace; it never becomes a click.
+    const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+    if (IsInputKeyDown(EKeys::LeftMouseButton)) SelectReleaseSeenSeconds = -1.0;
+    else if (SelectReleaseSeenSeconds < 0.0) SelectReleaseSeenSeconds = Now;
+    else if (Now - SelectReleaseSeenSeconds > 0.25)
     {
         CancelSelectPress(TEXT("ReleaseLost"));
+        return;
+    }
+    if (!IsViewportFocused())
+    {
+        CancelSelectPress(TEXT("FocusLost"));
         return;
     }
     FVector2D Cursor;
@@ -2671,8 +2684,14 @@ void APolitikaPrototypePlayerController::UpdateSelectDrag()
 void APolitikaPrototypePlayerController::EndSelectPress()
 {
     if (!bSelectPressed) return;
-    UpdateSelectDrag();
-    if (!bSelectPressed) return;
+    // Focus loss flushes held keys as simulated releases; those cancel instead of selecting.
+    if (!IsViewportFocused())
+    {
+        CancelSelectPress(TEXT("FocusLost"));
+        return;
+    }
+    // The box ends at the last position sampled while the button was held: releasing mouse
+    // capture moves the cursor back to where the press began, so it is not read here.
     const bool bBox = bBoxSelecting;
     bSelectPressed = false;
     bBoxSelecting = false;
@@ -2689,6 +2708,14 @@ void APolitikaPrototypePlayerController::CancelSelectPress(const TCHAR* Reason)
 #endif
     bSelectPressed = false;
     bBoxSelecting = false;
+}
+
+bool APolitikaPrototypePlayerController::IsViewportFocused() const
+{
+    const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+    const FViewport* Viewport = LocalPlayer && LocalPlayer->ViewportClient ? LocalPlayer->ViewportClient->Viewport : nullptr;
+    // Without a viewport (automation, a server-side controller) there is no focus to lose.
+    return !Viewport || Viewport->HasFocus();
 }
 
 bool APolitikaPrototypePlayerController::GetSelectionBox(FVector2D& OutMin, FVector2D& OutMax) const

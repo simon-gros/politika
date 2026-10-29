@@ -919,6 +919,9 @@ private:
     bool bBoxSelecting = false;
     FVector2D SelectPressPosition = FVector2D::ZeroVector;
     FVector2D SelectDragPosition = FVector2D::ZeroVector;
+    // Real time at which the button was first seen up without its release binding; -1 when down.
+    double SelectReleaseSeenSeconds = -1.0;
+    bool IsViewportFocused() const;
     void BeginSelectPress();
     void EndSelectPress();
     void CancelSelectPress(const TCHAR* Reason);
