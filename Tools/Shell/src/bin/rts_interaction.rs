@@ -246,6 +246,46 @@ fn require_render_difference(before: &Path, after: &Path) -> Result<(), String> 
     Ok(())
 }
 
+fn camera_position(line: &str) -> Option<(f32, f32)> {
+    let field = |name: &str| {
+        line.split_whitespace()
+            .find_map(|field| field.strip_prefix(name))
+            .and_then(|value| value.parse::<f32>().ok())
+    };
+    Some((field("x=")?, field("y=")?))
+}
+
+/// The S (Stop) and A (AttackMove) command keys share the W/S and A/D pan axes, so the
+/// earlier hotkey taps can displace the camera by a frame before this check. The first
+/// logged forward state is therefore the baseline: PanForward changes only world Y, so the
+/// X change up to the first right state is PanRight's own movement. The fixture camera
+/// looks along +Y (CameraOffset has no X), making its ground-projected right vector -X.
+fn require_right_pan_moved(log: &str) -> Result<(), String> {
+    let find = |axis: &str| {
+        log.lines()
+            .position(|line| line.contains(&format!("RTS_CAMERA_INPUT axis={axis} value=1.0")))
+            .map(|index| (index, log.lines().nth(index).unwrap_or_default()))
+    };
+    let (forward_index, forward) = find("forward").ok_or("missing positive forward-pan state")?;
+    let (right_index, right) = find("right").ok_or("missing positive right-pan state")?;
+    if right_index < forward_index {
+        return Err(format!(
+            "right-pan state was logged before its forward-pan baseline: {right}"
+        ));
+    }
+    let (forward_x, _) = camera_position(forward)
+        .ok_or_else(|| format!("forward-pan state has no x/y position: {forward}"))?;
+    let (right_x, _) = camera_position(right)
+        .ok_or_else(|| format!("right-pan state has no x/y position: {right}"))?;
+    let delta = right_x - forward_x;
+    if !delta.is_finite() || delta > -1.0 {
+        return Err(format!(
+            "right-pan input did not move the camera along screen-right (world -X): delta_x={delta:.1}; baseline {forward}; after {right}"
+        ));
+    }
+    Ok(())
+}
+
 fn wait_for(
     child: &mut Child,
     log: &Path,
@@ -720,23 +760,7 @@ fn main() -> Result<(), String> {
             Duration::from_secs(5),
         )?;
         let camera_log = fs::read_to_string(&log).map_err(|e| e.to_string())?;
-        let camera_state = camera_log
-            .lines()
-            .rev()
-            .find(|line| line.contains("RTS_CAMERA_INPUT axis=right value=1.0"))
-            .ok_or("missing positive right-pan state")?;
-        let moved = camera_state.split_whitespace().any(|field| {
-            field
-                .strip_prefix("x=")
-                .or_else(|| field.strip_prefix("y="))
-                .and_then(|value| value.parse::<f32>().ok())
-                .is_some_and(|value| value.abs() > 1.0)
-        });
-        if !moved {
-            return Err(format!(
-                "camera input reached the controller but its clamped position did not change: {camera_state}"
-            ));
-        }
+        require_right_pan_moved(&camera_log)?;
         capture(&window, &evidence, "08-camera-pan")?;
         require_render_difference(
             &evidence.join("07-objective-uncontested.png"),
@@ -806,4 +830,51 @@ fn main() -> Result<(), String> {
         desktop_copy.display()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_right_pan_moved;
+
+    const PREFIX: &str = "LogPolitikaStartup: Display: RTS_CAMERA_INPUT";
+
+    fn log(forward: &str, right: &str) -> String {
+        format!(
+            "{PREFIX} axis=forward value=1.0 {forward}\n{PREFIX} axis=right value=1.0 {right}\n"
+        )
+    }
+
+    #[test]
+    fn accepts_right_pan_from_the_origin() {
+        // c14a6c4 passing replay: forward and right were logged two frames apart.
+        assert!(require_right_pan_moved(&log("x=0.0 y=23.3", "x=-23.3 y=70.0")).is_ok());
+    }
+
+    #[test]
+    fn accepts_right_pan_that_returns_to_the_origin_after_hotkey_nudges() {
+        // c14a6c4 attempt-1 replay: the S and A hotkey taps had already moved the camera
+        // to (23.3, -23.3), so W+D in one frame landed exactly on the origin.
+        assert!(require_right_pan_moved(&log("x=23.3 y=0.0", "x=-0.0 y=0.0")).is_ok());
+    }
+
+    #[test]
+    fn rejects_right_pan_without_screen_right_movement() {
+        let error = require_right_pan_moved(&log("x=0.0 y=23.3", "x=0.0 y=46.6")).unwrap_err();
+        assert!(error.contains("delta_x=0.0"), "{error}");
+        assert!(require_right_pan_moved(&log("x=0.0 y=23.3", "x=23.3 y=23.3")).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_or_misordered_states() {
+        let forward_only = format!("{PREFIX} axis=forward value=1.0 x=0.0 y=23.3\n");
+        assert!(require_right_pan_moved(&forward_only).is_err());
+        let reversed = format!(
+            "{PREFIX} axis=right value=1.0 x=-23.3 y=0.0\n{PREFIX} axis=forward value=1.0 x=-23.3 y=23.3\n"
+        );
+        assert!(
+            require_right_pan_moved(&reversed)
+                .unwrap_err()
+                .contains("before")
+        );
+    }
 }
