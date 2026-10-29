@@ -13,11 +13,13 @@ Planned primary target platforms: Linux, Windows, SteamOS/Steam Deck, and Androi
 
 The goal is a complete, polished real-time strategy game, not a reproduction of a proprietary engine. POLITIKA should use UE as its rendering, platform, editor, asset, and packaging foundation, with a game-specific RTS layer implemented primarily in C++ and UE authoring/configuration assets. C# remains suitable for external content/build tools where it earns its keep; it is not required in the runtime.
 
-The game-specific layer needs to support faction/unit content, squad/vehicle combat, tactical objectives, campaign missions, skirmish and possible multiplayer rules, AI, maps, in-game briefings and dialogue, audio, save/replay, and localization. The economy, production, deployment, reinforcement and objective-control rules remain POLITIKA design decisions; this outline establishes systems capable of supporting those choices.
+The game-specific layer needs to support faction/unit content, squad/vehicle combat, tactical objectives, campaign missions, skirmish and planned future multiplayer rules, AI, maps, in-game briefings and dialogue, audio, save/replay, and localization. The economy, production, deployment, reinforcement and objective-control rules remain POLITIKA design decisions; this outline establishes systems capable of supporting those choices.
 
 ## 2. Proposed layers
 
 Treat these as ownership boundaries and data flows, not necessarily separate UE modules. Start with a small number of runtime/editor modules and split only when build, ownership, or team boundaries justify it. The key contract is: **input becomes validated player commands; the match/simulation applies rules; state changes emit events; presentation observes those events.** UI, animation, audio, and VFX must not be the source of gameplay truth.
+
+**Multiplayer architecture decision (2026-10-29):** [RTS Multiplayer Architecture](RTS_MULTIPLAYER_ARCHITECTURE.md) defines a future server-authoritative, up-to-four-human model with interchangeable listen and dedicated server hosting. All existing and newly authored gameplay code must undergo the **mandatory full-code retrofit inventory and per-symbol authority/replication assessment** in that document (§2.1), including explicit fixes or justified no-change findings. Maintain authority/presentation and per-participant observation boundaries now; network transport, matchmaking and dedicated server builds are **not implemented**. Do not create a second simulator, separate duplicate applications or new Stage 4A–4F acceptance gates; MP-0 audit precedes any MP-1 two-client proof.
 
 ### Minimal RTS gameplay contract
 
@@ -603,6 +605,8 @@ Also test a **valid asset rename or display-label change with unchanged gameplay
 **Stage 3 done means all of the following:** actual prototype tuning is read from typed authored assets; an edited gameplay value changes the corresponding *rules-owned* computation without C++ recompilation; the valid level is reproducibly populated from its map definition; hard errors stop an editor/automation validation run and pre-match admission; a valid cooked Linux Development build loads and plays; the accepted prototype behavior and default shell still pass. Source and report schema versions are recorded separately from the public game version. Do not advance to the full economy or faction roster on the strength of asset class definitions alone.
 
 ### 7.5 Stage 4 — First Playable Skirmish (repeatable offline match)
+
+**Multiplayer compatibility handoff:** Preserve offline-first Stage 4 milestones while applying the [MP-0 whole-repository code audit and design seams](RTS_MULTIPLAYER_ARCHITECTURE.md#21-mandatory-whole-repository-multiplayer-retrofit-audit-before-mp-1) to every relevant existing/new simulation, command, AI, economy, visibility and UI subsystem. Actual networking is a separately accepted, deferred MP-1+ scope; no Stage 4 status changes follow from this note.
 
 **Purpose:** connect the accepted tactical command/simulation, typed-content and lifecycle foundations into one ordinary, complete match. This is an integration milestone, not a parallel framework and not permission to build every documented mechanic. A player must launch normally, choose one valid scenario, play against an autonomous opponent, reach a normal result, return to the menu and begin a fresh isolated match in the same process.
 
