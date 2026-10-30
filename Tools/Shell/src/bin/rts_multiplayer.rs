@@ -7914,7 +7914,10 @@ fn formation_lifecycle_session(
         // 4. The fixture kills the highest-ID member still following; one regroup follows the
         // hysteresis window, for the members still following only.
         let casualty = server.wait_line(
-            &["MP_FORMATION_CASUALTY", &format!("formation={formation} ")],
+            &[
+                "MP_FORMATION_CASUALTY formation=",
+                &format!("formation={formation} "),
+            ],
             Duration::from_secs(10),
             at_server,
         )?;
