@@ -1,6 +1,6 @@
 # POLITIKA — Military Discipline: earned in formation
 
-**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)). **DISC-D2 IMPLEMENTED 30 October 2026** (casualty shock, isolation with the Concord exemption, the Directorate/Ascendancy mass ceiling; see the [DISC-D2 record](RTS_UNIT_DISCIPLINE_D2_ACCEPTANCE.md)) except the faction baseline from Population Morale (DISC-13), which waits for a Population Morale system. **DISC-D3 IMPLEMENTED 30 October 2026** (one per-unit modifier registry; Discipline drives damage taken, fire interval, reload time, return-to-post speed and the regroup delay; see the [DISC-D3 record](RTS_UNIT_DISCIPLINE_D3_ACCEPTANCE.md)) except spread, which waits for indirect fire. DISC-D4 is not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. DISC-D1 and D2 gave it **no effect on any other attribute**; §7 lists the attributes it drives from DISC-D3 and how they plug in.
+**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)). **DISC-D2 IMPLEMENTED 30 October 2026** (casualty shock, isolation with the Concord exemption, the Directorate/Ascendancy mass ceiling; see the [DISC-D2 record](RTS_UNIT_DISCIPLINE_D2_ACCEPTANCE.md)) except the faction baseline from Population Morale (DISC-13), which waits for a Population Morale system. **DISC-D3 IMPLEMENTED 30 October 2026** (one per-unit modifier registry; Discipline drives damage taken, fire interval, reload time, return-to-post speed and the regroup delay; see the [DISC-D3 record](RTS_UNIT_DISCIPLINE_D3_ACCEPTANCE.md)) except spread, which waits for indirect fire. **DISC-D4 rout IMPLEMENTED 30 October 2026** (a soldier broken at 0 leaves its formation, stops fighting, refuses orders, flees to its side's start and rallies at 15; see §7A and the [DISC-D4 record](RTS_UNIT_DISCIPLINE_D4_ACCEPTANCE.md)); the other break consumers, Psy-Ops and Intimidation, arrive with their own systems. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. DISC-D1 and D2 gave it **no effect on any other attribute**; §7 lists the attributes it drives from DISC-D3 and how they plug in.
 
 **Authority:** [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) owns the single `UnitResolve` meter and its break rules; [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns formations, stances and Cohesion (this document is its §6 made concrete and replaces the FORM-F5 sketch); [Engine Outline](ENGINE_OUTLINE.md) owns sequencing. The numbers below are first values for implementation and testing, not balance.
 
@@ -20,7 +20,8 @@ All values are authoritative integers in **milli-points** (`0…100 000` for 0�
 |---|---|---|
 | Range | 0–100 | `UnitResolve` maximum 100 |
 | Baseline `B` | 50 | Later from faction Population Morale (§6); a constant in DISC-D1 and DISC-D2 |
-| Broken threshold | 0 | Defined, not used until DISC-D4 |
+| Broken threshold | 0 | A military unit at 0 routs (DISC-D4, §7A) |
+| Rally threshold (DISC-D4) | 15 | A routed unit recovers +0.5 per second wherever it is and rallies here: 0 → 15 takes 30 s |
 | Spawn value | `B` | |
 | Evaluation cadence | every 20 steps (1 s at 20 steps/s) | Cheap and deterministic; no per-frame updates |
 | Formation gain | +1.0 per second while **eligible** (§3) | 50 → 80 takes 30 s of service |
@@ -72,6 +73,8 @@ Rules that keep the gain honest:
 | Form (T) | No change; earning starts at the next evaluation if eligible |
 | Release (Y), dissolve, becoming the last member | No immediate change; decay towards `B` starts |
 | Member death | Its value disappears with it. Surviving members of its formation within 800 cm take casualty shock (DISC-D2, §3A) |
+| Reaching 0 (DISC-D4) | The soldier routs in that step (§7A): it leaves its formation, which regroups or dissolves as after any loss |
+| Rally (DISC-D4) | At 15 the soldier is idle where it stands, outside any formation, and takes orders again; the usual rules move its value from there |
 | Individual order on a member | Stops earning until the next formation move makes it follow again; no loss |
 | Joining a different formation | Keeps its value; earns under the new formation |
 | Match Terminal / Return | Values are dropped with the match; not saved |
@@ -80,7 +83,7 @@ Rules that keep the gain honest:
 
 - **Server-owned.** The value lives on the authoritative unit and is updated only in the fixed-step simulation, after movement and before event publication, so a step's support uses that step's positions. Clients never compute it.
 - **Owner-only exact value.** The owning player receives each own unit's value and trend. Opponents and allies receive nothing in DISC-D1; a coarse visible band for enemies (for example "steady / shaken") belongs with intelligence rules later.
-- **Replication** adds the value to the existing owner-only unit state; `network_protocol` 4 → 5.
+- **Replication** adds the value to the existing owner-only unit state; `network_protocol` 4 → 5. DISC-D4 adds the owner-only routed flag and the `Routed` order rejection; `network_protocol` 5 → 6.
 - **HUD:** a selected unit's line ends `DISCIPLINE 72 rising` (`MORALE` on a civilian); a multi-selection, including a whole formation, shows `DISCIPLINE avg 64` over its military units. Unit labels and the formation line are unchanged, to avoid more label clutter.
 - **Development logs:** every 100 steps `RTS_DISCIPLINE_SAMPLE` per formation (members, earning, holding, min/avg/max), `RTS_DISCIPLINE_PARTICIPANT` per participant (members and units outside formations) and `RTS_DISCIPLINE_HOLDING` for each member that is not earning; `RTS_DISCIPLINE_BAND` when a unit crosses 60, 70, 80, 90 or 100, falls through 40, 30, 20, 10 or 0, or lands back on `B` from either side. DISC-D2 adds `RTS_DISCIPLINE_SHOCK` for every surviving member at each formation casualty (in range or not, with distance and the window), `RTS_DISCIPLINE_ISOLATED` every 100 steps for each lone soldier (with its doctrine and whether it is exempt), `RTS_DISCIPLINE_MASS` every 100 steps for a formation at the mass ceiling, and `RTS_DISCIPLINE_DOCTRINE_OVERRIDE` for a development override. The client's `MP_CLIENT_SAMPLE` carries `resolve=` for every unit it receives. No per-unit log every evaluation.
 
@@ -109,11 +112,29 @@ Every effect reads one normalized factor, `F = (D − 50) / 50`, in `[−1, +1]`
 | Suppression resistance | +18% | +30% | Suppression system |
 | Stance obedience | Guard/Aggressive return to post 20% faster | 33% faster | DISC-D3 |
 | Regroup | Regroup delay 40 → 31 steps | 40 → 25 steps | DISC-D3 |
-| Break threshold consumers | Psy-Ops, Intimidation and rout need the meter to fall from its current value, so high Discipline buys time | | DISC-D4 |
+| Break threshold consumers | Psy-Ops, Intimidation and rout need the meter to fall from its current value, so high Discipline buys time | | Rout DISC-D4 (§7A); Psy-Ops and Intimidation with their systems |
 
 Below baseline (isolation, casualties; DISC-D2) the same coefficients apply with the negative factor, so a shaken unit takes more damage and shoots worse. **Defense** is a multiplier on damage taken, applied once per hit after armour and before health; it is not extra health and never reaches immunity (its largest reduction is the 20% above). Civilian Morale does not drive combat effects; its later effects (work rate, panic) belong to [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
 
 **As implemented (DISC-D3).** `F` is integer permille. Each multiplier is `1000 + F × coefficient` permille, truncated toward zero: damage taken and spread −1/5, fire interval and reload time −3/20, return speed +1/3, regroup delay −3/8 (rounded to the nearest step, at least one). The unit's registry (`Modifiers.h`) holds one entry per source and attribute and is rewritten when Discipline changes. Weapon damage is applied in milli-health and the fire interval in milli-steps, each with the fraction carried per unit, so a −12% on an 8-point hit or a 4-step interval is not lost to rounding. The regroup delay uses the surviving members' average after that step's casualty shock. At exactly 50 every quantity is unchanged.
+
+## 7A. Rout (DISC-D4)
+
+The broken threshold's first consumer. Today only casualty shock (§3A) lowers a member's value far enough, so a formation that keeps losing men breaks from the inside: the members near the casualties go first.
+
+| Rule | Value |
+|---|---|
+| Break | A **military** unit whose value is at or below 0 breaks in that step. Breaks are checked once per step after the step's casualties and before the evaluation, in stable-ID order, so a member shocked to 0 cannot earn its way out first. Civilians at Morale 0 never rout; their break consumers are Intimidation and Psy-Ops. |
+| Formation | The routed member leaves its formation (`LeaveReason::Routed`). The formation treats it as a loss: it regroups after the Discipline-scaled delay of §7, or dissolves below two members. |
+| Flight | The unit drops its order, target, grenade and engagement and flees to its participant's authored start (the unit's spawn point when the participant has none) as a plain Move, which never acquires a target. Without a route it holds where it is. After the flight it stays where it ended; a routed unit has no stance behaviour. |
+| Fighting | A routed unit never acquires or fires, whatever its stance or order history. It can still be shot; at 0 it takes 20% more damage (§7). |
+| Orders | Every order from its owner is refused with `OrderRejection::Routed` (19), checked after ownership so no other participant learns the state. Form refuses it as an unavailable member. A stance setting is accepted and applies after the rally. |
+| Recovery | +0.5 per evaluation wherever it is, alone or not, no casualty shock (it is no member). |
+| Rally | At 15 (30 evaluations after a break at 0) the unit rallies where it stands: idle, outside any formation, with a fresh post, taking orders again. From there the usual rules apply: beside a comrade it returns to 50, alone it holds below the isolation floor until it has company. |
+| Network and HUD | The routed flag is owner-only replicated; an opponent sees the unit run, never the state. A selected routed unit's line reads `ROUTED` instead of its order; a selection line adds `N ROUTED`. A refused order shows "That unit is routing and will not take orders." |
+| Logs | `RTS_DISCIPLINE_ROUT phase=break` (value, formation, previous order, route, rally point and distance), `phase=flight_end` (arrival or obstruction) and `phase=rally` (steps routed, distance to the rally point); `RTS_FORMATION_MEMBER_LEFT reason=routed`; `RTS_ORDER_REJECTED outcome=19`; `MP_CLIENT_SAMPLE routed=`. |
+
+Rout is not contagious in DISC-D4: a breaking soldier does not shock its former comrades (§10).
 
 ## 8. Delivery slices
 
@@ -122,11 +143,11 @@ Below baseline (isolation, casualties; DISC-D2) the same coefficients apply with
 | **DISC-D1** | Meter on military units (spawn at `B`), a combat/non-combat unit category with Form refusing non-combat units, formation gain / ceiling / decay (§2–4), owner-only replication, HUD, logs, `network_protocol` 5. **No effect on any other attribute.** | DISC-01 to DISC-09 |
 | DISC-D2 | Stress: casualty shock to nearby members (−5, capped −15 per 5 s), isolation drift below `B` (floor 30) with the Concord exemption, faction mass bonus, faction baseline from Population Morale. **Implemented 30 Oct 2026** except the Population Morale baseline | DISC-10 to DISC-12 accepted; DISC-13 deferred |
 | DISC-D3 | First effects (§7): defense, accuracy, aim/reload, stance return speed, regroup delay. **Implemented 30 Oct 2026** except spread (no consumer until indirect fire) | DISC-14, DISC-16 to DISC-19 accepted; DISC-15 deferred |
-| DISC-D4 | Break threshold consumers: rout, Psy-Ops, Intimidation (their own documents) | Their own acceptance |
+| DISC-D4 | Break threshold consumers. **Rout implemented 30 Oct 2026** (§7A); Psy-Ops and Intimidation arrive with their own systems ([Espionage and Intimidation](ESPIONAGE_AND_INTIMIDATION.md)) | DISC-20 to DISC-26 accepted; Psy-Ops and Intimidation by their own acceptance |
 
 Possible later doctrine, not decided: Maintain adherence earning faster; veteran units keeping a higher personal floor; commander talents and research raising the ceiling ([Commander Talents](COMMANDER_TALENT_SYSTEM.md), [Research](RTS_TECHNOLOGICAL_RESEARCH.md)).
 
-## 9. Acceptance matrix (DISC-D1 to DISC-D3)
+## 9. Acceptance matrix (DISC-D1 to DISC-D4)
 
 | ID | Requirement |
 |---|---|
@@ -149,6 +170,15 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 | DISC-17 | (D3) Guard/Aggressive return-to-post speed scales with `F` per §7. |
 | DISC-18 | (D3) A formation's regroup delay follows its survivors' average Discipline per §7. |
 | DISC-19 | (D3) At the baseline every effect is neutral and earlier behaviour is unchanged; civilian Morale drives no combat effect; Discipline enters each attribute once. |
+| DISC-20 | (D4) A military unit breaks in the step its value reaches 0, and only then; a civilian never routs. |
+| DISC-21 | (D4) A routed member leaves its formation as `routed` in that step and takes no later casualty shock. |
+| DISC-22 | (D4) A routed unit flees to its participant's start along a route, or holds where it is without one. |
+| DISC-23 | (D4) A routed unit never acquires or fires. |
+| DISC-24 | (D4) Its owner's orders are refused with `Routed`; another participant never learns the state (owner-only flag, ownership checked first). |
+| DISC-25 | (D4) Form refuses a routed unit. |
+| DISC-26 | (D4) It recovers 0.5 per evaluation and rallies at 15, 30 evaluations after a break at 0, idle and taking orders again. |
+
+**DISC-D4 packaged check (skirmish map, 20 units):** form 20 units into a Line; with the rout seed, the casualty fixture sets its members to 10 and kills four at one end; confirm the members shocked to 0 break in that step and only those, leave the formation as routed and flee towards seat 1's start without firing; select the group and order a move with real input: the routed members are refused as `Routed` and the rest accepted; with the witness fixture walking an opposing soldier into sight of the start, confirm the opponent's client receives the routed units but never their routed flag; confirm each rallies at 15 after 30 evaluations and the same order is then accepted by every unit.
 
 **DISC-D3 packaged check (skirmish map, 20 units):** form 20 units into a Line and let them earn 80; with the opponent held at 50, walk one opposing soldier into the Line under Guard and confirm each hit on a member is scaled to 88% while the opponent's losses are unscaled, members fire on a shorter interval than the opponent's, and members walk back to their posts 20% faster; trigger the casualty fixture and confirm the regroup comes on the scaled step; reload and confirm the shorter reload; confirm the opponent's units log no effect and its client still receives only the default.
 
@@ -165,3 +195,4 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 - Whether vehicles and crewed weapons earn Discipline the same way as infantry, or through their crew.
 - DISC-D2 first values: shock radius 800 cm and shock to formation members only; allied soldiers count as company against isolation; isolation floor 30; recovery at the fade rate. Tune with DISC-D3.
 - Whether lone soldiers should get a coarse HUD cue ("alone"); DISC-D2 shows only the value and its trend.
+- DISC-D4 first values: break at 0, rally at 15 (30 s), recovery at the fade rate anywhere, flight to the participant's authored start. Open: whether rout is contagious (a breaking soldier shocking nearby comrades), whether a rallied soldier should return to its old formation, whether routing should be faster than walking, whether the flight should prefer a nearby friendly formation or base once bases exist, and whether opponents should see that a unit is routing (intelligence rules).
