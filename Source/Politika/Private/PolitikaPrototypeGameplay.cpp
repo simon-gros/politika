@@ -247,6 +247,7 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
     GrenadeTarget.Reset();
     InfantryPresentation->CancelGrenade();
     CurrentOrder = Kind;
+    ResetAutonomy();
     PlayLocalAcknowledgement(TEXT("move"));
     OrderDestination = Destination;
     ResolvedNavigationDestination = ResolvedDestination;
@@ -273,6 +274,7 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
     NavigationReplanCooldownSeconds = 0.0f;
     NavigationReplanAttempts = 0;
     CurrentOrder = EPolitikaPrototypeOrder::Attack;
+    ResetAutonomy();
     OrderTarget = Target;
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
@@ -291,6 +293,7 @@ void APolitikaPrototypeUnit::SetGuardOrder()
     NavigationReplanCooldownSeconds = 0.0f;
     NavigationReplanAttempts = 0;
     CurrentOrder = EPolitikaPrototypeOrder::Guard;
+    ResetAutonomy();
     OrderTarget.Reset();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
@@ -303,6 +306,7 @@ void APolitikaPrototypeUnit::StopOrder()
     GrenadeTarget.Reset();
     InfantryPresentation->CancelGrenade();
     CurrentOrder = EPolitikaPrototypeOrder::Stop;
+    ResetAutonomy();
     NavigationWaypoints.Reset();
     NavigationWaypointIndex = 0;
     NavigationMatchGeneration = 0;
@@ -326,6 +330,13 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     if (!HasAuthority()) return politika::rules::OrderEndReason::None;
     StepStartPosition = GetActorLocation();
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
+    // An idle unit moves only on its own, under its combat stance (FORM-F4): it never ends an
+    // order, so it reports nothing to the command layer.
+    if (CurrentOrder == EPolitikaPrototypeOrder::Idle)
+    {
+        SimulateIdleAutonomy(DeltaSeconds);
+        return politika::rules::OrderEndReason::None;
+    }
     if (InfantryBehavior && SprintRemaining <= 0 && CurrentOrder == EPolitikaPrototypeOrder::AttackMove)
     {
         if (!OrderTarget.IsValid()) AutoAcquireForAttackMove();
@@ -367,74 +378,13 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     // direct-line movement or query every 20 Hz step.
     if (CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
     {
-        NavigationReplanCooldownSeconds = FMath::Max(0.0f, NavigationReplanCooldownSeconds - DeltaSeconds);
-        const bool bTargetMoved = FlatDistance(ResolvedNavigationDestination, Destination) > 100.0f;
-        if (bTargetMoved)
+        switch (EnsureRouteTo(Destination, DeltaSeconds))
         {
-            NavigationWaypoints.Reset();
-            NavigationWaypointIndex = 0;
-            NavigationReplanAttempts = 0;
-            NavigationReplanCooldownSeconds = 0.0f;
-        }
-        if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
-        {
-            if (NavigationReplanCooldownSeconds > 0.0f) return politika::rules::OrderEndReason::None;
-            if (NavigationReplanAttempts >= 3)
-            {
+            case ERouteStatus::Waiting: return politika::rules::OrderEndReason::None;
+            case ERouteStatus::Failed:
                 StopOrder();
                 return politika::rules::OrderEndReason::NavigationFailed;
-            }
-            ++NavigationReplanAttempts;
-            NavigationReplanCooldownSeconds = 0.5f;
-            UNavigationSystemV1* NavSystem = GetWorld()
-                ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()) : nullptr;
-            ANavigationData* NavData = NavSystem
-                ? NavSystem->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
-            FNavLocation ProjectedStart, ProjectedGoal;
-            const bool bProjected = NavSystem && NavData && !NavSystem->IsNavigationBuildInProgress()
-                && NavSystem->ProjectPointToNavigation(GetActorLocation(), ProjectedStart,
-                    FVector(80.0f, 80.0f, 180.0f), NavData)
-                && NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal,
-                    FVector(80.0f, 80.0f, 180.0f), NavData)
-                && FlatDistance(ProjectedGoal.Location, Destination) <= 80.0f;
-            bool bRouteReady = false;
-            if (bProjected)
-            {
-                FPathFindingQuery Query(this, *NavData, ProjectedStart.Location, ProjectedGoal.Location);
-                Query.SetAllowPartialPaths(false);
-                const double QueryStartSeconds = FPlatformTime::Seconds();
-                const FPathFindingResult Result = NavSystem->FindPathSync(Query);
-#if !UE_BUILD_SHIPPING
-                UE_LOG(LogPolitikaStartup, Display,
-                    TEXT("RTS_NAV_TARGET_QUERY generation=%llu unit=%llu sequence=%llu result=%u partial=%d points=%d duration_us=%.1f attempt=%u"),
-                    NavigationMatchGeneration, StableId, NavigationOrderSequence,
-                    static_cast<uint32>(Result.Result), Result.IsPartial() ? 1 : 0,
-                    Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0,
-                    (FPlatformTime::Seconds() - QueryStartSeconds) * 1000000.0, NavigationReplanAttempts);
-#endif
-                if (Result.Result == ENavigationQueryResult::Success && Result.Path.IsValid()
-                    && !Result.Path->IsPartial() && Result.Path->GetPathPoints().Num() > 0)
-                {
-                    NavigationWaypoints.Reset();
-                    for (const FNavPathPoint& Point : Result.Path->GetPathPoints())
-                    {
-                        if (!FMath::IsFinite(Point.Location.X) || !FMath::IsFinite(Point.Location.Y)
-                            || !FMath::IsFinite(Point.Location.Z)) { NavigationWaypoints.Reset(); break; }
-                        NavigationWaypoints.Add(Point.Location
-                            + FVector(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z));
-                    }
-                    NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
-                    const FVector VerticalOffset(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z);
-                    ResolvedNavigationDestination = ProjectedGoal.Location + VerticalOffset;
-                    bRouteReady = !NavigationWaypoints.IsEmpty()
-                        && FVector::Dist(NavigationWaypoints.Last(), ResolvedNavigationDestination) <= 150.0f;
-                }
-            }
-            if (!bRouteReady)
-            {
-                StopOrder();
-                return politika::rules::OrderEndReason::NavigationFailed;
-            }
+            case ERouteStatus::Ready: break;
         }
     }
 
@@ -444,42 +394,14 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
         return politika::rules::OrderEndReason::NavigationFailed;
     }
 
-    float RemainingDistance = MoveSpeed * (SprintRemaining > 0 && InfantryBehavior ? InfantryBehavior->SprintMultiplier : 1) * DeltaSeconds;
-    int32 WaypointsConsumed = 0;
-    const FVector PreviousLocation = GetActorLocation();
-    while (RemainingDistance > KINDA_SMALL_NUMBER && NavigationWaypointIndex < NavigationWaypoints.Num()
-        && WaypointsConsumed < 16)
-    {
-        const FVector Waypoint = NavigationWaypoints[NavigationWaypointIndex];
-        const FVector Current = GetActorLocation();
-        FVector Offset = Waypoint - Current;
-        const float SegmentDistance = Offset.Size();
-        if (!FMath::IsFinite(SegmentDistance))
-        {
-            StopOrder();
-            return politika::rules::OrderEndReason::NavigationFailed;
-        }
-        if (SegmentDistance <= 2.0f)
-        {
-            ++NavigationWaypointIndex;
-            ++WaypointsConsumed;
-            continue;
-        }
-        const float Travel = FMath::Min(RemainingDistance, SegmentDistance);
-        const FVector Next = Current + Offset.GetSafeNormal() * Travel;
-        FHitResult Hit;
-        SetActorLocation(Next, true, &Hit, ETeleportType::None);
 #if !UE_BUILD_SHIPPING
-        if (bTraceNavigationTraversal) NavigationStepTraversal.Add(GetActorLocation());
+    const FVector PreviousLocation = GetActorLocation();
 #endif
-        if (Hit.bBlockingHit)
-        {
-            StopOrder();
-            return politika::rules::OrderEndReason::Obstructed;
-        }
-        RemainingDistance -= Travel;
-        ++WaypointsConsumed;
-        if (Travel + 2.0f >= SegmentDistance) ++NavigationWaypointIndex;
+    if (const politika::rules::OrderEndReason Stepped = AdvanceAlongRoute(DeltaSeconds);
+        Stepped != politika::rules::OrderEndReason::None)
+    {
+        StopOrder();
+        return Stepped;
     }
 #if !UE_BUILD_SHIPPING
     if (!bAcceptanceMovementLogged && FlatDistance(PreviousLocation, GetActorLocation()) > 1.0f)
@@ -504,11 +426,301 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     return politika::rules::OrderEndReason::None;
 }
 
-void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
+APolitikaPrototypeUnit::ERouteStatus APolitikaPrototypeUnit::EnsureRouteTo(const FVector& Destination, float DeltaSeconds)
+{
+    NavigationReplanCooldownSeconds = FMath::Max(0.0f, NavigationReplanCooldownSeconds - DeltaSeconds);
+    const bool bTargetMoved = FlatDistance(ResolvedNavigationDestination, Destination) > 100.0f;
+    if (bTargetMoved)
+    {
+        NavigationWaypoints.Reset();
+        NavigationWaypointIndex = 0;
+        NavigationReplanAttempts = 0;
+        NavigationReplanCooldownSeconds = 0.0f;
+    }
+    if (!NavigationWaypoints.IsEmpty() && NavigationWaypointIndex < NavigationWaypoints.Num()) return ERouteStatus::Ready;
+    if (NavigationReplanCooldownSeconds > 0.0f) return ERouteStatus::Waiting;
+    if (NavigationReplanAttempts >= 3) return ERouteStatus::Failed;
+    ++NavigationReplanAttempts;
+    NavigationReplanCooldownSeconds = 0.5f;
+    UNavigationSystemV1* NavSystem = GetWorld()
+        ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()) : nullptr;
+    ANavigationData* NavData = NavSystem
+        ? NavSystem->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) : nullptr;
+    FNavLocation ProjectedStart, ProjectedGoal;
+    const bool bProjected = NavSystem && NavData && !NavSystem->IsNavigationBuildInProgress()
+        && NavSystem->ProjectPointToNavigation(GetActorLocation(), ProjectedStart,
+            FVector(80.0f, 80.0f, 180.0f), NavData)
+        && NavSystem->ProjectPointToNavigation(Destination, ProjectedGoal,
+            FVector(80.0f, 80.0f, 180.0f), NavData)
+        && FlatDistance(ProjectedGoal.Location, Destination) <= 80.0f;
+    bool bRouteReady = false;
+    if (bProjected)
+    {
+        FPathFindingQuery Query(this, *NavData, ProjectedStart.Location, ProjectedGoal.Location);
+        Query.SetAllowPartialPaths(false);
+        const double QueryStartSeconds = FPlatformTime::Seconds();
+        const FPathFindingResult Result = NavSystem->FindPathSync(Query);
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_NAV_TARGET_QUERY generation=%llu unit=%llu sequence=%llu result=%u partial=%d points=%d duration_us=%.1f attempt=%u"),
+            NavigationMatchGeneration, StableId, NavigationOrderSequence,
+            static_cast<uint32>(Result.Result), Result.IsPartial() ? 1 : 0,
+            Result.Path.IsValid() ? Result.Path->GetPathPoints().Num() : 0,
+            (FPlatformTime::Seconds() - QueryStartSeconds) * 1000000.0, NavigationReplanAttempts);
+#endif
+        if (Result.Result == ENavigationQueryResult::Success && Result.Path.IsValid()
+            && !Result.Path->IsPartial() && Result.Path->GetPathPoints().Num() > 0)
+        {
+            NavigationWaypoints.Reset();
+            for (const FNavPathPoint& Point : Result.Path->GetPathPoints())
+            {
+                if (!FMath::IsFinite(Point.Location.X) || !FMath::IsFinite(Point.Location.Y)
+                    || !FMath::IsFinite(Point.Location.Z)) { NavigationWaypoints.Reset(); break; }
+                NavigationWaypoints.Add(Point.Location
+                    + FVector(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z));
+            }
+            NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+            const FVector VerticalOffset(0.0, 0.0, GetActorLocation().Z - ProjectedStart.Location.Z);
+            ResolvedNavigationDestination = ProjectedGoal.Location + VerticalOffset;
+            bRouteReady = !NavigationWaypoints.IsEmpty()
+                && FVector::Dist(NavigationWaypoints.Last(), ResolvedNavigationDestination) <= 150.0f;
+        }
+    }
+    return bRouteReady ? ERouteStatus::Ready : ERouteStatus::Failed;
+}
+
+politika::rules::OrderEndReason APolitikaPrototypeUnit::AdvanceAlongRoute(float DeltaSeconds)
+{
+    float RemainingDistance = MoveSpeed * (SprintRemaining > 0 && InfantryBehavior ? InfantryBehavior->SprintMultiplier : 1) * DeltaSeconds;
+    int32 WaypointsConsumed = 0;
+    while (RemainingDistance > KINDA_SMALL_NUMBER && NavigationWaypointIndex < NavigationWaypoints.Num()
+        && WaypointsConsumed < 16)
+    {
+        const FVector Waypoint = NavigationWaypoints[NavigationWaypointIndex];
+        const FVector Current = GetActorLocation();
+        FVector Offset = Waypoint - Current;
+        const float SegmentDistance = Offset.Size();
+        if (!FMath::IsFinite(SegmentDistance)) return politika::rules::OrderEndReason::NavigationFailed;
+        if (SegmentDistance <= 2.0f)
+        {
+            ++NavigationWaypointIndex;
+            ++WaypointsConsumed;
+            continue;
+        }
+        const float Travel = FMath::Min(RemainingDistance, SegmentDistance);
+        const FVector Next = Current + Offset.GetSafeNormal() * Travel;
+        FHitResult Hit;
+        SetActorLocation(Next, true, &Hit, ETeleportType::None);
+#if !UE_BUILD_SHIPPING
+        if (bTraceNavigationTraversal) NavigationStepTraversal.Add(GetActorLocation());
+#endif
+        if (Hit.bBlockingHit) return politika::rules::OrderEndReason::Obstructed;
+        RemainingDistance -= Travel;
+        ++WaypointsConsumed;
+        if (Travel + 2.0f >= SegmentDistance) ++NavigationWaypointIndex;
+    }
+    return politika::rules::OrderEndReason::None;
+}
+
+uint64 APolitikaPrototypeUnit::AuthorityStep() const
+{
+    const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+    return Match ? Match->SimulationStepsExecuted : 0;
+}
+
+void APolitikaPrototypeUnit::ResetAutonomy()
+{
+    Autonomy = EPolitikaUnitAutonomy::Holding;
+    bHasPost = false;
+    MaxPostDisplacement = 0.0f;
+}
+
+void APolitikaPrototypeUnit::SetStanceOverride(std::optional<politika::stance::CombatStance> Override)
+{
+    StanceOverride = Override ? static_cast<uint8>(*Override) : 255;
+}
+
+void APolitikaPrototypeUnit::ApplyStance(politika::stance::CombatStance Effective,
+    std::optional<politika::stance::Adherence> FormationAdherence)
+{
+    if (!HasAuthority()) return;
+    namespace ps = politika::stance;
+    const uint8 PreviousStance = EffectiveStance;
+    const bool bPreviousReturn = bReturnToPost;
+    const double PreviousLeash = IdleBehavior.leashCm;
+    EffectiveStance = static_cast<uint8>(Effective);
+    IdleBehavior = ps::BehaviorFor(Effective, FormationAdherence);
+    bReturnToPost = !FormationAdherence || *FormationAdherence != ps::Adherence::Free;
+    if (CurrentOrder == EPolitikaPrototypeOrder::Idle)
+    {
+        // Hold Fire drops a target the unit picked by itself; explicit orders are not idle.
+        if (!IdleBehavior.acquire) OrderTarget.Reset();
+        if (Autonomy == EPolitikaUnitAutonomy::Chasing && !IdleBehavior.chase)
+        {
+            OrderTarget.Reset();
+            EndEngagement(TEXT("stance"));
+        }
+    }
+#if !UE_BUILD_SHIPPING
+    if (PreviousStance != EffectiveStance || bPreviousReturn != bReturnToPost || PreviousLeash != IdleBehavior.leashCm)
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_STANCE_APPLIED unit=%llu stance=%s override=%s adherence=%s leash=%.0f return=%d order=%u autonomy=%u step=%llu"),
+            StableId, UTF8_TO_TCHAR(ps::StanceName(Effective).data()),
+            GetStanceOverride() ? UTF8_TO_TCHAR(ps::StanceName(*GetStanceOverride()).data()) : TEXT("none"),
+            FormationAdherence ? UTF8_TO_TCHAR(ps::AdherenceName(*FormationAdherence).data()) : TEXT("none"),
+            IdleBehavior.leashCm, bReturnToPost ? 1 : 0, static_cast<uint32>(CurrentOrder), static_cast<uint32>(Autonomy),
+            AuthorityStep());
+#else
+    (void)PreviousStance;
+    (void)bPreviousReturn;
+    (void)PreviousLeash;
+#endif
+}
+
+void APolitikaPrototypeUnit::EndEngagement(const TCHAR* Reason)
+{
+    const float Displacement = FlatDistance(GetActorLocation(), Post);
+    const bool bReturn = bReturnToPost && bHasPost && Displacement > politika::stance::kReturnToleranceCm;
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_STANCE_DISENGAGE unit=%llu reason=%s stance=%s displacement=%.1f max_displacement=%.1f leash=%.0f return=%d step=%llu"),
+        StableId, Reason, UTF8_TO_TCHAR(politika::stance::StanceName(GetEffectiveStance()).data()), Displacement,
+        MaxPostDisplacement, IdleBehavior.leashCm, bReturn ? 1 : 0, AuthorityStep());
+#else
+    (void)Reason;
+#endif
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationReplanAttempts = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    Autonomy = bReturn ? EPolitikaUnitAutonomy::Returning : EPolitikaUnitAutonomy::Holding;
+#if !UE_BUILD_SHIPPING
+    if (bReturn)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STANCE_RETURN unit=%llu phase=start displacement=%.1f post=%.1f,%.1f step=%llu"),
+            StableId, Displacement, Post.X, Post.Y, AuthorityStep());
+#endif
+}
+
+void APolitikaPrototypeUnit::SimulateIdleAutonomy(float DeltaSeconds)
+{
+    namespace ps = politika::stance;
+    namespace pf = politika::formation;
+    if (!bHasPost)
+    {
+        Post = GetActorLocation();
+        bHasPost = true;
+        MaxPostDisplacement = 0.0f;
+    }
+    const auto ResetRoute = [this]()
+    {
+        NavigationWaypoints.Reset();
+        NavigationWaypointIndex = 0;
+        NavigationReplanAttempts = 0;
+        NavigationReplanCooldownSeconds = 0.0f;
+    };
+    if (Autonomy == EPolitikaUnitAutonomy::Returning)
+    {
+        const auto GiveUp = [&](const TCHAR* Why)
+        {
+#if !UE_BUILD_SHIPPING
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STANCE_RETURN unit=%llu phase=failed reason=%s displacement=%.1f step=%llu"),
+                StableId, Why, FlatDistance(GetActorLocation(), Post), AuthorityStep());
+#else
+            (void)Why;
+#endif
+            // The unit holds where it is: that becomes its post, so it never retries forever.
+            Post = GetActorLocation();
+            Autonomy = EPolitikaUnitAutonomy::Holding;
+            ResetRoute();
+        };
+        if (FlatDistance(GetActorLocation(), Post) <= 18.0f)
+        {
+#if !UE_BUILD_SHIPPING
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STANCE_RETURN unit=%llu phase=arrived displacement=%.1f post=%.1f,%.1f step=%llu"),
+                StableId, FlatDistance(GetActorLocation(), Post), Post.X, Post.Y, AuthorityStep());
+#endif
+            Autonomy = EPolitikaUnitAutonomy::Holding;
+            MaxPostDisplacement = 0.0f;
+            ResetRoute();
+            return;
+        }
+        switch (EnsureRouteTo(Post, DeltaSeconds))
+        {
+            case ERouteStatus::Waiting: return;
+            case ERouteStatus::Failed: GiveUp(TEXT("route")); return;
+            case ERouteStatus::Ready: break;
+        }
+        if (AdvanceAlongRoute(DeltaSeconds) != politika::rules::OrderEndReason::None) GiveUp(TEXT("obstructed"));
+        return;
+    }
+    if (!IdleBehavior.chase)
+    {
+        if (Autonomy == EPolitikaUnitAutonomy::Chasing) EndEngagement(TEXT("stance"));
+        return;
+    }
+    const APolitikaPrototypeUnit* Target = OrderTarget.Get();
+    if (!Target || !Target->IsAlive() || !Target->IsAttackable() || !IsHostileTo(Target))
+    {
+        if (Autonomy == EPolitikaUnitAutonomy::Chasing) EndEngagement(TEXT("target_lost"));
+        return;
+    }
+    // In range: stand and fire (ResolveCombat). Out of range: chase inside the leash.
+    if (FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= WeaponRange) return;
+    const pf::Point PostPoint{Post.X, Post.Y};
+    const pf::Point TargetPoint{Target->GetActorLocation().X, Target->GetActorLocation().Y};
+    if (!ps::WithinReach(PostPoint, TargetPoint, IdleBehavior.leashCm, WeaponRange))
+    {
+        OrderTarget.Reset();
+        EndEngagement(TEXT("leash"));
+        return;
+    }
+    FVector Destination = Target->GetActorLocation()
+        - (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal2D() * FMath::Max(0.0f, WeaponRange - 100.0f);
+    const pf::Point Clamped = ps::ClampToLeash(PostPoint, {Destination.X, Destination.Y}, IdleBehavior.leashCm);
+    Destination.X = Clamped.x;
+    Destination.Y = Clamped.y;
+    // At the edge of the leash: wait there until the target comes into range or leaves reach.
+    if (FlatDistance(GetActorLocation(), Destination) <= 18.0f) return;
+    // After a chase found no route the unit holds for a while instead of querying every step.
+    if (AuthorityStep() < ChaseBlockedUntilStep) return;
+    if (Autonomy != EPolitikaUnitAutonomy::Chasing)
+    {
+        Autonomy = EPolitikaUnitAutonomy::Chasing;
+        MaxPostDisplacement = 0.0f;
+        ResetRoute();
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_STANCE_ENGAGE unit=%llu target=%llu stance=%s post=%.1f,%.1f post_target=%.1f target_distance=%.1f leash=%.0f step=%llu"),
+            StableId, Target->GetStableId(), UTF8_TO_TCHAR(ps::StanceName(GetEffectiveStance()).data()), Post.X, Post.Y,
+            ps::Distance(PostPoint, TargetPoint), FlatDistance(GetActorLocation(), Target->GetActorLocation()),
+            IdleBehavior.leashCm, AuthorityStep());
+#endif
+    }
+    switch (EnsureRouteTo(Destination, DeltaSeconds))
+    {
+        case ERouteStatus::Waiting: return;
+        case ERouteStatus::Failed:
+            OrderTarget.Reset();
+            ChaseBlockedUntilStep = AuthorityStep() + ChaseRetryDelaySteps;
+            EndEngagement(TEXT("route_failed"));
+            return;
+        case ERouteStatus::Ready: break;
+    }
+    if (AdvanceAlongRoute(DeltaSeconds) != politika::rules::OrderEndReason::None)
+    {
+        OrderTarget.Reset();
+        ChaseBlockedUntilStep = AuthorityStep() + ChaseRetryDelaySteps;
+        EndEngagement(TEXT("obstructed"));
+        return;
+    }
+    MaxPostDisplacement = FMath::Max(MaxPostDisplacement, FlatDistance(GetActorLocation(), Post));
+}
+
+void APolitikaPrototypeUnit::AutoAcquireForAttackMove(float RangeCm, const FVector* PostLocation, double LeashCm)
 {
     if (!HasAuthority()) return;
     APolitikaPrototypeUnit* Nearest = nullptr;
-    float NearestDistance = InfantryBehavior ? InfantryBehavior->AcquisitionRangeCm : 800.0f;
+    float NearestDistance = RangeCm > 0.0f ? RangeCm : InfantryBehavior ? InfantryBehavior->AcquisitionRangeCm : 800.0f;
     const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
     const bool bFog = Match && Match->IsFogOfWarEnabled();
     for (TActorIterator<APolitikaPrototypeUnit> It(GetWorld()); It; ++It)
@@ -519,6 +731,10 @@ void APolitikaPrototypeUnit::AutoAcquireForAttackMove()
             || !politika::rules::CanAutoEngage(OwnerPlayer, TeamId, Candidate->OwnerPlayer, Candidate->TeamId)) continue;
         // Under fog, only enemies the owning team currently observes can be acquired.
         if (bFog && !Candidate->IsObservedByTeam(TeamId)) continue;
+        // A leashed unit only takes targets it can fire at from inside its leash.
+        if (PostLocation && !politika::stance::WithinReach({PostLocation->X, PostLocation->Y},
+                {Candidate->GetActorLocation().X, Candidate->GetActorLocation().Y}, LeashCm, WeaponRange))
+            continue;
         const float Distance = FlatDistance(GetActorLocation(), Candidate->GetActorLocation());
         if (Distance < NearestDistance)
         {
@@ -576,11 +792,29 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     // Decimal authored intervals such as 0.2 s must not acquire an extra 0.05 s
     // step from a positive floating-point residue after four simulation steps.
     if (CooldownRemaining <= KINDA_SMALL_NUMBER) CooldownRemaining = 0;
+    const bool bIdle = CurrentOrder == EPolitikaPrototypeOrder::Idle;
+    // Idle fire follows the combat stance (FORM-F4): Hold Fire never fires on its own, and a
+    // unit walking back to its post does not stop to fight. Explicit orders are not idle.
+    if (bIdle && (!IdleBehavior.acquire || Autonomy == EPolitikaUnitAutonomy::Returning))
+    {
+        OrderTarget.Reset();
+        return;
+    }
+    if (bIdle && !bHasPost)
+    {
+        Post = GetActorLocation();
+        bHasPost = true;
+        MaxPostDisplacement = 0.0f;
+    }
     if ((CurrentOrder == EPolitikaPrototypeOrder::AttackMove
-        || (InfantryBehavior && InfantryBehavior->bAutoAcquireWhenIdle && CurrentOrder == EPolitikaPrototypeOrder::Idle))
+        || (InfantryBehavior && InfantryBehavior->bAutoAcquireWhenIdle && bIdle))
         && !OrderTarget.IsValid())
     {
-        AutoAcquireForAttackMove();
+        // Guard and Aggressive look for targets they can reach from inside their leash.
+        if (bIdle && IdleBehavior.chase)
+            AutoAcquireForAttackMove(static_cast<float>(IdleBehavior.acquireRangeCm), &Post, IdleBehavior.leashCm);
+        else
+            AutoAcquireForAttackMove();
     }
     else if (CurrentOrder == EPolitikaPrototypeOrder::Guard && !OrderTarget.IsValid())
     {
@@ -2483,7 +2717,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 #endif
             for (auto& Selection : SelectionByPlayer) Selection.Value.Units.Remove(Unit);
             if (Formations.FormationOf(Unit->GetStableId()))
-                HandleFormationChange(Formations.MemberLost(Unit->GetStableId(), SimulationStepsExecuted), TEXT("destroyed"));
+                LoseFormationMember(Unit->GetStableId(), politika::formation::LeaveReason::Destroyed, TEXT("destroyed"));
             Unit->BeginDeathPresentation();
         }
     }
@@ -2678,6 +2912,8 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
+    InputComponent->BindAction(TEXT("PrototypeCycleStance"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleStanceSelected);
+    InputComponent->BindAction(TEXT("PrototypeCycleAdherence"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleAdherenceSelected);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
     InputComponent->BindAxis(TEXT("PrototypePanRight"), this, &APolitikaPrototypePlayerController::PanRight);
@@ -3702,7 +3938,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
     const bool bLineShape = !PrototypeOwner || PrototypeOwner->GetGroupMoveShape() == politika::formation::Shape::Line;
-    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  T form  ·  Y release  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
+    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         bLineShape ? TEXT("LINE") : TEXT("COLUMN")), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
@@ -3720,8 +3956,12 @@ void APolitikaPrototypeHUD::DrawHUD()
                 const EPolitikaPrototypeOrder Order = Unit->GetCurrentOrder();
                 Moving += Order == EPolitikaPrototypeOrder::Move || Order == EPolitikaPrototypeOrder::AttackMove ? 1 : 0;
             }
-            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving"), SelectedUnits.Num(), Health, MaxHealth,
-                Moving), Ink, Left, Y, nullptr, 1.25f * UiScale);
+            // Combat stance (FORM-F4): one stance for the whole selection, or MIXED.
+            const politika::stance::CombatStance FirstStance = SelectedUnits[0]->GetEffectiveStance();
+            const bool bMixedStance = SelectedUnits.ContainsByPredicate(
+                [FirstStance](const APolitikaPrototypeUnit* Unit) { return Unit->GetEffectiveStance() != FirstStance; });
+            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving    STANCE %s"), SelectedUnits.Num(), Health, MaxHealth,
+                Moving, bMixedStance ? TEXT("MIXED") : *PolitikaStanceLabel(FirstStance)), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
             // Formation membership (FORM-F3): which formations the selection touches, and whether
             // the selection is one whole formation (then RMB/Q/X address the formation itself).
@@ -3737,8 +3977,10 @@ void APolitikaPrototypeHUD::DrawHUD()
                     else ++Loose;
                 }
                 if (Whole)
-                    DrawText(FString::Printf(TEXT("FORMATION %u  ·  %s  ·  %d of %u members  ·  %d in formation  ·  %s%s  ·  RMB/Q/X order the formation  ·  Y release"),
+                    DrawText(FString::Printf(TEXT("FORMATION %u  ·  %s  ·  %s  ·  %s  ·  %d of %u members  ·  %d following its move  ·  %s%s  ·  RMB/Q/X order the formation  ·  Y release"),
                         Whole->FormationId, Whole->Shape == static_cast<uint8>(politika::formation::Shape::Column) ? TEXT("COLUMN") : TEXT("LINE"),
+                        *PolitikaStanceLabel(static_cast<politika::stance::CombatStance>(Whole->Stance)),
+                        *PolitikaAdherenceLabel(static_cast<politika::stance::Adherence>(Whole->Adherence)),
                         Whole->Members.Num(), Whole->FormedMembers, Whole->Following,
                         Whole->State == static_cast<uint8>(politika::formation::FormationState::Degraded) ? TEXT("DEGRADED") : TEXT("ORGANIZED"),
                         Whole->Regroups > 0 ? *FString::Printf(TEXT("  ·  %u regroup%s"), Whole->Regroups, Whole->Regroups == 1 ? TEXT("") : TEXT("s")) : TEXT("")),
@@ -3781,8 +4023,12 @@ void APolitikaPrototypeHUD::DrawHUD()
                 case EPolitikaPrototypeOrder::Sprint:
                 case EPolitikaPrototypeOrder::Idle: break;
             }
-            DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s"), *Selected->GetUnitName().ToString(),
-                Selected->GetHealth(), Selected->GetMaxHealth(), Order), Ink, Left, Y, nullptr, 1.25f * UiScale);
+            const TCHAR* Autonomy = Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
+                : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Chasing ? TEXT(" (engaging)")
+                : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Returning ? TEXT(" (returning to post)") : TEXT("");
+            DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s%s    STANCE %s%s"), *Selected->GetUnitName().ToString(),
+                Selected->GetHealth(), Selected->GetMaxHealth(), Order, Autonomy, *PolitikaStanceLabel(Selected->GetEffectiveStance()),
+                Selected->GetStanceOverride() ? TEXT(" (own)") : TEXT("")), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
             if (Selected->HasInfantryBehavior())
             {

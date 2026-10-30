@@ -12,6 +12,7 @@
 #include "GroupSelection.h"
 #include "FormationGeometry.h"
 #include "Formation.h"
+#include "Stance.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -66,6 +67,15 @@ struct FPolitikaPrototypeSystemFactionAuthority
 UENUM(BlueprintType)
 enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Stop, Guard, Grenade, Reload, Sprint };
 
+// What an idle unit is doing on its own under its combat stance (FORM-F4): standing at its
+// post, chasing a target inside its leash, or walking back to its post. Never an order.
+UENUM()
+enum class EPolitikaUnitAutonomy : uint8 { Holding, Chasing, Returning };
+
+// HUD labels for stance and adherence (PolitikaFormations.cpp).
+FString PolitikaStanceLabel(politika::stance::CombatStance Stance);
+FString PolitikaAdherenceLabel(politika::stance::Adherence Adherence);
+
 // Versioned remote command intent (network_protocol in version.json). It carries
 // no participant, owner, faction or object pointer: the server derives authority
 // from the sending connection and resolves entity IDs in the current match.
@@ -110,23 +120,28 @@ struct POLITIKA_API FPolitikaSelectionSet
     UPROPERTY() TArray<TWeakObjectPtr<APolitikaPrototypeUnit>> Units;
 };
 
-// Versioned formation request (FORM-F3, network_protocol 3). Like the command intent it carries
-// no participant or owner: the server derives authority from the sending connection, resolves
-// member and formation IDs in the current match and fans a formation move out into ordinary,
-// individually admitted member commands.
+// Versioned formation request (FORM-F3, network_protocol 3; stance and adherence FORM-F4,
+// network_protocol 4). Like the command intent it carries no participant or owner: the server
+// derives authority from the sending connection, resolves member and formation IDs in the
+// current match and fans a formation move out into ordinary, individually admitted member
+// commands. A stance or adherence change is not an order and submits none.
 USTRUCT()
 struct POLITIKA_API FPolitikaNetFormationIntent
 {
     GENERATED_BODY()
     UPROPERTY() int32 ProtocolVersion = 0;
-    // politika::formation::FormationOp: Form, Release, Move, AttackMove, Stop.
+    // politika::formation::FormationOp: Form, Release, Move, AttackMove, Stop, SetStance, SetAdherence.
     UPROPERTY() uint8 Op = 0;
-    // Addressed formation for Move/AttackMove/Stop; zero for Form and Release.
+    // Addressed formation for Move/AttackMove/Stop/SetAdherence and a whole-formation SetStance;
+    // zero for Form, Release and a per-unit SetStance.
     UPROPERTY() uint32 FormationId = 0;
     // politika::formation::Shape for Form; zero otherwise.
     UPROPERTY() uint8 Shape = 0;
-    // Unit IDs for Form (2-64) and Release; empty otherwise.
+    // Unit IDs for Form (2-64), Release and a per-unit SetStance; empty otherwise.
     UPROPERTY() TArray<uint64> Members;
+    // politika::stance::CombatStance for SetStance, politika::stance::Adherence for
+    // SetAdherence; zero otherwise.
+    UPROPERTY() uint8 Value = 0;
     // Rules-domain map coordinates for Move/AttackMove (cm from the playable minimum).
     UPROPERTY() double DestinationX = 0.0;
     UPROPERTY() double DestinationY = 0.0;
@@ -167,13 +182,17 @@ struct POLITIKA_API FPolitikaNetFormationInfo
     UPROPERTY() uint8 Following = 0;
     UPROPERTY() uint16 Regroups = 0;
     UPROPERTY() uint16 FormedMembers = 0;
+    // politika::stance::CombatStance and politika::stance::Adherence (FORM-F4).
+    UPROPERTY() uint8 Stance = 0;
+    UPROPERTY() uint8 Adherence = 0;
     // Sorted unit IDs.
     UPROPERTY() TArray<uint64> Members;
     bool operator==(const FPolitikaNetFormationInfo& Other) const
     {
         return FormationId == Other.FormationId && Shape == Other.Shape && State == Other.State
             && bHasDestination == Other.bHasDestination && Following == Other.Following && Regroups == Other.Regroups
-            && FormedMembers == Other.FormedMembers && Members == Other.Members;
+            && FormedMembers == Other.FormedMembers && Stance == Other.Stance && Adherence == Other.Adherence
+            && Members == Other.Members;
     }
 };
 
@@ -267,6 +286,23 @@ public:
     EPolitikaPrototypeOrder GetCurrentOrder() const { return CurrentOrder; }
     FText GetUnitName() const { return UnitName; }
     APolitikaPrototypeUnit* GetOrderTarget() const { return OrderTarget.Get(); }
+    // Combat stance (FORM-F4). Owner-only replicated: an opponent sees what the unit does,
+    // never its stance. The override is the unit's own setting; without one the unit fights
+    // by its formation's stance, else by the default.
+    politika::stance::CombatStance GetEffectiveStance() const { return static_cast<politika::stance::CombatStance>(EffectiveStance); }
+    std::optional<politika::stance::CombatStance> GetStanceOverride() const
+    {
+        return StanceOverride < politika::stance::kStanceCount
+            ? std::optional(static_cast<politika::stance::CombatStance>(StanceOverride)) : std::nullopt;
+    }
+    EPolitikaUnitAutonomy GetAutonomy() const { return Autonomy; }
+    // Authority: records the unit's own stance setting (nullopt clears it).
+    void SetStanceOverride(std::optional<politika::stance::CombatStance> Override);
+    // Authority: applies the effective stance and, for a formation member, its formation's
+    // adherence. Never changes the current order; an idle chase that the new stance no longer
+    // allows ends, and a Hold Fire unit drops any target it picked by itself.
+    void ApplyStance(politika::stance::CombatStance Effective, std::optional<politika::stance::Adherence> FormationAdherence);
+    const politika::stance::IdleBehavior& GetIdleBehavior() const { return IdleBehavior; }
 private:
     friend class APolitikaPrototypeMatch;
 #if WITH_DEV_AUTOMATION_TESTS
@@ -281,6 +317,7 @@ private:
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
+    friend class FPolitikaMultiplayerFormationStanceTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -374,7 +411,41 @@ private:
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;
 #endif
-    void AutoAcquireForAttackMove();
+    // Nearest hostile, attackable, team-observed unit within RangeCm (zero: the archetype's
+    // acquisition range). With a post, only targets that can be fired at from inside the leash.
+    void AutoAcquireForAttackMove(float RangeCm = 0.0f, const FVector* Post = nullptr, double LeashCm = 0.0);
+
+    // Stance (FORM-F4). EffectiveStance/StanceOverride/Autonomy are owner-only replicated for
+    // the HUD; the post, leash state and behaviour are authority-only simulation state.
+    UPROPERTY(Replicated) uint8 EffectiveStance = 0;
+    // 255: no override.
+    UPROPERTY(Replicated) uint8 StanceOverride = 255;
+    UPROPERTY(Replicated) EPolitikaUnitAutonomy Autonomy = EPolitikaUnitAutonomy::Holding;
+    politika::stance::IdleBehavior IdleBehavior = politika::stance::BehaviorFor(politika::stance::kDefaultStance, std::nullopt);
+    // Where the unit stood when it last became idle; chases are leashed to it.
+    FVector Post = FVector::ZeroVector;
+    bool bHasPost = false;
+    // False only for members of a Free formation: they stay where an engagement ends.
+    bool bReturnToPost = true;
+    // A chase that found no route (or was obstructed) is not retried for 2 s (40 steps), so an
+    // unreachable enemy cannot cause a path query every step.
+    static constexpr uint64 ChaseRetryDelaySteps = 40;
+    uint64 ChaseBlockedUntilStep = 0;
+    float MaxPostDisplacement = 0.0f;
+    // An explicit order ends any autonomous engagement and forgets the post.
+    void ResetAutonomy();
+    // Idle movement under the stance: chase inside the leash, or walk back to the post.
+    void SimulateIdleAutonomy(float DeltaSeconds);
+    // Ends an autonomous chase: back to the post when the stance and adherence ask for it.
+    void EndEngagement(const TCHAR* Reason);
+    // Shared route following for target-following orders and idle autonomy: (re)plans towards
+    // Destination when the route is exhausted or the goal moved, bounded by a 0.5 s cooldown
+    // and three attempts. Returns false when no route can be found.
+    enum class ERouteStatus : uint8 { Ready, Waiting, Failed };
+    ERouteStatus EnsureRouteTo(const FVector& Destination, float DeltaSeconds);
+    // Advances along the current waypoints for one step; Obstructed/NavigationFailed or None.
+    politika::rules::OrderEndReason AdvanceAlongRoute(float DeltaSeconds);
+    uint64 AuthorityStep() const;
 };
 
 UCLASS()
@@ -772,6 +843,15 @@ private:
     uint32 FormationCasualtyFormation = 0;
     uint64 FormationCasualtyStep = 0;
     void TickFormationCasualtyFixture();
+    // Development fixture (-PolitikaMPStanceProbe, FORM-F4): when a participant's formation is
+    // first set to Guard, the opponent's lowest-ID unit is moved (an ordinary Move) to a point
+    // 740 cm from the nearest member (inside acquisition, outside weapon range); when it is
+    // first set to Hold Fire, the next one is moved to 450 cm (inside weapon range).
+    int32 StanceProbeArmed = -1;
+    bool bStanceProbeGuardSent = false;
+    bool bStanceProbeHoldFireSent = false;
+    TSet<uint64> StanceProbeUnits;
+    void TriggerStanceProbe(uint32 ParticipantId, const politika::formation::Formation& Formation);
 #endif
 #if WITH_DEV_AUTOMATION_TESTS
     TFunction<bool(const FVector2D&)> FormationSlotProbeForTest;
@@ -779,7 +859,18 @@ private:
     // no connection for the client RPC).
     TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
+    friend class FPolitikaMultiplayerFormationStanceTest;
 #endif
+    // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
+    // stance, else the default. Membership changes never change it: StanceSnapshot records it
+    // before a registry change and PreserveStances re-derives each override afterwards.
+    void RefreshUnitStance(APolitikaPrototypeUnit* Unit);
+    void RefreshFormationStances(politika::formation::FormationId Formation);
+    TMap<uint64, politika::stance::CombatStance> StanceSnapshot(TConstArrayView<uint64> ExtraIds = {}) const;
+    void PreserveStances(const TMap<uint64, politika::stance::CombatStance>& Before);
+    // Member loss with the stance of a dissolved formation's survivor preserved.
+    void LoseFormationMember(uint64 UnitId, politika::formation::LeaveReason Reason, const TCHAR* Cause);
+    bool SubmitStanceIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent, uint32 ParticipantId);
     // Authority: every live match unit. Observer: only units its connection currently
     // receives (fog-filtered); membership follows unit BeginPlay/EndPlay. Not replicated,
     // so the array size cannot reveal hidden enemy counts.
@@ -980,6 +1071,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerGroupMoveShapeTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
+    friend class FPolitikaMultiplayerFormationStanceTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -1141,11 +1233,18 @@ private:
     // is exactly one whole formation, RMB/Q/X address that formation instead of the units.
     void FormSelected();
     void ReleaseSelected();
+    // Stances (FORM-F4): H cycles the combat stance of the selection (a whole formation sets the
+    // formation's stance, any other selection sets each unit's own); J cycles a whole
+    // formation's adherence. Neither sends an order.
+    void CycleStanceSelected();
+    void CycleAdherenceSelected();
     bool SubmitFormationRequest(APolitikaPrototypeMatch* ActiveMatch, politika::formation::FormationOp Op,
         uint32 FormationId, TConstArrayView<APolitikaPrototypeUnit*> Members, const politika::rules::Position& Destination,
-        const FVector* GroundHit = nullptr);
+        const FVector* GroundHit = nullptr, uint8 Value = 0);
     // Pending formation move/stop correlations and their order kind, for the outcome batch.
     TMap<uint32, uint8> PendingFormationOrderKinds;
+    // Requested stance/adherence per pending correlation, for the outcome feedback.
+    TMap<uint32, uint8> PendingStanceValues;
     void ClearSelectionState();
     void OrderUnderCursor();
     void StopSelected();

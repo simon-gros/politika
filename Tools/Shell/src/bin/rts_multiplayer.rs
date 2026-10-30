@@ -8201,6 +8201,553 @@ fn formation_lifecycle_session(
     result
 }
 
+// ---------------------------------------------------------------------------------------
+// `--formation-stance SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// FORM-F4 on the same dedicated 1v1 fixture (20 idle units per seat), with the server's
+// development stance probe armed. Seat 1's client, with real X input: forms the army with T,
+// moves the formation into a Line, then presses H (Guard). The probe walks one opposing unit
+// to 740 cm from the nearest member (inside acquisition, outside weapon range): the nearest
+// members chase it inside their 600 cm leash, kill it and walk back to their posts while the
+// rest hold. J cycles adherence. H twice more reaches Hold Fire; the probe walks a second
+// opposing unit to 450 cm (inside weapon range) and it fires while the formation holds its
+// fire. A last H returns to Hold Ground and the formation fires again. No stance change sends
+// a unit order; the opposing client never sees the formation or its stance.
+// ---------------------------------------------------------------------------------------
+
+/// The stance and adherence fields that FORM-F4 appends to each `RTS_FORMATION_VIEW` entry.
+fn formation_view_stance(line: &str) -> Option<(String, String)> {
+    let detail = field(line, "detail")?;
+    let entry = detail.split(';').next()?;
+    let mut stance = None;
+    let mut adherence = None;
+    for part in entry.split(':') {
+        if let Some(value) = part.strip_prefix("stance=") {
+            stance = Some(value.to_owned());
+        } else if let Some(value) = part.strip_prefix("adherence=") {
+            adherence = Some(value.to_owned());
+        }
+    }
+    Some((stance?, adherence?))
+}
+
+/// Shots decided for `shooters` in `text` (one cue per receiving connection; counted once).
+fn shots_by(text: &str, shooters: &[u64]) -> usize {
+    let mut seen: Vec<String> = text
+        .lines()
+        .filter(|l| l.contains("MP_SHOT_CUE_SENT"))
+        .filter(|l| {
+            field(l, "shooter")
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|s| shooters.contains(&s))
+        })
+        .filter_map(|l| field(l, "sequence").map(str::to_owned))
+        .collect();
+    seen.sort();
+    seen.dedup();
+    seen.len()
+}
+
+fn unit_field(line: &str) -> u64 {
+    field(line, "unit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+#[allow(clippy::too_many_lines)]
+fn formation_stance_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPStanceProbe".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        SHAPE_LINE_POINT.0, SHAPE_LINE_POINT.1, SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        let own_lines = |text: &str, tag: &str| -> Vec<String> {
+            text.lines()
+                .filter(|l| l.contains(tag) && own.contains(&unit_field(l)))
+                .map(str::to_owned)
+                .collect()
+        };
+        let unit_orders = |text: &str| {
+            text.lines()
+                .filter(|l| {
+                    (l.contains("MP_COMMAND_RECEIVED") || l.contains("RTS_ORDER_ADMITTED"))
+                        && l.contains(" participant=1 ")
+                })
+                .count()
+        };
+
+        // 1. Box-select the army and form it (Line); the defaults are Hold Ground / Flexible.
+        let before = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        let boxed = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            before,
+        )?;
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let view = client_a.wait_line(
+            &["RTS_FORMATION_VIEW", "source=replicated", "formations=1 "],
+            Duration::from_secs(5),
+            at,
+        )?;
+        report.verdict(
+            "FORM-F4-DEFAULTS",
+            selection_ids(&boxed) == own
+                && ids_field(&formed, "ids") == own
+                && formation_view_stance(&view)
+                    == Some(("hold_ground".to_owned(), "flexible".to_owned())),
+            format!("{} | {}", formed.trim(), view.trim()),
+        );
+
+        // 2. Move the formation into its Line; each member's slot becomes its post.
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        server.wait_line(
+            &["RTS_FORMATION_MOVE", &format!("formation={formation} ")],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &own, &own);
+        report.verdict(
+            "FORM-F4-SETUP-LINE-ARRIVED",
+            arrived == own.len() && at_slot == own.len() && failed == 0,
+            format!(
+                "{arrived}/20 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm"
+            ),
+        );
+        thread::sleep(Duration::from_secs(2));
+        let posts: Vec<(u64, (f64, f64))> = own
+            .iter()
+            .filter_map(|u| server_unit(&server.text(), *u).map(|s| (*u, s.0)))
+            .collect();
+
+        // 3. H with the whole formation selected: Guard. A stance change sends no unit order.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("h")?;
+        let sent = wait5(&mut client_a, &["RTS_FORMATION_SENT", "op=set_stance"], at)?;
+        let set = server.wait_line(
+            &[
+                "RTS_STANCE_SET",
+                &format!("formation={formation} "),
+                "stance=guard",
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let outcome = wait5(&mut client_a, &["RTS_FORMATION_OUTCOME", "op=5 "], at)?;
+        let view = client_a.wait_line(
+            &["RTS_FORMATION_VIEW", "source=replicated", ":stance=guard"],
+            Duration::from_secs(5),
+            at,
+        )?;
+        thread::sleep(Duration::from_millis(500));
+        let applied = own_lines(&server.text()[at_server..], "RTS_STANCE_APPLIED")
+            .iter()
+            .filter(|l| field(l, "stance") == Some("guard") && field(l, "leash") == Some("600"))
+            .count();
+        let orders = unit_orders(&server.text()[at_server..]);
+        report.verdict(
+            "FORM-F4-STANCE-IS-NOT-AN-ORDER",
+            field(&sent, "formation") == Some(formation.as_str())
+                && field(&set, "members") == Some("20")
+                && field(&outcome, "accepted") == Some("1")
+                && field(&outcome, "orders") == Some("0")
+                && applied == own.len()
+                && orders == 0,
+            format!(
+                "{} | {} | {}; members applying guard {applied}; unit orders {orders}",
+                set.trim(),
+                outcome.trim(),
+                view.trim()
+            ),
+        );
+        report.artifact("guard_png", &client_a.screenshot(evidence, "01-guard")?);
+
+        // 4. The probe walks an opposing unit to 740 cm: the nearest members chase it inside the
+        // leash, it dies, and they walk back to their posts. Nobody else moves.
+        let probe = server.wait_line(
+            &["MP_STANCE_PROBE", "phase=guard"],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let probe_unit = unit_field(&probe);
+        let destroyed = server.wait_line(
+            &["RTS_UNIT_DESTROYED", &format!("unit={probe_unit}")],
+            Duration::from_secs(60),
+            at_server,
+        );
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let (engaged, disengaged, returned) = loop {
+            let text = server.text()[at_server..].to_owned();
+            let engaged: Vec<String> = own_lines(&text, "RTS_STANCE_ENGAGE");
+            let disengaged: Vec<String> = own_lines(&text, "RTS_STANCE_DISENGAGE");
+            let returned: Vec<String> = own_lines(&text, "RTS_STANCE_RETURN unit=")
+                .into_iter()
+                .filter(|l| l.contains("phase=arrived") || l.contains("phase=failed"))
+                .collect();
+            let returning = disengaged
+                .iter()
+                .filter(|l| l.contains(" return=1 "))
+                .count();
+            if (destroyed.is_ok() && returned.len() >= returning && !engaged.is_empty())
+                || Instant::now() >= deadline
+            {
+                break (engaged, disengaged, returned);
+            }
+            thread::sleep(Duration::from_millis(500));
+        };
+        thread::sleep(Duration::from_secs(2));
+        let engaged_units: Vec<u64> = {
+            let mut v: Vec<u64> = engaged.iter().map(|l| unit_field(l)).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        report.verdict(
+            "FORM-F4-GUARD-ENGAGES",
+            field(&probe, "placed") == Some("1")
+                && number(&probe, "nearest_member_cm").is_some_and(|d| (d - 740.0).abs() < 5.0)
+                && !engaged_units.is_empty()
+                && engaged.iter().all(|l| {
+                    field(l, "stance") == Some("guard")
+                        && field(l, "leash") == Some("600")
+                        && field(l, "target").and_then(|v| v.parse::<u64>().ok())
+                            == Some(probe_unit)
+                })
+                && destroyed.is_ok(),
+            format!(
+                "{} | {} engaged: {engaged_units:?} | {}",
+                probe.trim(),
+                engaged.len(),
+                destroyed
+                    .as_deref()
+                    .unwrap_or("probe unit not destroyed")
+                    .trim()
+            ),
+        );
+        let max_displacement = disengaged
+            .iter()
+            .filter_map(|l| number(l, "max_displacement"))
+            .fold(0.0_f64, f64::max);
+        report.verdict(
+            "FORM-08-GUARD-LEASH-BOUNDED",
+            !disengaged.is_empty()
+                && max_displacement > 0.0
+                && max_displacement <= 600.0 + 5.0
+                && disengaged
+                    .iter()
+                    .all(|l| field(l, "reason") != Some("route_failed")),
+            format!(
+                "{} disengagements, max displacement from post {max_displacement:.1} cm (leash 600)",
+                disengaged.len()
+            ),
+        );
+        let returning: Vec<u64> = disengaged
+            .iter()
+            .filter(|l| l.contains(" return=1 "))
+            .map(|l| unit_field(l))
+            .collect();
+        let back: Vec<u64> = returned
+            .iter()
+            .filter(|l| l.contains("phase=arrived"))
+            .map(|l| unit_field(l))
+            .collect();
+        let at_posts = posts
+            .iter()
+            .filter(|(u, post)| {
+                server_unit(&server.text(), *u).is_some_and(|s| distance(s.0, *post) <= 30.0)
+            })
+            .count();
+        let survivors = posts
+            .iter()
+            .filter(|(u, _)| server_unit(&server.text(), *u).is_some_and(|s| s.2 > 0))
+            .count();
+        report.verdict(
+            "FORM-F4-GUARD-RETURNS-TO-POST",
+            !returning.is_empty()
+                && returning.iter().all(|u| back.contains(u))
+                && at_posts == survivors,
+            format!(
+                "returning {returning:?}, arrived {back:?}; {at_posts}/{survivors} living members within 30 cm of their post"
+            ),
+        );
+        let idle_orders = unit_orders(&server.text()[at_server..]);
+        let independent = server.text()[at_server..]
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATION_MEMBER_INDEPENDENT"))
+            .count();
+        report.verdict(
+            "FORM-07-AUTONOMY-IS-NOT-AN-ORDER",
+            idle_orders == 0 && independent == 0,
+            format!("unit orders during the engagement {idle_orders}; members made independent {independent}"),
+        );
+        report.artifact(
+            "returned_png",
+            &client_a.screenshot(evidence, "02-returned")?,
+        );
+
+        // 5. J cycles adherence: Maintain halves the leash, Free stops returning, then Flexible.
+        let mut cycle = Vec::new();
+        for (expected, leash, back) in [
+            ("maintain", "300", "1"),
+            ("free", "600", "0"),
+            ("flexible", "600", "1"),
+        ] {
+            let at = client_a.offset();
+            let at_server = server.offset();
+            client_a.key("j")?;
+            let view = client_a.wait_line(
+                &[
+                    "RTS_FORMATION_VIEW",
+                    "source=replicated",
+                    &format!(":adherence={expected}"),
+                ],
+                Duration::from_secs(5),
+                at,
+            )?;
+            thread::sleep(Duration::from_millis(400));
+            let applied = own_lines(&server.text()[at_server..], "RTS_STANCE_APPLIED")
+                .iter()
+                .filter(|l| {
+                    field(l, "adherence") == Some(expected)
+                        && field(l, "leash") == Some(leash)
+                        && field(l, "return") == Some(back)
+                })
+                .count();
+            cycle.push((expected, applied, view.trim().to_owned()));
+        }
+        report.verdict(
+            "FORM-F4-ADHERENCE-CYCLES",
+            cycle.iter().all(|(_, applied, _)| *applied == survivors),
+            format!("{cycle:?}"),
+        );
+
+        // 6. H twice: Aggressive, then Hold Fire. The probe walks a second opposing unit into
+        // weapon range; it fires at the formation, which holds its fire.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("h")?;
+        client_a.wait_line(
+            &[
+                "RTS_FORMATION_VIEW",
+                "source=replicated",
+                ":stance=aggressive",
+            ],
+            Duration::from_secs(5),
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.key("h")?;
+        client_a.wait_line(
+            &[
+                "RTS_FORMATION_VIEW",
+                "source=replicated",
+                ":stance=hold_fire",
+            ],
+            Duration::from_secs(5),
+            at,
+        )?;
+        let probe2 = server.wait_line(
+            &["MP_STANCE_PROBE", "phase=hold_fire"],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let probe2_unit = unit_field(&probe2);
+        let target = (
+            number(&probe2, "x").unwrap_or(0.0),
+            number(&probe2, "y").unwrap_or(0.0),
+        );
+        wait_arrival(
+            &mut server,
+            probe2_unit,
+            target,
+            60.0,
+            Duration::from_secs(40),
+        )?;
+        let window = server.offset();
+        thread::sleep(Duration::from_secs(5));
+        let window_text = server.text()[window..].to_owned();
+        let own_shots = shots_by(&window_text, &own);
+        let probe_shots = shots_by(&window_text, &[probe2_unit]);
+        let moved = own_lines(&window_text, "RTS_STANCE_ENGAGE").len();
+        report.verdict(
+            "FORM-F4-HOLD-FIRE-HOLDS",
+            field(&probe2, "placed") == Some("1")
+                && number(&probe2, "nearest_member_cm").is_some_and(|d| (d - 450.0).abs() < 5.0)
+                && own_shots == 0
+                && probe_shots > 0
+                && moved == 0,
+            format!(
+                "{}; in 5 s the probe fired {probe_shots} shots, the Hold Fire formation {own_shots}, chases {moved}",
+                probe2.trim()
+            ),
+        );
+        report.artifact(
+            "hold_fire_png",
+            &client_a.screenshot(evidence, "03-hold-fire")?,
+        );
+
+        // 7. H once more: Hold Ground (the default). The formation fires again, without chasing.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("h")?;
+        client_a.wait_line(
+            &[
+                "RTS_FORMATION_VIEW",
+                "source=replicated",
+                ":stance=hold_ground",
+            ],
+            Duration::from_secs(5),
+            at,
+        )?;
+        let killed = server.wait_line(
+            &["RTS_UNIT_DESTROYED", &format!("unit={probe2_unit}")],
+            Duration::from_secs(30),
+            at_server,
+        );
+        let text = server.text()[at_server..].to_owned();
+        let fired = shots_by(&text, &own);
+        let chases = own_lines(&text, "RTS_STANCE_ENGAGE").len();
+        report.verdict(
+            "FORM-F4-HOLD-GROUND-FIRES-AGAIN",
+            killed.is_ok() && fired > 0 && chases == 0,
+            format!(
+                "{}; formation shots {fired}; chases {chases}",
+                killed
+                    .as_deref()
+                    .unwrap_or("probe unit not destroyed")
+                    .trim()
+            ),
+        );
+
+        // 8. The opposing client never receives the formation or its stance.
+        let leaked = client_b
+            .text()
+            .lines()
+            .filter(|l| {
+                (l.contains("RTS_FORMATION_VIEW") && !l.contains("formations=0 "))
+                    || l.contains("RTS_STANCE")
+            })
+            .count();
+        report.verdict(
+            "FORM-F4-OWNER-ONLY",
+            leaked == 0,
+            format!("opposing client formation or stance lines: {leaked}"),
+        );
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        let at_server = server.offset();
+        client_a.key("Escape")?;
+        let cleared = server.wait_line(
+            &["RTS_FORMATIONS_CLEARED"],
+            Duration::from_secs(15),
+            at_server,
+        )?;
+        report.verdict(
+            "FORM-15-TERMINAL-RETIRES-ONCE",
+            field(&cleared, "reason") == Some("match_ended")
+                && field(&cleared, "count") == Some("1"),
+            cleared.trim().to_owned(),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -8314,6 +8861,14 @@ fn main() {
             "politika.form.formation-lifecycle-evidence.v1",
             "formation-lifecycle",
             formation_lifecycle_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--formation-stance") {
+        run_dedicated_session(
+            "--formation-stance",
+            "politika.form.formation-stance-evidence.v1",
+            "formation-stance",
+            formation_stance_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

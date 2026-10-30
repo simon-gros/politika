@@ -10,6 +10,7 @@
 #include "PolitikaPrototypeGameplay.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaBootstrap.h"
+#include "PolitikaInfantryBehavior.h"
 
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
@@ -1685,6 +1686,214 @@ bool FPolitikaMultiplayerFormationLifecycleTest::RunTest(const FString& Paramete
         Formations.Empty() && Host->GetOwnFormations().IsEmpty());
     TestEqual(TEXT("FORM-15 an inactive match refuses formation requests"),
         Rejection(Host, Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]})), Code(pf::FormationRejection::MatchInactive));
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationStanceTest,
+    "Politika.RTS.Multiplayer.FormationStance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// FORM-F4: combat stances and formation adherence. Stance requests are formation intents that
+// submit no order; Hold Fire stops idle fire but not an explicit Attack; stance changes never
+// replace the current order; Form, Release and member loss never change a unit's stance; a
+// chase that finds no route backs off instead of querying every step.
+bool FPolitikaMultiplayerFormationStanceTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace ps = politika::stance;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    if (!TestTrue(TEXT("Host and enemy are bound"), HostId != 0 && EnemyId != 0)) return false;
+
+    // Four own infantry in a row and one enemy 400 cm in front of the first: inside every own
+    // unit's 600 cm weapon range. The enemy has no infantry behaviour, so it never fires back.
+    auto* Behavior = NewObject<UPolitikaInfantryBehaviorDefinition>();
+    Behavior->bRequiresLineOfFire = false;
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        Own.Add(F.AddUnit(HostId, {-1500.0 + Index * 100.0, -1200.0}));
+        if (Own.Last()) Own.Last()->ConfigureInfantryBehavior(Behavior);
+    }
+    APolitikaPrototypeUnit* Target = F.AddUnit(EnemyId, {-1350.0, -800.0});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !Target)) return false;
+    Target->Health = Target->MaxHealth = 100000; // survives the whole test
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    const pf::Registry& Formations = F.Match->GetFormations();
+    TArray<uint64> OwnIds;
+    for (const APolitikaPrototypeUnit* Unit : Own) OwnIds.Add(Unit->GetStableId());
+    auto LastOutcome = [&F](const APlayerController* Source) -> const FPolitikaNetFormationOutcome*
+    {
+        for (int32 Index = F.Match->TestFormationOutcomes.Num() - 1; Index >= 0; --Index)
+            if (F.Match->TestFormationOutcomes[Index].Key.Get() == Source) return &F.Match->TestFormationOutcomes[Index].Value;
+        return nullptr;
+    };
+    auto Request = [&F, Host](APolitikaPrototypePlayerController* Source, pf::FormationOp Op, uint32 FormationId,
+        TArray<uint64> Members, uint8 Value)
+    {
+        FPolitikaNetFormationIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.FormationId = FormationId;
+        Intent.Members = MoveTemp(Members);
+        Intent.Value = Value;
+        uint32& Sequence = Source == Host ? Host->NextClientSequence : F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto Code = [](pf::FormationRejection Value) { return static_cast<int32>(Value); };
+    auto Rejection = [&](APolitikaPrototypePlayerController* Source, const FPolitikaNetFormationIntent& Intent) -> int32
+    {
+        F.Match->SubmitFormationIntent(Source, Intent);
+        const FPolitikaNetFormationOutcome* Outcome = LastOutcome(Source);
+        return Outcome && Outcome->CorrelationId == Intent.CorrelationId && !Outcome->bAccepted
+            ? static_cast<int32>(Outcome->Rejection) : -1;
+    };
+    const auto AllStance = [&Own](ps::CombatStance Stance)
+    {
+        return !Own.ContainsByPredicate([Stance](const APolitikaPrototypeUnit* Unit) { return Unit->GetEffectiveStance() != Stance; });
+    };
+    const uint8 HoldFire = static_cast<uint8>(ps::CombatStance::HoldFire);
+
+    // Default: Hold Ground, no override, holding.
+    TestTrue(TEXT("Units start in Hold Ground without an override"), AllStance(ps::CombatStance::HoldGround)
+        && !Own.ContainsByPredicate([](const APolitikaPrototypeUnit* Unit) { return Unit->GetStanceOverride().has_value(); }));
+
+    // FORM-01/03: foreign, malformed and misaddressed stance requests fail closed.
+    TestEqual(TEXT("FORM-01 the enemy cannot set the host's stance"),
+        Rejection(Enemy, Request(Enemy, pf::FormationOp::SetStance, 0, {OwnIds[0]}, HoldFire)), Code(pf::FormationRejection::MemberUnavailable));
+    TestEqual(TEXT("FORM-03 an unknown stance is malformed"),
+        Rejection(Host, Request(Host, pf::FormationOp::SetStance, 0, {OwnIds[0]}, 9)), Code(pf::FormationRejection::MalformedCommand));
+    TestEqual(TEXT("FORM-03 adherence needs a formation"),
+        Rejection(Host, Request(Host, pf::FormationOp::SetAdherence, 0, {OwnIds[0]}, 1)), Code(pf::FormationRejection::MalformedCommand));
+    TestEqual(TEXT("An unknown formation is refused"),
+        Rejection(Host, Request(Host, pf::FormationOp::SetStance, 77, {}, HoldFire)), Code(pf::FormationRejection::UnknownFormation));
+    TestTrue(TEXT("Rejected stance requests change nothing"), AllStance(ps::CombatStance::HoldGround));
+
+    // A Guard order on unit 1, then Hold Fire for everyone: one request, no orders.
+    Host->SubmitGroupIntent(F.Match, {Own[1]}, nullptr, GuardOrder{});
+    F.Step();
+    TestEqual(TEXT("Hold Fire accepted for four units"),
+        Rejection(Host, Request(Host, pf::FormationOp::SetStance, 0, OwnIds, HoldFire)), -1);
+    TestTrue(TEXT("Outcome reports four units and no order"), LastOutcome(Host) && LastOutcome(Host)->bAccepted
+        && LastOutcome(Host)->Members == 4 && LastOutcome(Host)->Orders == 0);
+    TestEqual(TEXT("A stance change queues no command"), F.Match->PendingOrders.Num(), 0);
+    TestTrue(TEXT("FORM-10 all four hold fire by their own override"), AllStance(ps::CombatStance::HoldFire)
+        && Own[0]->GetStanceOverride() == std::optional(ps::CombatStance::HoldFire));
+    TestTrue(TEXT("FORM-10 a stance change never replaces the current order"), Own[1]->GetCurrentOrder() == EPolitikaPrototypeOrder::Guard);
+    Host->SubmitGroupIntent(F.Match, {Own[1]}, nullptr, StopOrder{});
+    F.Step();
+
+    // Hold Fire: an enemy inside weapon range is never fired at by idle units.
+    const int32 FullHealth = Target->GetHealth();
+    F.Step(40);
+    TestEqual(TEXT("Hold Fire: no idle unit fires"), Target->GetHealth(), FullHealth);
+    TestTrue(TEXT("Hold Fire: no idle unit holds a target"),
+        !Own[0]->GetOrderTarget() && !Own[2]->GetOrderTarget() && !Own[3]->GetOrderTarget());
+
+    // Explicit Attack overrides Hold Fire for that order only (provisional decision).
+    Host->SubmitGroupIntent(F.Match, {Own[0]}, Target, AttackOrder{Target->GetStableId()});
+    F.Step(30);
+    TestTrue(TEXT("An explicit Attack fires despite Hold Fire"), Target->GetHealth() < FullHealth);
+    TestTrue(TEXT("The other Hold Fire units stay silent"), !Own[2]->GetOrderTarget() && !Own[3]->GetOrderTarget());
+    TestTrue(TEXT("An explicit order does not clear the stance"), Own[0]->GetEffectiveStance() == ps::CombatStance::HoldFire);
+    Host->SubmitGroupIntent(F.Match, {Own[0]}, nullptr, StopOrder{});
+    F.Step();
+
+    // H on one unit: Hold Fire -> Hold Ground (the default, so the override goes); it fires again.
+    Host->ApplySelection({Own[2]}, SelectionOp::Replace, TEXT("automation"));
+    Host->CycleStanceSelected();
+    TestTrue(TEXT("H cycles Hold Fire to Hold Ground and clears the override"),
+        Own[2]->GetEffectiveStance() == ps::CombatStance::HoldGround && !Own[2]->GetStanceOverride());
+    const int32 HealthBefore = Target->GetHealth();
+    F.Step(30);
+    TestTrue(TEXT("Hold Ground: the idle unit fires at the enemy in range, as before stances"),
+        Target->GetHealth() < HealthBefore && Own[2]->GetOrderTarget() == Target);
+    TestTrue(TEXT("Hold Ground never moves"), FVector::Dist2D(Own[2]->GetActorLocation(), FVector(-1300.0, -1200.0, 0.0)) < 1.0);
+
+    // FORM-10: Form keeps every member's stance. Mixed stances: the formation takes the default
+    // and the Hold Fire members keep their overrides.
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms one formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Id = Formations.All().front().id;
+    TestTrue(TEXT("Mixed members: the formation starts at the default stance and adherence"),
+        Formations.Find(Id)->stance == ps::CombatStance::HoldGround && Formations.Find(Id)->adherence == ps::Adherence::Flexible);
+    TestTrue(TEXT("FORM-10 Form changes no member's stance"),
+        Own[0]->GetEffectiveStance() == ps::CombatStance::HoldFire && Own[1]->GetEffectiveStance() == ps::CombatStance::HoldFire
+        && Own[2]->GetEffectiveStance() == ps::CombatStance::HoldGround && Own[3]->GetEffectiveStance() == ps::CombatStance::HoldFire
+        && !Own[2]->GetStanceOverride() && Own[3]->GetStanceOverride());
+
+    // H with the whole formation selected sets the formation's stance and clears every override.
+    Host->CycleStanceSelected();
+    TestTrue(TEXT("Whole formation: H sets the formation to Guard"), Formations.Find(Id)->stance == ps::CombatStance::Guard);
+    TestTrue(TEXT("Every member fights by the formation stance, no overrides"), AllStance(ps::CombatStance::Guard)
+        && !Own.ContainsByPredicate([](const APolitikaPrototypeUnit* Unit) { return Unit->GetStanceOverride().has_value(); }));
+    TestTrue(TEXT("The owner view carries the stance"), Host->GetOwnFormations().Num() == 1
+        && Host->GetOwnFormations()[0].Stance == static_cast<uint8>(ps::CombatStance::Guard));
+    TestEqual(TEXT("The enemy sees no formation or stance"), Enemy->GetOwnFormations().Num(), 0);
+    TestTrue(TEXT("Guard members chase on a 600 cm leash and return"), Own[0]->GetIdleBehavior().chase
+        && FMath::IsNearlyEqual(Own[0]->GetIdleBehavior().leashCm, ps::kGuardLeashCm) && Own[0]->bReturnToPost);
+
+    // J cycles adherence: Maintain halves the leash; Free keeps the leash but does not return.
+    Host->CycleAdherenceSelected();
+    TestTrue(TEXT("J sets Maintain: half leash"), Formations.Find(Id)->adherence == ps::Adherence::Maintain
+        && FMath::IsNearlyEqual(Own[1]->GetIdleBehavior().leashCm, ps::kGuardLeashCm * ps::kMaintainLeashScale));
+    Host->CycleAdherenceSelected();
+    TestTrue(TEXT("J sets Free: full leash, no return to post"), Formations.Find(Id)->adherence == ps::Adherence::Free
+        && FMath::IsNearlyEqual(Own[1]->GetIdleBehavior().leashCm, ps::kGuardLeashCm) && !Own[1]->bReturnToPost);
+    Host->ApplySelection({Own[0]}, SelectionOp::Replace, TEXT("automation"));
+    Host->CycleAdherenceSelected();
+    TestTrue(TEXT("J on part of a formation sends nothing"), Formations.Find(Id)->adherence == ps::Adherence::Free);
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->CycleAdherenceSelected();
+    TestTrue(TEXT("J wraps back to Flexible"), Formations.Find(Id)->adherence == ps::Adherence::Flexible);
+
+    // FORM-08: with no navmesh a Guard chase finds no route; the unit backs off for 40 steps
+    // instead of querying every step. Move the in-range enemy away and add one 700 cm out.
+    Target->SetActorLocation(FVector(1500.0, 1500.0, 42.0));
+    APolitikaPrototypeUnit* Far = F.AddUnit(EnemyId, {-1200.0, -500.0});
+    if (!TestNotNull(TEXT("Far enemy spawned"), Far)) return false;
+    Far->Health = Far->MaxHealth = 100000;
+    for (APolitikaPrototypeUnit* Unit : Own) Unit->OrderTarget.Reset();
+    F.Step(3);
+    const APolitikaPrototypeUnit* Nearest = Own[3];
+    const uint64 FirstBlock = Nearest->ChaseBlockedUntilStep;
+    TestTrue(TEXT("A chase without a route backs off"), FirstBlock > F.Match->SimulationStepsExecuted);
+    TestTrue(TEXT("A failed chase moves nobody"), FVector::Dist2D(Nearest->GetActorLocation(), FVector(-1200.0, -1200.0, 0.0)) < 1.0);
+    F.Step(20);
+    TestEqual(TEXT("No retry inside the back-off window"), Nearest->ChaseBlockedUntilStep, FirstBlock);
+    F.Step(25);
+    TestTrue(TEXT("One retry after the window, then another back-off"), Nearest->ChaseBlockedUntilStep > FirstBlock
+        && Nearest->ChaseBlockedUntilStep <= FirstBlock + 2 * APolitikaPrototypeUnit::ChaseRetryDelaySteps);
+    TestTrue(TEXT("Idle autonomy never ends or replaces an order"), Nearest->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle);
+
+    // FORM-10: Release keeps each member's stance (the formation's Guard becomes their own).
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->ReleaseSelected();
+    TestTrue(TEXT("Release dissolves the formation"), Formations.Empty());
+    TestTrue(TEXT("FORM-10 Release changes no stance: Guard is now each unit's own"), AllStance(ps::CombatStance::Guard)
+        && Own[0]->GetStanceOverride() == std::optional(ps::CombatStance::Guard));
+
+    // FORM-09: a member's death dissolves a pair; the survivor keeps the formation's stance.
+    Host->ApplySelection({Own[2], Own[3]}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    const pf::Formation* Pair = Formations.All().empty() ? nullptr : &Formations.All().front();
+    TestTrue(TEXT("Same-stance members form a Guard formation without overrides"), Pair && Pair->stance == ps::CombatStance::Guard
+        && !Own[2]->GetStanceOverride() && !Own[3]->GetStanceOverride());
+    Own[3]->PendingDamage = static_cast<float>(Own[3]->GetHealth() + 1);
+    F.Step();
+    TestTrue(TEXT("The pair dissolves"), Formations.Empty());
+    TestTrue(TEXT("FORM-09 the survivor keeps Guard as its own stance"), Own[2]->GetEffectiveStance() == ps::CombatStance::Guard
+        && Own[2]->GetStanceOverride() == std::optional(ps::CombatStance::Guard));
     F.Match->FormationSlotProbeForTest = nullptr;
     return true;
 }

@@ -5,6 +5,7 @@
 #include "GroupSelection.h"
 #include "FormationGeometry.h"
 #include "Formation.h"
+#include "Stance.h"
 
 #include <cassert>
 #include <iterator>
@@ -605,7 +606,9 @@ int main() {
         assert(CheckIntentShape({2, 3, 0, {}, std::nan(""), 20.0}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({4, 3, 0, {}}) == FormationRejection::None);
         assert(CheckIntentShape({4, 3, 0, {}, 1.0, 0.0}) == FormationRejection::MalformedCommand);
-        assert(CheckIntentShape({5, 3, 0, {}}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({7, 3, 0, {}}) == FormationRejection::MalformedCommand);
+        // Formation ops carry no stance/adherence value.
+        assert(CheckIntentShape({4, 3, 0, {}, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
 
         // Form validates every member against authoritative state and changes nothing on rejection.
         Registry Formations;
@@ -721,6 +724,113 @@ int main() {
         const Change Cleared = Limited.Clear();
         assert(Cleared.dissolved.size() == kMaxFormationsPerParticipant + 1 && Limited.Empty() && Limited.Clear().dissolved.empty());
         assert(Limited.Form(1, std::span<const Entity>(Many.data(), 2), Shape::Line, 2).formed == FormationId{13});
+    }
+
+    // FORM-F4 combat stances and formation adherence: idle behaviour per stance, precedence,
+    // overrides that keep a unit's stance across Form/Release, leash geometry, and Free
+    // formations that keep membership but stop closing their ranks.
+    {
+        using namespace politika::formation;
+        using namespace politika::stance;
+        static_assert(kDefaultStance == CombatStance::HoldGround && static_cast<int>(CombatStance::HoldGround) == 0);
+        static_assert(kDefaultAdherence == Adherence::Flexible && static_cast<int>(Adherence::Flexible) == 0);
+        static_assert(StanceName(CombatStance::HoldFire) == "hold_fire" && AdherenceName(Adherence::Maintain) == "maintain");
+        static_assert(OpName(FormationOp::SetStance) == "set_stance" && OpName(FormationOp::SetAdherence) == "set_adherence");
+        // The stance key visits every stance once and wraps; adherence likewise.
+        static_assert(NextStance(NextStance(NextStance(NextStance(CombatStance::HoldGround)))) == CombatStance::HoldGround);
+        static_assert(NextStance(CombatStance::HoldGround) == CombatStance::Guard
+            && NextStance(CombatStance::Guard) == CombatStance::Aggressive
+            && NextStance(CombatStance::Aggressive) == CombatStance::HoldFire);
+        static_assert(NextAdherence(NextAdherence(NextAdherence(Adherence::Flexible))) == Adherence::Flexible);
+        static_assert(IsValidStance(3) && !IsValidStance(4) && IsValidAdherence(2) && !IsValidAdherence(3));
+
+        // Precedence: unit override > formation stance > default (FORM-10).
+        static_assert(Effective(std::nullopt, std::nullopt) == CombatStance::HoldGround);
+        static_assert(Effective(std::nullopt, CombatStance::Guard) == CombatStance::Guard);
+        static_assert(Effective(CombatStance::HoldFire, CombatStance::Guard) == CombatStance::HoldFire);
+        static_assert(!OverrideFor(CombatStance::Guard, CombatStance::Guard).has_value());
+        static_assert(*OverrideFor(CombatStance::HoldFire, CombatStance::Guard) == CombatStance::HoldFire);
+
+        // Idle behaviour: Hold Ground is the pre-stance behaviour (fire in range, never move).
+        constexpr IdleBehavior Ground = BehaviorFor(CombatStance::HoldGround, std::nullopt);
+        static_assert(Ground.acquire && !Ground.chase && Ground.leashCm == 0.0 && !Ground.returnToPost);
+        constexpr IdleBehavior Fire = BehaviorFor(CombatStance::HoldFire, Adherence::Flexible);
+        static_assert(!Fire.acquire && !Fire.chase && !Fire.returnToPost);
+        constexpr IdleBehavior Guarding = BehaviorFor(CombatStance::Guard, std::nullopt);
+        static_assert(Guarding.acquire && Guarding.chase && Guarding.leashCm == kGuardLeashCm && Guarding.returnToPost
+            && Guarding.acquireRangeCm == 0.0);
+        constexpr IdleBehavior Pursuing = BehaviorFor(CombatStance::Aggressive, Adherence::Flexible);
+        static_assert(Pursuing.leashCm == kAggressiveLeashCm && Pursuing.acquireRangeCm == kAggressiveLeashCm && Pursuing.returnToPost);
+        // Adherence: Maintain halves the leash; Free chases but does not walk back.
+        static_assert(BehaviorFor(CombatStance::Guard, Adherence::Maintain).leashCm == kGuardLeashCm * kMaintainLeashScale);
+        static_assert(BehaviorFor(CombatStance::Guard, Adherence::Free).chase && !BehaviorFor(CombatStance::Guard, Adherence::Free).returnToPost);
+        static_assert(BehaviorFor(CombatStance::HoldGround, Adherence::Maintain).leashCm == 0.0);
+
+        // Leash geometry: engage only what can be fired at from inside the leash; clamp the chase.
+        assert(WithinReach({0, 0}, {1200, 0}, 600.0, 650.0) && !WithinReach({0, 0}, {1300, 0}, 600.0, 650.0));
+        assert(!WithinReach({0, 0}, {10, 0}, 0.0, 650.0) && !WithinReach({0, 0}, {std::nan(""), 0}, 600.0, 650.0));
+        const Point Clamped = ClampToLeash({100, 100}, {100, 1100}, 600.0);
+        assert(std::abs(Clamped.x - 100.0) < 1e-9 && std::abs(Clamped.y - 700.0) < 1e-9);
+        const Point Inside = ClampToLeash({0, 0}, {300, 400}, 600.0);
+        assert(Inside.x == 300.0 && Inside.y == 400.0);
+
+        // Intent shapes: a formation or a unit list, never both; values bounded; no position.
+        const EntityId Three[] = {4, 7, 9};
+        const EntityId Dup[] = {4, 4};
+        const EntityId ZeroId[] = {0, 4};
+        assert(CheckIntentShape({5, 3, 0, {}, 0.0, 0.0, 3}) == FormationRejection::None);
+        assert(CheckIntentShape({5, 0, 0, Three, 0.0, 0.0, 1}) == FormationRejection::None);
+        assert(CheckIntentShape({5, 3, 0, Three, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 0, 0, {}, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 3, 0, {}, 0.0, 0.0, 4}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 3, 1, {}, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 3, 0, {}, 5.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 0, 0, Dup, 0.0, 0.0, 1}) == FormationRejection::DuplicateMember);
+        assert(CheckIntentShape({5, 0, 0, ZeroId, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        std::vector<EntityId> TooMany(static_cast<std::size_t>(kMaxUnitsPerParticipant) + 1);
+        for (std::size_t Index = 0; Index < TooMany.size(); ++Index) TooMany[Index] = Index + 1;
+        assert(CheckIntentShape({5, 0, 0, TooMany, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({6, 3, 0, {}, 0.0, 0.0, 2}) == FormationRejection::None);
+        assert(CheckIntentShape({6, 3, 0, {}, 0.0, 0.0, 3}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({6, 0, 0, Three, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+
+        // Registry: a formation starts with the stance it is given and the default adherence;
+        // only its owner can change either.
+        const auto Always = [](Point) { return true; };
+        const auto At = [](EntityId Id) { return Point{1000.0 + static_cast<double>(Id) * 10.0, 1000.0}; };
+        std::vector<Entity> Six;
+        for (EntityId Id = 1; Id <= 6; ++Id) Six.push_back(Entity{Id, 1});
+        Registry Formations;
+        const Change Formed = Formations.Form(1, Six, Shape::Line, 1, CombatStance::Guard);
+        assert(Formed.Accepted());
+        const FormationId Id = Formed.formed;
+        assert(Formations.Find(Id)->stance == CombatStance::Guard && Formations.Find(Id)->adherence == Adherence::Flexible);
+        assert(Formations.Form(1, Six, Shape::Line, 1, static_cast<CombatStance>(9)).rejection == FormationRejection::MalformedCommand);
+        assert(Formations.SetStance(2, Id, CombatStance::HoldFire) == FormationRejection::UnknownFormation);
+        assert(Formations.SetStance(1, FormationId{99}, CombatStance::HoldFire) == FormationRejection::UnknownFormation);
+        assert(Formations.SetStance(1, Id, static_cast<CombatStance>(4)) == FormationRejection::MalformedCommand);
+        assert(Formations.SetStance(1, Id, CombatStance::HoldFire) == FormationRejection::None);
+        assert(Formations.Find(Id)->stance == CombatStance::HoldFire);
+        assert(Formations.SetAdherence(2, Id, Adherence::Free) == FormationRejection::UnknownFormation);
+        assert(Formations.SetAdherence(1, Id, static_cast<Adherence>(3)) == FormationRejection::MalformedCommand);
+        // Changing stance or adherence is not an order: following and destination are untouched.
+        (void)Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always);
+        assert(Formations.SetStance(1, Id, CombatStance::Aggressive) == FormationRejection::None);
+        assert(Formations.Find(Id)->FollowingCount() == 6 && Formations.Find(Id)->hasDestination);
+
+        // Flexible and Maintain close ranks after a loss; Free keeps membership and does not.
+        assert(Formations.SetAdherence(1, Id, Adherence::Maintain) == FormationRejection::None);
+        const Change Lost = Formations.MemberLost(6, 100);
+        assert(Lost.regroups.size() == 1 && Formations.Find(Id)->regroupDueStep == 100 + kRegroupDelaySteps);
+        // Switching to Free cancels the pending regroup; later losses schedule none.
+        assert(Formations.SetAdherence(1, Id, Adherence::Free) == FormationRejection::None);
+        assert(Formations.Find(Id)->regroupDueStep == 0 && Formations.DueRegroups(1000).empty());
+        const Change LostFree = Formations.MemberLost(5, 200);
+        assert(LostFree.Accepted() && LostFree.regroups.empty() && Formations.Find(Id)->members.size() == 4);
+        assert(Formations.Find(Id)->state == FormationState::Degraded && Formations.Find(Id)->FollowingCount() == 4);
+        // Back to Flexible: the next loss regroups again.
+        assert(Formations.SetAdherence(1, Id, Adherence::Flexible) == FormationRejection::None);
+        assert(Formations.MemberLost(4, 300).regroups.size() == 1);
     }
 
     // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.

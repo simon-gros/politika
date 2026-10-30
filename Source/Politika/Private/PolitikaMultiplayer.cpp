@@ -121,6 +121,10 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, Ammo, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ReloadRemaining, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, SprintRemaining, COND_OwnerOnly);
+    // Combat stance (FORM-F4): the owner's HUD only; an opponent sees behaviour, not the setting.
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, EffectiveStance, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, StanceOverride, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, Autonomy, COND_OwnerOnly);
 }
 
 void APolitikaPrototypeObjective::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

@@ -4,8 +4,8 @@
 // FORM-F3): a formation ID, its owning participant, its sorted member IDs, its shape and the
 // last formation move, plus explicit Form/Release transitions, member loss and one bounded
 // regroup after losses. Selection and control groups never create one; only an admitted Form
-// does. There is no stance, adherence, Cohesion or Discipline effect (FORM-F4+), and the
-// registry never moves a unit itself: it returns per-member destinations that the caller
+// does. Each formation carries a combat stance and an adherence (FORM-F4, Stance.h); there is
+// no Cohesion or Discipline effect (FORM-F5+), and the registry never moves a unit itself: it returns per-member destinations that the caller
 // submits as ordinary, individually admitted Move/AttackMove commands.
 
 #include <algorithm>
@@ -18,6 +18,7 @@
 
 #include "FormationGeometry.h"
 #include "Rules.h"
+#include "Stance.h"
 
 namespace politika::formation {
 
@@ -50,8 +51,10 @@ enum class FormationState : std::uint8_t { Organized, Degraded };
     return state == FormationState::Degraded ? "degraded" : "organized";
 }
 
-enum class FormationOp : std::uint8_t { Form, Release, Move, AttackMove, Stop };
-inline constexpr std::uint8_t kFormationOpCount = 5;
+// SetStance addresses a whole formation (its stance; member overrides are cleared) or a list
+// of units (per-unit overrides). SetAdherence addresses a formation only.
+enum class FormationOp : std::uint8_t { Form, Release, Move, AttackMove, Stop, SetStance, SetAdherence };
+inline constexpr std::uint8_t kFormationOpCount = 7;
 
 [[nodiscard]] constexpr std::string_view OpName(FormationOp op) noexcept {
     switch (op) {
@@ -60,6 +63,8 @@ inline constexpr std::uint8_t kFormationOpCount = 5;
         case FormationOp::Move: return "move";
         case FormationOp::AttackMove: return "attack_move";
         case FormationOp::Stop: return "stop";
+        case FormationOp::SetStance: return "set_stance";
+        case FormationOp::SetAdherence: return "set_adherence";
     }
     return "invalid";
 }
@@ -118,6 +123,8 @@ struct IntentPayload {
     std::span<const EntityId> members;
     double x = 0.0;
     double y = 0.0;
+    // SetStance: stance::CombatStance; SetAdherence: stance::Adherence; zero otherwise.
+    std::uint8_t value = 0;
 };
 
 // Shape check only: unused fields must be zero and member lists bounded, unique and non-zero.
@@ -127,6 +134,21 @@ struct IntentPayload {
         return FormationRejection::MalformedCommand;
     const auto op = static_cast<FormationOp>(payload.op);
     const bool hasPosition = payload.x != 0.0 || payload.y != 0.0;
+    if (op == FormationOp::SetStance || op == FormationOp::SetAdherence) {
+        const bool valid = op == FormationOp::SetStance ? stance::IsValidStance(payload.value)
+                                                        : stance::IsValidAdherence(payload.value);
+        if (!valid || payload.shape != 0 || hasPosition) return FormationRejection::MalformedCommand;
+        // Exactly one address: a formation, or (SetStance only) a list of units.
+        if (payload.formation_id != 0) return payload.members.empty() ? FormationRejection::None : FormationRejection::MalformedCommand;
+        if (op == FormationOp::SetAdherence || payload.members.empty() || payload.members.size() > kMaxReleaseIds)
+            return FormationRejection::MalformedCommand;
+        std::vector<EntityId> sorted(payload.members.begin(), payload.members.end());
+        std::sort(sorted.begin(), sorted.end());
+        if (sorted.front() == 0) return FormationRejection::MalformedCommand;
+        if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) return FormationRejection::DuplicateMember;
+        return FormationRejection::None;
+    }
+    if (payload.value != 0) return FormationRejection::MalformedCommand;
     const bool takesMembers = op == FormationOp::Form || op == FormationOp::Release;
     if (takesMembers) {
         if (payload.formation_id != 0 || hasPosition) return FormationRejection::MalformedCommand;
@@ -163,6 +185,8 @@ struct Formation {
     FormationId id;
     std::uint32_t owner = 0;
     Shape shape = Shape::Line;
+    stance::CombatStance stance = stance::kDefaultStance;
+    stance::Adherence adherence = stance::kDefaultAdherence;
     std::vector<MemberSlot> members; // sorted by ID, unique
     FormationState state = FormationState::Organized;
     std::size_t formedMembers = 0;
@@ -260,10 +284,11 @@ public:
     // than two members dissolves; one that keeps two or more closes its ranks like after a
     // loss. Rejections change nothing.
     [[nodiscard]] Change Form(std::uint32_t participant, std::span<const rules::Entity> members, Shape shape,
-        std::uint64_t step) {
+        std::uint64_t step, stance::CombatStance initialStance = stance::kDefaultStance) {
         Change change;
         if (participant == 0) return Reject(change, FormationRejection::Unauthorized);
-        if (static_cast<std::uint8_t>(shape) >= kShapeCount) return Reject(change, FormationRejection::MalformedCommand);
+        if (static_cast<std::uint8_t>(shape) >= kShapeCount || !stance::IsValidStance(static_cast<std::uint8_t>(initialStance)))
+            return Reject(change, FormationRejection::MalformedCommand);
         if (members.size() < kMinFormationMembers) return Reject(change, FormationRejection::TooFewMembers);
         if (members.size() > kMaxFormationMembers) return Reject(change, FormationRejection::TooManyMembers);
         std::vector<EntityId> ids;
@@ -291,6 +316,7 @@ public:
         formation.id = FormationId{nextId_++};
         formation.owner = participant;
         formation.shape = shape;
+        formation.stance = initialStance;
         formation.formedMembers = ids.size();
         for (EntityId id : ids) formation.members.push_back({id, kNoSlot, {}, false});
         change.formed = formation.id;
@@ -354,6 +380,25 @@ public:
             result.orders.push_back({assignment.id, assignment.destination, assignment.slot});
         }
         return result;
+    }
+
+    // Formation stance: every member without an override fights by it.
+    [[nodiscard]] FormationRejection SetStance(std::uint32_t participant, FormationId id, stance::CombatStance value) {
+        Formation* formation = MutableOwned(id, participant);
+        if (!formation) return FormationRejection::UnknownFormation;
+        if (!stance::IsValidStance(static_cast<std::uint8_t>(value))) return FormationRejection::MalformedCommand;
+        formation->stance = value;
+        return FormationRejection::None;
+    }
+
+    // Formation adherence. Free gives up closing the ranks, so a pending regroup is cancelled.
+    [[nodiscard]] FormationRejection SetAdherence(std::uint32_t participant, FormationId id, stance::Adherence value) {
+        Formation* formation = MutableOwned(id, participant);
+        if (!formation) return FormationRejection::UnknownFormation;
+        if (!stance::IsValidAdherence(static_cast<std::uint8_t>(value))) return FormationRejection::MalformedCommand;
+        formation->adherence = value;
+        if (value == stance::Adherence::Free) formation->regroupDueStep = 0;
+        return FormationRejection::None;
     }
 
     // Formation Stop: forget the destination (nothing to regroup towards) and stop following.
@@ -457,7 +502,9 @@ private:
             }
             ++it->losses;
             it->state = FormationState::Degraded;
-            if (it->hasDestination && it->FollowingCount() > 0 && it->regroupDueStep == 0) {
+            // A Free formation keeps its membership but does not close its ranks.
+            if (it->adherence != stance::Adherence::Free && it->hasDestination && it->FollowingCount() > 0
+                && it->regroupDueStep == 0) {
                 const std::uint64_t earliest = std::max(step + kRegroupDelaySteps,
                     it->regroups > 0 ? it->lastRegroupStep + kRegroupDelaySteps : 0);
                 it->regroupDueStep = std::max<std::uint64_t>(earliest, 1);

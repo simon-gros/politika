@@ -7,6 +7,11 @@
 // Move/AttackMove/Stop and its bounded regroup are planned here, on the server's own navmesh,
 // and submitted as ordinary single-issuer commands that the coordinator admits one by one.
 // Clients receive only an owner-only summary of their own formations.
+//
+// Combat stance and adherence (FORM-F4): a stance or adherence change is a formation request
+// that submits no order. A unit's effective stance is its own override, else its formation's
+// stance, else the default; Form, Release and member loss never change it (StanceSnapshot and
+// PreserveStances re-derive each override around every registry change).
 
 #include "PolitikaPrototypeGameplay.h"
 
@@ -14,6 +19,7 @@
 #include "Formation.h"
 #include "GroupSelection.h"
 #include "Rules.h"
+#include "Stance.h"
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -27,6 +33,7 @@
 #include <vector>
 
 namespace pf = politika::formation;
+namespace ps = politika::stance;
 
 namespace
 {
@@ -77,7 +84,33 @@ const TCHAR* ShapeText(pf::Shape Shape)
 {
     return Shape == pf::Shape::Column ? TEXT("column") : TEXT("line");
 }
+
+const TCHAR* StanceText(ps::CombatStance Stance)
+{
+    switch (Stance)
+    {
+        case ps::CombatStance::HoldGround: return TEXT("HOLD GROUND");
+        case ps::CombatStance::Guard: return TEXT("GUARD");
+        case ps::CombatStance::Aggressive: return TEXT("AGGRESSIVE");
+        case ps::CombatStance::HoldFire: return TEXT("HOLD FIRE");
+    }
+    return TEXT("?");
 }
+
+const TCHAR* AdherenceText(ps::Adherence Adherence)
+{
+    switch (Adherence)
+    {
+        case ps::Adherence::Flexible: return TEXT("FLEXIBLE");
+        case ps::Adherence::Maintain: return TEXT("MAINTAIN");
+        case ps::Adherence::Free: return TEXT("FREE");
+    }
+    return TEXT("?");
+}
+}
+
+FString PolitikaStanceLabel(ps::CombatStance Stance) { return StanceText(Stance); }
+FString PolitikaAdherenceLabel(ps::Adherence Adherence) { return AdherenceText(Adherence); }
 
 // ----------------------------------------------------------------------------
 // Shared advisory slot check
@@ -211,7 +244,7 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
         Ids.push_back(static_cast<pf::EntityId>(Intent.Members[Index]));
     if (Intent.Members.Num() > static_cast<int32>(pf::kMaxReleaseIds)) Ids.push_back(0); // fails the shape check
     if (const FormationRejection Shape = pf::CheckIntentShape({Intent.Op, Intent.FormationId, Intent.Shape, Ids,
-            Intent.DestinationX, Intent.DestinationY}); Shape != FormationRejection::None)
+            Intent.DestinationX, Intent.DestinationY, Intent.Value}); Shape != FormationRejection::None)
     {
         RejectFormationIntent(Source, Intent, ParticipantId, Shape);
         return true;
@@ -239,8 +272,15 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
 #endif
     };
 
+    if (Op == pf::FormationOp::SetStance || Op == pf::FormationOp::SetAdherence)
+        return SubmitStanceIntent(Source, Intent, ParticipantId);
+
     if (Op == pf::FormationOp::Form || Op == pf::FormationOp::Release)
     {
+        // Form and Release never change any unit's effective stance.
+        TArray<uint64> NamedIds;
+        for (const pf::EntityId Id : Ids) NamedIds.Add(Id);
+        const TMap<uint64, ps::CombatStance> StancesBefore = StanceSnapshot(NamedIds);
         pf::Change Change;
         if (Op == pf::FormationOp::Form)
         {
@@ -266,7 +306,19 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
                 }
                 Members.push_back(Entity);
             }
-            Change = Formations.Form(ParticipantId, Members, static_cast<pf::Shape>(Intent.Shape), Step);
+            // A formation of units that all fight the same way takes that stance, so none of
+            // them needs an override; otherwise it starts at the default and they keep theirs.
+            std::optional<ps::CombatStance> Common;
+            bool bCommon = true;
+            for (const pf::EntityId Id : Ids)
+            {
+                const ps::CombatStance* Stance = StancesBefore.Find(Id);
+                if (!Stance) { bCommon = false; break; }
+                if (Common && *Common != *Stance) { bCommon = false; break; }
+                Common = *Stance;
+            }
+            Change = Formations.Form(ParticipantId, Members, static_cast<pf::Shape>(Intent.Shape), Step,
+                bCommon && Common ? *Common : ps::kDefaultStance);
         }
         else
             Change = Formations.Release(ParticipantId, Ids, Step);
@@ -280,6 +332,7 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
         LogAccepted(Change.formed.value, Members, 0);
         SendFormationOutcome(Source, Intent, FormationRejection::None, Change.formed.value, Members, 0);
         HandleFormationChange(Change, Op == pf::FormationOp::Form ? TEXT("form") : TEXT("release"));
+        PreserveStances(StancesBefore);
         SyncFormationReplication();
         return true;
     }
@@ -475,8 +528,139 @@ void APolitikaPrototypeMatch::PruneFormationMembers()
             if (!Unit || !Unit->IsAlive()) Lost.emplace_back(Member.id, pf::LeaveReason::Destroyed);
             else if (Unit->GetOwnerPlayer() != Formation.owner) Lost.emplace_back(Member.id, pf::LeaveReason::Unavailable);
         }
-    for (const auto& [Id, Reason] : Lost)
-        HandleFormationChange(Formations.MemberLost(Id, SimulationStepsExecuted, Reason), TEXT("revalidation"));
+    for (const auto& [Id, Reason] : Lost) LoseFormationMember(Id, Reason, TEXT("revalidation"));
+}
+
+void APolitikaPrototypeMatch::LoseFormationMember(uint64 UnitId, pf::LeaveReason Reason, const TCHAR* Cause)
+{
+    const TMap<uint64, ps::CombatStance> StancesBefore = StanceSnapshot();
+    HandleFormationChange(Formations.MemberLost(UnitId, SimulationStepsExecuted, Reason), Cause);
+    PreserveStances(StancesBefore);
+}
+
+// ----------------------------------------------------------------------------
+// Combat stance and adherence (FORM-F4)
+// ----------------------------------------------------------------------------
+
+void APolitikaPrototypeMatch::RefreshUnitStance(APolitikaPrototypeUnit* Unit)
+{
+    if (!Unit || !HasAuthority()) return;
+    const pf::FormationId Id = Formations.FormationOf(Unit->GetStableId());
+    const pf::Formation* Formation = Id ? Formations.Find(Id) : nullptr;
+    Unit->ApplyStance(ps::Effective(Unit->GetStanceOverride(), Formation ? std::optional(Formation->stance) : std::nullopt),
+        Formation ? std::optional(Formation->adherence) : std::nullopt);
+}
+
+void APolitikaPrototypeMatch::RefreshFormationStances(pf::FormationId Id)
+{
+    if (const pf::Formation* Formation = Formations.Find(Id))
+        for (const pf::MemberSlot& Member : Formation->members) RefreshUnitStance(FindUnitByStableId(Member.id));
+}
+
+TMap<uint64, ps::CombatStance> APolitikaPrototypeMatch::StanceSnapshot(TConstArrayView<uint64> ExtraIds) const
+{
+    TMap<uint64, ps::CombatStance> Snapshot;
+    const auto Record = [this, &Snapshot](uint64 Id)
+    {
+        if (const APolitikaPrototypeUnit* Unit = FindUnitByStableId(Id)) Snapshot.Add(Id, Unit->GetEffectiveStance());
+    };
+    for (const pf::Formation& Formation : Formations.All())
+        for (const pf::MemberSlot& Member : Formation.members) Record(Member.id);
+    for (const uint64 Id : ExtraIds) Record(Id);
+    return Snapshot;
+}
+
+void APolitikaPrototypeMatch::PreserveStances(const TMap<uint64, ps::CombatStance>& Before)
+{
+    for (const TPair<uint64, ps::CombatStance>& Entry : Before)
+    {
+        APolitikaPrototypeUnit* Unit = FindUnitByStableId(Entry.Key);
+        if (!Unit || !Unit->IsAlive()) continue;
+        const pf::FormationId Id = Formations.FormationOf(Entry.Key);
+        const pf::Formation* Formation = Id ? Formations.Find(Id) : nullptr;
+        Unit->SetStanceOverride(ps::OverrideFor(Entry.Value, Formation ? Formation->stance : ps::kDefaultStance));
+        RefreshUnitStance(Unit);
+    }
+}
+
+bool APolitikaPrototypeMatch::SubmitStanceIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent,
+    uint32 ParticipantId)
+{
+    using pf::FormationRejection;
+    const pf::FormationOp Op = static_cast<pf::FormationOp>(Intent.Op);
+    const uint64 Step = SimulationStepsExecuted;
+    int32 Affected = 0;
+    if (Intent.FormationId != 0)
+    {
+        const pf::FormationId Addressed{Intent.FormationId};
+        const FormationRejection Rejection = Op == pf::FormationOp::SetStance
+            ? Formations.SetStance(ParticipantId, Addressed, static_cast<ps::CombatStance>(Intent.Value))
+            : Formations.SetAdherence(ParticipantId, Addressed, static_cast<ps::Adherence>(Intent.Value));
+        if (Rejection != FormationRejection::None)
+        {
+            RejectFormationIntent(Source, Intent, ParticipantId, Rejection);
+            return true;
+        }
+        const pf::Formation* Formation = Formations.Find(Addressed);
+#if !UE_BUILD_SHIPPING
+        if (Op == pf::FormationOp::SetStance) TriggerStanceProbe(ParticipantId, *Formation);
+#endif
+        // Setting the whole formation's stance applies it to every member: overrides go.
+        if (Op == pf::FormationOp::SetStance)
+            for (const pf::MemberSlot& Member : Formation->members)
+                if (APolitikaPrototypeUnit* Unit = FindUnitByStableId(Member.id)) Unit->SetStanceOverride(std::nullopt);
+        RefreshFormationStances(Addressed);
+        Affected = static_cast<int32>(Formation->members.size());
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_STANCE_SET participant=%u op=%s formation=%u stance=%s adherence=%s members=%d correlation=%u step=%llu"),
+            ParticipantId, UTF8_TO_TCHAR(pf::OpName(Op).data()), Addressed.value,
+            UTF8_TO_TCHAR(ps::StanceName(Formation->stance).data()), UTF8_TO_TCHAR(ps::AdherenceName(Formation->adherence).data()),
+            Affected, Intent.CorrelationId, Step);
+#endif
+    }
+    else
+    {
+        // Per-unit stance: every listed unit must be the participant's own living unit.
+        TArray<APolitikaPrototypeUnit*> Targets;
+        for (const uint64 Id : Intent.Members)
+        {
+            APolitikaPrototypeUnit* Unit = FindUnitByStableId(Id);
+            if (!Unit || !IsCommandableUnit(Unit, ParticipantId) || !Unit->IsAlive())
+            {
+                RejectFormationIntent(Source, Intent, ParticipantId, FormationRejection::MemberUnavailable);
+                return true;
+            }
+            Targets.Add(Unit);
+        }
+        const ps::CombatStance Value = static_cast<ps::CombatStance>(Intent.Value);
+        for (APolitikaPrototypeUnit* Unit : Targets)
+        {
+            const pf::FormationId Id = Formations.FormationOf(Unit->GetStableId());
+            const pf::Formation* Formation = Id ? Formations.Find(Id) : nullptr;
+            Unit->SetStanceOverride(ps::OverrideFor(Value, Formation ? Formation->stance : ps::kDefaultStance));
+            RefreshUnitStance(Unit);
+        }
+        Affected = Targets.Num();
+#if !UE_BUILD_SHIPPING
+        TArray<uint64> SortedIds;
+        for (const APolitikaPrototypeUnit* Unit : Targets) SortedIds.Add(Unit->GetStableId());
+        SortedIds.Sort();
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_STANCE_SET participant=%u op=set_stance formation=0 stance=%s units=%d ids=%s correlation=%u step=%llu"),
+            ParticipantId, UTF8_TO_TCHAR(ps::StanceName(Value).data()), Affected, *JoinIds(SortedIds), Intent.CorrelationId, Step);
+#endif
+    }
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_FORMATION_INTENT participant=%u op=%u correlation=%u client_sequence=%u formation=%u members=%d accepted=1 rejection=0 orders=0 generation=%llu step=%llu remote=%d"),
+        ParticipantId, Intent.Op, Intent.CorrelationId, Intent.ClientSequence, Intent.FormationId, Affected, MatchGeneration, Step,
+        Source && Cast<APolitikaPrototypePlayerController>(Source) && !Cast<APolitikaPrototypePlayerController>(Source)->IsLocalSeatController() ? 1 : 0);
+#endif
+    SendFormationOutcome(Source, Intent, FormationRejection::None, Intent.FormationId, Affected, 0);
+    bFormationsDirty = true;
+    SyncFormationReplication();
+    return true;
 }
 
 void APolitikaPrototypeMatch::NoteFormationOrderAdmitted(const APolitikaPrototypeUnit* Unit, const FPendingOrder& Pending)
@@ -562,7 +746,9 @@ void APolitikaPrototypeMatch::ClearFormations(const TCHAR* Reason)
     FormationCasualtyStep = 0;
     if (FormationCasualtyArmed == 2) FormationCasualtyArmed = 1;
 #endif
+    const TMap<uint64, ps::CombatStance> StancesBefore = StanceSnapshot();
     const pf::Change Cleared = Formations.Clear();
+    PreserveStances(StancesBefore);
     if (Cleared.dissolved.empty()) return;
 #if !UE_BUILD_SHIPPING
     std::vector<uint32> Ids;
@@ -596,6 +782,8 @@ void APolitikaPrototypeMatch::SyncFormationReplication()
             Info.Following = static_cast<uint8>(FMath::Min<std::size_t>(Formation.FollowingCount(), 255));
             Info.Regroups = static_cast<uint16>(FMath::Min<uint32>(Formation.regroups, 65535));
             Info.FormedMembers = static_cast<uint16>(Formation.formedMembers);
+            Info.Stance = static_cast<uint8>(Formation.stance);
+            Info.Adherence = static_cast<uint8>(Formation.adherence);
             for (const pf::MemberSlot& Member : Formation.members) Info.Members.Add(Member.id);
         }
         Controller->SetOwnFormations(MoveTemp(Infos));
@@ -603,6 +791,79 @@ void APolitikaPrototypeMatch::SyncFormationReplication()
 }
 
 #if !UE_BUILD_SHIPPING
+void APolitikaPrototypeMatch::TriggerStanceProbe(uint32 ParticipantId, const pf::Formation& Formation)
+{
+    if (StanceProbeArmed < 0) StanceProbeArmed = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPStanceProbe")) ? 1 : 0;
+    if (StanceProbeArmed != 1) return;
+    double NearestCm = 0.0;
+    const TCHAR* Phase = nullptr;
+    if (Formation.stance == ps::CombatStance::Guard && !bStanceProbeGuardSent)
+    {
+        bStanceProbeGuardSent = true;
+        NearestCm = 740.0;
+        Phase = TEXT("guard");
+    }
+    else if (Formation.stance == ps::CombatStance::HoldFire && !bStanceProbeHoldFireSent)
+    {
+        bStanceProbeHoldFireSent = true;
+        NearestCm = 450.0;
+        Phase = TEXT("hold_fire");
+    }
+    else return;
+    TArray<FVector2D> Members;
+    FVector2D Centre = FVector2D::ZeroVector;
+    for (const pf::MemberSlot& Member : Formation.members)
+        if (const APolitikaPrototypeUnit* Unit = FindUnitByStableId(Member.id); Unit && Unit->IsAlive())
+        {
+            Members.Add(FVector2D(Unit->GetActorLocation()));
+            Centre += Members.Last();
+        }
+    APolitikaPrototypeUnit* Probe = nullptr;
+    for (APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() != 0 && Unit->GetOwnerPlayer() != ParticipantId
+            && !StanceProbeUnits.Contains(Unit->GetStableId()) && (!Probe || Unit->GetStableId() < Probe->GetStableId()))
+            Probe = Unit;
+    if (Members.IsEmpty() || !Probe)
+    {
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_STANCE_PROBE phase=%s placed=0 reason=no_units"), Phase);
+        return;
+    }
+    StanceProbeUnits.Add(Probe->GetStableId());
+    Centre /= Members.Num();
+    const auto Nearest = [&Members](const FVector2D& Point)
+    {
+        double Best = TNumericLimits<double>::Max();
+        for (const FVector2D& Member : Members) Best = FMath::Min(Best, FVector2D::Distance(Member, Point));
+        return Best;
+    };
+    // Head-on from the probe unit's side, turning in 15 degree steps until the point is open
+    // ground, inside the map and well clear of the control point (a capture would end the match).
+    const FVector2D Base = (FVector2D(Probe->GetActorLocation()) - Centre).GetSafeNormal();
+    const FVector2D ObjectivePoint = Objective ? FVector2D(Objective->GetActorLocation()) : FVector2D(TNumericLimits<double>::Max());
+    for (int32 Turn = 0; Turn <= 12; ++Turn)
+    {
+        const double Degrees = 15.0 * ((Turn + 1) / 2) * (Turn % 2 == 0 ? 1.0 : -1.0);
+        const FVector2D Direction = Base.GetRotated(Degrees);
+        double Radius = 0.0;
+        while (Radius < 6000.0 && Nearest(Centre + Direction * Radius) < NearestCm) Radius += 2.0;
+        const FVector2D Point = Centre + Direction * Radius;
+        const FVector2D MapPoint = Point - PlayableMin;
+        float GroundZ = Probe->GetActorLocation().Z;
+        if (FVector2D::Distance(Point, ObjectivePoint) < 900.0 || MapPoint.X < 200.0 || MapPoint.Y < 200.0
+            || MapPoint.X > PlayableMax.X - PlayableMin.X - 200.0 || MapPoint.Y > PlayableMax.Y - PlayableMin.Y - 200.0
+            || !FormationAnchorGround({MapPoint.X, MapPoint.Y}, GroundZ)
+            || !IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, MapPoint, GroundZ))
+            continue;
+        SubmitMove(Probe->GetOwnerPlayer(), Probe, FVector(Point.X, Point.Y, GroundZ));
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_STANCE_PROBE phase=%s placed=1 formation=%u unit=%llu owner=%u x=%.1f y=%.1f nearest_member_cm=%.1f objective_cm=%.1f turn_deg=%.0f step=%llu"),
+            Phase, Formation.id.value, Probe->GetStableId(), Probe->GetOwnerPlayer(), Point.X, Point.Y, Nearest(Point),
+            FVector2D::Distance(Point, ObjectivePoint), Degrees, SimulationStepsExecuted);
+        return;
+    }
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_STANCE_PROBE phase=%s placed=0 reason=no_open_point"), Phase);
+}
+
 void APolitikaPrototypeMatch::TickFormationCasualtyFixture()
 {
     if (FormationCasualtyArmed != 1 || FormationCasualtyFormation == 0 || SimulationStepsExecuted < FormationCasualtyStep) return;
@@ -649,10 +910,12 @@ void APolitikaPrototypePlayerController::LogOwnFormations(const TCHAR* Source) c
 #if !UE_BUILD_SHIPPING
     FString Detail;
     for (const FPolitikaNetFormationInfo& Info : OwnFormations)
-        Detail += FString::Printf(TEXT("%s%u:%s:%s:%d/%u:f%u:r%u:dest%d:ids=%s"), Detail.IsEmpty() ? TEXT("") : TEXT(";"),
+        Detail += FString::Printf(TEXT("%s%u:%s:%s:%d/%u:f%u:r%u:dest%d:ids=%s:stance=%s:adherence=%s"), Detail.IsEmpty() ? TEXT("") : TEXT(";"),
             Info.FormationId, ShapeText(static_cast<pf::Shape>(Info.Shape)),
             UTF8_TO_TCHAR(pf::StateName(static_cast<pf::FormationState>(Info.State)).data()), Info.Members.Num(),
-            Info.FormedMembers, Info.Following, Info.Regroups, Info.bHasDestination ? 1 : 0, *JoinIds(Info.Members).Replace(TEXT(","), TEXT("/")));
+            Info.FormedMembers, Info.Following, Info.Regroups, Info.bHasDestination ? 1 : 0, *JoinIds(Info.Members).Replace(TEXT(","), TEXT("/")),
+            UTF8_TO_TCHAR(ps::StanceName(static_cast<ps::CombatStance>(Info.Stance)).data()),
+            UTF8_TO_TCHAR(ps::AdherenceName(static_cast<ps::Adherence>(Info.Adherence)).data()));
     UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_FORMATION_VIEW participant=%u source=%s formations=%d detail=%s"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnFormations.Num(),
         Detail.IsEmpty() ? TEXT("none") : *Detail);
@@ -674,7 +937,7 @@ const FPolitikaNetFormationInfo* APolitikaPrototypePlayerController::SelectedWho
 
 bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototypeMatch* ActiveMatch, pf::FormationOp Op,
     uint32 FormationId, TConstArrayView<APolitikaPrototypeUnit*> Members, const politika::rules::Position& Destination,
-    const FVector* GroundHit)
+    const FVector* GroundHit, uint8 Value)
 {
     if (!ActiveMatch) return false;
     FPolitikaNetFormationIntent Intent;
@@ -682,6 +945,7 @@ bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototy
     Intent.Op = static_cast<uint8>(Op);
     Intent.FormationId = FormationId;
     Intent.Shape = Op == pf::FormationOp::Form ? static_cast<uint8>(GroupMoveShape) : 0;
+    Intent.Value = Op == pf::FormationOp::SetStance || Op == pf::FormationOp::SetAdherence ? Value : 0;
     for (const APolitikaPrototypeUnit* Unit : Members)
         if (Unit) Intent.Members.Add(Unit->GetStableId());
     if (Op == pf::FormationOp::Move || Op == pf::FormationOp::AttackMove)
@@ -701,10 +965,10 @@ bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototy
     }
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_FORMATION_SENT participant=%u op=%s correlation=%u client_sequence=%u formation=%u shape=%s members=%d ids=%s x=%.1f y=%.1f authority=%d"),
+        TEXT("RTS_FORMATION_SENT participant=%u op=%s correlation=%u client_sequence=%u formation=%u shape=%s members=%d ids=%s x=%.1f y=%.1f value=%u authority=%d"),
         GetCommandPlayerId(), UTF8_TO_TCHAR(pf::OpName(Op).data()), Intent.CorrelationId, Intent.ClientSequence, FormationId,
         ShapeText(static_cast<pf::Shape>(Intent.Shape)), Intent.Members.Num(), *JoinIds(Intent.Members), Intent.DestinationX,
-        Intent.DestinationY, HasAuthority() ? 1 : 0);
+        Intent.DestinationY, Intent.Value, HasAuthority() ? 1 : 0);
 #endif
     if (GroundHit)
     {
@@ -777,7 +1041,60 @@ void APolitikaPrototypePlayerController::ClientReceiveFormationOutcome_Implement
         case pf::FormationOp::Stop:
             ShowLocalFeedback(FString::Printf(TEXT("Formation %u stopped"), Outcome.FormationId));
             break;
+        case pf::FormationOp::SetStance:
+        case pf::FormationOp::SetAdherence:
+        {
+            uint8 Requested = 0;
+            const bool bKnown = PendingStanceValues.RemoveAndCopyValue(Outcome.CorrelationId, Requested);
+            const FString Value = !bKnown ? FString(TEXT("updated"))
+                : Op == pf::FormationOp::SetStance ? FString(StanceText(static_cast<ps::CombatStance>(Requested)))
+                : FString(AdherenceText(static_cast<ps::Adherence>(Requested)));
+            ShowLocalFeedback(Outcome.FormationId != 0
+                ? FString::Printf(TEXT("Formation %u %s: %s  ·  no order sent"), Outcome.FormationId,
+                    Op == pf::FormationOp::SetStance ? TEXT("stance") : TEXT("adherence"), *Value)
+                : FString::Printf(TEXT("%d unit%s set to %s  ·  no order sent"), Outcome.Members,
+                    Outcome.Members == 1 ? TEXT("") : TEXT("s"), *Value));
+            break;
+        }
     }
+}
+
+void APolitikaPrototypePlayerController::CycleStanceSelected()
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    if (Selected.IsEmpty())
+    {
+        ShowLocalFeedback(TEXT("Select your units to change their stance."));
+        return;
+    }
+    // The next stance after the one the formation (or the first selected unit) holds now.
+    const FPolitikaNetFormationInfo* Whole = SelectedWholeFormation(Selected);
+    const ps::CombatStance Current = Whole ? static_cast<ps::CombatStance>(Whole->Stance) : Selected[0]->GetEffectiveStance();
+    const uint8 Next = static_cast<uint8>(ps::NextStance(Current));
+    // Recorded first: a host-local request is answered before SubmitFormationRequest returns.
+    if (PendingStanceValues.Num() >= 16) PendingStanceValues.Reset();
+    PendingStanceValues.Add(NextCorrelationId, Next);
+    if (Whole)
+        SubmitFormationRequest(ActiveMatch, pf::FormationOp::SetStance, Whole->FormationId, {}, {}, nullptr, Next);
+    else
+        SubmitFormationRequest(ActiveMatch, pf::FormationOp::SetStance, 0, Selected, {}, nullptr, Next);
+}
+
+void APolitikaPrototypePlayerController::CycleAdherenceSelected()
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    const FPolitikaNetFormationInfo* Whole = SelectedWholeFormation(Selected);
+    if (!Whole)
+    {
+        ShowLocalFeedback(TEXT("Adherence belongs to a formation: select one whole formation."));
+        return;
+    }
+    const uint8 Next = static_cast<uint8>(ps::NextAdherence(static_cast<ps::Adherence>(Whole->Adherence)));
+    if (PendingStanceValues.Num() >= 16) PendingStanceValues.Reset();
+    PendingStanceValues.Add(NextCorrelationId, Next);
+    SubmitFormationRequest(ActiveMatch, pf::FormationOp::SetAdherence, Whole->FormationId, {}, {}, nullptr, Next);
 }
 
 void APolitikaPrototypePlayerController::FormSelected()
