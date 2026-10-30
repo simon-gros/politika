@@ -2536,6 +2536,38 @@ APolitikaPrototypeCameraPawn::APolitikaPrototypeCameraPawn()
     SetReplicatingMovement(false);
 }
 
+#if !UE_BUILD_SHIPPING
+namespace
+{
+// "c0,c1,...,c9": member count of every control-group slot, for structured evidence.
+FString ControlGroupCounts(const politika::selection::ControlGroups& Groups)
+{
+    FString Counts;
+    for (std::size_t Slot = 0; Slot < politika::selection::kControlGroupSlots; ++Slot)
+        Counts += FString::Printf(TEXT("%s%d"), Slot == 0 ? TEXT("") : TEXT(","), static_cast<int32>(Groups.Members(Slot).size()));
+    return Counts;
+}
+
+void LogSelectionSet(const APlayerController& Controller, TConstArrayView<APolitikaPrototypeUnit*> Selected, uint32 PlayerId,
+    const TCHAR* Source, const TCHAR* OpName, int32 Hits)
+{
+    FString Ids;
+    for (const APolitikaPrototypeUnit* Unit : Selected)
+        Ids += FString::Printf(TEXT("%s%llu"), Ids.IsEmpty() ? TEXT("") : TEXT(","), Unit->GetStableId());
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SET player=%u source=%s op=%s hits=%d count=%d ids=%s"),
+        PlayerId, Source, OpName, Hits, Selected.Num(), *Ids);
+    // Screen positions let the packaged harness click a specific selected unit.
+    for (const APolitikaPrototypeUnit* Unit : Selected)
+    {
+        FVector2D Screen;
+        if (Controller.ProjectWorldLocationToScreen(Unit->GetActorLocation(), Screen, true))
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SCREEN unit=%llu x=%.0f y=%.0f"),
+                Unit->GetStableId(), Screen.X, Screen.Y);
+    }
+}
+}
+#endif
+
 void APolitikaPrototypePlayerController::BeginPlay()
 {
     Super::BeginPlay();
@@ -2554,6 +2586,9 @@ void APolitikaPrototypePlayerController::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     if (!bMapCameraApplied) ResolveMatch();
     UpdateSelectDrag();
+    // Keeps group counts current for the HUD: dead or lost members drop out, and a new
+    // generation, participant or inactive match clears every slot.
+    if (IsLocalController()) SyncControlGroups(Match.Get());
 #if !UE_BUILD_SHIPPING
     if (bHostileProbeEnabled && IsLocalController()) TickHostileProbe();
 #endif
@@ -2622,6 +2657,12 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeReload"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReloadSelected);
     InputComponent->BindAction(TEXT("PrototypeSprint"), IE_Pressed, this, &APolitikaPrototypePlayerController::SprintSelected);
     InputComponent->BindAction(TEXT("PrototypeAttackMove"), IE_Pressed, this, &APolitikaPrototypePlayerController::AttackMoveSelected);
+    // Control groups (4C-G): one action per digit; ControlGroupInput reads the modifier.
+    DECLARE_DELEGATE_OneParam(FPolitikaControlGroupKey, int32);
+    for (int32 Slot = 0; Slot < static_cast<int32>(politika::selection::kControlGroupSlots); ++Slot)
+        InputComponent->BindAction<FPolitikaControlGroupKey>(FName(*FString::Printf(TEXT("PrototypeControlGroup%d"), Slot)),
+            IE_Pressed, this, &APolitikaPrototypePlayerController::ControlGroupKey, Slot);
+    InputComponent->BindAction(TEXT("PrototypeSubgroupCycle"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleSubgroup);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
     InputComponent->BindAxis(TEXT("PrototypePanRight"), this, &APolitikaPrototypePlayerController::PanRight);
@@ -2644,6 +2685,12 @@ void APolitikaPrototypePlayerController::BeginSelectPress()
 {
     FVector2D Cursor;
     if (!ResolveMatch() || !GetMousePosition(Cursor.X, Cursor.Y)) return;
+    // The group bar captures its clicks: no world selection stroke starts over it.
+    if (const int32 BarSlot = GroupBarSlotUnderCursor(); BarSlot != INDEX_NONE)
+    {
+        ControlGroupInput(BarSlot, TEXT("bar"));
+        return;
+    }
     bSelectPressed = true;
     bBoxSelecting = false;
     SelectReleaseSeenSeconds = -1.0;
@@ -2733,8 +2780,22 @@ void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::
     FHitResult Hit;
     APolitikaPrototypeUnit* Unit = GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)
         ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
+    const bool bOwnUnit = IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() == GetCommandPlayerId();
+    const bool bCtrl = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
     if (Op == politika::selection::SelectionOp::Replace)
     {
+        // Ctrl+click or a double-click on an own unit selects its archetype on screen (4C-G).
+        // Ctrl+click elsewhere changes nothing.
+        const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+        const bool bDoubleClick = bOwnUnit && LastClickUnit == Unit->GetStableId() && LastClickSeconds >= 0.0
+            && Now - LastClickSeconds <= politika::selection::kDoubleClickSeconds;
+        LastClickUnit = bOwnUnit && !bDoubleClick ? Unit->GetStableId() : 0;
+        LastClickSeconds = Now;
+        if (bCtrl || bDoubleClick)
+        {
+            if (bOwnUnit) SelectSameArchetype(Unit, bCtrl ? TEXT("ctrl_click") : TEXT("double_click"));
+            return;
+        }
         SelectUnitForInput(Unit);
         return;
     }
@@ -2808,23 +2869,36 @@ void APolitikaPrototypePlayerController::ApplySelection(TConstArrayView<APolitik
         if (Found) Next.Add(*Found);
     }
     ActiveMatch->SetSelectionSet(PlayerId, Next);
-    const TArray<APolitikaPrototypeUnit*> Selected = ActiveMatch->GetSelectedUnitsForPlayer(PlayerId);
+    ActiveSubgroup = 0;
 #if !UE_BUILD_SHIPPING
     static const TCHAR* OpNames[] = {TEXT("replace"), TEXT("union"), TEXT("toggle"), TEXT("subtract")};
-    FString Ids;
-    for (const APolitikaPrototypeUnit* Unit : Selected)
-        Ids += FString::Printf(TEXT("%s%llu"), Ids.IsEmpty() ? TEXT("") : TEXT(","), Unit->GetStableId());
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SET player=%u source=%s op=%s hits=%d count=%d ids=%s"),
-        PlayerId, Source, OpNames[static_cast<uint8>(Op)], Hits.Num(), Selected.Num(), *Ids);
-    // Screen positions let the packaged harness click a specific selected unit.
-    for (const APolitikaPrototypeUnit* Unit : Selected)
-    {
-        FVector2D Screen;
-        if (ProjectWorldLocationToScreen(Unit->GetActorLocation(), Screen, true))
-            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_SCREEN unit=%llu x=%.0f y=%.0f"),
-                Unit->GetStableId(), Screen.X, Screen.Y);
-    }
+    LogSelectionSet(*this, ActiveMatch->GetSelectedUnitsForPlayer(PlayerId), PlayerId, Source, OpNames[static_cast<uint8>(Op)],
+        Hits.Num());
 #endif
+}
+
+void APolitikaPrototypePlayerController::SelectSameArchetype(APolitikaPrototypeUnit* Unit, const TCHAR* Source)
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch || !IsValid(Unit)) return;
+    const uint32 PlayerId = GetCommandPlayerId();
+    int32 ViewWidth = 0;
+    int32 ViewHeight = 0;
+    GetViewportSize(ViewWidth, ViewHeight);
+    // Only units the player can see right now: inside the viewport and not fog-hidden. This is
+    // never a scan of the hidden world (GRP-17).
+    TArray<APolitikaPrototypeUnit*> Hits;
+    for (APolitikaPrototypeUnit* Candidate : ActiveMatch->GetUnits())
+    {
+        if (!IsValid(Candidate) || !Candidate->IsAlive() || Candidate->GetOwnerPlayer() != PlayerId
+            || Candidate->GetArchetypeId() != Unit->GetArchetypeId() || Candidate->IsLocalFogHidden())
+            continue;
+        FVector2D Screen;
+        if (Candidate == Unit || (ProjectWorldLocationToScreen(Candidate->GetActorLocation(), Screen, true)
+            && Screen.X >= 0 && Screen.Y >= 0 && Screen.X < ViewWidth && Screen.Y < ViewHeight))
+            Hits.Add(Candidate);
+    }
+    ApplySelection(Hits, politika::selection::SelectionOp::Replace, Source);
 }
 
 void APolitikaPrototypePlayerController::SelectUnitForInput(APolitikaPrototypeUnit* Unit)
@@ -2864,11 +2938,250 @@ void APolitikaPrototypePlayerController::SelectUnitForInput(APolitikaPrototypeUn
 #endif
 }
 
+int32 APolitikaPrototypePlayerController::GroupBarSlotUnderCursor() const
+{
+    FVector2D Cursor;
+    int32 ViewWidth = 0;
+    int32 ViewHeight = 0;
+    if (!GetMousePosition(Cursor.X, Cursor.Y)) return INDEX_NONE;
+    GetViewportSize(ViewWidth, ViewHeight);
+    if (ViewWidth <= 0 || ViewHeight <= 0) return INDEX_NONE;
+    const std::size_t Slot = politika::selection::GroupBarSlotAt({Cursor.X, Cursor.Y}, ViewWidth, ViewHeight,
+        APolitikaPrototypeHUD::UiScaleFor(ViewWidth));
+    return Slot < politika::selection::kControlGroupSlots ? static_cast<int32>(Slot) : INDEX_NONE;
+}
+
+bool APolitikaPrototypePlayerController::SyncControlGroups(APolitikaPrototypeMatch* ActiveMatch)
+{
+    const uint32 PlayerId = GetCommandPlayerId();
+    const bool bActive = ActiveMatch && PlayerId != 0 && ActiveMatch->IsLocalControllerBound(this)
+        && ActiveMatch->GetMatchPhase() == politika::rules::MatchPhase::Active;
+    if (!bActive)
+    {
+#if !UE_BUILD_SHIPPING
+        if (!ControlGroups.Empty())
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_CONTROL_GROUPS_CLEARED participant=%u reason=inactive"),
+                ControlGroups.Participant());
+#endif
+        ControlGroups.Clear();
+        RecallTaps.Reset();
+        return false;
+    }
+    const uint64 Generation = ActiveMatch->GetMatchGeneration();
+    if (ControlGroups.Bind(Generation, PlayerId))
+    {
+        RecallTaps.Reset();
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_CONTROL_GROUPS_CLEARED participant=%u generation=%llu reason=rebound"),
+            PlayerId, Generation);
+#endif
+    }
+    // Permanently invalid members (dead, destroyed, no longer this participant's) leave every
+    // slot at once. The prototype has no temporarily inoperable state, so nothing is held back.
+    const std::size_t Dropped = ControlGroups.Prune([ActiveMatch, PlayerId](politika::selection::EntityId Id)
+        { return ActiveMatch->IsCommandableUnitForPlayer(ActiveMatch->FindUnitByStableId(Id), PlayerId); });
+#if !UE_BUILD_SHIPPING
+    if (Dropped > 0)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_CONTROL_GROUPS_PRUNED participant=%u generation=%llu dropped=%llu counts=%s"),
+            PlayerId, Generation, static_cast<uint64>(Dropped), *ControlGroupCounts(ControlGroups));
+#else
+    (void)Dropped;
+#endif
+    return true;
+}
+
+void APolitikaPrototypePlayerController::ControlGroupKey(int32 Slot)
+{
+    // A held selection stroke finishes first; group keys never interrupt it.
+    if (bSelectPressed) return;
+    ControlGroupInput(Slot, TEXT("key"));
+}
+
+void APolitikaPrototypePlayerController::ControlGroupInput(int32 Slot, const TCHAR* Source)
+{
+    using namespace politika::selection;
+    if (Slot < 0 || Slot >= static_cast<int32>(kControlGroupSlots)) return;
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!SyncControlGroups(ActiveMatch))
+    {
+        ShowLocalFeedback(TEXT("Control groups are available during an active match."));
+        return;
+    }
+    ApplyControlGroupInput(ActiveMatch, Slot, IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl),
+        IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift),
+        IsInputKeyDown(EKeys::LeftAlt) || IsInputKeyDown(EKeys::RightAlt), Source);
+}
+
+void APolitikaPrototypePlayerController::ApplyControlGroupInput(APolitikaPrototypeMatch* ActiveMatch, int32 Slot, bool bCtrl,
+    bool bShift, bool bAlt, const TCHAR* Source)
+{
+    using namespace politika::selection;
+    const int32 Modifiers = (bCtrl ? 1 : 0) + (bShift ? 1 : 0) + (bAlt ? 1 : 0);
+    if (Modifiers > 1)
+    {
+        RecallTaps.Reset();
+        ShowLocalFeedback(FString::Printf(TEXT("Group %d unchanged: use one modifier (Ctrl sets, Shift adds, Alt moves)."), Slot));
+        return;
+    }
+    if (Modifiers == 0)
+    {
+        const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+        RecallControlGroup(ActiveMatch, Slot, RecallTaps.Tap(static_cast<std::size_t>(Slot), Now), Source);
+        return;
+    }
+    RecallTaps.Reset();
+    const GroupOp Op = bCtrl ? GroupOp::Replace : bShift ? GroupOp::Union : GroupOp::Transfer;
+    std::vector<EntityId> Ids;
+    for (const APolitikaPrototypeUnit* Unit : GetCommandableSelectedUnits(ActiveMatch)) Ids.push_back(Unit->GetStableId());
+    std::array<std::size_t, kControlGroupSlots> Before{};
+    for (std::size_t Index = 0; Index < kControlGroupSlots; ++Index) Before[Index] = ControlGroups.Members(Index).size();
+    const bool bApplied = ControlGroups.Assign(static_cast<std::size_t>(Slot), Op, Ids);
+    const int32 Members = static_cast<int32>(ControlGroups.Members(static_cast<std::size_t>(Slot)).size());
+    FString Feedback;
+    if (!bApplied)
+        Feedback = FString::Printf(TEXT("Select units first: group %d unchanged."), Slot);
+    else if (Op == GroupOp::Replace)
+        Feedback = FString::Printf(TEXT("Group %d set: %d units"), Slot, Members);
+    else
+    {
+        Feedback = FString::Printf(TEXT("%s %d units %s group %d (now %d)"), Op == GroupOp::Union ? TEXT("Added") : TEXT("Moved"),
+            static_cast<int32>(Ids.size()), Op == GroupOp::Union ? TEXT("to") : TEXT("into"), Slot, Members);
+        for (std::size_t Other = 0; Other < kControlGroupSlots; ++Other)
+            if (static_cast<int32>(Other) != Slot && ControlGroups.Members(Other).size() != Before[Other])
+                Feedback += FString::Printf(TEXT("  ·  group %d: %d → %d"), static_cast<int32>(Other), static_cast<int32>(Before[Other]),
+                    static_cast<int32>(ControlGroups.Members(Other).size()));
+    }
+    ShowLocalFeedback(Feedback);
+#if !UE_BUILD_SHIPPING
+    static const TCHAR* OpNames[] = {TEXT("replace"), TEXT("union"), TEXT("transfer")};
+    FString MemberIds;
+    for (const EntityId Id : ControlGroups.Members(static_cast<std::size_t>(Slot)))
+        MemberIds += FString::Printf(TEXT("%s%llu"), MemberIds.IsEmpty() ? TEXT("") : TEXT(","), Id);
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_CONTROL_GROUP_ASSIGN participant=%u generation=%llu slot=%d op=%s source=%s selection=%d applied=%d members=%d ids=%s counts=%s"),
+        GetCommandPlayerId(), ControlGroups.Generation(), Slot, OpNames[static_cast<uint8>(Op)], Source, static_cast<int32>(Ids.size()),
+        bApplied ? 1 : 0, Members, *MemberIds, *ControlGroupCounts(ControlGroups));
+#endif
+}
+
+void APolitikaPrototypePlayerController::RecallControlGroup(APolitikaPrototypeMatch* ActiveMatch, int32 Slot, bool bFocus,
+    const TCHAR* Source)
+{
+    const uint32 PlayerId = GetCommandPlayerId();
+    const std::vector<politika::selection::EntityId>& Ids = ControlGroups.Members(static_cast<std::size_t>(Slot));
+    if (Ids.empty())
+    {
+        // An empty slot keeps the current selection.
+        ShowLocalFeedback(FString::Printf(TEXT("Group %d is empty: Ctrl+%d assigns the selected units."), Slot, Slot));
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_CONTROL_GROUP_RECALL participant=%u generation=%llu slot=%d source=%s members=0 selected=%d focus=0"),
+            PlayerId, ControlGroups.Generation(), Slot, Source, ActiveMatch->GetSelectedUnitsForPlayer(PlayerId).Num());
+#endif
+        return;
+    }
+    // Recall only replaces the local selection through the normal revalidating setter.
+    TArray<APolitikaPrototypeUnit*> Units;
+    for (const politika::selection::EntityId Id : Ids)
+        if (APolitikaPrototypeUnit* Unit = ActiveMatch->FindUnitByStableId(Id)) Units.Add(Unit);
+    ActiveMatch->SetSelectionSet(PlayerId, Units);
+    ActiveSubgroup = 0;
+    const TArray<APolitikaPrototypeUnit*> Selected = ActiveMatch->GetSelectedUnitsForPlayer(PlayerId);
+    if (bFocus) FocusCameraOn(ActiveMatch, Selected, Slot);
+    ShowLocalFeedback(FString::Printf(TEXT("Group %d selected: %d units%s"), Slot, Selected.Num(),
+        bFocus ? TEXT("  ·  camera centred") : TEXT("")));
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_CONTROL_GROUP_RECALL participant=%u generation=%llu slot=%d source=%s members=%d selected=%d focus=%d"),
+        PlayerId, ControlGroups.Generation(), Slot, Source, static_cast<int32>(Ids.size()), Selected.Num(), bFocus ? 1 : 0);
+    LogSelectionSet(*this, Selected, PlayerId, TEXT("group"), TEXT("replace"), Units.Num());
+#endif
+}
+
+void APolitikaPrototypePlayerController::FocusCameraOn(APolitikaPrototypeMatch* ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Units, int32 Slot)
+{
+    APolitikaPrototypeCameraPawn* CameraPawn = Cast<APolitikaPrototypeCameraPawn>(GetPawn());
+    if (Units.IsEmpty() || !CameraPawn || !CameraPawn->GetCamera()) return;
+    FVector Centre = FVector::ZeroVector;
+    for (const APolitikaPrototypeUnit* Unit : Units) Centre += Unit->GetActorLocation();
+    Centre /= static_cast<double>(Units.Num());
+    // The ground point at screen centre, on the plane through the group's centre.
+    const auto ScreenCentreGround = [CameraPawn, &Centre](FVector& Out)
+    {
+        const FVector Origin = CameraPawn->GetCamera()->GetComponentLocation();
+        const FVector Forward = CameraPawn->GetCamera()->GetForwardVector();
+        if (Forward.Z >= -UE_SMALL_NUMBER) return false;
+        Out = Origin + Forward * ((Centre.Z - Origin.Z) / Forward.Z);
+        return true;
+    };
+    FVector Before;
+    if (!ScreenCentreGround(Before)) return;
+    // Camera only: the pawn is client-local and moving it is never match state.
+    FVector Location = CameraPawn->GetActorLocation() + FVector(Centre.X - Before.X, Centre.Y - Before.Y, 0.0);
+    const FVector2D Min = ActiveMatch->GetCameraPanMin();
+    const FVector2D Max = ActiveMatch->GetCameraPanMax();
+    Location.X = FMath::Clamp(Location.X, Min.X, Max.X);
+    Location.Y = FMath::Clamp(Location.Y, Min.Y, Max.Y);
+    CameraPawn->SetActorLocation(Location);
+#if !UE_BUILD_SHIPPING
+    FVector After = Before;
+    ScreenCentreGround(After);
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_CONTROL_GROUP_FOCUS participant=%u slot=%d units=%d centre_x=%.1f centre_y=%.1f before_x=%.1f before_y=%.1f after_x=%.1f after_y=%.1f error_cm=%.1f"),
+        GetCommandPlayerId(), Slot, Units.Num(), Centre.X, Centre.Y, Before.X, Before.Y, After.X, After.Y,
+        FVector2D::Distance(FVector2D(After), FVector2D(Centre)));
+#endif
+}
+
+TArray<APolitikaPrototypeUnit*> APolitikaPrototypePlayerController::GetActiveSubgroupUnits(APolitikaPrototypeMatch* ActiveMatch)
+{
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    std::vector<std::pair<politika::selection::EntityId, FName>> Members;
+    for (const APolitikaPrototypeUnit* Unit : Selected) Members.emplace_back(Unit->GetStableId(), Unit->GetArchetypeId());
+    const std::vector<FName> Order = politika::selection::SubgroupOrder(std::move(Members));
+    if (Order.size() <= 1) return Selected;
+    const FName Active = Order[static_cast<std::size_t>(ActiveSubgroup) % Order.size()];
+    return Selected.FilterByPredicate([Active](const APolitikaPrototypeUnit* Unit) { return Unit->GetArchetypeId() == Active; });
+}
+
+void APolitikaPrototypePlayerController::CycleSubgroup()
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    if (Selected.IsEmpty()) return;
+    std::vector<std::pair<politika::selection::EntityId, FName>> Members;
+    for (const APolitikaPrototypeUnit* Unit : Selected) Members.emplace_back(Unit->GetStableId(), Unit->GetArchetypeId());
+    const std::vector<FName> Order = politika::selection::SubgroupOrder(std::move(Members));
+    const bool bBackward = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+    ActiveSubgroup = static_cast<int32>(politika::selection::CycleSubgroup(static_cast<std::size_t>(ActiveSubgroup),
+        Order.size(), !bBackward));
+    // Tab refines which members receive subgroup abilities; it never changes saved groups.
+    const TArray<APolitikaPrototypeUnit*> Active = GetActiveSubgroupUnits(ActiveMatch);
+    ShowLocalFeedback(FString::Printf(TEXT("Subgroup %d of %d: %s (%d units)"), ActiveSubgroup + 1,
+        static_cast<int32>(Order.size()), *Active[0]->GetUnitName().ToString(), Active.Num()));
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SUBGROUP_CYCLE participant=%u subgroups=%d active=%d archetype=%s units=%d backward=%d"),
+        GetCommandPlayerId(), static_cast<int32>(Order.size()), ActiveSubgroup, *Active[0]->GetArchetypeId().ToString(),
+        Active.Num(), bBackward ? 1 : 0);
+#endif
+}
+
 void APolitikaPrototypePlayerController::ClearSelectionState()
 {
     bSelectPressed = false;
     bBoxSelecting = false;
     CommandBatches.Reset();
+    // Selection and every control group end together (Return, rematch, revoked seat).
+#if !UE_BUILD_SHIPPING
+    if (!ControlGroups.Empty())
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_CONTROL_GROUPS_CLEARED participant=%u reason=selection_reset"),
+            ControlGroups.Participant());
+#endif
+    ControlGroups.Clear();
+    RecallTaps.Reset();
+    ActiveSubgroup = 0;
+    LastClickUnit = 0;
     if (APolitikaPrototypeMatch* ActiveMatch = Match.Get())
     {
         const uint32 LocalPlayerId = ActiveMatch->GetLocalRuntimePlayerId();
@@ -2947,8 +3260,8 @@ bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCo
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()
 {
-    // A held selection stroke never turns into an order.
-    if (bSelectPressed) return;
+    // A held selection stroke never turns into an order, and the group bar captures its clicks.
+    if (bSelectPressed || GroupBarSlotUnderCursor() != INDEX_NONE) return;
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
     if (Selected.IsEmpty()) return;
@@ -2986,7 +3299,7 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
-    if (Selected.IsEmpty()) return;
+    if (Selected.IsEmpty() || GroupBarSlotUnderCursor() != INDEX_NONE) return;
     FHitResult Hit;
     if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
@@ -3153,7 +3466,7 @@ void APolitikaPrototypeHUD::DrawHUD()
 
     // UCanvas text is drawn in physical pixels, unlike the Slate shell which
     // receives the project's DPI scale from the viewport layer manager.
-    const float UiScale = FMath::Clamp(Canvas->ClipX / 1920.0f, 1.0f, 2.0f);
+    const float UiScale = UiScaleFor(Canvas->ClipX);
     float Y = 38.0f * UiScale;
     const float Left = 40.0f * UiScale;
     const FLinearColor Ink(0.91f, 0.93f, 0.84f);
@@ -3220,8 +3533,10 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(Outcome, FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, 1.25f * UiScale); Y += 32.0f * UiScale;
         }
     }
-    DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
+    DrawText(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
+    const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
     {
         APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];
         if (SelectedUnits.Num() > 1)
@@ -3240,6 +3555,20 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving"), SelectedUnits.Num(), Health, MaxHealth,
                 Moving), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
+            // Mixed archetypes: name the Tab subgroup that receives grenade, reload and sprint.
+            std::vector<std::pair<politika::selection::EntityId, FName>> Members;
+            for (const APolitikaPrototypeUnit* Unit : SelectedUnits) Members.emplace_back(Unit->GetStableId(), Unit->GetArchetypeId());
+            const std::vector<FName> Subgroups = politika::selection::SubgroupOrder(std::move(Members));
+            if (Subgroups.size() > 1 && PrototypeOwner)
+            {
+                const std::size_t ActiveIndex = static_cast<std::size_t>(PrototypeOwner->GetActiveSubgroup()) % Subgroups.size();
+                const APolitikaPrototypeUnit* const* First = SelectedUnits.FindByPredicate(
+                    [&](const APolitikaPrototypeUnit* Unit) { return Unit->GetArchetypeId() == Subgroups[ActiveIndex]; });
+                DrawText(FString::Printf(TEXT("SUBGROUP %d / %d: %s  ·  Tab next"), static_cast<int32>(ActiveIndex) + 1,
+                    static_cast<int32>(Subgroups.size()), First ? *(*First)->GetUnitName().ToString() : TEXT("")),
+                    FLinearColor(0.94f, 0.78f, 0.31f), Left, Y, nullptr, UiScale);
+                Y += 26.0f * UiScale;
+            }
         }
         else if (Selected)
         {
@@ -3319,6 +3648,47 @@ void APolitikaPrototypeHUD::DrawHUD()
             : FString(Hints[Index]);
         DrawText(Hint, bActive ? FLinearColor(0.94f, 0.78f, 0.31f) : TextColor,
             PanelLeft + (230.0f * UiScale), RowY + (6.0f * UiScale), nullptr, 0.82f * UiScale);
+    }
+    // Control-group bar (4C-G): 1..9 then 0 along the bottom edge. Each slot shows its member
+    // count and is clickable; the slot matching the current selection is outlined.
+    if (PrototypeOwner)
+    {
+        using namespace politika::selection;
+        const ControlGroups& Groups = PrototypeOwner->GetControlGroups();
+        std::vector<EntityId> SelectedIds;
+        for (const APolitikaPrototypeUnit* Unit : SelectedUnits) SelectedIds.push_back(Unit->GetStableId());
+        SelectedIds = Normalize(std::move(SelectedIds));
+        const ScreenRect FirstSlot = GroupBarSlotRect(1, Canvas->ClipX, Canvas->ClipY, UiScale);
+        DrawText(TEXT("CONTROL GROUPS   # select  ·  # # centre camera  ·  Ctrl+# set  ·  Shift+# add  ·  Alt+# move  ·  or click a slot"),
+            Ink, FirstSlot.min.x, FirstSlot.min.y - 22.0f * UiScale, nullptr, 0.8f * UiScale);
+        const FLinearColor Muted(0.46f, 0.50f, 0.48f);
+        const FLinearColor Gold(0.94f, 0.78f, 0.31f);
+        for (std::size_t Slot = 0; Slot < kControlGroupSlots; ++Slot)
+        {
+            const ScreenRect Rect = GroupBarSlotRect(Slot, Canvas->ClipX, Canvas->ClipY, UiScale);
+            const float X0 = static_cast<float>(Rect.min.x);
+            const float Y0 = static_cast<float>(Rect.min.y);
+            const float W = static_cast<float>(Rect.max.x - Rect.min.x);
+            const float H = static_cast<float>(Rect.max.y - Rect.min.y);
+            const std::vector<EntityId>& Members = Groups.Members(Slot);
+            const bool bHasMembers = !Members.empty();
+            const bool bSelected = bHasMembers && Members == SelectedIds;
+            DrawRect(bSelected ? FLinearColor(0.16f, 0.22f, 0.18f, 0.94f)
+                : bHasMembers ? FLinearColor(0.10f, 0.14f, 0.15f, 0.88f) : FLinearColor(0.05f, 0.06f, 0.07f, 0.70f),
+                X0, Y0, W, H);
+            if (bSelected)
+            {
+                const float Thickness = FMath::Max(1.0f, 2.0f * UiScale);
+                DrawLine(X0, Y0, X0 + W, Y0, Gold, Thickness);
+                DrawLine(X0 + W, Y0, X0 + W, Y0 + H, Gold, Thickness);
+                DrawLine(X0 + W, Y0 + H, X0, Y0 + H, Gold, Thickness);
+                DrawLine(X0, Y0 + H, X0, Y0, Gold, Thickness);
+            }
+            DrawText(FString::FromInt(static_cast<int32>(Slot)), bHasMembers ? Ink : Muted, X0 + 5.0f * UiScale, Y0 + 3.0f * UiScale,
+                nullptr, 0.8f * UiScale);
+            DrawText(bHasMembers ? FString::FromInt(static_cast<int32>(Members.size())) : FString(TEXT("-")),
+                bSelected ? Gold : bHasMembers ? Ink : Muted, X0 + 24.0f * UiScale, Y0 + 16.0f * UiScale, nullptr, 1.15f * UiScale);
+        }
     }
     // In-progress box selection, drawn last so it stays visible over every panel.
     if (const APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))

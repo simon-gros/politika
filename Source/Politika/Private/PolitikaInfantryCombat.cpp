@@ -136,10 +136,12 @@ void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
 
 void APolitikaPrototypePlayerController::GrenadeSelected()
 {
-    // One press throws one grenade: only the primary selected unit, never the whole group.
+    // One press throws one grenade: only the first unit of the active Tab subgroup, never the
+    // whole group. The group bar captures clicks, so it is never a grenade aim point.
     auto* ActiveMatch = ResolveMatch();
-    APolitikaPrototypeUnit* Unit = GetCommandableSelectedUnit(ActiveMatch);
-    if (!Unit) return;
+    const TArray<APolitikaPrototypeUnit*> Subgroup = GetActiveSubgroupUnits(ActiveMatch);
+    APolitikaPrototypeUnit* Unit = Subgroup.IsEmpty() ? nullptr : Subgroup[0];
+    if (!Unit || GroupBarSlotUnderCursor() != INDEX_NONE) return;
     FHitResult Hit;
     GetHitResultUnderCursor(ECC_Visibility, false, Hit);
     auto* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor());
@@ -149,11 +151,11 @@ void APolitikaPrototypePlayerController::GrenadeSelected()
 void APolitikaPrototypePlayerController::ReloadSelected()
 {
     auto* ActiveMatch = ResolveMatch();
-    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::ReloadOrder{});
+    SubmitGroupIntent(ActiveMatch, GetActiveSubgroupUnits(ActiveMatch), nullptr, politika::rules::ReloadOrder{});
 }
 
 void APolitikaPrototypePlayerController::SprintSelected()
 {
     auto* ActiveMatch = ResolveMatch();
-    SubmitGroupIntent(ActiveMatch, GetCommandableSelectedUnits(ActiveMatch), nullptr, politika::rules::SprintOrder{});
+    SubmitGroupIntent(ActiveMatch, GetActiveSubgroupUnits(ActiveMatch), nullptr, politika::rules::SprintOrder{});
 }

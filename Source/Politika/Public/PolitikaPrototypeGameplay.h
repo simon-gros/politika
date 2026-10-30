@@ -210,6 +210,7 @@ private:
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
+    friend class FPolitikaMultiplayerControlGroupsTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -378,6 +379,8 @@ public:
     // Replaces the selection with the commandable members of Candidates, normalized once.
     void SetSelectionSet(uint32 PlayerId, TConstArrayView<APolitikaPrototypeUnit*> Candidates);
     void SetSelection(uint32 PlayerId, APolitikaPrototypeUnit* Unit);
+    // The same ownership/participant check selection revalidation uses (§1).
+    bool IsCommandableUnitForPlayer(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const { return IsCommandableUnit(Unit, PlayerId); }
     // Pointer adapter for the local controller and trusted test fixtures; it builds
     // the same versioned intent and calls SubmitControllerIntent.
     bool SubmitLocalControllerCommand(APlayerController* Source, APolitikaPrototypeUnit* Unit,
@@ -623,6 +626,7 @@ private:
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
+    friend class FPolitikaMultiplayerControlGroupsTest;
     // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
     bool bTestDedicatedHosting = false;
     // Automation-only: record each shot cue decision instead of sending the client RPC
@@ -853,6 +857,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
+    friend class FPolitikaMultiplayerControlGroupsTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -898,6 +903,9 @@ private:
 public:
     // HUD read-only view of an in-progress box selection, in viewport pixels.
     bool GetSelectionBox(FVector2D& OutMin, FVector2D& OutMax) const;
+    // HUD read-only view of the numbered control groups (4C-G) and the active Tab subgroup.
+    const politika::selection::ControlGroups& GetControlGroups() const { return ControlGroups; }
+    int32 GetActiveSubgroup() const { return ActiveSubgroup; }
 private:
 #if !UE_BUILD_SHIPPING
     // Development-only hostile-input probe: sends forged intents through the real RPC.
@@ -931,6 +939,30 @@ private:
     void BoxSelect(const FVector2D& CornerA, const FVector2D& CornerB, politika::selection::SelectionOp Op);
     void ApplySelection(TConstArrayView<APolitikaPrototypeUnit*> Hits, politika::selection::SelectionOp Op, const TCHAR* Source);
     void SelectUnitForInput(APolitikaPrototypeUnit* Unit);
+    // Ctrl+click or double-click: own units of the clicked archetype that are on screen now.
+    void SelectSameArchetype(APolitikaPrototypeUnit* Unit, const TCHAR* Source);
+    uint64 LastClickUnit = 0;
+    double LastClickSeconds = -1.0;
+    // Numbered control groups (4C-G, §2B/§2D): local membership snapshots of stable IDs for
+    // this participant and match generation. They never issue an order or grant authority.
+    politika::selection::ControlGroups ControlGroups;
+    politika::selection::RecallTapTracker RecallTaps;
+    // Binds the slots to the current participant and generation and drops dead or lost
+    // members. Returns false (with the slots cleared) when no active bound match exists.
+    bool SyncControlGroups(APolitikaPrototypeMatch* ActiveMatch);
+    void ControlGroupKey(int32 Slot);
+    void ControlGroupInput(int32 Slot, const TCHAR* Source);
+    // Ctrl replaces, Shift adds, Alt moves; no modifier recalls. Callers sync the slots first.
+    void ApplyControlGroupInput(APolitikaPrototypeMatch* ActiveMatch, int32 Slot, bool bCtrl, bool bShift, bool bAlt,
+        const TCHAR* Source);
+    void RecallControlGroup(APolitikaPrototypeMatch* ActiveMatch, int32 Slot, bool bFocus, const TCHAR* Source);
+    void FocusCameraOn(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Units, int32 Slot);
+    // The control-group bar slot under the cursor, or INDEX_NONE; the bar captures clicks.
+    int32 GroupBarSlotUnderCursor() const;
+    // Tab/Shift+Tab: the active archetype subgroup that receives grenade, reload and sprint.
+    int32 ActiveSubgroup = 0;
+    void CycleSubgroup();
+    TArray<APolitikaPrototypeUnit*> GetActiveSubgroupUnits(APolitikaPrototypeMatch* ActiveMatch);
     // The revalidated selection; empty unless this controller is bound.
     TArray<APolitikaPrototypeUnit*> GetCommandableSelectedUnits(APolitikaPrototypeMatch* ActiveMatch);
     APolitikaPrototypeUnit* GetCommandableSelectedUnit(APolitikaPrototypeMatch* ActiveMatch);
@@ -982,6 +1014,8 @@ public:
     void ShowLocalFeedback(const FString& Feedback) { CommandFeedback = Feedback; }
     // Player-facing text for an OrderRejection code.
     static FString RejectionText(uint8 Rejection);
+    // Canvas text and panels scale with the viewport width (1920 px = 1).
+    static float UiScaleFor(float ViewWidth) { return FMath::Clamp(ViewWidth / 1920.0f, 1.0f, 2.0f); }
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     FString CommandFeedback;

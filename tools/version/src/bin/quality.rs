@@ -303,6 +303,53 @@ fn check_input_bindings(input_ini: &str, sources: &[(String, String)]) -> Check 
             orders.push((key, format!("{path} BindKey")));
         }
     }
+    // One semantic action per chord (GRP-19): a key with modifiers forms its own chord, and a
+    // BindKey source file counts as one owner however many events it binds on that key.
+    let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for line in input_ini.lines() {
+        let Some(key) = mapping_key(line, "+ActionMappings=") else {
+            continue;
+        };
+        let action = line
+            .split("ActionName=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap_or("?")
+            .to_owned();
+        let chord: String = ["bShift", "bCtrl", "bAlt", "bCmd"]
+            .iter()
+            .filter(|flag| line.contains(&format!("{flag}=True")))
+            .map(|flag| format!("{}+", &flag[1..]))
+            .collect::<String>()
+            + &key;
+        owners.entry(chord).or_default().insert(action);
+    }
+    for (key, origin) in orders
+        .iter()
+        .filter(|(_, origin)| origin.ends_with("BindKey"))
+    {
+        owners
+            .entry(key.clone())
+            .or_default()
+            .insert(origin.clone());
+    }
+    let shared: Vec<String> = owners
+        .iter()
+        .filter(|(_, actions)| actions.len() > 1)
+        .map(|(chord, actions)| {
+            format!(
+                "{chord} ({})",
+                actions.iter().cloned().collect::<Vec<_>>().join(" + ")
+            )
+        })
+        .collect();
+    if !shared.is_empty() {
+        return Check::new(
+            "input.bindings",
+            Verdict::Fail,
+            format!("one chord drives several actions: {}", shared.join(", ")),
+        );
+    }
     if axis_keys.is_empty() {
         return Check::new(
             "input.bindings",
@@ -753,6 +800,37 @@ mod tests {
         assert_eq!(failed.verdict, Verdict::Fail);
         assert!(failed.detail.contains("A (Gameplay.cpp BindKey)"));
         assert_eq!(check_input_bindings(action, &[]).verdict, Verdict::Fail);
+        // A chord drives one action; a modifier makes a distinct chord, and one source file
+        // binding pressed and released on the same key is one owner.
+        let guard = "+ActionMappings=(ActionName=\"PrototypeGuard\",bShift=False,Key=X)\n";
+        let failed = check_input_bindings(&(axes.to_owned() + action + guard), &[]);
+        assert_eq!(failed.verdict, Verdict::Fail);
+        assert!(failed.detail.contains("X (PrototypeGuard + PrototypeStop)"));
+        let shifted = guard.replace("bShift=False", "bShift=True");
+        assert_eq!(
+            check_input_bindings(&(axes.to_owned() + action + &shifted), &[]).verdict,
+            Verdict::Pass
+        );
+        let mouse = (
+            "Gameplay.cpp".to_owned(),
+            "BindKey(EKeys::LeftMouseButton, IE_Pressed); BindKey(EKeys::LeftMouseButton, IE_Released);"
+                .to_owned(),
+        );
+        assert_eq!(
+            check_input_bindings(&(axes.to_owned() + action), &[mouse]).verdict,
+            Verdict::Pass
+        );
+        let tab = (
+            "Other.cpp".to_owned(),
+            "BindKey(EKeys::X, IE_Pressed);".to_owned(),
+        );
+        let failed = check_input_bindings(&(axes.to_owned() + action), &[tab]);
+        assert_eq!(failed.verdict, Verdict::Fail);
+        assert!(
+            failed
+                .detail
+                .contains("X (Other.cpp BindKey + PrototypeStop)")
+        );
     }
 
     #[test]

@@ -11,6 +11,7 @@
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaBootstrap.h"
 
+#include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
 #include "Engine/World.h"
@@ -1182,6 +1183,156 @@ bool FPolitikaMultiplayerGroupOrdersTest::RunTest(const FString& Parameters)
     Host->ClearSelectionState();
     TestEqual(TEXT("GRP-09 selection cleared"), SelectedIds().Num(), 0);
     TestEqual(TEXT("GRP-09 batches cleared"), Host->CommandBatches.Num(), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerControlGroupsTest,
+    "Politika.RTS.Multiplayer.ControlGroups",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerControlGroupsTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Every 1v1 seat binds"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 20; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 5) * 120.0, -1500.0 + (Index / 5) * 120.0}));
+    APolitikaPrototypeUnit* EnemyUnit = F.AddUnit(EnemyId, {1500, 1500});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !EnemyUnit)) return false;
+    auto Ids = [](TConstArrayView<APolitikaPrototypeUnit*> Units)
+    {
+        std::vector<politika::selection::EntityId> Out;
+        for (const APolitikaPrototypeUnit* Unit : Units) Out.push_back(Unit->GetStableId());
+        return politika::selection::Normalize(std::move(Out));
+    };
+    auto Slice = [&Own](int32 First, int32 Count) { return TArray<APolitikaPrototypeUnit*>(Own.GetData() + First, Count); };
+    auto Selected = [&]() { return Ids(F.Match->GetSelectedUnitsForPlayer(HostId)); };
+    const auto& Groups = Host->GetControlGroups();
+    auto Key = [&](int32 Slot, bool bCtrl, bool bShift, bool bAlt)
+    {
+        TestTrue(TEXT("Control groups are available in the active match"), Host->SyncControlGroups(F.Match));
+        Host->ApplyControlGroupInput(F.Match, Slot, bCtrl, bShift, bAlt, TEXT("automation"));
+    };
+    const auto OrdersOf = [&Own]()
+    {
+        TArray<EPolitikaPrototypeOrder> Orders;
+        for (const APolitikaPrototypeUnit* Unit : Own) Orders.Add(Unit->GetCurrentOrder());
+        return Orders;
+    };
+
+    // GRP-13: Ctrl replaces, Shift unions without stealing, Alt transfers only the selected IDs.
+    // None of them changes the current selection.
+    Host->ApplySelection(Slice(0, 10), SelectionOp::Replace, TEXT("automation"));
+    Key(1, true, false, false);
+    TestTrue(TEXT("GRP-13 Ctrl+1 stores the selection"), Groups.Members(1) == Ids(Slice(0, 10)));
+    TestEqual(TEXT("Groups bind to the host participant"), Groups.Participant(), HostId);
+    Host->ApplySelection(Slice(5, 10), SelectionOp::Replace, TEXT("automation"));
+    Key(1, false, true, false);
+    TestTrue(TEXT("GRP-13 Shift+1 unions"), Groups.Members(1) == Ids(Slice(0, 15)));
+    TestTrue(TEXT("Assigning never changes the selection"), Selected() == Ids(Slice(5, 10)));
+    Key(3, true, false, false);
+    Key(2, false, false, true);
+    TestTrue(TEXT("GRP-13 Alt+2 holds the moved units"), Groups.Members(2) == Ids(Slice(5, 10)));
+    TestTrue(TEXT("GRP-13 Alt+2 takes them from group 1"), Groups.Members(1) == Ids(Slice(0, 5)));
+    TestTrue(TEXT("GRP-13 Alt+2 takes them from group 3"), Groups.Members(3).empty());
+    Key(2, false, false, true);
+    TestTrue(TEXT("GRP-13 repeated Alt+2 is idempotent"), Groups.Members(2) == Ids(Slice(5, 10)) && Groups.Members(1) == Ids(Slice(0, 5)));
+    Key(4, true, true, false);
+    TestTrue(TEXT("Two modifiers change no slot"), Groups.Members(4).empty());
+    Host->ApplySelection({}, SelectionOp::Replace, TEXT("automation"));
+    Key(1, true, false, false);
+    TestTrue(TEXT("Ctrl with an empty selection keeps the slot"), Groups.Members(1) == Ids(Slice(0, 5)));
+
+    // GRP-14/15: overlapping slots, recall and double-tap focus issue no orders and change no unit.
+    Host->ApplySelection(Slice(3, 4), SelectionOp::Replace, TEXT("automation"));
+    Key(0, true, false, false);
+    TestTrue(TEXT("GRP-14 slot 0 exists and overlaps group 1"), Groups.Members(0) == Ids(Slice(3, 4)));
+    APolitikaPrototypeCameraPawn* CameraPawn = F.World->SpawnActor<APolitikaPrototypeCameraPawn>(FVector(0, 0, 0), FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("Camera pawn spawned"), CameraPawn)) return false;
+    Host->Possess(CameraPawn);
+    CameraPawn->GetCamera()->SetRelativeLocation(FVector(-1400, 0, 1800));
+    CameraPawn->GetCamera()->SetRelativeRotation(FRotator(-52, 0, 0));
+    const TArray<EPolitikaPrototypeOrder> OrdersBefore = OrdersOf();
+    const TArray<FVector> LocationsBefore = [&Own]() { TArray<FVector> L; for (const auto* U : Own) L.Add(U->GetActorLocation()); return L; }();
+    const int32 PendingBefore = F.Match->PendingOrders.Num();
+    const FVector PawnBefore = CameraPawn->GetActorLocation();
+    Key(1, false, false, false);
+    TestTrue(TEXT("GRP-15 recall selects group 1"), Selected() == Ids(Slice(0, 5)));
+    TestTrue(TEXT("A single recall leaves the camera"), CameraPawn->GetActorLocation().Equals(PawnBefore));
+    Key(1, false, false, false);
+    TestFalse(TEXT("GRP-15 double tap moves the camera"), CameraPawn->GetActorLocation().Equals(PawnBefore));
+    {
+        FVector Centre = FVector::ZeroVector;
+        for (const APolitikaPrototypeUnit* Unit : Slice(0, 5)) Centre += Unit->GetActorLocation();
+        Centre /= 5.0;
+        const FVector Origin = CameraPawn->GetCamera()->GetComponentLocation();
+        const FVector Forward = CameraPawn->GetCamera()->GetForwardVector();
+        const FVector Ground = Origin + Forward * ((Centre.Z - Origin.Z) / Forward.Z);
+        TestTrue(TEXT("GRP-15 the group centre is at screen centre"), FVector2D::Distance(FVector2D(Ground), FVector2D(Centre)) < 1.0);
+    }
+    Key(0, false, false, false);
+    TestTrue(TEXT("GRP-14 recalling the overlapping slot selects only its members"), Selected() == Ids(Slice(3, 4)));
+    TestEqual(TEXT("GRP-15 recall and focus queue no command"), F.Match->PendingOrders.Num(), PendingBefore);
+    F.Step();
+    TestTrue(TEXT("GRP-15 no unit order changed"), OrdersOf() == OrdersBefore);
+    for (int32 Index = 0; Index < Own.Num(); ++Index)
+        TestTrue(TEXT("GRP-15 no unit moved"), Own[Index]->GetActorLocation().Equals(LocationsBefore[Index]));
+    // GRP-14: a group order from an overlapping recall has one request per unit, no duplicates.
+    Host->ApplySelection(Slice(0, 7), SelectionOp::Replace, TEXT("automation"));
+    Host->StopSelected();
+    TestEqual(TEXT("GRP-14 one request per selected unit"), F.Match->PendingOrders.Num(), PendingBefore + 7);
+    F.Step();
+
+    // Empty slots keep the selection.
+    Key(7, false, false, false);
+    TestTrue(TEXT("Empty slot recall keeps the selection"), Selected() == Ids(Slice(0, 7)));
+
+    // GRP-16: dead and foreign references leave every slot; they cannot come back by recall.
+    Own[3]->PendingDamage = static_cast<float>(Own[3]->GetHealth());
+    Own[3]->ApplyPendingDamage();
+    Host->ControlGroups.Assign(5, politika::selection::GroupOp::Replace, {EnemyUnit->GetStableId(), Own[10]->GetStableId(), 999999});
+    TestTrue(TEXT("Slots sync"), Host->SyncControlGroups(F.Match));
+    TestTrue(TEXT("GRP-16 dead member leaves group 1"), Groups.Members(1) == Ids({Own[0], Own[1], Own[2], Own[4]}));
+    TestTrue(TEXT("GRP-16 dead member leaves group 0"), Groups.Members(0) == Ids({Own[4], Own[5], Own[6]}));
+    TestTrue(TEXT("GRP-16 forged enemy and missing IDs are dropped"), Groups.Members(5) == Ids({Own[10]}));
+    Key(1, false, false, false);
+    TestTrue(TEXT("GRP-16 recall never returns the dead unit"), Selected() == Ids({Own[0], Own[1], Own[2], Own[4]}));
+
+    // GRP-17: Tab cycles archetype subgroups; reload/sprint go to the active subgroup only.
+    for (int32 Index = 15; Index < 20; ++Index) Own[Index]->SetArchetypeId(TEXT("unit.test.second_archetype"));
+    const FName FirstArchetype = Own[0]->GetArchetypeId();
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    TestEqual(TEXT("Selection holds the 19 living units"), static_cast<int32>(Selected().size()), 19);
+    TestEqual(TEXT("A new selection starts on the first subgroup"), Host->GetActiveSubgroup(), 0);
+    TestTrue(TEXT("The first subgroup is the lowest ID's archetype"),
+        Host->GetActiveSubgroupUnits(F.Match).Num() == 14 && Host->GetActiveSubgroupUnits(F.Match)[0]->GetArchetypeId() == FirstArchetype);
+    Host->CycleSubgroup();
+    TestEqual(TEXT("Tab moves to the second subgroup"), Host->GetActiveSubgroupUnits(F.Match).Num(), 5);
+    const int32 PendingBeforeReload = F.Match->PendingOrders.Num();
+    Host->ReloadSelected();
+    TestEqual(TEXT("Reload goes to the active subgroup only"), F.Match->PendingOrders.Num(), PendingBeforeReload + 5);
+    F.Step();
+    Host->CycleSubgroup();
+    TestEqual(TEXT("Tab wraps to the first subgroup"), Host->GetActiveSubgroup(), 0);
+    TestTrue(TEXT("Tab never edits saved groups"), Groups.Members(5) == Ids({Own[10]}));
+
+    // A new match generation, an inactive match and a selection reset each clear every slot.
+    F.Match->MatchGeneration += 1;
+    TestTrue(TEXT("Slots rebind"), Host->SyncControlGroups(F.Match));
+    TestTrue(TEXT("A new generation clears every slot"), Groups.Empty() && Groups.Generation() == F.Match->GetMatchGeneration());
+    Host->ApplySelection(Slice(0, 2), SelectionOp::Replace, TEXT("automation"));
+    Key(9, true, false, false);
+    TestEqual(TEXT("Slot 9 holds two units"), static_cast<int32>(Groups.Members(9).size()), 2);
+    Host->ClearSelectionState();
+    TestTrue(TEXT("GRP-09 selection reset clears every slot"), Groups.Empty() && Groups.Participant() == 0);
+    APolitikaPrototypePlayerController* Unbound = F.World->SpawnActor<APolitikaPrototypePlayerController>();
+    if (!TestNotNull(TEXT("Unbound controller spawned"), Unbound)) return false;
+    Unbound->MarkLocalControllerForTest();
+    TestFalse(TEXT("An unbound controller has no control groups"), Unbound->SyncControlGroups(F.Match));
     return true;
 }
 

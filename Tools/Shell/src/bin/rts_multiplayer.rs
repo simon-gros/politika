@@ -6448,6 +6448,505 @@ fn group_orders_session(options: &DedicatedOptions, report: &mut Report) -> Resu
     result
 }
 
+// 4C-G control groups (RTS_SELECTION_AND_GROUP_ORDERS.md §2B/§2D): `--control-groups SERVER
+// CLIENT [--evidence DIR] [--port N]`.
+//
+// Same dedicated 1v1 fixture as `--group-orders` (20 idle units per seat). Seat 1's client is
+// driven with real X input: Ctrl/Shift/Alt+digit edit slots, digits recall them, a double tap
+// centres the camera, Ctrl+click and double-click select the on-screen archetype, Tab cycles
+// subgroups and the bottom group bar is clicked. Client logs are checked against the server's
+// ownership and received commands; no group operation may send an order.
+// ---------------------------------------------------------------------------------------
+
+/// Bar slot centre in the 1280x720 client window, mirroring `GroupBarSlotRect` at UI scale 1.
+fn group_bar_slot_centre(slot: usize) -> (f64, f64) {
+    let (w, h, gap, bottom, min_left) = (64.0, 46.0, 6.0, 22.0, 446.0);
+    let total = 10.0 * w + 9.0 * gap;
+    let left = ((f64::from(WIDTH) - total) * 0.5).max(min_left);
+    let position = (slot + 9) % 10;
+    (
+        left + position as f64 * (w + gap) + w * 0.5,
+        f64::from(HEIGHT) - bottom - h * 0.5,
+    )
+}
+
+fn group_counts(line: &str) -> Vec<u32> {
+    field(line, "counts")
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|v| v.parse().ok())
+        .collect()
+}
+
+impl Game {
+    /// Holds a modifier across a separate key press so the game sees both in one state.
+    fn modified_key(&self, modifier: &str, key: &str) -> Result<(), String> {
+        self.xdo_here(&["keydown", modifier])?;
+        thread::sleep(Duration::from_millis(150));
+        let pressed = self.xdo_here(&["key", key]);
+        thread::sleep(Duration::from_millis(150));
+        self.xdo_here(&["keyup", modifier])?;
+        thread::sleep(Duration::from_millis(250));
+        pressed
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &client_args(client_options, true, false, false),
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.fact("own_units", own.len().to_string());
+        let wait = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+
+        // Setup: the whole army by box, as in the 4C baseline.
+        let before_box = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        let boxed = wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=box"],
+            before_box,
+        )?;
+        report.verdict(
+            "CG-SETUP-BOX-20",
+            selection_ids(&boxed) == own && own.len() == GROUP_UNITS_PER_SEAT,
+            boxed.trim().to_owned(),
+        );
+        // Unit screen positions clear of the HUD text, the command panel and the group bar.
+        let screens: Vec<(u64, f64, f64)> = client_a.text()[before_box..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SCREEN"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "unit")?.parse().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .filter(|(_, x, y)| {
+                *x > 40.0 && *x < f64::from(WIDTH) - 40.0 && *y > 220.0 && *y < 500.0
+            })
+            .collect();
+        // Greedy pick of five well-separated units so no click lands on a neighbour.
+        let mut picked: Vec<(u64, f64, f64)> = Vec::new();
+        while picked.len() < 5 {
+            let next = screens
+                .iter()
+                .filter(|s| !picked.iter().any(|p| p.0 == s.0))
+                .map(|s| {
+                    let nearest = screens
+                        .iter()
+                        .filter(|o| o.0 != s.0)
+                        .map(|o| (s.1 - o.1).hypot(s.2 - o.2))
+                        .fold(f64::MAX, f64::min);
+                    let from_picked = picked
+                        .iter()
+                        .map(|p| (s.1 - p.1).hypot(s.2 - p.2))
+                        .fold(f64::MAX, f64::min);
+                    (*s, nearest.min(from_picked * 4.0))
+                })
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(s, _)| s)
+                .ok_or("fewer than five clickable own units on screen")?;
+            picked.push(next);
+        }
+        let mut five: Vec<u64> = picked.iter().map(|p| p.0).collect();
+        five.sort_unstable();
+        report.fact(
+            "picked_units",
+            picked
+                .iter()
+                .map(|p| format!("{}@{:.0},{:.0}", p.0, p.1, p.2))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+
+        // GRP-13: Ctrl+1 stores the army.
+        let before_ops = client_a.offset();
+        let before_ops_server = server.offset();
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let set1 = wait(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        report.verdict(
+            "CG-13-CTRL-REPLACE",
+            field(&set1, "op") == Some("replace")
+                && selection_ids(&set1) == own
+                && field(&set1, "generation") == Some(generation.as_str()),
+            set1.trim().to_owned(),
+        );
+
+        // Five units by click and Shift+click, then Ctrl+2: overlapping membership.
+        let at = client_a.offset();
+        client_a.click(picked[0].1, picked[0].2, "1")?;
+        wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=1 "],
+            at,
+        )?;
+        for p in &picked[1..] {
+            let at = client_a.offset();
+            client_a.modified_click(p.1, p.2, "shift")?;
+            wait(
+                &mut client_a,
+                &["RTS_SELECTION_SET", "source=click", "op=toggle"],
+                at,
+            )?;
+        }
+        let five_selected = client_a.text()[before_ops..]
+            .lines()
+            .rev()
+            .find(|l| l.contains("RTS_SELECTION_SET"))
+            .map(selection_ids)
+            .unwrap_or_default();
+        report.verdict(
+            "CG-SETUP-FIVE",
+            five_selected == five,
+            format!("selected {five_selected:?}; picked {five:?}"),
+        );
+        let after_pick = client_a.offset();
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "2")?;
+        let set2 = wait(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=2 "], at)?;
+        let counts = group_counts(&set2);
+        report.verdict(
+            "CG-14-OVERLAP",
+            selection_ids(&set2) == five && counts.get(1) == Some(&20) && counts.get(2) == Some(&5),
+            set2.trim().to_owned(),
+        );
+        // Alt+3 moves the five out of groups 1 and 2 into 3.
+        let at = client_a.offset();
+        client_a.modified_key("alt", "3")?;
+        let set3 = wait(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=3 "], at)?;
+        let counts = group_counts(&set3);
+        report.verdict(
+            "CG-13-ALT-TRANSFER",
+            field(&set3, "op") == Some("transfer")
+                && selection_ids(&set3) == five
+                && counts.get(1) == Some(&15)
+                && counts.get(2) == Some(&0)
+                && counts.get(3) == Some(&5),
+            set3.trim().to_owned(),
+        );
+        // Shift+1 adds them back to 1 without taking them from 3.
+        let at = client_a.offset();
+        client_a.modified_key("shift", "1")?;
+        let add1 = wait(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        let counts = group_counts(&add1);
+        report.verdict(
+            "CG-13-SHIFT-UNION",
+            field(&add1, "op") == Some("union")
+                && selection_ids(&add1) == own
+                && counts.get(1) == Some(&20)
+                && counts.get(3) == Some(&5),
+            add1.trim().to_owned(),
+        );
+        let reselected = client_a.text()[after_pick..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SET"))
+            .count();
+        report.verdict(
+            "CG-13-ASSIGN-KEEPS-SELECTION",
+            reselected == 0,
+            format!("selection changes during Ctrl+2, Alt+3, Shift+1: {reselected}"),
+        );
+        report.artifact(
+            "assigned_png",
+            &client_a.screenshot(evidence, "01-assigned")?,
+        );
+
+        // GRP-15: clear, then 1 recalls the army; an empty slot keeps the selection.
+        let at = client_a.offset();
+        client_a.click(f64::from(WIDTH) * 0.12, f64::from(HEIGHT) * 0.80, "1")?;
+        wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=0 "],
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.key("1")?;
+        let recall = wait(&mut client_a, &["RTS_CONTROL_GROUP_RECALL", "slot=1 "], at)?;
+        let recalled = wait(&mut client_a, &["RTS_SELECTION_SET", "source=group"], at)?;
+        report.verdict(
+            "CG-15-RECALL",
+            field(&recall, "selected") == Some("20")
+                && field(&recall, "focus") == Some("0")
+                && selection_ids(&recalled) == own,
+            format!("{}; {}", recall.trim(), recalled.trim()),
+        );
+        let at = client_a.offset();
+        client_a.key("7")?;
+        let empty = wait(&mut client_a, &["RTS_CONTROL_GROUP_RECALL", "slot=7 "], at)?;
+        thread::sleep(Duration::from_millis(300));
+        let changed = client_a.text()[at..].contains("RTS_SELECTION_SET");
+        report.verdict(
+            "CG-16-EMPTY-SLOT-KEEPS-SELECTION",
+            field(&empty, "members") == Some("0")
+                && field(&empty, "selected") == Some("20")
+                && !changed,
+            format!("{}; selection_changed={changed}", empty.trim()),
+        );
+
+        // GRP-17: Ctrl+click and double-click select the archetype on screen; Tab cycles.
+        let at = client_a.offset();
+        client_a.click(picked[1].1, picked[1].2, "1")?;
+        wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=1 "],
+            at,
+        )?;
+        thread::sleep(Duration::from_millis(600));
+        let at = client_a.offset();
+        client_a.modified_click(picked[0].1, picked[0].2, "ctrl")?;
+        let same = wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=ctrl_click"],
+            at,
+        )?;
+        report.verdict(
+            "CG-17-CTRL-CLICK-SAME-TYPE",
+            selection_ids(&same) == own,
+            same.trim().to_owned(),
+        );
+        thread::sleep(Duration::from_millis(600));
+        let at = client_a.offset();
+        client_a.pointer_to(picked[2].1, picked[2].2)?;
+        thread::sleep(Duration::from_millis(150));
+        client_a.xdo_here(&["click", "--repeat", "2", "--delay", "150", "1"])?;
+        let double = wait(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=double_click"],
+            at,
+        )?;
+        report.verdict(
+            "CG-17-DOUBLE-CLICK-SAME-TYPE",
+            selection_ids(&double) == own,
+            double.trim().to_owned(),
+        );
+        let at = client_a.offset();
+        client_a.key("Tab")?;
+        let tab = wait(&mut client_a, &["RTS_SUBGROUP_CYCLE"], at)?;
+        report.verdict(
+            "CG-17-TAB-SINGLE-ARCHETYPE",
+            field(&tab, "subgroups") == Some("1") && field(&tab, "units") == Some("20"),
+            format!(
+                "{} (mixed archetypes: Automation ControlGroups)",
+                tab.trim()
+            ),
+        );
+
+        // GRP-15: pan away, then double-tap 3 centres the camera on group 3.
+        client_a.xdo_here(&["keydown", "d"])?;
+        thread::sleep(Duration::from_millis(1300));
+        client_a.xdo_here(&["keyup", "d"])?;
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "panned_png",
+            &client_a.screenshot(evidence, "02-panned-away")?,
+        );
+        let at = client_a.offset();
+        client_a.xdo_here(&["key", "--delay", "120", "3", "3"])?;
+        let focus = wait(&mut client_a, &["RTS_CONTROL_GROUP_FOCUS", "slot=3 "], at)?;
+        let focus_recall = wait(
+            &mut client_a,
+            &["RTS_CONTROL_GROUP_RECALL", "slot=3 ", "focus=1"],
+            at,
+        )?;
+        let moved = distance(
+            (
+                number(&focus, "before_x").unwrap_or(0.0),
+                number(&focus, "before_y").unwrap_or(0.0),
+            ),
+            (
+                number(&focus, "after_x").unwrap_or(0.0),
+                number(&focus, "after_y").unwrap_or(0.0),
+            ),
+        );
+        let error = number(&focus, "error_cm").unwrap_or(f64::MAX);
+        report.verdict(
+            "CG-15-DOUBLE-TAP-FOCUS",
+            field(&focus, "units") == Some("5")
+                && field(&focus_recall, "selected") == Some("5")
+                && moved > 300.0
+                && error < 30.0,
+            format!(
+                "camera moved {moved:.0} cm, centre error {error:.1} cm; {}",
+                focus.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "focused_png",
+            &client_a.screenshot(evidence, "03-focused-group-3")?,
+        );
+
+        // GRP-21: the bar recalls on click and captures a right-click.
+        let (bx, by) = group_bar_slot_centre(1);
+        let at = client_a.offset();
+        client_a.click(bx, by, "1")?;
+        let bar = wait(
+            &mut client_a,
+            &["RTS_CONTROL_GROUP_RECALL", "slot=1 ", "source=bar"],
+            at,
+        )?;
+        report.verdict(
+            "CG-21-BAR-CLICK-RECALLS",
+            field(&bar, "selected") == Some("20"),
+            format!("clicked {bx:.0},{by:.0}; {}", bar.trim()),
+        );
+        let at = client_a.offset();
+        client_a.click(bx, by, "3")?;
+        thread::sleep(Duration::from_millis(1500));
+        let ordered = client_a.text()[at..].contains("RTS_GROUP_ORDER_SENT");
+        report.verdict(
+            "CG-21-BAR-CAPTURES-RIGHT-CLICK",
+            !ordered,
+            format!("right-click on slot 1 sent an order: {ordered}"),
+        );
+        client_a.hover(f64::from(WIDTH) * 0.5, f64::from(HEIGHT) * 0.4)?;
+        thread::sleep(Duration::from_millis(400));
+        report.artifact("bar_png", &client_a.screenshot(evidence, "04-bar-slot-1")?);
+
+        // GRP-15: no group operation so far sent an intent or reached the server.
+        let intents = client_a.text()[before_ops..]
+            .lines()
+            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
+            .count();
+        let received = server.text()[before_ops_server..]
+            .lines()
+            .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
+            .count();
+        report.verdict(
+            "CG-15-NO-ORDERS-FROM-GROUP-OPS",
+            intents == 0 && received == 0,
+            format!("client intents {intents}; server commands from participant 1 {received}"),
+        );
+
+        // GRP-14: an order from the recalled overlapping group has one request per unit.
+        let at = client_a.offset();
+        client_a.xdo_here(&["key", "--delay", "120", "1", "1"])?;
+        wait(&mut client_a, &["RTS_CONTROL_GROUP_FOCUS", "slot=1 "], at)?;
+        thread::sleep(Duration::from_millis(600));
+        let order_point = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective",
+        )?;
+        let (lx, ly) = group_bar_slot_centre(1);
+        if order_point.1 > ly - 60.0 && order_point.0 > lx - 60.0 {
+            return Err(format!(
+                "objective at {order_point:?} is behind the group bar"
+            ));
+        }
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.click(order_point.0, order_point.1, "3")?;
+        let sent = wait(&mut client_a, &["RTS_GROUP_ORDER_SENT", "order=0"], at)?;
+        let outcome = client_a.wait_line(
+            &["RTS_GROUP_ORDER_OUTCOME", "order=0"],
+            Duration::from_secs(15),
+            at,
+        )?;
+        let mut issuers: Vec<u64> = server.text()[at_server..]
+            .lines()
+            .filter(|l| {
+                l.contains("MP_COMMAND_RECEIVED")
+                    && l.contains(" participant=1 ")
+                    && l.contains(" order=0 ")
+            })
+            .filter_map(|l| field(l, "issuer")?.parse().ok())
+            .collect();
+        issuers.sort_unstable();
+        let total = issuers.len();
+        issuers.dedup();
+        report.verdict(
+            "CG-14-ONE-REQUEST-PER-UNIT",
+            field(&sent, "issuers") == Some("20")
+                && total == 20
+                && issuers == own
+                && field(&outcome, "accepted") == Some("20"),
+            format!(
+                "server received {total} intents from {} distinct issuers; {}",
+                issuers.len(),
+                outcome.trim()
+            ),
+        );
+        thread::sleep(Duration::from_secs(2));
+        report.artifact(
+            "ordered_png",
+            &client_a.screenshot(evidence, "05-group-1-ordered")?,
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -6537,6 +7036,14 @@ fn main() {
             "politika.grp.group-orders-evidence.v1",
             "group-orders",
             group_orders_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--control-groups") {
+        run_dedicated_session(
+            "--control-groups",
+            "politika.grp.control-groups-evidence.v1",
+            "control-groups",
+            control_groups_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

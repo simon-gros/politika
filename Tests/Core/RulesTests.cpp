@@ -367,6 +367,75 @@ int main() {
         static_assert(BatchTally<2>{0}.Complete());
     }
 
+    // Control groups 0-9 (4C-G, GRP-13/14/16/17/21).
+    {
+        using namespace politika::selection;
+        using Ids = std::vector<EntityId>;
+        ControlGroups Groups;
+        // Unbound slots never accept members.
+        assert(!Groups.Assign(1, GroupOp::Replace, {5}) && Groups.Empty());
+        assert(!Groups.Bind(1, 3) && Groups.Generation() == 1 && Groups.Participant() == 3);
+        // GRP-13: Ctrl replaces, Shift unions without stealing, Alt transfers only the selected IDs.
+        assert(Groups.Assign(1, GroupOp::Replace, {9, 2, 9, 0}) && (Groups.Members(1) == Ids{2, 9}));
+        assert(Groups.Assign(2, GroupOp::Replace, {2, 4}) && (Groups.Members(2) == Ids{2, 4}));
+        assert(Groups.Assign(1, GroupOp::Union, {4, 7}) && (Groups.Members(1) == Ids{2, 4, 7, 9}));
+        assert((Groups.Members(2) == Ids{2, 4}));
+        assert(Groups.Assign(0, GroupOp::Transfer, {4, 9}) && (Groups.Members(0) == Ids{4, 9}));
+        assert((Groups.Members(1) == Ids{2, 7}) && (Groups.Members(2) == Ids{2}));
+        // Repeating each operation is idempotent.
+        assert(Groups.Assign(0, GroupOp::Transfer, {4, 9}) && (Groups.Members(0) == Ids{4, 9}) && (Groups.Members(1) == Ids{2, 7}));
+        assert(Groups.Assign(1, GroupOp::Union, {7}) && (Groups.Members(1) == Ids{2, 7}));
+        assert(Groups.Assign(2, GroupOp::Replace, {2}) && (Groups.Members(2) == Ids{2}));
+        // An empty selection edits nothing; slot 10 does not exist.
+        assert(!Groups.Assign(1, GroupOp::Replace, {}) && !Groups.Assign(1, GroupOp::Replace, {0}) && (Groups.Members(1) == Ids{2, 7}));
+        assert(!Groups.Assign(kControlGroupSlots, GroupOp::Replace, {5}) && Groups.Members(kControlGroupSlots).empty());
+        // GRP-14: overlapping slots share an ID; recall of both stays one normalized ID each.
+        assert((Apply(Groups.Members(1), Groups.Members(2), SelectionOp::Union) == Ids{2, 7}));
+        // Explicit removal touches one slot only.
+        assert(Groups.Remove(1, {2}) && (Groups.Members(1) == Ids{7}) && (Groups.Members(2) == Ids{2}) && !Groups.Remove(1, {2}));
+        // GRP-16: permanently invalid references leave every slot at once.
+        assert(Groups.Assign(3, GroupOp::Replace, {2, 7, 9}));
+        assert(Groups.Prune([](EntityId Id) { return Id != 2 && Id != 9; }) == 4);
+        assert(Groups.Members(2).empty() && (Groups.Members(3) == Ids{7}) && Groups.Members(0) == Ids{4});
+        assert(Groups.Prune([](EntityId) { return true; }) == 0);
+        // A new match generation or another participant clears every slot.
+        assert(!Groups.Bind(1, 3) && !Groups.Empty());
+        assert(Groups.Bind(2, 3) && Groups.Empty() && Groups.Generation() == 2);
+        assert(Groups.Assign(5, GroupOp::Replace, {11}) && Groups.Bind(2, 4) && Groups.Empty());
+        assert(!Groups.Bind(2, 4));
+        Groups.Clear();
+        assert(Groups.Participant() == 0 && !Groups.Assign(5, GroupOp::Replace, {11}));
+
+        // GRP-15: a double tap is the same slot within the window; a third tap is a plain recall.
+        RecallTapTracker Taps;
+        assert(!Taps.Tap(1, 10.0) && Taps.Tap(1, 10.2) && !Taps.Tap(1, 10.3) && Taps.Tap(1, 10.5));
+        assert(!Taps.Tap(2, 20.0) && !Taps.Tap(3, 20.1) && !Taps.Tap(3, 20.6) && !Taps.Tap(2, 20.7));
+        assert(!Taps.Tap(4, 0.0) && Taps.Tap(4, kGroupDoubleTapSeconds));
+        Taps.Reset();
+        assert(!Taps.Tap(4, 31.0));
+        assert(!Taps.Tap(6, 40.0) && !Taps.Tap(6, 39.0));
+
+        // GRP-17: subgroups follow each archetype's lowest ID; Tab wraps both ways.
+        assert((SubgroupOrder<int>({{9, 2}, {3, 1}, {5, 2}, {1, 7}}) == std::vector<int>{7, 1, 2}));
+        assert(SubgroupOrder<int>({}).empty());
+        static_assert(CycleSubgroup(0, 3, true) == 1 && CycleSubgroup(2, 3, true) == 0);
+        static_assert(CycleSubgroup(0, 3, false) == 2 && CycleSubgroup(0, 1, true) == 0 && CycleSubgroup(4, 0, true) == 0);
+
+        // GRP-21: the bar shows 1..9 then 0, centred, and hit-tests each slot exactly.
+        static_assert(GroupBarSlotAtPosition(0) == 1 && GroupBarSlotAtPosition(8) == 9 && GroupBarSlotAtPosition(9) == 0);
+        constexpr ScreenRect One = GroupBarSlotRect(1, 1920, 1080, 1.0);
+        constexpr ScreenRect Zero = GroupBarSlotRect(0, 1920, 1080, 1.0);
+        static_assert(One.min.x == 613.0 && One.max.x == 677.0 && One.min.y == 1012.0 && One.max.y == 1058.0);
+        static_assert(Zero.min.x == 1243.0 && Zero.max.x == 1307.0);
+        static_assert(GroupBarSlotAt({620, 1030}, 1920, 1080, 1.0) == 1 && GroupBarSlotAt({1300, 1030}, 1920, 1080, 1.0) == 0);
+        static_assert(GroupBarSlotAt({679, 1030}, 1920, 1080, 1.0) == kControlGroupSlots);
+        static_assert(GroupBarSlotAt({620, 1000}, 1920, 1080, 1.0) == kControlGroupSlots);
+        static_assert(GroupBarSlotAt({1240, 2060}, 3840, 2160, 2.0) == 1 && GroupBarSlotRect(1, 3840, 2160, 2.0).min.x == 1226.0);
+        // A narrow view moves the bar right of the command panel instead of under it.
+        static_assert(GroupBarSlotRect(1, 1280, 720, 1.0).min.x == 446.0 && GroupBarSlotRect(0, 1280, 720, 1.0).max.x == 1140.0);
+        static_assert(GroupBarSlotAt({450, 670}, 1280, 720, 1.0) == 1 && GroupBarSlotAt({300, 670}, 1280, 720, 1.0) == kControlGroupSlots);
+    }
+
     // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.
     static_assert(AreAllied(1, kTeamA, 1, kTeamA) && AreAllied(1, kTeamA, 3, kTeamA));
     static_assert(!AreAllied(1, kTeamA, 2, kTeamB) && !AreAllied(1, kNoTeam, 2, kNoTeam));
