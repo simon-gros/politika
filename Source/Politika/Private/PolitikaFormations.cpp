@@ -83,7 +83,14 @@ FString JoinIds(const Range& Ids)
 
 const TCHAR* ShapeText(pf::Shape Shape)
 {
-    return Shape == pf::Shape::Column ? TEXT("column") : TEXT("line");
+    switch (Shape)
+    {
+        case pf::Shape::Column: return TEXT("column");
+        case pf::Shape::Dispersed: return TEXT("dispersed");
+        case pf::Shape::Perimeter: return TEXT("perimeter");
+        case pf::Shape::Line: break;
+    }
+    return TEXT("line");
 }
 
 const TCHAR* StanceText(ps::CombatStance Stance)
@@ -111,6 +118,7 @@ const TCHAR* AdherenceText(ps::Adherence Adherence)
 }
 
 FString PolitikaStanceLabel(ps::CombatStance Stance) { return StanceText(Stance); }
+FString PolitikaShapeLabel(pf::Shape Shape) { return FString(ShapeText(Shape)).ToUpper(); }
 FString PolitikaAdherenceLabel(ps::Adherence Adherence) { return AdherenceText(Adherence); }
 
 // ----------------------------------------------------------------------------
@@ -1140,7 +1148,7 @@ void APolitikaPrototypePlayerController::ClientReceiveFormationOutcome_Implement
     {
         case pf::FormationOp::Form:
             ShowLocalFeedback(FString::Printf(TEXT("Formation %u formed: %d units in %s  ·  RMB moves the whole formation  ·  Y releases"),
-                Outcome.FormationId, Outcome.Members, GroupMoveShape == pf::Shape::Column ? TEXT("COLUMN") : TEXT("LINE")));
+                Outcome.FormationId, Outcome.Members, *PolitikaShapeLabel(GroupMoveShape)));
             break;
         case pf::FormationOp::Release:
             ShowLocalFeedback(FString::Printf(TEXT("%d units released from their formation"), Outcome.Members));

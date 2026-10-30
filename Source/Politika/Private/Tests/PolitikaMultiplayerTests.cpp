@@ -1416,7 +1416,55 @@ bool FPolitikaMultiplayerGroupMoveShapeTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("FORM-04 column is four ranks deep and two files wide"),
         FMath::IsNearlyEqual(Extent.GetSize().X, 450.0, 0.01) && FMath::IsNearlyEqual(Extent.GetSize().Y, 150.0, 0.01));
     F.Step();
+
+    // FORM-F6: V then Dispersed, staggered 450 cm apart, beyond every member's support radius.
+    // The block is 1800 cm wide, so the cluster and the point move 500 cm north (still due east,
+    // inside the map and clear of the control point).
+    TArray<FVector> ClusterHome;
+    for (APolitikaPrototypeUnit* Unit : Own)
+    {
+        ClusterHome.Add(Unit->GetActorLocation());
+        Unit->SetActorLocation(Unit->GetActorLocation() + FVector(0.0, 500.0, 0.0));
+    }
+    const FVector WideGround(-700.0, -680.0, 42.0);
+    const FVector2D WideMap(WideGround.X - F.Match->GetPlayableMin().X, WideGround.Y - F.Match->GetPlayableMin().Y);
     Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V cycles to Dispersed"), Host->GetGroupMoveShape() == Shape::Dispersed);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{WideMap.X, WideMap.Y}}, &WideGround);
+    TMap<uint64, FVector> Dispersed = Destinations();
+    FBox2D DispersedExtent(ForceInit);
+    for (const auto& Entry : Dispersed) DispersedExtent += FVector2D(Entry.Value.X, Entry.Value.Y);
+    TestEqual(TEXT("FORM-F6 dispersed has one destination per member"), Dispersed.Num(), 8);
+    TestTrue(TEXT("FORM-F6 dispersed members are 450 cm apart, outside the 400 cm support radius"),
+        FMath::Abs(MinSeparation(Dispersed) - 450.0) < 0.01 && MinSeparation(Dispersed) > politika::discipline::kSupportRadiusCm);
+    TestTrue(TEXT("FORM-F6 an eastward dispersed eight is two staggered ranks (five, then three)"),
+        FMath::IsNearlyEqual(DispersedExtent.GetSize().X, 450.0, 0.01) && FMath::IsNearlyEqual(DispersedExtent.GetSize().Y, 1800.0, 0.01));
+    F.Step();
+    TestEqual(TEXT("FORM-F6 every dispersed member's request is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+
+    // V then Perimeter: one ring of eight around the clicked point at the 300 cm minimum radius.
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V cycles to Perimeter"), Host->GetGroupMoveShape() == Shape::Perimeter);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{WideMap.X, WideMap.Y}}, &WideGround);
+    TMap<uint64, FVector> Perimeter = Destinations();
+    bool bOnRing = Perimeter.Num() == 8;
+    FVector2D RingSum(0.0, 0.0);
+    for (const auto& Entry : Perimeter)
+    {
+        bOnRing &= FMath::IsNearlyEqual(FVector::Dist2D(Entry.Value, WideGround), 300.0, 0.01);
+        RingSum += FVector2D(Entry.Value.X, Entry.Value.Y);
+    }
+    TestTrue(TEXT("FORM-F6 every perimeter member is 300 cm from the clicked point"), bOnRing);
+    TestTrue(TEXT("FORM-F6 the ring is centred on the clicked point"), FVector2D::Distance(RingSum / 8.0, FVector2D(WideGround)) < 0.01);
+    TestTrue(TEXT("FORM-F6 ring neighbours are evenly spaced"),
+        FMath::IsNearlyEqual(MinSeparation(Perimeter), 600.0 * FMath::Sin(UE_DOUBLE_PI / 8.0), 0.01));
+    F.Step();
+    TestEqual(TEXT("FORM-F6 every perimeter member's request is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V returns to Line after Perimeter"), Host->GetGroupMoveShape() == Shape::Line);
+    for (int32 Index = 0; Index < Own.Num(); ++Index) Own[Index]->SetActorLocation(ClusterHome[Index]);
 
     // FORM-05: blocked candidates are replaced by spare slots, never sent.
     Host->GroupMoveSlotProbeForTest = [&Map](const FVector2D& Candidate) { return Candidate.Y >= Map.Y - 200.0; };
@@ -2054,6 +2102,147 @@ bool FPolitikaMultiplayerFormationDisciplineTest::RunTest(const FString& Paramet
     TestTrue(TEXT("At the baseline the trend is Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
     TestEqual(TEXT("The civilian stayed at the baseline throughout"), Civilian->GetResolveMilli(), pd::kBaseline);
 
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationShapesTest,
+    "Politika.RTS.Multiplayer.FormationShapes",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// FORM-F6 Dispersed and Perimeter as formation shapes: Form stores the V choice, the server plans
+// the formation's moves and regroups in that shape, a Dispersed formation's members stand beyond
+// each other's 400 cm support radius and hold their Discipline, and a Perimeter formation's
+// ring neighbours support each other and earn it.
+bool FPolitikaMultiplayerFormationShapesTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace pd = politika::discipline;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    if (!TestTrue(TEXT("Host is bound"), HostId != 0)) return false;
+    // A row of eight ordered due east to a point whose 1800 cm Dispersed block stays inside the
+    // map and more than 450 cm from the control point.
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 8; ++Index) Own.Add(F.AddUnit(HostId, {-1900.0 + Index * 100.0, -700.0}));
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr))) return false;
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    Host->GroupMoveSlotProbeForTest = [](const FVector2D&) { return true; };
+    const pf::Registry& Formations = F.Match->GetFormations();
+    const FVector Ground(-700.0, -700.0, 42.0);
+    const FVector2D Map(Ground.X - F.Match->GetPlayableMin().X, Ground.Y - F.Match->GetPlayableMin().Y);
+
+    auto NextEvaluation = [&F]()
+    {
+        const uint64 Target = (F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps + 1) * pd::kEvaluationIntervalSteps;
+        for (int32 Guard = 0; F.Match->SimulationStepsExecuted < Target && Guard < 100; ++Guard) F.Step();
+    };
+    // Queued member orders of one formation, by unit.
+    auto Planned = [&F](uint32 FormationId)
+    {
+        TMap<APolitikaPrototypeUnit*, FVector> Out;
+        for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+            if (Pending.FormationId == FormationId && Pending.Unit.IsValid()) Out.Add(Pending.Unit.Get(), Pending.Destination);
+        return Out;
+    };
+    auto MinSeparation = [](const TMap<APolitikaPrototypeUnit*, FVector>& Points)
+    {
+        double Best = TNumericLimits<double>::Max();
+        for (const auto& A : Points)
+            for (const auto& B : Points)
+                if (A.Key != B.Key) Best = FMath::Min(Best, FVector::Dist2D(A.Value, B.Value));
+        return Best;
+    };
+    // The Automation world has no navmesh: members are put on their planned slots directly.
+    auto StandOnSlots = [](const TMap<APolitikaPrototypeUnit*, FVector>& Points)
+    {
+        for (const auto& Entry : Points) Entry.Key->SetActorLocation(FVector(Entry.Value.X, Entry.Value.Y, 42.0));
+    };
+    auto Values = [&Own]()
+    {
+        TArray<int32> Result;
+        for (const APolitikaPrototypeUnit* Unit : Own) Result.Add(Unit->GetResolveMilli());
+        return Result;
+    };
+
+    // Dispersed: V twice, then T. The formation stores the shape; its move is planned 450 cm apart.
+    Host->CycleGroupMoveShape();
+    Host->CycleGroupMoveShape();
+    if (!TestTrue(TEXT("V twice selects Dispersed"), Host->GetGroupMoveShape() == pf::Shape::Dispersed)) return false;
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms one formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Spread = Formations.All().front().id;
+    TestTrue(TEXT("FORM-F6 the formation stores the Dispersed shape"), Formations.Find(Spread)->shape == pf::Shape::Dispersed);
+    TestTrue(TEXT("FORM-F6 the owner-only view carries the Dispersed shape"), Host->GetOwnFormations().Num() == 1
+        && Host->GetOwnFormations()[0].Shape == static_cast<uint8>(pf::Shape::Dispersed));
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    const TMap<APolitikaPrototypeUnit*, FVector> SpreadSlots = Planned(Spread.value);
+    TestEqual(TEXT("FORM-F6 one Dispersed member order per member"), SpreadSlots.Num(), 8);
+    TestTrue(TEXT("FORM-F6 Dispersed members are planned 450 cm apart"), FMath::Abs(MinSeparation(SpreadSlots) - 450.0) < 0.01);
+    F.Step();
+    TestTrue(TEXT("FORM-F6 every Dispersed member follows the move"), Formations.Find(Spread)->FollowingCount() == 8);
+    StandOnSlots(SpreadSlots);
+    const TArray<int32> SpreadBefore = Values();
+    NextEvaluation();
+    NextEvaluation();
+    TestTrue(TEXT("FORM-F6 Dispersed members stand outside each other's support radius and hold their Discipline"),
+        Values() == SpreadBefore);
+    TestTrue(TEXT("FORM-F6 a holding Dispersed member shows Steady"), Own[0]->GetResolveTrend() == pd::Trend::Steady);
+
+    // Perimeter: release, V, T again. The move is a ring around the clicked point.
+    Host->ReleaseSelected();
+    TestTrue(TEXT("Release dissolves the Dispersed formation"), Formations.Empty());
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V selects Perimeter"), Host->GetGroupMoveShape() == pf::Shape::Perimeter);
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms the Perimeter formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Ring = Formations.All().front().id;
+    TestTrue(TEXT("FORM-F6 the formation stores the Perimeter shape"), Formations.Find(Ring)->shape == pf::Shape::Perimeter);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    const TMap<APolitikaPrototypeUnit*, FVector> RingSlots = Planned(Ring.value);
+    bool bOnRing = RingSlots.Num() == 8;
+    for (const auto& Entry : RingSlots) bOnRing &= FMath::IsNearlyEqual(FVector::Dist2D(Entry.Value, Ground), 300.0, 0.01);
+    TestTrue(TEXT("FORM-F6 Perimeter members are planned on a 300 cm ring around the clicked point"), bOnRing);
+    F.Step();
+    StandOnSlots(RingSlots);
+    TArray<int32> RingExpected = Values();
+    for (int32& Value : RingExpected) Value += 1000;
+    NextEvaluation();
+    TestTrue(TEXT("FORM-F6 Perimeter ring neighbours support each other: every member gains one point"), Values() == RingExpected);
+
+    // A loss: the regroup keeps the Perimeter shape and closes the ring around the same point.
+    Own[7]->PendingDamage = static_cast<float>(Own[7]->GetHealth() + 1);
+    F.Step();
+    const uint64 DueStep = Formations.Find(Ring)->regroupDueStep;
+    if (!TestTrue(TEXT("A regroup is scheduled"), DueStep > F.Match->SimulationStepsExecuted)) return false;
+    for (int32 Guard = 0; F.Match->SimulationStepsExecuted < DueStep && Guard < 200; ++Guard) F.Step();
+    TestEqual(TEXT("FORM-F6 one regroup ran"), Formations.Find(Ring)->regroups, 1u);
+    // The regroup's plan is the members' stored slots (a member already standing on its new slot
+    // is sent no order).
+    const pf::Formation* Closing = Formations.Find(Ring);
+    bool bClosed = Closing && Closing->members.size() == 7;
+    TArray<FVector2D> ClosedSlots;
+    if (Closing)
+        for (const pf::MemberSlot& Member : Closing->members)
+        {
+            const FVector2D Slot(Member.destination.x, Member.destination.y);
+            bClosed &= Member.slot != pf::kNoSlot && FMath::IsNearlyEqual(FVector2D::Distance(Slot, Map), 300.0, 0.01);
+            ClosedSlots.Add(Slot);
+        }
+    double ClosedSeparation = TNumericLimits<double>::Max();
+    for (int32 A = 0; A < ClosedSlots.Num(); ++A)
+        for (int32 B = A + 1; B < ClosedSlots.Num(); ++B) ClosedSeparation = FMath::Min(ClosedSeparation, FVector2D::Distance(ClosedSlots[A], ClosedSlots[B]));
+    TestTrue(TEXT("FORM-F6 the regroup closes a 300 cm ring of seven around the same point"), bClosed);
+    TestTrue(TEXT("FORM-F6 the seven regroup slots are evenly spaced"),
+        FMath::IsNearlyEqual(ClosedSeparation, 600.0 * FMath::Sin(UE_DOUBLE_PI / 7.0), 0.01));
+    TestTrue(TEXT("FORM-F6 regroup orders go to members off their new slot"), Planned(Ring.value).Num() >= 1 && Planned(Ring.value).Num() <= 7);
+    F.Step();
+
+    Host->GroupMoveSlotProbeForTest = nullptr;
     F.Match->FormationSlotProbeForTest = nullptr;
     return true;
 }

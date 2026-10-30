@@ -74,8 +74,9 @@ enum class EPolitikaPrototypeOrder : uint8 { Idle, Move, Attack, AttackMove, Sto
 UENUM()
 enum class EPolitikaUnitAutonomy : uint8 { Holding, Chasing, Returning };
 
-// HUD labels for stance and adherence (PolitikaFormations.cpp).
+// HUD labels for stance, adherence and formation shape (PolitikaFormations.cpp).
 FString PolitikaStanceLabel(politika::stance::CombatStance Stance);
+FString PolitikaShapeLabel(politika::formation::Shape Shape);
 // The rules-domain execution order of a unit order (for OrderChangedEvent).
 politika::rules::ExecutionOrder PolitikaExecutionOrderOf(EPolitikaPrototypeOrder Order);
 FString PolitikaAdherenceLabel(politika::stance::Adherence Adherence);
@@ -125,7 +126,7 @@ struct POLITIKA_API FPolitikaSelectionSet
 };
 
 // Versioned formation request (FORM-F3, network_protocol 3; stance and adherence FORM-F4,
-// network_protocol 4). Like the command intent it carries no participant or owner: the server
+// network_protocol 4; Dispersed and Perimeter shapes FORM-F6, network_protocol 7). Like the command intent it carries no participant or owner: the server
 // derives authority from the sending connection, resolves member and formation IDs in the
 // current match and fans a formation move out into ordinary, individually admitted member
 // commands. A stance or adherence change is not an order and submits none.
@@ -139,7 +140,7 @@ struct POLITIKA_API FPolitikaNetFormationIntent
     // Addressed formation for Move/AttackMove/Stop/SetAdherence and a whole-formation SetStance;
     // zero for Form, Release and a per-unit SetStance.
     UPROPERTY() uint32 FormationId = 0;
-    // politika::formation::Shape for Form; zero otherwise.
+    // politika::formation::Shape for Form (Line, Column, Dispersed, Perimeter); zero otherwise.
     UPROPERTY() uint8 Shape = 0;
     // Unit IDs for Form (2-64), Release and a per-unit SetStance; empty otherwise.
     UPROPERTY() TArray<uint64> Members;
@@ -351,6 +352,7 @@ private:
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerFormationShapesTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
@@ -959,6 +961,7 @@ private:
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerFormationShapesTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
@@ -1201,6 +1204,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerFormationShapesTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;

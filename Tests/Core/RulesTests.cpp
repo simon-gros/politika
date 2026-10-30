@@ -446,7 +446,11 @@ int main() {
         using namespace politika::formation;
         const auto Always = [](Point) { return true; };
         const auto Near = [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; };
-        static_assert(NextShape(Shape::Line) == Shape::Column && NextShape(Shape::Column) == Shape::Line);
+        static_assert(NextShape(Shape::Line) == Shape::Column && NextShape(Shape::Column) == Shape::Dispersed
+            && NextShape(Shape::Dispersed) == Shape::Perimeter && NextShape(Shape::Perimeter) == Shape::Line
+            && NextShape(static_cast<Shape>(9)) == Shape::Line);
+        static_assert(ShapeName(Shape::Dispersed) == "dispersed" && ShapeName(Shape::Perimeter) == "perimeter"
+            && ShapeName(Shape::Line) == "line" && kShapeCount == 4);
         static_assert(ShapeName(Shape::Column) == "column" && Frontage(Shape::Line, 8, {}) == 8
             && Frontage(Shape::Line, 20, {}) == 10 && Frontage(Shape::Column, 20, {}) == 2 && Frontage(Shape::Column, 1, {}) == 1);
 
@@ -567,6 +571,146 @@ int main() {
         assert(Near(PlanGroupMove(Group, Anchor, Shape::Line, Always, {}, {1.0, 0.0}, {std::nan(""), 1.0}).facing, {1.0, 0.0}));
     }
 
+    // FORM-F6 Dispersed and Perimeter: a staggered block beyond the Discipline support radius,
+    // and rings around the anchor with every neighbouring chord at least one spacing.
+    {
+        using namespace politika::formation;
+        const auto Always = [](Point) { return true; };
+        const auto Distance = [](Point a, Point b) { return std::hypot(a.x - b.x, a.y - b.y); };
+        static_assert(Frontage(Shape::Dispersed, 20, {}) == 5 && Frontage(Shape::Dispersed, 3, {}) == 3);
+        static_assert(ShapeSpacing(Shape::Dispersed, {}) == 450.0 && ShapeSpacing(Shape::Perimeter, {}) == 150.0);
+        static_assert(Layout{}.dispersedSpacingCm > politika::discipline::kSupportRadiusCm);
+
+        // Dispersed: ranks of five 450 cm apart, odd ranks half a spacing to the right, the
+        // block centred on the anchor.
+        const std::vector<Slot> Dispersed20 = RelativeSlots(Shape::Dispersed, 20, 0, {});
+        assert(Dispersed20.size() == 20 && Dispersed20[0].rank == 0 && Dispersed20[19].rank == 3);
+        assert(Dispersed20[0].lateral == -1012.5 && Dispersed20[5].lateral == -787.5 && Dispersed20[0].forward == 675.0);
+        double LateralSum = 0.0, ForwardSum = 0.0;
+        for (const Slot& S : Dispersed20) { LateralSum += S.lateral; ForwardSum += S.forward; }
+        assert(std::abs(LateralSum) < 1e-9 && std::abs(ForwardSum) < 1e-9);
+        // One rank is not staggered; spares continue the stagger behind the block.
+        const std::vector<Slot> Dispersed4 = RelativeSlots(Shape::Dispersed, 4, 4, {});
+        assert(Dispersed4[0].lateral == -675.0 && Dispersed4[3].lateral == 675.0 && Dispersed4[4].rank == 1);
+        const std::vector<Slot> Dispersed7 = RelativeSlots(Shape::Dispersed, 7, 5, {});
+        assert(Dispersed7[5].lateral == -112.5 && Dispersed7[7].rank == 2 && Dispersed7[7].lateral == -1012.5);
+
+        std::vector<Member> Twenty;
+        for (EntityId Id = 1; Id <= 20; ++Id)
+            Twenty.push_back({Id, {500.0 + static_cast<double>(Id % 5) * 100.0, 500.0 + static_cast<double>(Id / 5) * 100.0}});
+        const Plan Spread = PlanGroupMove(Twenty, {4000.0, 600.0}, Shape::Dispersed, Always);
+        assert(Spread.shape == Shape::Dispersed && Spread.unplaced == 0 && Spread.assignments.size() == 20);
+        assert(std::abs(MinimumSeparation(Spread) - 450.0) < 1e-9);
+        // Every member stands beyond the support radius of every other: none can earn Discipline.
+        for (const Assignment& A : Spread.assignments)
+            for (const Assignment& B : Spread.assignments)
+                assert(A.id == B.id || Distance(A.destination, B.destination) > politika::discipline::kSupportRadiusCm);
+        // Shuffled input gives the same plan.
+        std::vector<Member> Reversed(Twenty.rbegin(), Twenty.rend());
+        const Plan SpreadAgain = PlanGroupMove(Reversed, {4000.0, 600.0}, Shape::Dispersed, Always);
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(SpreadAgain.assignments[Index].id == Spread.assignments[Index].id
+                && Distance(SpreadAgain.assignments[Index].destination, Spread.assignments[Index].destination) == 0.0);
+        Layout BadSpread; BadSpread.dispersedSpacingCm = std::nan("");
+        assert(PlanGroupMove(Twenty, {4000.0, 600.0}, Shape::Dispersed, Always, BadSpread).unplaced == 20);
+
+        // Perimeter radius and ring capacity: chords of exactly one spacing, at least 300 cm.
+        assert(PerimeterRadius(2, {}) == 300.0 && PerimeterRadius(12, {}) == 300.0);
+        assert(std::abs(2.0 * PerimeterRadius(20, {}) * std::sin(kPi / 20.0) - 150.0) < 1e-9);
+        assert(RingCapacity(1200.0, 150.0) == 50 && RingCapacity(300.0, 150.0) == 12 && RingCapacity(50.0, 150.0) == 1);
+        assert(RingCapacity(0.0, 150.0) == 0 && RingCapacity(300.0, std::nan("")) == 0);
+        assert(RingCapacity(PerimeterRadius(20, {}), 150.0) == 20);
+
+        // Twenty: one ring centred on the anchor, slot 0 straight ahead, clockwise.
+        const std::vector<Slot> Ring20 = RelativeSlots(Shape::Perimeter, 20, 20, {});
+        assert(Ring20.size() == 40 && Ring20[0].lateral == 0.0 && Ring20[0].rank == 0 && Ring20[20].rank == 1);
+        assert(Ring20[5].lateral > 0.0 && std::abs(Ring20[5].forward) < 1e-9);
+        const double R20 = PerimeterRadius(20, {});
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(std::abs(std::hypot(Ring20[Index].lateral, Ring20[Index].forward) - R20) < 1e-9);
+        // Spares sit on the next ring out, one spacing beyond.
+        assert(std::abs(std::hypot(Ring20[20].lateral, Ring20[20].forward) - (R20 + 150.0)) < 1e-9);
+        const Point Centre{4000.0, 600.0};
+        const Plan Ring = PlanGroupMove(Twenty, Centre, Shape::Perimeter, Always);
+        assert(Ring.shape == Shape::Perimeter && Ring.unplaced == 0 && Ring.candidatesRejected == 0);
+        assert(std::abs(MinimumSeparation(Ring) - 150.0) < 1e-9);
+        Point Sum{0.0, 0.0};
+        std::vector<std::size_t> Used;
+        for (const Assignment& A : Ring.assignments) {
+            assert(A.slot < 20 && std::abs(Distance(A.destination, Centre) - R20) < 1e-9);
+            Sum = {Sum.x + A.destination.x, Sum.y + A.destination.y};
+            Used.push_back(A.slot);
+        }
+        std::sort(Used.begin(), Used.end());
+        assert(std::unique(Used.begin(), Used.end()) == Used.end());
+        assert(std::abs(Sum.x / 20 - Centre.x) < 1e-6 && std::abs(Sum.y / 20 - Centre.y) < 1e-6);
+        // Fellow members within the support radius: each has its two ring neighbours.
+        for (const Assignment& A : Ring.assignments)
+            assert(std::count_if(Ring.assignments.begin(), Ring.assignments.end(), [&](const Assignment& B) {
+                return B.id != A.id && Distance(A.destination, B.destination) <= politika::discipline::kSupportRadiusCm;
+            }) >= 2);
+        const Plan RingAgain = PlanGroupMove(Reversed, Centre, Shape::Perimeter, Always);
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(RingAgain.assignments[Index].id == Ring.assignments[Index].id
+                && Distance(RingAgain.assignments[Index].destination, Ring.assignments[Index].destination) == 0.0);
+
+        // Members already standing around the anchor keep their side of it: eight soldiers on a
+        // 400 cm circle each take the ring slot nearest them.
+        std::vector<Member> Around;
+        for (EntityId Id = 1; Id <= 8; ++Id) {
+            const double Angle = 2.0 * kPi * static_cast<double>((Id * 3) % 8) / 8.0;
+            Around.push_back({Id, {1000.0 + 400.0 * std::cos(Angle), 1000.0 + 400.0 * std::sin(Angle)}});
+        }
+        const Plan InPlace = PlanGroupMove(Around, {1000.0, 1000.0}, Shape::Perimeter, Always, {}, {1.0, 0.0}, {1.0, 0.0});
+        for (const Assignment& A : InPlace.assignments) {
+            const Point From = std::find_if(Around.begin(), Around.end(), [&](const Member& M) { return M.id == A.id; })->position;
+            assert(Distance(From, A.destination) < 100.0 + 1e-9);
+        }
+
+        // Blocked ring slots (everything east of x = 4300) are replaced from the outer spare
+        // ring; with too few legal slots the members farthest from the anchor are unplaced.
+        std::size_t Probes = 0;
+        const auto West = [&Probes](Point P) { ++Probes; return P.x <= 4300.0; };
+        const Plan Blocked = PlanGroupMove(Twenty, Centre, Shape::Perimeter, West);
+        assert(Blocked.unplaced == 0 && Blocked.candidatesRejected > 0 && Probes == Blocked.candidatesChecked && Probes <= 40);
+        assert(std::all_of(Blocked.assignments.begin(), Blocked.assignments.end(),
+            [](const Assignment& A) { return A.slot != kNoSlot && A.destination.x <= 4300.0; }));
+        assert(MinimumSeparation(Blocked) >= 150.0 - 1e-9);
+        int Allowed = 15;
+        const Plan Short = PlanGroupMove(Twenty, Centre, Shape::Perimeter, [&Allowed](Point) { return Allowed-- > 0; });
+        assert(Short.unplaced == 5);
+        double PlacedFarthest = 0.0, UnplacedNearest = 1e18;
+        for (const Assignment& A : Short.assignments) {
+            const double From = Distance(std::find_if(Twenty.begin(), Twenty.end(), [&](const Member& M) { return M.id == A.id; })->position, Centre);
+            if (A.slot == kNoSlot) UnplacedNearest = std::min(UnplacedNearest, From);
+            else PlacedFarthest = std::max(PlacedFarthest, From);
+        }
+        assert(PlacedFarthest <= UnplacedNearest);
+
+        // Large groups: full rings from 1200 cm inwards (50, 43, 37, 31, 25, 18, 12 = 216 slots),
+        // then outwards from 1350 cm; every slot unique and one spacing from every other.
+        const std::vector<Slot> Ring300 = RelativeSlots(Shape::Perimeter, 300, 0, {});
+        assert(Ring300.size() == 300 && Ring300[0].rank == 0 && Ring300[49].rank == 0 && Ring300[50].rank == 1);
+        assert(std::abs(std::hypot(Ring300[50].lateral, Ring300[50].forward) - 1050.0) < 1e-9);
+        assert(std::abs(std::hypot(Ring300[216].lateral, Ring300[216].forward) - 1350.0) < 1e-9);
+        double Closest = 1e18;
+        for (std::size_t A = 0; A < Ring300.size(); ++A)
+            for (std::size_t B = A + 1; B < Ring300.size(); ++B)
+                Closest = std::min(Closest, std::hypot(Ring300[A].lateral - Ring300[B].lateral, Ring300[A].forward - Ring300[B].forward));
+        assert(Closest >= 150.0 - 1e-9);
+        std::vector<Member> Many;
+        for (EntityId Id = 1; Id <= 300; ++Id)
+            Many.push_back({Id, {static_cast<double>(Id % 20) * 100.0, static_cast<double>(Id / 20) * 100.0}});
+        const Plan Big = PlanGroupMove(Many, {6000.0, 6000.0}, Shape::Perimeter, Always);
+        assert(Big.unplaced == 0 && Big.assignments.size() == 300 && MinimumSeparation(Big) >= 150.0 - 1e-9);
+        // Two members: opposite sides of the minimum ring.
+        const Plan Pair = PlanGroupMove(std::span<const Member>(Twenty.data(), 2), Centre, Shape::Perimeter, Always);
+        assert(std::abs(MinimumSeparation(Pair) - 600.0) < 1e-9);
+        Layout BadRing; BadRing.perimeterMaxRadiusCm = 100.0;
+        assert(RingSlots(20, 0, BadRing).empty() && PlanGroupMove(Twenty, Centre, Shape::Perimeter, Always, BadRing).unplaced == 20);
+        assert(PlanGroupMove(Twenty, Centre, static_cast<Shape>(4), Always).unplaced == 20);
+    }
+
     // FORM-F3 formation instances: explicit Form/Release, one formation per unit, member loss,
     // independent overrides and one bounded regroup per loss window.
     {
@@ -587,7 +731,9 @@ int main() {
         const EntityId One[] = {4};
         assert(CheckIntentShape({0, 0, 0, Two}) == FormationRejection::None);
         assert(CheckIntentShape({0, 0, 1, Two}) == FormationRejection::None);
-        assert(CheckIntentShape({0, 0, 2, Two}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 2, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 3, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 4, Two}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 5, 0, Two}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 0, 0, Two, 1.0, 0.0}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 0, 0, Dup}) == FormationRejection::DuplicateMember);

@@ -3469,8 +3469,7 @@ void APolitikaPrototypePlayerController::CycleGroupMoveShape()
 {
     // A local presentation preference for the next group move; it changes no unit or order.
     GroupMoveShape = politika::formation::NextShape(GroupMoveShape);
-    const bool bLine = GroupMoveShape == politika::formation::Shape::Line;
-    ShowLocalFeedback(FString::Printf(TEXT("Group move shape: %s  ·  V to change"), bLine ? TEXT("LINE") : TEXT("COLUMN")));
+    ShowLocalFeedback(FString::Printf(TEXT("Group move shape: %s  ·  V to change"), *PolitikaShapeLabel(GroupMoveShape)));
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GROUP_MOVE_SHAPE participant=%u shape=%s"), GetCommandPlayerId(),
         UTF8_TO_TCHAR(politika::formation::ShapeName(GroupMoveShape).data()));
@@ -3985,9 +3984,9 @@ void APolitikaPrototypeHUD::DrawHUD()
     }
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
-    const bool bLineShape = !PrototypeOwner || PrototypeOwner->GetGroupMoveShape() == politika::formation::Shape::Line;
+    const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
     DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
-        bLineShape ? TEXT("LINE") : TEXT("COLUMN")), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+        *PolitikaShapeLabel(HelpShape)), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
         APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];
@@ -4041,7 +4040,7 @@ void APolitikaPrototypeHUD::DrawHUD()
                 }
                 if (Whole)
                     DrawText(FString::Printf(TEXT("FORMATION %u  ·  %s  ·  %s  ·  %s  ·  %d of %u members  ·  %d following its move  ·  %s%s  ·  RMB/Q/X order the formation  ·  Y release"),
-                        Whole->FormationId, Whole->Shape == static_cast<uint8>(politika::formation::Shape::Column) ? TEXT("COLUMN") : TEXT("LINE"),
+                        Whole->FormationId, *PolitikaShapeLabel(static_cast<politika::formation::Shape>(Whole->Shape)),
                         *PolitikaStanceLabel(static_cast<politika::stance::CombatStance>(Whole->Stance)),
                         *PolitikaAdherenceLabel(static_cast<politika::stance::Adherence>(Whole->Adherence)),
                         Whole->Members.Num(), Whole->FormedMembers, Whole->Following,

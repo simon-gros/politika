@@ -6954,21 +6954,44 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
 // `--group-move-shape SERVER CLIENT [--evidence DIR] [--port N]`.
 //
 // Same dedicated 1v1 fixture as `--group-orders` (20 idle units per seat). Seat 1's client
-// box-selects its 20 units with real X input and right-clicks three destinations: a Line
-// move clear of the control point (a capture would end the match), V then a Column move, and V then a Line move so close to the
-// western playable edge that part of the nominal line is outside it. For each move the
+// box-selects its 20 units with real X input and right-clicks five destinations: a Line
+// move clear of the control point (a capture would end the match), V then a Column move, V then
+// a Dispersed move and V then a Perimeter move (FORM-F6), and V back to Line for a move so close
+// to the western playable edge that part of the nominal line is outside it. For each move the
 // client's plan and per-unit slots are checked against what the server received, projected
 // and routed, and against where every unit actually stopped.
 // ---------------------------------------------------------------------------------------
 
 /// Ground probe points (world cm), all well outside the control point's 300 cm capture radius
-/// at (0, 150): a Line destination east of seat 1, a Column destination west of it, and a Line
+/// at (0, 150): a Line destination east of seat 1, a Column destination west of it, a Dispersed
+/// destination whose 2025 x 1350 cm block clears the control point by 500 cm and the map edge by
+/// 90 cm when ordered from the Column, a Perimeter centre south-west of seat 1, and a Line
 /// destination 100 cm inside the western playable edge (x = -2000).
 const SHAPE_LINE_POINT: (f64, f64) = (-450.0, -1000.0);
 const SHAPE_COLUMN_POINT: (f64, f64) = (-1000.0, -1050.0);
+const SHAPE_DISPERSED_POINT: (f64, f64) = (-750.0, -850.0);
+const SHAPE_PERIMETER_POINT: (f64, f64) = (-1350.0, -1100.0);
 const SHAPE_EDGE_POINT: (f64, f64) = (-1900.0, -650.0);
 /// The planner's slot spacing (`politika::formation::Layout::spacingCm`).
 const SHAPE_SPACING_CM: f64 = 150.0;
+/// `politika::formation::Layout::dispersedSpacingCm`: beyond the 400 cm Discipline support radius.
+const SHAPE_DISPERSED_SPACING_CM: f64 = 450.0;
+
+/// Slot spacing of a shape as the planner logs it.
+fn shape_spacing(shape: &str) -> f64 {
+    if shape == "dispersed" {
+        SHAPE_DISPERSED_SPACING_CM
+    } else {
+        SHAPE_SPACING_CM
+    }
+}
+
+/// Radius of a single Perimeter ring of `count` slots (`PerimeterRadius`): neighbouring chords
+/// of one spacing, never under 300 cm.
+fn perimeter_radius(count: usize) -> f64 {
+    let count = count as f64;
+    (SHAPE_SPACING_CM / (2.0 * (std::f64::consts::PI / count).sin())).max(300.0)
+}
 
 fn pair(line: &str, key: &str) -> Option<(f64, f64)> {
     let (x, y) = field(line, key)?.split_once(',')?;
@@ -6998,8 +7021,9 @@ struct ShapeMove<'a> {
     id: &'a str,
     shape: &'a str,
     screen: (f64, f64),
-    /// The planner must skip at least one out-of-bounds or blocked candidate.
-    expect_rejected: bool,
+    /// Some(true): the planner must skip at least one out-of-bounds or blocked candidate;
+    /// Some(false): it must skip none; None: either (the ground check decides).
+    expect_rejected: Option<bool>,
 }
 
 /// Issues one right-click group move with the current selection and checks the plan, the
@@ -7055,6 +7079,7 @@ fn shape_move(
         .all(|p| p.0 >= 50.0 && p.1 >= 50.0 && p.0 <= size.0 - 50.0 && p.1 <= size.1 - 50.0);
     let placed = slots.iter().filter(|s| s.1 >= 0).count();
     let separation = min_separation(&map_points);
+    let spacing = shape_spacing(step.shape);
     let rejected: usize = field(&plan, "rejected")
         .and_then(|v| v.parse().ok())
         .unwrap_or(usize::MAX);
@@ -7066,19 +7091,54 @@ fn shape_move(
             && field(&plan, "unplaced") == Some("0")
             && slot_units == own
             && placed == own.len()
-            && (separation - SHAPE_SPACING_CM).abs() < 0.5
+            && (separation - spacing).abs() < 0.5
             && in_bounds
-            && (rejected > 0) == step.expect_rejected,
+            && step.expect_rejected.is_none_or(|want| (rejected > 0) == want),
         format!(
-            "{} slots for {} own units, {placed} placed, min separation {separation:.1} cm, in bounds {in_bounds}, rejected {rejected}",
+            "{} slots for {} own units, {placed} placed, min separation {separation:.1} cm (want {spacing}), in bounds {in_bounds}, rejected {rejected}",
             slots.len(),
             own.len()
         ),
     );
 
-    // Geometry along the plan's facing: Line spans 10 slots across and 2 ranks deep;
-    // Column spans 2 files across and 10 ranks deep (when no slot was replaced).
-    if let Some(facing) = pair(&plan, "facing") {
+    // Perimeter (FORM-F6): every slot on one ring around the clicked point, centred on it, with
+    // neighbouring chords of one spacing (when no slot was replaced).
+    if step.shape == "perimeter" {
+        let anchor = pair(&plan, "anchor").unwrap_or((f64::NAN, f64::NAN));
+        let radius = perimeter_radius(own.len());
+        let worst = map_points
+            .iter()
+            .map(|p| (distance(*p, anchor) - radius).abs())
+            .fold(0.0, f64::max);
+        let count = map_points.len().max(1) as f64;
+        let centre = (
+            map_points.iter().map(|p| p.0).sum::<f64>() / count,
+            map_points.iter().map(|p| p.1).sum::<f64>() / count,
+        );
+        report.fact(
+            &format!("{id}_ring"),
+            format!(
+                "radius {radius:.1} cm, worst radial error {worst:.2} cm, slot centre {:.1},{:.1}, anchor {:.1},{:.1}",
+                centre.0, centre.1, anchor.0, anchor.1
+            ),
+        );
+        if rejected == 0 {
+            report.verdict(
+                &format!("FORM-04-{id}-SHAPE"),
+                worst < 0.5 && distance(centre, anchor) < 0.5,
+                format!(
+                    "{} slots within {worst:.2} cm of the {radius:.1} cm ring, centre {:.1} cm from the anchor",
+                    map_points.len(),
+                    distance(centre, anchor)
+                ),
+            );
+        }
+    }
+
+    // Geometry along the plan's facing: Line spans 10 slots across and 2 ranks deep; Column spans
+    // 2 files across and 10 ranks deep; Dispersed spans 4.5 staggered files of 450 cm across and
+    // 4 ranks deep (when no slot was replaced).
+    if let Some(facing) = pair(&plan, "facing").filter(|_| step.shape != "perimeter") {
         let right = (-facing.1, facing.0);
         let (mut across, mut along) = (Vec::new(), Vec::new());
         for p in &map_points {
@@ -7096,11 +7156,14 @@ fn shape_move(
                 facing.0, facing.1
             ),
         );
-        if !step.expect_rejected {
-            let (want_width, want_depth) = if step.shape == "column" {
-                (SHAPE_SPACING_CM, 9.0 * SHAPE_SPACING_CM)
-            } else {
-                (9.0 * SHAPE_SPACING_CM, SHAPE_SPACING_CM)
+        if rejected == 0 {
+            let (want_width, want_depth) = match step.shape {
+                "column" => (SHAPE_SPACING_CM, 9.0 * SHAPE_SPACING_CM),
+                "dispersed" => (
+                    4.5 * SHAPE_DISPERSED_SPACING_CM,
+                    3.0 * SHAPE_DISPERSED_SPACING_CM,
+                ),
+                _ => (9.0 * SHAPE_SPACING_CM, SHAPE_SPACING_CM),
             };
             report.verdict(
                 &format!("FORM-04-{id}-SHAPE"),
@@ -7221,10 +7284,11 @@ fn shape_move(
             && failed == 0
             && finals.len() == own.len()
             && at_slot == own.len()
-            && final_separation >= SHAPE_SPACING_CM - 20.0,
+            && final_separation >= spacing - 20.0,
         format!(
-            "{count}/{} arrived, {failed} navigation failures, {at_slot} stopped within 30 cm of their resolved slot, final min separation {final_separation:.1} cm",
-            own.len()
+            "{count}/{} arrived, {failed} navigation failures, {at_slot} stopped within 30 cm of their resolved slot, final min separation {final_separation:.1} cm (want at least {})",
+            own.len(),
+            spacing - 20.0
         ),
     );
     Ok(())
@@ -7248,11 +7312,15 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
     let display_a = Display::start(evidence, "client-a")?;
     let mut args_a = client_args(client_options, true, false, false);
     args_a.push(format!(
-        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
+        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}/{}:{}/{}:{}",
         SHAPE_LINE_POINT.0,
         SHAPE_LINE_POINT.1,
         SHAPE_COLUMN_POINT.0,
         SHAPE_COLUMN_POINT.1,
+        SHAPE_DISPERSED_POINT.0,
+        SHAPE_DISPERSED_POINT.1,
+        SHAPE_PERIMETER_POINT.0,
+        SHAPE_PERIMETER_POINT.1,
         SHAPE_EDGE_POINT.0,
         SHAPE_EDGE_POINT.1
     ));
@@ -7340,37 +7408,55 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
                 id: "LINE",
                 shape: "line",
                 screen: line,
-                expect_rejected: false,
+                expect_rejected: Some(false),
             },
         )?;
 
-        // 2. V: Column, sent nothing by itself.
-        let before_v = client_a.offset();
-        let before_v_server = server.offset();
-        client_a.key("v")?;
-        let shape =
-            client_a.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
-        thread::sleep(Duration::from_millis(500));
-        let sent = client_a.text()[before_v..]
-            .lines()
-            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
-            .count();
-        let received = server.text()[before_v_server..]
-            .lines()
-            .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
-            .count();
-        report.verdict(
+        // V cycles Line, Column, Dispersed, Perimeter, Line. Each press is local: the client
+        // sends nothing and the server receives nothing; the HUD names the new shape.
+        let press_v = |client: &mut Game,
+                       server: &Game,
+                       report: &mut Report,
+                       verdict: &str,
+                       want: &str|
+         -> Result<(), String> {
+            let before_v = client.offset();
+            let before_v_server = server.offset();
+            client.key("v")?;
+            let shape =
+                client.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
+            thread::sleep(Duration::from_millis(500));
+            let sent = client.text()[before_v..]
+                .lines()
+                .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
+                .count();
+            let received = server.text()[before_v_server..]
+                .lines()
+                .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
+                .count();
+            report.verdict(
+                verdict,
+                field(&shape, "shape") == Some(want) && sent == 0 && received == 0,
+                format!(
+                    "{}; intents sent {sent}, server received {received}",
+                    shape.trim()
+                ),
+            );
+            report.artifact(
+                &format!("client_a_{want}_hud_png"),
+                &client.screenshot(evidence, &format!("hud-{want}-selected"))?,
+            );
+            Ok(())
+        };
+
+        // 2. V: Column.
+        press_v(
+            &mut client_a,
+            &server,
+            report,
             "FORM-02-SHAPE-KEY-IS-LOCAL",
-            field(&shape, "shape") == Some("column") && sent == 0 && received == 0,
-            format!(
-                "{}; intents sent {sent}, server received {received}",
-                shape.trim()
-            ),
-        );
-        report.artifact(
-            "client_a_column_hud_png",
-            &client_a.screenshot(evidence, "02-column-selected")?,
-        );
+            "column",
+        )?;
         let column = wait_screen(&mut client_a, |t| probe_screen(t, 1), "column probe")?;
         shape_move(
             &mut client_a,
@@ -7382,21 +7468,65 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
                 id: "COLUMN",
                 shape: "column",
                 screen: column,
-                expect_rejected: false,
+                expect_rejected: Some(false),
             },
         )?;
 
-        // 3. V again: Line next to the western edge; out-of-bounds slots are replaced.
-        let before_v = client_a.offset();
-        client_a.key("v")?;
-        let shape =
-            client_a.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
-        report.verdict(
+        // 3. V: Dispersed (FORM-F6), staggered ranks 450 cm apart.
+        press_v(
+            &mut client_a,
+            &server,
+            report,
+            "FORM-F6-SHAPE-KEY-DISPERSED",
+            "dispersed",
+        )?;
+        let dispersed = wait_screen(&mut client_a, |t| probe_screen(t, 2), "dispersed probe")?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "DISPERSED",
+                shape: "dispersed",
+                screen: dispersed,
+                expect_rejected: None,
+            },
+        )?;
+
+        // 4. V: Perimeter (FORM-F6), one ring of twenty around the clicked point.
+        press_v(
+            &mut client_a,
+            &server,
+            report,
+            "FORM-F6-SHAPE-KEY-PERIMETER",
+            "perimeter",
+        )?;
+        let perimeter = wait_screen(&mut client_a, |t| probe_screen(t, 3), "perimeter probe")?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "PERIMETER",
+                shape: "perimeter",
+                screen: perimeter,
+                expect_rejected: None,
+            },
+        )?;
+
+        // 5. V again: back to Line, next to the western edge; out-of-bounds slots are replaced.
+        press_v(
+            &mut client_a,
+            &server,
+            report,
             "FORM-SHAPE-CYCLES-BACK-TO-LINE",
-            field(&shape, "shape") == Some("line"),
-            shape.trim().to_owned(),
-        );
-        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 2), "edge probe")?;
+            "line",
+        )?;
+        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 4), "edge probe")?;
         shape_move(
             &mut client_a,
             &mut server,
@@ -7407,7 +7537,7 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
                 id: "EDGE",
                 shape: "line",
                 screen: edge,
-                expect_rejected: true,
+                expect_rejected: Some(true),
             },
         )?;
         // The fixture's match stayed Active throughout: no objective capture or result.
