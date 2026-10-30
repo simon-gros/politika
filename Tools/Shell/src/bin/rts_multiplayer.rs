@@ -2217,6 +2217,18 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
             Duration::from_secs(25),
             mark_b,
         )?;
+        // Capture the menu now: each client schedules its rematch travel 3 s after reaching
+        // MainMenu, which is about when the server finishes its reset, so a capture taken after
+        // the reset can land on the rejoin's map load and record a blank frame.
+        thread::sleep(Duration::from_secs(1));
+        report.artifact(
+            "client_a_menu_png",
+            &client_a.screenshot(evidence, "05-menu")?,
+        );
+        report.artifact(
+            "client_b_menu_png",
+            &client_b.screenshot(evidence, "05-menu")?,
+        );
         let closing = server.wait_line(
             &[
                 "MP_DEDICATED_SESSION_CLOSING reason=results_complete",
@@ -2241,15 +2253,6 @@ fn dedicated_gameplay(options: &DedicatedOptions, report: &mut Report) -> Result
             server_mark,
         )?;
         let generation2 = field(&awaiting2, "generation").unwrap_or("0").to_owned();
-        thread::sleep(Duration::from_secs(1));
-        report.artifact(
-            "client_a_menu_png",
-            &client_a.screenshot(evidence, "05-menu")?,
-        );
-        report.artifact(
-            "client_b_menu_png",
-            &client_b.screenshot(evidence, "05-menu")?,
-        );
         report.verdict(
             "MP3-RESET-AFTER-RESULTS",
             server.alive()
