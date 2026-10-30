@@ -333,6 +333,7 @@ private:
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerDisciplineStressTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -441,6 +442,8 @@ private:
     UPROPERTY(Replicated) int32 ResolveMilli = politika::discipline::kBaseline;
     // politika::discipline::Trend of the latest evaluation.
     UPROPERTY(Replicated) uint8 ResolveTrend = 0;
+    // Authority only (DISC-D2): this unit's casualty-shock budget.
+    politika::discipline::ShockWindow ResolveShock;
     politika::stance::IdleBehavior IdleBehavior = politika::stance::BehaviorFor(politika::stance::kDefaultStance, std::nullopt);
     // Where the unit stood when it last became idle; chases are leashed to it.
     FVector Post = FVector::ZeroVector;
@@ -863,6 +866,16 @@ private:
     uint32 FormationCasualtyFormation = 0;
     uint64 FormationCasualtyStep = 0;
     void TickFormationCasualtyFixture();
+    // Development fixture (-PolitikaMPDisciplineCasualties, DISC-D2): the first time a
+    // participant sets the adherence of a formation of at least 8 members, the member farthest
+    // from the formation's centre and its three nearest fellow members fall one per step from
+    // 10 steps later, so packaged runs can check casualty shock range and cap.
+    int32 DisciplineCasualtiesArmed = -1;
+    uint32 DisciplineCasualtiesFormation = 0;
+    uint64 DisciplineCasualtiesFirstStep = 0;
+    TArray<uint64> DisciplineCasualtyVictims;
+    void TriggerDisciplineCasualties(const politika::formation::Formation& Formation);
+    void TickDisciplineCasualtyFixture();
     // Development fixture (-PolitikaMPStanceProbe, FORM-F4): when a participant's formation is
     // first set to Guard, the opponent's lowest-ID unit is moved (an ordinary Move) to a point
     // 740 cm from the nearest member (inside acquisition, outside weapon range); when it is
@@ -881,6 +894,7 @@ private:
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerDisciplineStressTest;
 #endif
     // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
     // stance, else the default. Membership changes never change it: StanceSnapshot records it
@@ -896,7 +910,19 @@ private:
     // formation with enough fellow members close by earns Discipline up to the ceiling; other
     // members hold; every unit outside a formation fades back to the baseline. Runs after the
     // step's movement and casualties, so support uses this step's positions and survivors.
+    // DISC-D2: a soldier alone outside a formation drifts below the baseline unless its doctrine
+    // tolerates solo work; a mass-formation doctrine raises a large formation's ceiling.
     void UpdateUnitResolve();
+    // Resolve (DISC-D2): a formation member's death shocks the surviving members of its formation
+    // within kCasualtyShockRadiusCm, within each unit's per-window cap. Call before the fallen
+    // unit leaves its formation.
+    void ApplyCasualtyShock(const APolitikaPrototypeUnit& Fallen);
+    // The unit's resolve doctrine: its faction's, unless a participant override is set.
+    politika::discipline::Doctrine DisciplineDoctrineOf(const APolitikaPrototypeUnit& Unit);
+    // Participant -> Doctrine overrides: Automation, and the development fixture
+    // -PolitikaMPDisciplineDoctrine=<participant>:<standard|mass|solo>[,...] parsed once per match.
+    TMap<uint32, politika::discipline::Doctrine> DisciplineDoctrineOverrides;
+    bool bDisciplineDoctrineOverridesParsed = false;
     // Authority: every live match unit. Observer: only units its connection currently
     // receives (fog-filtered); membership follows unit BeginPlay/EndPlay. Not replicated,
     // so the array size cannot reveal hidden enemy counts.
@@ -1099,6 +1125,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
+    friend class FPolitikaMultiplayerDisciplineStressTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

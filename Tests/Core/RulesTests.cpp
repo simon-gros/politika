@@ -964,7 +964,10 @@ int main() {
         static_assert(pd::Evaluate(79500, Service::MemberEarning).value == 80000);
         static_assert(pd::Evaluate(80000, Service::MemberEarning).value == 80000);
         static_assert(pd::Evaluate(80000, Service::MemberEarning).trend == Trend::Steady);
-        static_assert(pd::Evaluate(90000, Service::MemberEarning).value == 90000); // above a lower ceiling: held
+        // Above a lower ceiling (a mass formation that shrank): fade down to it.
+        static_assert(pd::Evaluate(90000, Service::MemberEarning).value == 89500);
+        static_assert(pd::Evaluate(90000, Service::MemberEarning).trend == Trend::Fading);
+        static_assert(pd::Evaluate(80200, Service::MemberEarning).value == 80000);
         static_assert(pd::Evaluate(99500, Service::MemberEarning, pd::kMaximum).value == 100000);
         // Holding: no gain, no loss.
         static_assert(pd::Evaluate(64000, Service::MemberHolding).value == 64000);
@@ -975,7 +978,10 @@ int main() {
         static_assert(pd::Evaluate(50200, Service::Outside).value == 50000);
         static_assert(pd::Evaluate(50000, Service::Outside).value == 50000);
         static_assert(pd::Evaluate(50000, Service::Outside).trend == Trend::Steady);
-        static_assert(pd::Evaluate(40000, Service::Outside).value == 40000);
+        // DISC-D2: below the baseline, outside a formation and not alone, recover at the fade rate.
+        static_assert(pd::Evaluate(40000, Service::Outside).value == 40500);
+        static_assert(pd::Evaluate(40000, Service::Outside).trend == Trend::Rising);
+        static_assert(pd::Evaluate(49800, Service::Outside).value == 50000);
         // Out-of-range input is clamped.
         static_assert(pd::Evaluate(250000, Service::Outside).value == 99500);
         static_assert(pd::Evaluate(-5, Service::MemberHolding).value == 0);
@@ -998,6 +1004,13 @@ int main() {
         static_assert(pd::CrossedBand(50000, 51000) == std::nullopt);
         static_assert(pd::CrossedBand(50500, 50000) == 50);
         static_assert(pd::CrossedBand(70000, 69500) == std::nullopt);
+        // DISC-D2: falling below the baseline reports the lowest band reached; rising back lands on 50.
+        static_assert(pd::CrossedBand(50000, 45000) == std::nullopt);
+        static_assert(pd::CrossedBand(40500, 40000) == 40);
+        static_assert(pd::CrossedBand(45000, 25000) == 30);
+        static_assert(pd::CrossedBand(5000, 0) == 0);
+        static_assert(pd::CrossedBand(49500, 50000) == 50);
+        static_assert(pd::CrossedBand(39500, 40000) == std::nullopt);
         // Support: other members within 400 cm; each counts once; unavailable members never count.
         const double NaN = std::numeric_limits<double>::quiet_NaN();
         const politika::formation::Point Line[] = {{0, 0}, {150, 0}, {300, 0}, {450, 0}, {1000, 0}, {NaN, NaN}};
@@ -1009,6 +1022,66 @@ int main() {
         assert(pd::SupportCount(Line, 9) == 0);       // out of range
         const politika::formation::Point Edge[] = {{0, 0}, {400, 0}};
         assert(pd::SupportCount(Edge, 0) == 1);       // exactly 400 cm supports
+
+        // DISC-D2 isolation: a lone soldier fades to the floor of 30 and holds there.
+        static_assert(pd::Evaluate(50000, Service::Isolated).value == 49500);
+        static_assert(pd::Evaluate(50000, Service::Isolated).trend == Trend::Fading);
+        static_assert(pd::Evaluate(70000, Service::Isolated).value == 69500); // above the baseline: the same fade
+        static_assert(pd::Evaluate(30200, Service::Isolated).value == 30000);
+        static_assert(pd::Evaluate(30000, Service::Isolated).value == 30000);
+        static_assert(pd::Evaluate(30000, Service::Isolated).trend == Trend::Steady);
+        static_assert(pd::Evaluate(20000, Service::Isolated).value == 20000); // already below: held
+        {
+            std::int32_t Value = pd::kBaseline;
+            for (int Second = 0; Second < 39; ++Second) Value = pd::Evaluate(Value, Service::Isolated).value;
+            assert(Value == 30500);
+            Value = pd::Evaluate(Value, Service::Isolated).value;
+            assert(Value == pd::kIsolationFloor && pd::Evaluate(Value, Service::Isolated).value == pd::kIsolationFloor);
+            // Rejoining comrades: back to the baseline in another 40 evaluations.
+            for (int Second = 0; Second < 40; ++Second) Value = pd::Evaluate(Value, Service::Outside).value;
+            assert(Value == pd::kBaseline);
+        }
+        // Doctrine: Concord tolerates solo work; civilians have no isolation; mass formations reach 100.
+        static_assert(pd::DoctrineOf(politika::rules::Faction::AtlanticConcord) == pd::Doctrine::SoloTolerant);
+        static_assert(pd::DoctrineOf(politika::rules::Faction::RedDirectorate) == pd::Doctrine::MassFormation);
+        static_assert(pd::DoctrineOf(politika::rules::Faction::IronAscendancy) == pd::Doctrine::MassFormation);
+        static_assert(pd::DoctrineOf(politika::rules::Faction::MeridianPact) == pd::Doctrine::Standard);
+        static_assert(pd::DoctrineOf(politika::rules::Faction::Unaligned) == pd::Doctrine::Standard);
+        static_assert(pd::IsolationApplies(pd::Doctrine::Standard, pd::UnitCategory::Military));
+        static_assert(pd::IsolationApplies(pd::Doctrine::MassFormation, pd::UnitCategory::Military));
+        static_assert(!pd::IsolationApplies(pd::Doctrine::SoloTolerant, pd::UnitCategory::Military));
+        static_assert(!pd::IsolationApplies(pd::Doctrine::Standard, pd::UnitCategory::NonCombat));
+        static_assert(pd::FormationCeiling(pd::Doctrine::MassFormation, 31) == pd::kNormalCeiling);
+        static_assert(pd::FormationCeiling(pd::Doctrine::MassFormation, 32) == 100000);
+        static_assert(pd::FormationCeiling(pd::Doctrine::Standard, 64) == pd::kNormalCeiling);
+        static_assert(pd::FormationCeiling(pd::Doctrine::SoloTolerant, 64) == pd::kNormalCeiling);
+        static_assert(pd::Evaluate(80000, Service::MemberEarning, pd::kMassCeiling).value == 81000);
+        {
+            std::int32_t Value = pd::kNormalCeiling;
+            for (int Second = 0; Second < 25; ++Second) Value = pd::Evaluate(Value, Service::MemberEarning, pd::kMassCeiling).value;
+            assert(Value == pd::kMassCeiling);
+            assert(pd::Evaluate(Value, Service::MemberEarning, pd::kMassCeiling).value == pd::kMassCeiling);
+        }
+
+        // DISC-D2 casualty shock: -5 per fallen comrade, at most -15 in a 100-step window opened by
+        // the first shock; a new window after it; never below zero.
+        {
+            pd::ShockWindow Window;
+            pd::ShockResult R = pd::ApplyCasualtyShock(70000, Window, 300);
+            assert(R.value == 65000 && R.applied == 5000 && R.window.open && R.window.start == 300 && R.window.taken == 5000);
+            R = pd::ApplyCasualtyShock(R.value, R.window, 310);
+            assert(R.value == 60000 && R.window.start == 300);
+            R = pd::ApplyCasualtyShock(R.value, R.window, 320);
+            assert(R.value == 55000 && R.window.taken == 15000);
+            R = pd::ApplyCasualtyShock(R.value, R.window, 399); // cap spent until step 400
+            assert(R.value == 55000 && R.applied == 0 && R.window.taken == 15000);
+            R = pd::ApplyCasualtyShock(R.value, R.window, 400); // a new window
+            assert(R.value == 50000 && R.applied == 5000 && R.window.start == 400 && R.window.taken == 5000);
+            const pd::ShockResult Low = pd::ApplyCasualtyShock(3000, {}, 10);
+            assert(Low.value == 0 && Low.applied == 3000 && Low.window.taken == 5000);
+            const pd::ShockResult Floor = pd::ApplyCasualtyShock(0, Low.window, 11);
+            assert(Floor.value == 0 && Floor.applied == 0 && Floor.window.taken == 10000);
+        }
     }
 
     // Faction nuclear permissions are independent of ownership and unit count.

@@ -2718,7 +2718,10 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 #endif
             for (auto& Selection : SelectionByPlayer) Selection.Value.Units.Remove(Unit);
             if (Formations.FormationOf(Unit->GetStableId()))
+            {
+                ApplyCasualtyShock(*Unit);
                 LoseFormationMember(Unit->GetStableId(), politika::formation::LeaveReason::Destroyed, TEXT("destroyed"));
+            }
             Unit->BeginDeathPresentation();
         }
     }

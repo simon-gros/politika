@@ -606,6 +606,7 @@ bool APolitikaPrototypeMatch::SubmitStanceIntent(APlayerController* Source, cons
         const pf::Formation* Formation = Formations.Find(Addressed);
 #if !UE_BUILD_SHIPPING
         if (Op == pf::FormationOp::SetStance) TriggerStanceProbe(ParticipantId, *Formation);
+        else TriggerDisciplineCasualties(*Formation);
 #endif
         // Setting the whole formation's stance applies it to every member: overrides go.
         if (Op == pf::FormationOp::SetStance)
@@ -698,6 +699,7 @@ void APolitikaPrototypeMatch::ProcessFormationRegroups()
 {
 #if !UE_BUILD_SHIPPING
     TickFormationCasualtyFixture();
+    TickDisciplineCasualtyFixture();
 #endif
     const std::vector<pf::FormationId> Due = Formations.DueRegroups(SimulationStepsExecuted);
     if (!Due.empty())
@@ -747,6 +749,9 @@ void APolitikaPrototypeMatch::ClearFormations(const TCHAR* Reason)
     FormationCasualtyFormation = 0;
     FormationCasualtyStep = 0;
     if (FormationCasualtyArmed == 2) FormationCasualtyArmed = 1;
+    DisciplineCasualtiesFormation = 0;
+    DisciplineCasualtyVictims.Reset();
+    if (DisciplineCasualtiesArmed == 2) DisciplineCasualtiesArmed = 1;
 #endif
     const TMap<uint64, ps::CombatStance> StancesBefore = StanceSnapshot();
     const pf::Change Cleared = Formations.Clear();
@@ -793,6 +798,72 @@ void APolitikaPrototypeMatch::SyncFormationReplication()
 }
 
 #if !UE_BUILD_SHIPPING
+void APolitikaPrototypeMatch::TriggerDisciplineCasualties(const pf::Formation& Formation)
+{
+    constexpr std::size_t MinimumMembers = 8;
+    constexpr int32 Victims = 4;
+    constexpr uint64 DelaySteps = 10;
+    if (DisciplineCasualtiesArmed < 0)
+        DisciplineCasualtiesArmed = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPDisciplineCasualties")) ? 1 : 0;
+    if (DisciplineCasualtiesArmed != 1 || Formation.members.size() < MinimumMembers) return;
+    TArray<const APolitikaPrototypeUnit*> Living;
+    FVector2D Centre = FVector2D::ZeroVector;
+    for (const pf::MemberSlot& Member : Formation.members)
+        if (const APolitikaPrototypeUnit* Unit = FindUnitByStableId(Member.id); Unit && Unit->IsAlive())
+        {
+            Living.Add(Unit);
+            Centre += FVector2D(Unit->GetActorLocation());
+        }
+    if (Living.Num() < static_cast<int32>(MinimumMembers)) return;
+    Centre /= Living.Num();
+    // Farthest from the centre (lowest ID on a tie), then its nearest fellow members.
+    const APolitikaPrototypeUnit* End = nullptr;
+    double EndDistance = -1.0;
+    for (const APolitikaPrototypeUnit* Unit : Living)
+    {
+        const double Distance = FVector2D::Distance(FVector2D(Unit->GetActorLocation()), Centre);
+        if (Distance > EndDistance + 0.001 || (FMath::IsNearlyEqual(Distance, EndDistance, 0.001) && Unit->GetStableId() < End->GetStableId()))
+        {
+            End = Unit;
+            EndDistance = Distance;
+        }
+    }
+    const FVector2D EndAt(End->GetActorLocation());
+    Living.Sort([EndAt](const APolitikaPrototypeUnit& A, const APolitikaPrototypeUnit& B)
+    {
+        const double DA = FVector2D::DistSquared(FVector2D(A.GetActorLocation()), EndAt);
+        const double DB = FVector2D::DistSquared(FVector2D(B.GetActorLocation()), EndAt);
+        return DA != DB ? DA < DB : A.GetStableId() < B.GetStableId();
+    });
+    DisciplineCasualtyVictims.Reset();
+    FString Names;
+    for (int32 Index = 0; Index < Victims; ++Index)
+    {
+        DisciplineCasualtyVictims.Add(Living[Index]->GetStableId());
+        Names += FString::Printf(TEXT("%s%llu"), Index ? TEXT(",") : TEXT(""), Living[Index]->GetStableId());
+    }
+    DisciplineCasualtiesArmed = 2; // once per match
+    DisciplineCasualtiesFormation = Formation.id.value;
+    DisciplineCasualtiesFirstStep = SimulationStepsExecuted + DelaySteps;
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_DISCIPLINE_CASUALTIES_ARMED formation=%u participant=%u members=%d victims=%s first_step=%llu centre=%.1f,%.1f"),
+        Formation.id.value, Formation.owner, Living.Num(), *Names, DisciplineCasualtiesFirstStep, Centre.X, Centre.Y);
+}
+
+void APolitikaPrototypeMatch::TickDisciplineCasualtyFixture()
+{
+    if (DisciplineCasualtiesArmed != 2 || DisciplineCasualtyVictims.IsEmpty() || SimulationStepsExecuted < DisciplineCasualtiesFirstStep) return;
+    // One per step: the next step's damage and cleanup phases destroy it.
+    const uint64 Victim = DisciplineCasualtyVictims[0];
+    DisciplineCasualtyVictims.RemoveAt(0);
+    APolitikaPrototypeUnit* Unit = FindUnitByStableId(Victim);
+    if (!Unit || !Unit->IsAlive()) return;
+    Unit->PendingDamage += static_cast<float>(Unit->GetHealth() + 1);
+    const FVector Location = Unit->GetActorLocation();
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_CASUALTY formation=%u unit=%llu x=%.1f y=%.1f remaining=%d step=%llu"),
+        DisciplineCasualtiesFormation, Victim, Location.X, Location.Y, DisciplineCasualtyVictims.Num(), SimulationStepsExecuted);
+}
+
 void APolitikaPrototypeMatch::TriggerStanceProbe(uint32 ParticipantId, const pf::Formation& Formation)
 {
     if (StanceProbeArmed < 0) StanceProbeArmed = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPStanceProbe")) ? 1 : 0;

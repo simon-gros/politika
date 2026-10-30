@@ -9269,6 +9269,587 @@ fn formation_discipline_session(
     result
 }
 
+// ---------------------------------------------------------------------------------------
+// `--discipline-stress SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// DISC-D2 on the dedicated 1v1 fixture (20 idle units per seat). The server runs with the
+// stance probe, the discipline casualty fixture and participant 2 on the solo-tolerant
+// (Atlantic Concord) doctrine. Seat 1's client, with real X input: sends one lone unit
+// (group 2) far behind the army and forms the other 19 (group 1) into a Line. The lone soldier
+// fades 0.5 per second to the isolation floor of 30 and holds there. H (Guard) makes the probe
+// walk one opposing unit away from its comrades: as a Concord soldier it stays at 50. J sets the
+// formation's adherence, which makes the fixture kill an end member and its three nearest
+// fellow members on consecutive steps: members within 800 cm lose 5 per casualty, at most 15 in
+// the window, members beyond do not. Finally the lone soldier walks back beside its comrades
+// and recovers to 50. The opposing client receives only the default value throughout.
+// ---------------------------------------------------------------------------------------
+
+/// The lone soldier's destination, far behind the army's Line (ground probe index 2).
+const DISC_LONE_POINT: (f64, f64) = (-1700.0, -500.0);
+
+#[allow(clippy::too_many_lines)]
+fn discipline_stress_session(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPStanceProbe".into());
+    args.push("-PolitikaMPDisciplineCasualties".into());
+    args.push("-PolitikaMPDisciplineDoctrine=2:solo".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
+        SHAPE_LINE_POINT.0,
+        SHAPE_LINE_POINT.1,
+        SHAPE_COLUMN_POINT.0,
+        SHAPE_COLUMN_POINT.1,
+        DISC_LONE_POINT.0,
+        DISC_LONE_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        let first = server.wait(
+            &["RTS_DISCIPLINE_PARTICIPANT", " participant=1 "],
+            Duration::from_secs(10),
+        )?;
+        report.verdict(
+            "DISC-01-BASELINE-AT-START",
+            int_field(&first, "units") == Some(20)
+                && int_field(&first, "min") == Some(50_000)
+                && int_field(&first, "max") == Some(50_000),
+            first.trim().to_owned(),
+        );
+
+        let box_all = |client: &mut Game| -> Result<(usize, String), String> {
+            let before = client.offset();
+            client.drag_hold(
+                (24.0, 24.0),
+                (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+            )?;
+            client.release()?;
+            let line = client.wait_line(
+                &["RTS_SELECTION_SET", "source=box", "op=replace"],
+                Duration::from_secs(5),
+                before,
+            )?;
+            Ok((before, line))
+        };
+
+        // Setup: the lowest-ID clickable unit alone in group 2, the other 19 in group 1.
+        let (before_box, _) = box_all(&mut client_a)?;
+        let screens: Vec<(u64, f64, f64)> = client_a.text()[before_box..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SCREEN"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "unit")?.parse().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .filter(|(_, x, y)| {
+                *x > 40.0 && *x < f64::from(WIDTH) - 40.0 && *y > 220.0 && *y < 500.0
+            })
+            .collect();
+        let lone = screens
+            .iter()
+            .filter(|s| {
+                screens
+                    .iter()
+                    .filter(|o| o.0 != s.0)
+                    .all(|o| (s.1 - o.1).hypot(s.2 - o.2) >= 14.0)
+            })
+            .min_by_key(|s| s.0)
+            .copied()
+            .ok_or("no clickable own unit clear of its neighbours")?;
+        let lone_id = lone.0;
+        report.fact(
+            "lone_unit",
+            format!("{}@{:.0},{:.0}", lone.0, lone.1, lone.2),
+        );
+        let at = client_a.offset();
+        client_a.click(lone.1, lone.2, "1")?;
+        wait5(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=1 "],
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "2")?;
+        let group2 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=2 "], at)?;
+        box_all(&mut client_a)?;
+        let at = client_a.offset();
+        client_a.modified_click(lone.1, lone.2, "shift")?;
+        wait5(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "op=toggle"],
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let group1 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        let army: Vec<u64> = own.iter().copied().filter(|u| *u != lone_id).collect();
+        if selection_ids(&group2) != vec![lone_id] || selection_ids(&group1) != army {
+            return Err(format!(
+                "control group setup failed: {} | {}",
+                group2.trim(),
+                group1.trim()
+            ));
+        }
+
+        // 1. Group 2: send the lone soldier far behind where the Line will stand.
+        let lone_point = wait_screen(&mut client_a, |t| probe_screen(t, 2), "lone point")?;
+        let at = client_a.offset();
+        client_a.key("2")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=1 "], at)?;
+        let lone_sent = server.offset();
+        client_a.click(lone_point.0, lone_point.1, "3")?;
+
+        // 2. Group 1: T forms the 19 and a click moves them into a Line.
+        let at = client_a.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=19 "], at)?;
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        server.wait_line(
+            &["RTS_FORMATION_MOVE", &format!("formation={formation} ")],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &army, &army);
+        report.verdict(
+            "DISC-SETUP-LINE-ARRIVED",
+            arrived == army.len() && at_slot == army.len() && failed == 0,
+            format!(
+                "{arrived}/19 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm"
+            ),
+        );
+
+        // 3. DISC-11: the lone soldier fades 2.5 points per 100-step sample to 30 and holds.
+        let lone_tag = format!(" unit={lone_id} ");
+        let isolated_samples = |text: &str| -> Vec<(i64, i64, String)> {
+            text.lines()
+                .filter(|l| l.contains("RTS_DISCIPLINE_ISOLATED") && l.contains(&lone_tag))
+                .filter_map(|l| Some((int_field(l, "step")?, int_field(l, "value")?, l.to_owned())))
+                .collect()
+        };
+        let deadline = Instant::now() + Duration::from_secs(90);
+        let lone_series = loop {
+            let series = isolated_samples(&server.text()[lone_sent..]);
+            if series.iter().filter(|s| s.1 == 30_000).count() >= 2 || Instant::now() >= deadline {
+                break series;
+            }
+            thread::sleep(Duration::from_secs(1));
+        };
+        let values: Vec<i64> = lone_series.iter().map(|s| s.1).collect();
+        let steady_fade = lone_series.windows(2).all(|w| {
+            w[1].0 - w[0].0 == 100
+                && (w[0].1 - w[1].1 == 2_500
+                    || (w[0].1 > 30_000 && w[1].1 == 30_000)
+                    || (w[0].1 == 30_000 && w[1].1 == 30_000))
+        });
+        let standard = lone_series.iter().all(|s| {
+            field(&s.2, "exempt") == Some("0") && field(&s.2, "doctrine") == Some("standard")
+        });
+        report.verdict(
+            "DISC-11-LONE-SOLDIER-FADES-TO-30",
+            values.len() >= 3
+                && steady_fade
+                && standard
+                && values.iter().all(|v| *v >= 30_000)
+                && values.iter().filter(|v| **v == 30_000).count() >= 2
+                && values.first().is_some_and(|v| *v < 50_000),
+            format!(
+                "unit {lone_id}: samples (step, value) {:?}",
+                lone_series.iter().map(|s| (s.0, s.1)).collect::<Vec<_>>()
+            ),
+        );
+        let at = client_a.offset();
+        client_a.key("2")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=1 "], at)?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "lone_png",
+            &client_a.screenshot(evidence, "01-lone-soldier-at-30")?,
+        );
+
+        // 4. Group 1 + H (Guard): the probe walks one opposing unit away from its comrades. With
+        // the solo-tolerant doctrine it is listed as alone but exempt, and stays at 50.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        let at_b = client_b.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=19 "], at)?;
+        client_a.key("h")?;
+        let probe = server.wait_line(
+            &["MP_STANCE_PROBE", "phase=guard"],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let probe_unit = unit_field(&probe);
+        let _ = server.wait_line(
+            &["RTS_UNIT_DESTROYED", &format!("unit={probe_unit}")],
+            Duration::from_secs(60),
+            at_server,
+        );
+        let exempt: Vec<String> = server.text()[at_server..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_DISCIPLINE_ISOLATED") && l.contains(&format!(" unit={probe_unit} "))
+            })
+            .map(str::to_owned)
+            .collect();
+        let opponent_min = discipline_participant_samples_of(&server.text(), 2)
+            .iter()
+            .filter_map(|l| int_field(l, "min"))
+            .min();
+        let override_line = server
+            .text()
+            .lines()
+            .find(|l| l.contains("RTS_DISCIPLINE_DOCTRINE_OVERRIDE"))
+            .unwrap_or("")
+            .trim()
+            .to_owned();
+        report.verdict(
+            "DISC-11-CONCORD-EXEMPT",
+            !exempt.is_empty()
+                && exempt.iter().all(|l| {
+                    field(l, "doctrine") == Some("solo")
+                        && field(l, "exempt") == Some("1")
+                        && int_field(l, "value") == Some(50_000)
+                })
+                && opponent_min == Some(50_000)
+                && field(&override_line, "participant") == Some("2"),
+            format!(
+                "{override_line}; probe unit {probe_unit} alone in {} samples: {}; participant 2 minimum over the run {opponent_min:?}",
+                exempt.len(),
+                exempt.first().map_or("none", |l| l.trim())
+            ),
+        );
+        // Guard chasers walk back to their posts before the casualties.
+        thread::sleep(Duration::from_secs(8));
+
+        // 5. J: the fixture kills an end member and its three nearest fellow members.
+        let at_server = server.offset();
+        client_a.key("j")?;
+        let armed = server.wait_line(
+            &[
+                "MP_DISCIPLINE_CASUALTIES_ARMED",
+                &format!("formation={formation} "),
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let victims: Vec<u64> = field(&armed, "victims")
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        let destroyed_since = |text: &str| -> Vec<u64> {
+            text.lines()
+                .filter(|l| l.contains("RTS_UNIT_DESTROYED"))
+                .map(unit_field)
+                .collect()
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !victims
+            .iter()
+            .all(|v| destroyed_since(&server.text()[at_server..]).contains(v))
+        {
+            if Instant::now() >= deadline {
+                return Err(format!("not every casualty fell: {}", armed.trim()));
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        let fallen_before = destroyed_since(&server.text()[..at_server]);
+        thread::sleep(Duration::from_millis(500));
+        let text = server.text()[at_server..].to_owned();
+        let destroyed_steps: Vec<(u64, i64)> = text
+            .lines()
+            .filter(|l| l.contains("MP_DISCIPLINE_CASUALTY "))
+            .filter_map(|l| Some((unit_field(l), int_field(l, "step")?)))
+            .collect();
+        let shocks: Vec<String> = text
+            .lines()
+            .filter(|l| l.contains("RTS_DISCIPLINE_SHOCK"))
+            .filter(|l| {
+                field(l, "casualty")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .is_some_and(|c| victims.contains(&c))
+            })
+            .map(str::to_owned)
+            .collect();
+        let in_range: Vec<&String> = shocks
+            .iter()
+            .filter(|l| field(l, "in_range") == Some("1"))
+            .collect();
+        let out_range: Vec<&String> = shocks
+            .iter()
+            .filter(|l| field(l, "in_range") == Some("0"))
+            .collect();
+        let range_ok = in_range
+            .iter()
+            .all(|l| number(l, "distance").is_some_and(|d| d <= 800.0))
+            && out_range.iter().all(|l| {
+                number(l, "distance").is_some_and(|d| d > 800.0)
+                    && int_field(l, "applied") == Some(0)
+                    && int_field(l, "before") == int_field(l, "after")
+            });
+        // Every surviving member is listed once per casualty: 19 members, minus the casualties so far.
+        let mut per_casualty = Vec::new();
+        let mut listed_ok = victims.len() == 4;
+        for (index, victim) in victims.iter().enumerate() {
+            let listed: Vec<u64> = shocks
+                .iter()
+                .filter(|l| field(l, "casualty") == Some(&victim.to_string()))
+                .map(|l| unit_field(l))
+                .collect();
+            let expected: Vec<u64> = army
+                .iter()
+                .copied()
+                .filter(|u| !victims[..=index].contains(u) && !fallen_before.contains(u))
+                .collect();
+            let mut sorted = listed.clone();
+            sorted.sort_unstable();
+            listed_ok &= sorted == expected;
+            per_casualty.push(listed.len());
+        }
+        report.verdict(
+            "DISC-10-SHOCK-REACHES-ONLY-MEMBERS-IN-RANGE",
+            range_ok && listed_ok && !in_range.is_empty() && !out_range.is_empty(),
+            format!(
+                "{armed}; casualties (unit, step) {destroyed_steps:?}; members listed per casualty {per_casualty:?}; in range {} (max {:.1} cm), out of range {} (min {:.1} cm)",
+                in_range.len(),
+                in_range.iter().filter_map(|l| number(l, "distance")).fold(0.0, f64::max),
+                out_range.len(),
+                out_range
+                    .iter()
+                    .filter_map(|l| number(l, "distance"))
+                    .fold(f64::INFINITY, f64::min),
+                armed = armed.trim()
+            ),
+        );
+        // Per member: what each casualty in range cost it, in order.
+        let mut costs: Vec<(u64, Vec<i64>)> = Vec::new();
+        let mut amounts_ok = true;
+        for line in &in_range {
+            let unit = unit_field(line);
+            let applied = int_field(line, "applied").unwrap_or(-1);
+            amounts_ok &= (0..=5_000).contains(&applied)
+                && int_field(line, "after")
+                    == int_field(line, "before").map(|b| (b - applied).max(0));
+            match costs.iter_mut().find(|c| c.0 == unit) {
+                Some(entry) => entry.1.push(applied),
+                None => costs.push((unit, vec![applied])),
+            }
+        }
+        let capped: Vec<&(u64, Vec<i64>)> = costs
+            .iter()
+            .filter(|c| c.1 == vec![5_000, 5_000, 5_000, 0])
+            .collect();
+        let within_cap = costs.iter().all(|c| c.1.iter().sum::<i64>() <= 15_000);
+        let full_until_cap = costs.iter().all(|c| {
+            let mut taken = 0;
+            c.1.iter().all(|a| {
+                let expected = (15_000 - taken).clamp(0, 5_000);
+                taken += expected;
+                *a == expected
+            })
+        });
+        report.verdict(
+            "DISC-10-SHOCK-5-CAPPED-AT-15",
+            amounts_ok && within_cap && full_until_cap && !capped.is_empty(),
+            format!(
+                "per member costs {costs:?}; members that hit the cap on the fourth casualty {}",
+                capped.len()
+            ),
+        );
+        report.artifact(
+            "shocked_png",
+            &client_a.screenshot(evidence, "02-formation-after-casualties")?,
+        );
+
+        // 6. Group 2: the lone soldier walks back to the Line and recovers to 50 beside it.
+        let at = client_a.offset();
+        client_a.key("2")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=1 "], at)?;
+        let back = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        let last_isolated = isolated_samples(&server.text()).last().map(|s| s.0);
+        client_a.click(back.0, back.1, "3")?;
+        let landed = server.wait_line(
+            &[
+                "RTS_DISCIPLINE_BAND",
+                &lone_tag,
+                "band=50 ",
+                "direction=rising",
+            ],
+            Duration::from_secs(75),
+            at_server,
+        );
+        thread::sleep(Duration::from_secs(1));
+        let after_back = isolated_samples(&server.text()[at_server..]);
+        let recovered = client_a
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE") && l.contains(&format!(" entity={lone_id} "))
+            })
+            .filter_map(|l| int_field(l, "resolve"))
+            .collect::<Vec<_>>();
+        let tail: Vec<i64> = recovered
+            .iter()
+            .copied()
+            .skip_while(|v| *v != 30_000)
+            .collect();
+        let landed_step = landed.as_ref().ok().and_then(|l| int_field(l, "step"));
+        report.verdict(
+            "DISC-11-RECOVERS-BESIDE-COMRADES",
+            landed_step.is_some()
+                && tail.windows(2).all(|w| w[1] >= w[0])
+                && tail.last() == Some(&50_000)
+                && after_back.len() <= 3,
+            format!(
+                "{}; last isolated sample at step {last_isolated:?}; isolated samples after the order {} (walking back); owner client values from 30 on, non-decreasing to {:?}",
+                landed.as_ref().map_or_else(|e| e.clone(), |l| l.trim().to_owned()),
+                after_back.len(),
+                tail.last()
+            ),
+        );
+        report.artifact(
+            "recovered_png",
+            &client_a.screenshot(evidence, "03-lone-soldier-recovered")?,
+        );
+
+        // 7. DISC-07: the opposing client received participant 1's units with the default only,
+        // although several of them were below 50 on the server.
+        let seen: Vec<String> = client_b.text()[at_b..]
+            .lines()
+            .filter(|l| l.contains("MP_CLIENT_SAMPLE") && field(l, "owner") == Some("1"))
+            .map(str::to_owned)
+            .collect();
+        let leaked = seen
+            .iter()
+            .filter(|l| int_field(l, "resolve") != Some(50_000))
+            .count();
+        let own_below = client_a
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE")
+                    && field(l, "owner") == Some("1")
+                    && int_field(l, "resolve").is_some_and(|v| v < 50_000)
+            })
+            .count();
+        report.verdict(
+            "DISC-07-OWNER-ONLY",
+            !seen.is_empty() && leaked == 0 && own_below > 0,
+            format!(
+                "opposing client samples of participant 1 units {}, with a value other than 50000 {leaked}; owner samples below 50000 {own_below}",
+                seen.len()
+            ),
+        );
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
+/// `RTS_DISCIPLINE_PARTICIPANT` lines of one participant in `text`.
+fn discipline_participant_samples_of(text: &str, participant: u32) -> Vec<String> {
+    let tag = format!(" participant={participant} ");
+    text.lines()
+        .filter(|l| l.contains("RTS_DISCIPLINE_PARTICIPANT") && l.contains(&tag))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -9398,6 +9979,14 @@ fn main() {
             "politika.disc.formation-discipline-evidence.v1",
             "formation-discipline",
             formation_discipline_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--discipline-stress") {
+        run_dedicated_session(
+            "--discipline-stress",
+            "politika.disc.discipline-stress-evidence.v1",
+            "discipline-stress",
+            discipline_stress_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

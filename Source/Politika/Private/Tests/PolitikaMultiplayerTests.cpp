@@ -2027,7 +2027,9 @@ bool FPolitikaMultiplayerFormationDisciplineTest::RunTest(const FString& Paramet
     TestEqual(TEXT("DISC-03 the gain stops at the ceiling of 80"), Own[3]->GetResolveMilli(), pd::kNormalCeiling);
     TestEqual(TEXT("DISC-03 every following member reaches the ceiling"), Own[2]->GetResolveMilli(), pd::kNormalCeiling);
     TestTrue(TEXT("At the ceiling the trend is Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
-    TestEqual(TEXT("The independent member still holds"), Own[0]->GetResolveMilli(), BeforeIndependent[0]);
+    // DISC-D2: Own[1]'s death 150 cm away cost the independent member the casualty shock.
+    TestEqual(TEXT("The independent member still holds, less one casualty shock"), Own[0]->GetResolveMilli(),
+        BeforeIndependent[0] - pd::kCasualtyShock);
 
     // DISC-06: after Release values fade 0.5 per evaluation to the baseline and never below it.
     Host->ApplySelection({Own[0], Own[2], Own[3]}, SelectionOp::Replace, TEXT("automation"));
@@ -2044,6 +2046,163 @@ bool FPolitikaMultiplayerFormationDisciplineTest::RunTest(const FString& Paramet
         Values({Own[0], Own[2], Own[3]}) == TArray<int32>({pd::kBaseline, pd::kBaseline, pd::kBaseline}));
     TestTrue(TEXT("At the baseline the trend is Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
     TestEqual(TEXT("The civilian stayed at the baseline throughout"), Civilian->GetResolveMilli(), pd::kBaseline);
+
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerDisciplineStressTest,
+    "Politika.RTS.Multiplayer.DisciplineStress",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// DISC-D2: stress and faction rules on the one resolve attribute. A soldier alone outside any
+// formation fades to 30 unless its doctrine tolerates solo work (Concord), and recovers to the
+// baseline beside a comrade; civilians and formation members are never isolated; a mass-formation
+// doctrine lifts a formation with at least 32 earning members to 100, and back to 80 below that;
+// a fallen member costs nearby members of its own formation 5 points, at most 15 per unit in a
+// 100-step window. Doctrines are set through the participant override, as the packaged fixture does.
+bool FPolitikaMultiplayerDisciplineStressTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace pd = politika::discipline;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 OpponentId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    if (!TestTrue(TEXT("Both participants are bound"), HostId != 0 && OpponentId != 0 && HostId != OpponentId)) return false;
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    // The opponent fights as the Concord; the host starts with its test faction's Standard doctrine.
+    F.Match->DisciplineDoctrineOverrides.Add(OpponentId, pd::Doctrine::SoloTolerant);
+    F.Match->bDisciplineDoctrineOverridesParsed = true;
+
+    // Isolation: a lone host soldier L, a host pair Q, a lone host soldier L2 beside an opposing
+    // Concord soldier E, a lone Concord soldier C and a lone civilian V.
+    APolitikaPrototypeUnit* L = F.AddUnit(HostId, {1500.0, 1500.0});
+    APolitikaPrototypeUnit* Q1 = F.AddUnit(HostId, {0.0, 1500.0});
+    APolitikaPrototypeUnit* Q2 = F.AddUnit(HostId, {200.0, 1500.0});
+    APolitikaPrototypeUnit* L2 = F.AddUnit(HostId, {1500.0, 0.0});
+    APolitikaPrototypeUnit* E = F.AddUnit(OpponentId, {1600.0, 0.0});
+    APolitikaPrototypeUnit* C = F.AddUnit(OpponentId, {1500.0, -1500.0});
+    APolitikaPrototypeUnit* V = F.AddUnit(HostId, {-1500.0, 1500.0});
+    // Casualty shock: a formation row R0..R6 at 150 cm spacing, a stranded member R7 and a host
+    // soldier N beside the row that is not a member.
+    TArray<APolitikaPrototypeUnit*> Row;
+    for (int32 Index = 0; Index < 7; ++Index) Row.Add(F.AddUnit(HostId, {-1800.0 + Index * 150.0, -1200.0}));
+    Row.Add(F.AddUnit(HostId, {-400.0, -1200.0}));
+    APolitikaPrototypeUnit* N = F.AddUnit(HostId, {-1800.0, -1050.0});
+    // Mass formation: 34 host soldiers in two rows of 17.
+    TArray<APolitikaPrototypeUnit*> Mass;
+    for (int32 Index = 0; Index < 34; ++Index) Mass.Add(F.AddUnit(HostId, {-1800.0 + (Index % 17) * 150.0, 600.0 + (Index / 17) * 150.0}));
+    if (!TestFalse(TEXT("Fixture units spawned"), !L || !Q1 || !Q2 || !L2 || !E || !C || !V || !N
+        || Row.Contains(nullptr) || Mass.Contains(nullptr))) return false;
+    V->SetUnitCategory(EPolitikaUnitCategory::NonCombat);
+    TestTrue(TEXT("A prototype test faction has the Standard doctrine; the override gives the opponent Solo"),
+        F.Match->DisciplineDoctrineOf(*L) == pd::Doctrine::Standard && F.Match->DisciplineDoctrineOf(*C) == pd::Doctrine::SoloTolerant);
+    const pf::Registry& Formations = F.Match->GetFormations();
+    Host->ApplySelection(Row, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    Host->ApplySelection(Mass, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    if (!TestEqual(TEXT("The row and the mass formation are formed"), static_cast<int32>(Formations.All().size()), 2)) return false;
+    const pf::FormationId MassId = Formations.FormationOf(Mass[0]->GetStableId());
+
+    auto NextEvaluation = [&F]()
+    {
+        const uint64 Target = (F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps + 1) * pd::kEvaluationIntervalSteps;
+        for (int32 Guard = 0; F.Match->SimulationStepsExecuted < Target && Guard < 100; ++Guard) F.Step();
+    };
+    auto Evaluations = [&NextEvaluation](int32 Count) { for (int32 Index = 0; Index < Count; ++Index) NextEvaluation(); };
+    auto AllAt = [](TConstArrayView<APolitikaPrototypeUnit*> Units, int32 Value)
+    {
+        return !Units.ContainsByPredicate([Value](const APolitikaPrototypeUnit* Unit) { return Unit->GetResolveMilli() != Value; });
+    };
+
+    // DISC-11: at the first evaluation only the lone Standard soldiers fade.
+    NextEvaluation();
+    TestEqual(TEXT("DISC-11 a lone soldier fades below the baseline"), L->GetResolveMilli(), pd::kBaseline - 500);
+    TestTrue(TEXT("DISC-11 a fading lone soldier shows Fading"), L->GetResolveTrend() == pd::Trend::Fading);
+    TestEqual(TEXT("DISC-11 an enemy soldier close by is no comrade"), L2->GetResolveMilli(), pd::kBaseline - 500);
+    TestTrue(TEXT("DISC-11 a soldier beside a comrade is not alone"), AllAt({Q1, Q2, N}, pd::kBaseline));
+    TestTrue(TEXT("DISC-11 lone Concord soldiers are exempt"), AllAt({C, E}, pd::kBaseline) && C->GetResolveTrend() == pd::Trend::Steady);
+    TestEqual(TEXT("DISC-11 a lone civilian is never isolated"), V->GetResolveMilli(), pd::kBaseline);
+    TestEqual(TEXT("A stranded formation member holds and is not isolated"), Row[7]->GetResolveMilli(), pd::kBaseline);
+    TestTrue(TEXT("Supported members earn"), AllAt(TArray<APolitikaPrototypeUnit*>(Row.GetData(), 7), 51000) && AllAt(Mass, 51000));
+
+    // DISC-11: 40 evaluations reach the floor of 30, which holds.
+    Evaluations(39);
+    TestEqual(TEXT("DISC-11 a lone soldier reaches the floor of 30 after 40 evaluations"), L->GetResolveMilli(), pd::kIsolationFloor);
+    NextEvaluation();
+    TestTrue(TEXT("DISC-11 the floor holds"), L->GetResolveMilli() == pd::kIsolationFloor && L->GetResolveTrend() == pd::Trend::Steady);
+    TestTrue(TEXT("DISC-11 the Concord soldiers stayed at the baseline"), AllAt({C, E}, pd::kBaseline));
+    // DISC-12: a Standard formation of 34 stops at 80.
+    TestTrue(TEXT("DISC-12 a Standard formation of 34 stops at 80"), AllAt(Mass, pd::kNormalCeiling));
+
+    // Recovery: beside a comrade the lone soldier climbs back to the baseline at the fade rate.
+    L->SetActorLocation(FVector(100.0, 1350.0, 42.0));
+    // DISC-12: from now on the host fights with the mass-formation doctrine.
+    F.Match->DisciplineDoctrineOverrides.Add(HostId, pd::Doctrine::MassFormation);
+    NextEvaluation();
+    TestTrue(TEXT("A lone soldier beside a comrade recovers"), L->GetResolveMilli() == pd::kIsolationFloor + 500
+        && L->GetResolveTrend() == pd::Trend::Rising);
+    TestTrue(TEXT("DISC-12 a mass formation of 34 earning members climbs past 80"), AllAt(Mass, pd::kNormalCeiling + 1000));
+    TestTrue(TEXT("DISC-12 a mass-doctrine formation of 8 stays at 80"), AllAt(TArray<APolitikaPrototypeUnit*>(Row.GetData(), 7), pd::kNormalCeiling));
+    Evaluations(19);
+    TestTrue(TEXT("DISC-12 the mass formation reaches 100"), AllAt(Mass, pd::kMassCeiling));
+    NextEvaluation();
+    TestTrue(TEXT("DISC-12 100 holds"), AllAt(Mass, pd::kMassCeiling) && Mass[0]->GetResolveTrend() == pd::Trend::Steady);
+
+    // DISC-12: three stranded members leave 31 earning; the rest fade back towards 80, the stranded hold.
+    Mass[31]->SetActorLocation(FVector(1900.0, -300.0, 42.0));
+    Mass[32]->SetActorLocation(FVector(1900.0, -900.0, 42.0));
+    Mass[33]->SetActorLocation(FVector(-1900.0, 1900.0, 42.0));
+    NextEvaluation();
+    TestTrue(TEXT("DISC-12 below 32 earning members the ceiling falls back to 80"),
+        AllAt(TArray<APolitikaPrototypeUnit*>(Mass.GetData(), 31), pd::kMassCeiling - 500) && Mass[0]->GetResolveTrend() == pd::Trend::Fading);
+    TestTrue(TEXT("Stranded members hold"), AllAt({Mass[31], Mass[32], Mass[33]}, pd::kMassCeiling));
+    TestTrue(TEXT("The mass formation still exists"), Formations.Find(MassId) != nullptr);
+    // 40 evaluations after it reached a comrade (evaluations 42..81).
+    Evaluations(18);
+    TestEqual(TEXT("The lone soldier is back at the baseline"), L->GetResolveMilli(), pd::kBaseline);
+
+    // DISC-10: casualty shock. Kills fall on consecutive steps right after an evaluation, so no
+    // evaluation interferes. R0 falls: R1..R5 (150-750 cm) lose 5; R6 (900 cm), stranded R7 and
+    // the non-member N do not.
+    NextEvaluation();
+    auto Kill = [&F](APolitikaPrototypeUnit* Unit) { Unit->Health = 0; F.Step(); };
+    auto Values = [](TConstArrayView<APolitikaPrototypeUnit*> Units)
+    {
+        TArray<int32> Result;
+        for (const APolitikaPrototypeUnit* Unit : Units) Result.Add(Unit->GetResolveMilli());
+        return Result;
+    };
+    TestTrue(TEXT("The row sits at 80 before the casualties"), AllAt(TArray<APolitikaPrototypeUnit*>(Row.GetData(), 7), pd::kNormalCeiling));
+    const uint64 FirstKillStep = F.Match->SimulationStepsExecuted + 1;
+    Kill(Row[0]);
+    TestTrue(TEXT("DISC-10 members within 800 cm lose 5"), Values({Row[1], Row[2], Row[3], Row[4], Row[5]})
+        == TArray<int32>({75000, 75000, 75000, 75000, 75000}) && Row[1]->GetResolveTrend() == pd::Trend::Fading);
+    TestTrue(TEXT("DISC-10 a member 900 cm away, a stranded member and a non-member are not shocked"),
+        Row[6]->GetResolveMilli() == pd::kNormalCeiling && Row[7]->GetResolveMilli() == pd::kBaseline
+        && N->GetResolveMilli() == pd::kBaseline);
+    Kill(Row[1]);
+    Kill(Row[2]);
+    TestTrue(TEXT("Three casualties: R3..R5 lost 15, R6 lost 10"),
+        Values({Row[3], Row[4], Row[5], Row[6]}) == TArray<int32>({65000, 65000, 65000, 70000}));
+    Kill(Row[3]);
+    TestTrue(TEXT("DISC-10 the cap: R4 and R5 lose nothing more in the window, R6 reaches its 15"),
+        Values({Row[4], Row[5], Row[6]}) == TArray<int32>({65000, 65000, 65000}));
+    TestEqual(TEXT("The row formation keeps its four survivors"),
+        Formations.Find(Formations.FormationOf(Row[4]->GetStableId())) ? static_cast<int32>(Formations.Find(Formations.FormationOf(Row[4]->GetStableId()))->members.size()) : 0, 4);
+
+    // DISC-10: each unit's window opens at its own first shock. At FirstKillStep + 100 R5's window
+    // (opened by R0's death) has closed; R6's (opened one step later) has not.
+    for (int32 Guard = 0; F.Match->SimulationStepsExecuted + 1 < FirstKillStep + pd::kCasualtyShockWindowSteps && Guard < 200; ++Guard) F.Step();
+    const TArray<int32> BeforeLate = Values({Row[5], Row[6]});
+    TestTrue(TEXT("The late casualty does not fall on an evaluation"), (F.Match->SimulationStepsExecuted + 1) % pd::kEvaluationIntervalSteps != 0);
+    Kill(Row[4]);
+    TestEqual(TEXT("DISC-10 a new window: R5 loses 5 again"), Row[5]->GetResolveMilli(), BeforeLate[0] - pd::kCasualtyShock);
+    TestEqual(TEXT("DISC-10 R6's window is still spent"), Row[6]->GetResolveMilli(), BeforeLate[1]);
 
     F.Match->FormationSlotProbeForTest = nullptr;
     return true;
