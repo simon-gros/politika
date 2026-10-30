@@ -8465,11 +8465,16 @@ fn formation_stance_session(options: &DedicatedOptions, report: &mut Report) -> 
                 .into_iter()
                 .filter(|l| l.contains("phase=arrived") || l.contains("phase=failed"))
                 .collect();
+            // Settled: every chaser disengaged, and every one walking back reached its post.
+            let all_disengaged = !engaged.is_empty()
+                && engaged
+                    .iter()
+                    .all(|e| disengaged.iter().any(|d| unit_field(d) == unit_field(e)));
             let returning = disengaged
                 .iter()
                 .filter(|l| l.contains(" return=1 "))
                 .count();
-            if (destroyed.is_ok() && returned.len() >= returning && !engaged.is_empty())
+            if (destroyed.is_ok() && all_disengaged && returned.len() >= returning)
                 || Instant::now() >= deadline
             {
                 break (engaged, disengaged, returned);
