@@ -425,10 +425,11 @@ void APolitikaPrototypeMatch::TriggerRoutWitness(const APolitikaPrototypeUnit& R
         UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=0 reason=no_unit"));
         return;
     }
-    // 1000 cm from the rally point, first towards the witness's own side, turning in 15 degree
-    // steps until the point is open ground inside the map, 900 cm clear of the control point (the
-    // witness must not stand on it), and its straight walk keeps 900 cm from every soldier of the
-    // routed side that can still fire, so the witness does not fight.
+    // About 1000 cm from the rally point (inside the witness's 1200 cm sight, beyond weapon range),
+    // first towards the witness's own side, turning in 15 degree steps until the point is open
+    // ground inside the map, 900 cm clear of the control point (the witness must not stand on it)
+    // and 700 cm clear of every soldier of the routed side that can still fire, so the witness
+    // does not stop inside their weapon range. The walk there is an ordinary route.
     const FVector2D Rally(Routed.RoutRallyPoint);
     const FVector2D From(Witness->GetActorLocation());
     const FVector2D Base = (From - Rally).GetSafeNormal();
@@ -437,38 +438,42 @@ void APolitikaPrototypeMatch::TriggerRoutWitness(const APolitikaPrototypeUnit& R
     for (const APolitikaPrototypeUnit* Unit : Units)
         if (IsValid(Unit) && Unit->IsAlive() && !Unit->IsRouted() && Unit->GetOwnerPlayer() == Routed.GetOwnerPlayer())
             Avoid.Add(FVector2D(Unit->GetActorLocation()));
-    const auto Clearance = [&Avoid, &From](const FVector2D& To)
+    const auto Clearance = [&Avoid](const FVector2D& To)
     {
         double Best = TNumericLimits<double>::Max();
-        const FVector2D Segment = To - From;
-        const double Length = Segment.SizeSquared();
-        for (const FVector2D& Point : Avoid)
-        {
-            const double T = Length > 0.0 ? FMath::Clamp(FVector2D::DotProduct(Point - From, Segment) / Length, 0.0, 1.0) : 0.0;
-            Best = FMath::Min(Best, FVector2D::Distance(Point, From + Segment * T));
-        }
+        for (const FVector2D& Point : Avoid) Best = FMath::Min(Best, FVector2D::Distance(Point, To));
         return Best;
     };
-    constexpr double DistanceCm = 1000.0;
-    for (int32 Turn = 0; Turn <= 24; ++Turn)
-    {
-        const double Degrees = 15.0 * ((Turn + 1) / 2) * (Turn % 2 == 0 ? 1.0 : -1.0);
-        const FVector2D Point = Rally + Base.GetRotated(Degrees) * DistanceCm;
-        const FVector2D MapPoint = Point - PlayableMin;
-        float GroundZ = Witness->GetActorLocation().Z;
-        if (Clearance(Point) < 900.0 || FVector2D::Distance(Point, ObjectivePoint) < 900.0 || MapPoint.X < 200.0 || MapPoint.Y < 200.0
-            || MapPoint.X > PlayableMax.X - PlayableMin.X - 200.0 || MapPoint.Y > PlayableMax.Y - PlayableMin.Y - 200.0
-            || !FormationAnchorGround({MapPoint.X, MapPoint.Y}, GroundZ)
-            || !IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, MapPoint, GroundZ))
-            continue;
-        SubmitMove(Witness->GetOwnerPlayer(), Witness, FVector(Point.X, Point.Y, GroundZ));
-        UE_LOG(LogPolitikaStartup, Display,
-            TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=1 unit=%llu owner=%u x=%.1f y=%.1f rally=%.1f,%.1f rally_distance=%.1f clearance=%.1f turn_deg=%.0f step=%llu"),
-            Witness->GetStableId(), Witness->GetOwnerPlayer(), Point.X, Point.Y, Rally.X, Rally.Y, DistanceCm, Clearance(Point),
-            Degrees, SimulationStepsExecuted);
-        return;
-    }
-    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=0 reason=no_open_point"));
+    // Inside sight (1200 cm) and beyond weapon range of the rally point.
+    constexpr double Distances[] = {1000.0, 900.0, 1100.0};
+    int32 Rejected[4] = {};
+    for (const double DistanceCm : Distances)
+        for (int32 Turn = 0; Turn <= 24; ++Turn)
+        {
+            const double Degrees = 15.0 * ((Turn + 1) / 2) * (Turn % 2 == 0 ? 1.0 : -1.0);
+            const FVector2D Point = Rally + Base.GetRotated(Degrees) * DistanceCm;
+            const FVector2D MapPoint = Point - PlayableMin;
+            if (MapPoint.X < 200.0 || MapPoint.Y < 200.0 || MapPoint.X > PlayableMax.X - PlayableMin.X - 200.0
+                || MapPoint.Y > PlayableMax.Y - PlayableMin.Y - 200.0)
+            { ++Rejected[0]; continue; }
+            if (FVector2D::Distance(Point, ObjectivePoint) < 900.0) { ++Rejected[1]; continue; }
+            if (Clearance(Point) < 700.0) { ++Rejected[2]; continue; }
+            // The same complete-route query the Move will make.
+            const FVector Destination(Point.X, Point.Y, Witness->GetActorLocation().Z);
+            TArray<FVector> Route;
+            FVector Resolved;
+            FString Failure;
+            if (!ResolveNavigationRoute(Witness, Destination, Route, Resolved, Failure, 0)) { ++Rejected[3]; continue; }
+            SubmitMove(Witness->GetOwnerPlayer(), Witness, Destination);
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=1 unit=%llu owner=%u x=%.1f y=%.1f rally=%.1f,%.1f rally_distance=%.1f clearance=%.1f turn_deg=%.0f step=%llu"),
+                Witness->GetStableId(), Witness->GetOwnerPlayer(), Point.X, Point.Y, Rally.X, Rally.Y, DistanceCm, Clearance(Point),
+                Degrees, SimulationStepsExecuted);
+            return;
+        }
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=0 reason=no_open_point from=%.1f,%.1f rally=%.1f,%.1f avoid=%d outside=%d objective=%d clearance=%d route=%d"),
+        From.X, From.Y, Rally.X, Rally.Y, Avoid.Num(), Rejected[0], Rejected[1], Rejected[2], Rejected[3]);
 }
 #endif
 
