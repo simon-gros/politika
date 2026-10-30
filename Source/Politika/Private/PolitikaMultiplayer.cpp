@@ -158,6 +158,8 @@ void APolitikaPrototypePlayerController::GetLifetimeReplicatedProps(TArray<FLife
     DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, AssignedSlotId, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, AssignedFactionId, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, AssignedMatchGeneration, COND_OwnerOnly);
+    // A participant sees only its own formations (FORM-F3); other teams never learn them.
+    DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, OwnFormations, COND_OwnerOnly);
 }
 
 void APolitikaPrototypeMatch::SyncReplicatedParticipants()
@@ -446,6 +448,7 @@ void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
 #if !UE_BUILD_SHIPPING
     ReportNetworkMeasurements(TEXT("end_play"));
 #endif
+    ClearFormations(TEXT("end_play"));
     ParticipantBindings.Reset();
     OutcomeRoutes.Reset();
     Super::EndPlay(EndPlayReason);
@@ -1187,6 +1190,7 @@ void APolitikaPrototypePlayerController::ClearServerAssignment()
     AssignedSlotId = 0;
     AssignedFactionId = NAME_None;
     AssignedMatchGeneration = 0;
+    OwnFormations.Reset();
     ClearSelectionState();
 }
 

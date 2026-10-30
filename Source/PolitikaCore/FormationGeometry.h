@@ -2,9 +2,9 @@
 
 // Portable group-move geometry (RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md §4 and §10, FORM-F2).
 // A selected group ordered to a point gets one distinct destination per member, laid out as a
-// Line or a Column facing the direction of travel. This is geometry only: there is no
-// formation instance, membership, stance or Cohesion (FORM-F3+), and every destination is
-// still sent as an ordinary single-issuer Move that the server admits and routes on its own.
+// Line or a Column facing the direction of travel. This is geometry only: formation identity,
+// membership and regroup live in Formation.h (FORM-F3), and every destination is still sent
+// as an ordinary single-issuer Move that the server admits and routes on its own.
 
 #include <algorithm>
 #include <cmath>
@@ -145,9 +145,11 @@ struct Plan {
 //  - members are ordered front to back along the facing and left to right inside each rank,
 //    and matched to the legal slots in the same order, so neighbours do not cross paths;
 //  - a single member goes to the anchor exactly, as an ordinary single-unit order does.
+// `fixedFacing`, when finite and non-zero, replaces the travel direction (a regroup keeps the
+// facing of the move it repairs instead of turning towards wherever the survivors stand).
 template <class IsLegal>
 [[nodiscard]] Plan PlanGroupMove(std::span<const Member> input, Point anchor, Shape shape, IsLegal&& isLegal,
-    const Layout& layout = {}, Point fallbackFacing = {1.0, 0.0}) {
+    const Layout& layout = {}, Point fallbackFacing = {1.0, 0.0}, Point fixedFacing = {0.0, 0.0}) {
     Plan plan;
     plan.shape = shape;
     std::vector<Member> members(input.begin(), input.end());
@@ -182,7 +184,10 @@ template <class IsLegal>
         ? Point{fallbackFacing.x / std::hypot(fallbackFacing.x, fallbackFacing.y),
               fallbackFacing.y / std::hypot(fallbackFacing.x, fallbackFacing.y)}
         : Point{1.0, 0.0};
-    plan.facing = TravelFacing(centroid, anchor, fallback, layout.minTravelCm);
+    const double fixedLength = std::hypot(fixedFacing.x, fixedFacing.y);
+    plan.facing = IsFinite(fixedFacing) && fixedLength > 0.0 && std::isfinite(fixedLength)
+        ? Point{fixedFacing.x / fixedLength, fixedFacing.y / fixedLength}
+        : TravelFacing(centroid, anchor, fallback, layout.minTravelCm);
 
     // Nominal slots first, then spares; keep the first legal ones up to one per member.
     const std::size_t count = members.size();

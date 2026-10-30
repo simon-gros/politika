@@ -4,6 +4,7 @@
 #include "UnitScale.h"
 #include "GroupSelection.h"
 #include "FormationGeometry.h"
+#include "Formation.h"
 
 #include <cassert>
 #include <iterator>
@@ -558,6 +559,168 @@ int main() {
         assert(Twenty20.unplaced == 0 && std::abs(MinimumSeparation(Twenty20) - 150.0) < 1e-9);
         const Plan Column20 = PlanGroupMove(Twenty, {4000.0, 600.0}, Shape::Column, Always);
         assert(Column20.unplaced == 0 && std::abs(MinimumSeparation(Column20) - 150.0) < 1e-9);
+        // A fixed facing overrides the travel direction (regroups keep the repaired move's facing).
+        const Plan Fixed = PlanGroupMove(Group, Anchor, Shape::Line, Always, {}, {1.0, 0.0}, {0.0, -2.0});
+        assert(Near(Fixed.facing, {0.0, -1.0}) && Fixed.unplaced == 0);
+        assert(Near(PlanGroupMove(Group, Anchor, Shape::Line, Always, {}, {1.0, 0.0}, {std::nan(""), 1.0}).facing, {1.0, 0.0}));
+    }
+
+    // FORM-F3 formation instances: explicit Form/Release, one formation per unit, member loss,
+    // independent overrides and one bounded regroup per loss window.
+    {
+        using namespace politika::formation;
+        const auto Always = [](Point) { return true; };
+        const auto Near = [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; };
+        const auto Unit = [](EntityId Id, std::uint32_t Owner) { Entity E{Id, Owner}; return E; };
+        std::vector<Entity> Eight;
+        for (EntityId Id = 1; Id <= 8; ++Id) Eight.push_back(Unit(Id, 1));
+        const auto At = [](EntityId Id) { return Point{1000.0 + static_cast<double>(Id) * 10.0, 1000.0}; };
+        static_assert(OpName(FormationOp::AttackMove) == "attack_move" && StateName(FormationState::Degraded) == "degraded");
+        static_assert(kFormationRejectionCount == 15 && !FormationId{} && FormationId{3});
+
+        // Payload shape checks fail closed before any authoritative state is read.
+        const EntityId Two[] = {4, 7};
+        const EntityId Dup[] = {4, 4};
+        const EntityId ZeroId[] = {0, 4};
+        const EntityId One[] = {4};
+        assert(CheckIntentShape({0, 0, 0, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 1, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 2, Two}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 5, 0, Two}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 0, Two, 1.0, 0.0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 0, Dup}) == FormationRejection::DuplicateMember);
+        assert(CheckIntentShape({0, 0, 0, ZeroId}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 0, One}) == FormationRejection::TooFewMembers);
+        assert(CheckIntentShape({0, 0, 0, {}}) == FormationRejection::TooFewMembers);
+        std::vector<EntityId> SixtyFive(65);
+        for (std::size_t Index = 0; Index < SixtyFive.size(); ++Index) SixtyFive[Index] = Index + 1;
+        assert(CheckIntentShape({0, 0, 0, SixtyFive}) == FormationRejection::TooManyMembers);
+        assert(CheckIntentShape({1, 0, 0, One}) == FormationRejection::None);
+        assert(CheckIntentShape({1, 0, 1, One}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({1, 0, 0, {}}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 0, {}, 10.0, 20.0}) == FormationRejection::None);
+        assert(CheckIntentShape({3, 3, 0, {}, 10.0, 20.0}) == FormationRejection::None);
+        assert(CheckIntentShape({2, 0, 0, {}, 10.0, 20.0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 0, Two, 10.0, 20.0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 0, {}, std::nan(""), 20.0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({4, 3, 0, {}}) == FormationRejection::None);
+        assert(CheckIntentShape({4, 3, 0, {}, 1.0, 0.0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 3, 0, {}}) == FormationRejection::MalformedCommand);
+
+        // Form validates every member against authoritative state and changes nothing on rejection.
+        Registry Formations;
+        assert(Formations.Form(0, Eight, Shape::Line, 1).rejection == FormationRejection::Unauthorized);
+        assert(Formations.Form(1, std::span<const Entity>(Eight.data(), 1), Shape::Line, 1).rejection == FormationRejection::TooFewMembers);
+        std::vector<Entity> Bad = Eight;
+        Bad[3].owner_player = 2;
+        assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::MemberUnavailable);
+        Bad = Eight; Bad[2].alive = false;
+        assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::MemberUnavailable);
+        Bad = Eight; Bad[2].movable = false;
+        assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::MemberUnavailable);
+        Bad = Eight; Bad[5].id = 2;
+        assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::DuplicateMember);
+        assert(Formations.Empty());
+        const Change Formed = Formations.Form(1, Eight, Shape::Column, 1);
+        assert(Formed.Accepted() && Formed.formed == FormationId{1} && Formed.dissolved.empty());
+        const Formation* First = Formations.FindOwned(FormationId{1}, 1);
+        assert(First && First->members.size() == 8 && First->shape == Shape::Column && First->formedMembers == 8);
+        assert(!First->hasDestination && First->FollowingCount() == 0 && First->state == FormationState::Organized);
+        assert(Formations.FormationOf(5) == FormationId{1} && !Formations.FormationOf(9));
+        // Another participant cannot see or address it: unknown and foreign IDs look the same.
+        assert(!Formations.FindOwned(FormationId{1}, 2) && !Formations.FindOwned(FormationId{9}, 1));
+        assert(Formations.PlanMove(2, FormationId{1}, {3000, 1000}, false, At, Always).rejection == FormationRejection::UnknownFormation);
+        assert(Formations.Stop(2, FormationId{1}) == FormationRejection::UnknownFormation);
+        const EntityId Foreign[] = {3};
+        assert(Formations.Release(2, Foreign, 1).rejection == FormationRejection::NotMember);
+
+        // A formation move plans one slot per member with the stored shape; all follow it.
+        assert(Formations.PlanMove(1, FormationId{1}, {std::nan(""), 0}, false, At, Always).rejection
+            == FormationRejection::InvalidDestination);
+        const MovePlan Moved = Formations.PlanMove(1, FormationId{1}, {3000, 1000}, false, At, Always);
+        assert(Moved.rejection == FormationRejection::None && Moved.orders.size() == 8 && Moved.plan.shape == Shape::Column);
+        assert(std::is_sorted(Moved.orders.begin(), Moved.orders.end(), [](const MemberOrder& A, const MemberOrder& B) { return A.id < B.id; }));
+        assert(std::abs(MinimumSeparation(Moved.plan) - 150.0) < 1e-9);
+        First = Formations.Find(FormationId{1});
+        assert(First->hasDestination && First->FollowingCount() == 8 && Near(First->facing, {1.0, 0.0}));
+
+        // FORM-07: an individual order for one member leaves the others following and keeps
+        // membership; the member's own formation orders keep it following.
+        assert(Formations.NoteOrderAdmitted(3, FormationId{1}) == false && First->Find(3)->following);
+        assert(Formations.NoteOrderAdmitted(3, FormationId{}) == true);
+        assert(!First->Find(3)->following && First->FollowingCount() == 7 && First->members.size() == 8);
+        assert(Formations.NoteOrderAdmitted(3, FormationId{}) == false);
+        assert(Formations.NoteOrderAdmitted(42, FormationId{}) == false);
+
+        // FORM-08: two losses inside one window share one regroup, which keeps the anchor and
+        // facing and moves only following members whose slot changed.
+        const Change Lost = Formations.MemberLost(8, 100);
+        assert(Lost.left.size() == 1 && Lost.left[0].reason == LeaveReason::Destroyed && Lost.dissolved.empty());
+        assert(Lost.regroups.size() == 1 && Lost.regroups[0].dueStep == 100 + kRegroupDelaySteps);
+        assert(First->state == FormationState::Degraded && First->losses == 1);
+        const Change Lost2 = Formations.MemberLost(7, 110);
+        assert(Lost2.regroups.empty() && First->regroupDueStep == 140);
+        assert(Formations.DueRegroups(139).empty() && Formations.DueRegroups(140).size() == 1);
+        const MovePlan Regroup = Formations.PlanRegroup(FormationId{1}, 140, At, Always);
+        assert(Regroup.rejection == FormationRejection::None && Regroup.plan.assignments.size() == 5);
+        assert(std::none_of(Regroup.orders.begin(), Regroup.orders.end(), [](const MemberOrder& O) { return O.id == 3; }));
+        assert(!Regroup.orders.empty() && Regroup.orders.size() <= 5 && Near(Regroup.plan.facing, {1.0, 0.0}));
+        assert(First->state == FormationState::Organized && First->regroups == 1 && First->regroupDueStep == 0);
+        assert(Formations.DueRegroups(1000).empty());
+        // Losing the independent member leaves the following set unchanged: the rate-limited
+        // regroup re-plans the same slots and re-sends nothing.
+        const Change Lost3 = Formations.MemberLost(3, 150);
+        assert(Lost3.regroups.size() == 1 && Lost3.regroups[0].dueStep == 190);  // rate limit: >= last + 40
+        const MovePlan Regroup2 = Formations.PlanRegroup(FormationId{1}, 190, At, Always);
+        assert(Regroup2.plan.assignments.size() == 5 && Regroup2.orders.empty() && First->regroups == 2);
+        // A regroup is only planned when one is due.
+        assert(Formations.PlanRegroup(FormationId{1}, 200, At, Always).rejection == FormationRejection::UnknownFormation);
+
+        // Losing all but one member dissolves the formation.
+        for (EntityId Id : {1, 2, 4, 5}) (void)Formations.MemberLost(Id, 300);
+        assert(Formations.Find(FormationId{1}) == nullptr && Formations.Empty());
+        assert(Formations.MemberLost(6, 301).rejection == FormationRejection::NotMember);
+
+        // One formation per unit: forming a subset moves it and dissolves an emptied formation;
+        // IDs never repeat. Release removes listed members; a formation left with one dissolves.
+        const Change A = Formations.Form(1, Eight, Shape::Line, 400);
+        assert(A.formed == FormationId{2});
+        const Change B = Formations.Form(1, std::span<const Entity>(Eight.data(), 3), Shape::Line, 401);
+        assert(B.formed == FormationId{3} && B.left.size() == 3 && B.dissolved.empty());
+        assert(Formations.Find(FormationId{2})->members.size() == 5 && Formations.FormationOf(1) == FormationId{3});
+        assert(B.regroups.empty());  // formation 2 had no destination
+        const Change C = Formations.Form(1, std::span<const Entity>(Eight.data() + 3, 5), Shape::Column, 402);
+        assert(C.formed == FormationId{4} && C.dissolved.size() == 1 && C.dissolved[0].reason == DissolveReason::Reformed);
+        assert(!Formations.Find(FormationId{2}) && Formations.All().size() == 2);
+        const EntityId ReleaseTwo[] = {1, 2, 99};
+        const Change Released = Formations.Release(1, ReleaseTwo, 403);
+        assert(Released.Accepted() && Released.left.size() == 2 && Released.dissolved.size() == 1
+            && Released.dissolved[0].formation == FormationId{3} && Released.dissolved[0].reason == DissolveReason::Released);
+        assert(!Formations.FormationOf(3) && Formations.FormationOf(4) == FormationId{4});
+
+        // Stop forgets the destination: following ends, and losses schedule no regroup.
+        (void)Formations.PlanMove(1, FormationId{4}, {3000, 1000}, true, At, Always);
+        assert(Formations.Find(FormationId{4})->attackMove && Formations.Find(FormationId{4})->FollowingCount() == 5);
+        assert(Formations.Stop(1, FormationId{4}) == FormationRejection::None);
+        assert(Formations.Find(FormationId{4})->FollowingCount() == 0);
+        assert(Formations.NoteOrderAdmitted(5, FormationId{4}) == false && !Formations.Find(FormationId{4})->Find(5)->following);
+        assert(Formations.MemberLost(5, 500).regroups.empty());
+
+        // Per-participant limit, counted after formations this Form would empty.
+        Registry Limited;
+        std::vector<Entity> Many;
+        for (EntityId Id = 1; Id <= 22; ++Id) Many.push_back(Unit(Id, 1));
+        for (std::size_t Index = 0; Index < kMaxFormationsPerParticipant; ++Index)
+            assert(Limited.Form(1, std::span<const Entity>(Many.data() + Index * 2, 2), Shape::Line, 1).Accepted());
+        assert(Limited.CountOwned(1) == kMaxFormationsPerParticipant);
+        assert(Limited.Form(1, std::span<const Entity>(Many.data() + 20, 2), Shape::Line, 1).rejection == FormationRejection::FormationLimit);
+        assert(Limited.Form(1, std::span<const Entity>(Many.data(), 2), Shape::Column, 1).Accepted());  // re-forms formation 1's pair
+        std::vector<Entity> OtherOwner{Unit(30, 2), Unit(31, 2)};
+        assert(Limited.Form(2, OtherOwner, Shape::Line, 1).Accepted());
+        // Clear retires every formation exactly once; IDs keep increasing afterwards.
+        const Change Cleared = Limited.Clear();
+        assert(Cleared.dissolved.size() == kMaxFormationsPerParticipant + 1 && Limited.Empty() && Limited.Clear().dissolved.empty());
+        assert(Limited.Form(1, std::span<const Entity>(Many.data(), 2), Shape::Line, 2).formed == FormationId{13});
     }
 
     // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.

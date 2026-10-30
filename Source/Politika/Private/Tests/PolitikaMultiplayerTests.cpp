@@ -1458,4 +1458,235 @@ bool FPolitikaMultiplayerGroupMoveShapeTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationLifecycleTest,
+    "Politika.RTS.Multiplayer.FormationLifecycle",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerFormationLifecycleTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    if (!TestTrue(TEXT("Host and enemy are bound"), HostId != 0 && EnemyId != 0)) return false;
+
+    // The first FORM fixture: eight own infantry, plus one enemy unit.
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 8; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 4) * 40.0, -1200.0 + (Index / 4) * 40.0}));
+    APolitikaPrototypeUnit* EnemyUnit = F.AddUnit(EnemyId, {1500, 1500});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !EnemyUnit)) return false;
+    // No physics or navmesh here: every slot and anchor is open unless a probe says otherwise.
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    const pf::Registry& Formations = F.Match->GetFormations();
+    auto LastOutcome = [&F](const APlayerController* Source) -> const FPolitikaNetFormationOutcome*
+    {
+        for (int32 Index = F.Match->TestFormationOutcomes.Num() - 1; Index >= 0; --Index)
+            if (F.Match->TestFormationOutcomes[Index].Key.Get() == Source) return &F.Match->TestFormationOutcomes[Index].Value;
+        return nullptr;
+    };
+    auto Request = [&F, Host](APolitikaPrototypePlayerController* Source, pf::FormationOp Op, uint32 FormationId,
+        TArray<uint64> Members = {}, double X = 0.0, double Y = 0.0)
+    {
+        FPolitikaNetFormationIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.FormationId = FormationId;
+        Intent.Members = MoveTemp(Members);
+        Intent.DestinationX = X;
+        Intent.DestinationY = Y;
+        // The host's own input shares this sequence, exactly like one client connection.
+        uint32& Sequence = Source == Host ? Host->NextClientSequence : F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto Code = [](pf::FormationRejection Value) { return static_cast<int32>(Value); };
+    auto Rejection = [&](APolitikaPrototypePlayerController* Source, const FPolitikaNetFormationIntent& Intent) -> int32
+    {
+        F.Match->SubmitFormationIntent(Source, Intent);
+        const FPolitikaNetFormationOutcome* Outcome = LastOutcome(Source);
+        return Outcome && Outcome->CorrelationId == Intent.CorrelationId && !Outcome->bAccepted
+            ? static_cast<int32>(Outcome->Rejection) : 0;
+    };
+    TArray<uint64> OwnIds;
+    for (const APolitikaPrototypeUnit* Unit : Own) OwnIds.Add(Unit->GetStableId());
+
+    // FORM-01: foreign, Unaligned-free and malformed requests fail closed and change nothing.
+    TArray<uint64> WithEnemy = {OwnIds[0], EnemyUnit->GetStableId()};
+    TestEqual(TEXT("FORM-01 a foreign unit cannot be formed"), Rejection(Host, Request(Host, pf::FormationOp::Form, 0, WithEnemy)),
+        Code(pf::FormationRejection::MemberUnavailable));
+    TestEqual(TEXT("FORM-01 the enemy cannot form the host's units"),
+        Rejection(Enemy, Request(Enemy, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]})), Code(pf::FormationRejection::MemberUnavailable));
+    TestEqual(TEXT("FORM-03 an unknown ID is unavailable"), Rejection(Host, Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], 999999})),
+        Code(pf::FormationRejection::MemberUnavailable));
+    TestEqual(TEXT("FORM-03 a duplicated member is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[0]})),
+        Code(pf::FormationRejection::DuplicateMember));
+    FPolitikaNetFormationIntent BadShape = Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]});
+    BadShape.Shape = 7;
+    TestEqual(TEXT("FORM-03 an unknown shape is malformed"), Rejection(Host, BadShape), Code(pf::FormationRejection::MalformedCommand));
+    FPolitikaNetFormationIntent OldProtocol = Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]});
+    OldProtocol.ProtocolVersion -= 1;
+    TestEqual(TEXT("An older protocol is malformed"), Rejection(Host, OldProtocol), Code(pf::FormationRejection::MalformedCommand));
+    FPolitikaNetFormationIntent Stale = Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]});
+    Stale.MatchGeneration -= 1;
+    TestEqual(TEXT("FORM-15 an earlier generation is stale"), Rejection(Host, Stale), Code(pf::FormationRejection::StaleMatch));
+    TestTrue(TEXT("FORM-01 rejected requests create no formation"), Formations.Empty() && Host->GetOwnFormations().IsEmpty());
+
+    // FORM-02: selection and control groups alone never create membership.
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    TestTrue(TEXT("Control groups sync"), Host->SyncControlGroups(F.Match));
+    Host->ApplyControlGroupInput(F.Match, 1, true, false, false, TEXT("automation"));
+    TestTrue(TEXT("FORM-02 selecting and grouping create no formation"), Formations.Empty());
+    TestTrue(TEXT("Not yet a whole formation"), Host->SelectedWholeFormation(Host->GetCommandableSelectedUnits(F.Match)) == nullptr);
+
+    // T forms the selection with the current (Column) shape.
+    Host->CycleGroupMoveShape();
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms one formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Id = Formations.All().front().id;
+    TestTrue(TEXT("Formation holds the eight members in Column"), Formations.Find(Id)->members.size() == 8
+        && Formations.Find(Id)->shape == pf::Shape::Column && Formations.Find(Id)->owner == HostId);
+    TestTrue(TEXT("Form outcome accepted with eight members"), LastOutcome(Host) && LastOutcome(Host)->bAccepted
+        && LastOutcome(Host)->Members == 8 && LastOutcome(Host)->FormationId == Id.value);
+    TestEqual(TEXT("The host sees its formation"), Host->GetOwnFormations().Num(), 1);
+    TestTrue(TEXT("The owner-only view lists the members"), Host->GetOwnFormations().Num() == 1
+        && Host->GetOwnFormations()[0].Members == OwnIds);
+    TestEqual(TEXT("The enemy controller is sent nothing"), Enemy->GetOwnFormations().Num(), 0);
+    TestTrue(TEXT("The selection is now exactly this formation"),
+        Host->SelectedWholeFormation(Host->GetCommandableSelectedUnits(F.Match)) != nullptr);
+    TestEqual(TEXT("Re-sending the same sequence is a duplicate"),
+        [&] { FPolitikaNetFormationIntent Replay = Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]});
+            Replay.ClientSequence = 1; return Rejection(Host, Replay); }(), Code(pf::FormationRejection::DuplicateCommand));
+
+    // A formation move: the server plans one slot per member and submits ordinary member orders.
+    const FVector Ground(-300.0, -1180.0, 42.0);
+    const FVector2D Map(Ground.X - F.Match->GetPlayableMin().X, Ground.Y - F.Match->GetPlayableMin().Y);
+    TestEqual(TEXT("FORM-01 the enemy cannot move the host's formation"),
+        Rejection(Enemy, Request(Enemy, pf::FormationOp::Move, Id.value, {}, Map.X, Map.Y)), Code(pf::FormationRejection::UnknownFormation));
+    TestEqual(TEXT("A destination outside the map is rejected"),
+        Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, {}, -10.0, Map.Y)), Code(pf::FormationRejection::InvalidDestination));
+    TestEqual(TEXT("Rejected moves queue nothing"), F.Match->PendingOrders.Num(), 0);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    TestEqual(TEXT("FORM-04 one member order per member"), F.Match->PendingOrders.Num(), 8);
+    TSet<uint64> Issuers;
+    TArray<FVector> Points;
+    bool bTagged = true;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+    {
+        Issuers.Add(Pending.Request.issuer_entity_id);
+        Points.Add(Pending.Destination);
+        bTagged &= Pending.FormationId == Id.value && Pending.Kind == EPolitikaPrototypeOrder::Move;
+    }
+    double Separation = TNumericLimits<double>::Max();
+    for (int32 A = 0; A < Points.Num(); ++A)
+        for (int32 B = A + 1; B < Points.Num(); ++B) Separation = FMath::Min(Separation, FVector::Dist2D(Points[A], Points[B]));
+    TestTrue(TEXT("FORM-04 distinct members, distinct slots a full spacing apart"),
+        Issuers.Num() == 8 && FMath::Abs(Separation - 150.0) < 0.01 && bTagged);
+    FBox2D Extent(ForceInit);
+    for (const FVector& Point : Points) Extent += FVector2D(Point.X, Point.Y);
+    TestTrue(TEXT("FORM-04 the stored Column shape is used, not the local V choice"),
+        FMath::IsNearlyEqual(Extent.GetSize().X, 450.0, 0.01) && FMath::IsNearlyEqual(Extent.GetSize().Y, 150.0, 0.01));
+    TestTrue(TEXT("Formation holds the move"), Formations.Find(Id)->hasDestination && Formations.Find(Id)->FollowingCount() == 8);
+    F.Step();
+    const APolitikaPrototypePlayerController::FCommandBatch* Batch = Host->CommandBatches.IsEmpty() ? nullptr : &Host->CommandBatches.Last();
+    TestTrue(TEXT("FORM-06 the member outcomes tally under the request: 8 of 8 accepted"),
+        Batch && Batch->Tally.Complete() && Batch->Tally.accepted == 8 && Batch->Tally.rejected == 0);
+
+    // FORM-07: one member's individual order makes only that member independent.
+    Host->SubmitGroupIntent(F.Match, {Own[2]}, nullptr, StopOrder{});
+    TestEqual(TEXT("An individual Stop is one ordinary order"), F.Match->PendingOrders.Num(), 1);
+    TestEqual(TEXT("An individual order carries no formation"), F.Match->PendingOrders[0].FormationId, 0u);
+    F.Step();
+    TestTrue(TEXT("FORM-07 the stopped member stays a member but is independent"),
+        Formations.Find(Id)->members.size() == 8 && !Formations.Find(Id)->Find(OwnIds[2])->following
+        && Formations.Find(Id)->FollowingCount() == 7);
+
+    // FORM-09/08: two losses close the ranks once, after the hysteresis window, for the members
+    // still following; the independent member keeps its own order.
+    Own[7]->PendingDamage = static_cast<float>(Own[7]->GetHealth() + 1);
+    F.Step();
+    const uint64 LossStep = F.Match->SimulationStepsExecuted;
+    TestTrue(TEXT("FORM-09 the dead member leaves; the formation is degraded"),
+        Formations.Find(Id)->members.size() == 7 && Formations.Find(Id)->state == pf::FormationState::Degraded);
+    TestTrue(TEXT("A regroup is scheduled after the hysteresis window"), Formations.Find(Id)->regroupDueStep
+        == LossStep + pf::kRegroupDelaySteps);
+    F.Step(5);
+    Own[6]->PendingDamage = static_cast<float>(Own[6]->GetHealth() + 1);
+    F.Step();
+    TestTrue(TEXT("A second loss inside the window keeps the same regroup"), Formations.Find(Id)->regroupDueStep
+        == LossStep + pf::kRegroupDelaySteps);
+    while (F.Match->SimulationStepsExecuted < LossStep + pf::kRegroupDelaySteps - 1)
+    {
+        F.Step();
+        TestEqual(TEXT("Nothing is re-sent before the regroup is due"), F.Match->PendingOrders.Num(), 0);
+    }
+    F.Step();
+    TestEqual(TEXT("FORM-08 exactly one regroup ran"), Formations.Find(Id)->regroups, 1u);
+    TestTrue(TEXT("The regroup closed the ranks"), Formations.Find(Id)->state == pf::FormationState::Organized);
+    bool bOnlyFollowers = !F.Match->PendingOrders.IsEmpty();
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+        bOnlyFollowers &= Pending.FormationId == Id.value && Pending.Request.issuer_entity_id != OwnIds[2]
+            && Pending.Request.issuer_entity_id != OwnIds[6] && Pending.Request.issuer_entity_id != OwnIds[7];
+    TestTrue(TEXT("FORM-07/08 regroup orders go to following members only"), bOnlyFollowers && F.Match->PendingOrders.Num() <= 5);
+    F.Step(100);
+    TestEqual(TEXT("FORM-08 no oscillation: no further regroup without a new loss"), Formations.Find(Id)->regroups, 1u);
+
+    // A mixed selection (part of the formation) is an ordinary batch, not a formation order.
+    Host->ApplySelection({Own[0], Own[1]}, SelectionOp::Replace, TEXT("automation"));
+    TestTrue(TEXT("Two members are not the whole formation"),
+        Host->SelectedWholeFormation(Host->GetCommandableSelectedUnits(F.Match)) == nullptr);
+    Host->GuardSelected();
+    bool bOrdinary = F.Match->PendingOrders.Num() == 2;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders) bOrdinary &= Pending.FormationId == 0;
+    TestTrue(TEXT("A partial selection sends ordinary member orders"), bOrdinary);
+    F.Step();
+    TestEqual(TEXT("Both guarded members stay members"), static_cast<int32>(Formations.Find(Id)->members.size()), 6);
+
+    // Formation Stop: the whole formation selected; it forgets its destination.
+    TArray<APolitikaPrototypeUnit*> Living = {Own[0], Own[1], Own[2], Own[3], Own[4], Own[5]};
+    Host->ApplySelection(Living, SelectionOp::Replace, TEXT("automation"));
+    TestTrue(TEXT("Six living members are the whole formation"),
+        Host->SelectedWholeFormation(Host->GetCommandableSelectedUnits(F.Match)) != nullptr);
+    Host->StopSelected();
+    bool bStops = F.Match->PendingOrders.Num() == 6;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+        bStops &= Pending.FormationId == Id.value && Pending.Kind == EPolitikaPrototypeOrder::Stop;
+    TestTrue(TEXT("Formation Stop sends one Stop per member"), bStops && !Formations.Find(Id)->hasDestination);
+    F.Step();
+    Own[5]->PendingDamage = static_cast<float>(Own[5]->GetHealth() + 1);
+    F.Step();
+    TestTrue(TEXT("Without a destination a loss schedules no regroup"), Formations.Find(Id)->regroupDueStep == 0);
+
+    // Release: Y on two members removes them; releasing the rest dissolves the formation.
+    Host->ApplySelection({Own[0], Own[1]}, SelectionOp::Replace, TEXT("automation"));
+    Host->ReleaseSelected();
+    TestEqual(TEXT("Release removes the two members"), static_cast<int32>(Formations.Find(Id)->members.size()), 3);
+    TestTrue(TEXT("Released units have no formation"), !Formations.FormationOf(OwnIds[0]));
+    const int32 OutcomesBefore = F.Match->TestFormationOutcomes.Num();
+    Host->ReleaseSelected();
+    TestEqual(TEXT("Y on units outside any formation sends nothing"), F.Match->TestFormationOutcomes.Num(), OutcomesBefore);
+    Host->ApplySelection({Own[2], Own[3], Own[4]}, SelectionOp::Replace, TEXT("automation"));
+    Host->ReleaseSelected();
+    TestTrue(TEXT("Releasing every member dissolves the formation"), Formations.Empty() && Host->GetOwnFormations().IsEmpty());
+
+    // Re-form, then end the match: FORM-15 retires every formation once and refuses new requests.
+    Host->ApplySelection({Own[0], Own[1], Own[2]}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    TestEqual(TEXT("A new formation gets a new ID"), Formations.All().empty() ? 0u : Formations.All().front().id.value, Id.value + 1);
+    TestEqual(TEXT("Formation limit counts only live formations"), static_cast<int32>(Formations.CountOwned(HostId)), 1);
+    if (!TestTrue(TEXT("Match ends"), F.Match->TransitionLifecycle(MatchPhase::Terminal))) return false;
+    TestTrue(TEXT("FORM-15 Terminal retires every formation and the owner view"),
+        Formations.Empty() && Host->GetOwnFormations().IsEmpty());
+    TestEqual(TEXT("FORM-15 an inactive match refuses formation requests"),
+        Rejection(Host, Request(Host, pf::FormationOp::Form, 0, {OwnIds[0], OwnIds[1]})), Code(pf::FormationRejection::MatchInactive));
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 #endif

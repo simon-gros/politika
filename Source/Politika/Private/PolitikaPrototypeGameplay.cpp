@@ -840,8 +840,12 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
         InfantryProjectiles.Reset();
         StepAccumulator = 0.0f;
         if (Previous == politika::rules::MatchPhase::Active)
+        {
             for (APolitikaPrototypeUnit* Unit : Units)
                 if (Unit && Unit->CanMove()) Unit->StopOrder();
+            // Formations belong to the active match: retire them exactly once (FORM-15).
+            ClearFormations(TEXT("match_ended"));
+        }
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
     SyncReplicatedLifecycle();
@@ -1226,6 +1230,8 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
         PendingGameplayEvents.Reset();
         AdmitPendingOrders();
         RunSimulationStep(SimulationStepSeconds);
+        // Regroups submit ordinary member commands, admitted at the start of the next step.
+        if (Lifecycle.IsActive()) ProcessFormationRegroups();
         StepAccumulator -= SimulationStepSeconds;
         ++Steps;
 #if !UE_BUILD_SHIPPING
@@ -1839,10 +1845,11 @@ void APolitikaPrototypeMatch::SubmitGuard(uint32 PlayerId, APolitikaPrototypeUni
 
 uint64 APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit,
     APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent, uint64 RequestedIssuerId,
-    uint64 CorrelationId, TOptional<uint64> GenerationHint)
+    uint64 CorrelationId, TOptional<uint64> GenerationHint, uint32 FormationId)
 {
     APolitikaPrototypeUnit* ValidUnit = IsValid(Unit) ? Unit : nullptr;
     FPendingOrder Pending;
+    Pending.FormationId = FormationId;
     Pending.Request.match_generation = GenerationHint.Get(MatchGeneration);
     Pending.Request.sequence = NextCommandSequence++;
     Pending.Request.participant_id = PlayerId;
@@ -2346,6 +2353,9 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
                 LastCommandFeedback = TEXT("Sprint active; firing suspended."); break;
             case EPolitikaPrototypeOrder::Idle: break;
         }
+        // FORM-F3: a formation's own member order keeps the member following; any other
+        // admitted order makes it independent while it stays a member.
+        NoteFormationOrderAdmitted(Unit, Pending);
         QueueGameplayEvent(politika::rules::CommandOutcomeEvent{
             SimulationStepsExecuted + 1, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), true,
@@ -2472,6 +2482,8 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
             UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_UNIT_DESTROYED unit=%llu"), Unit->GetStableId());
 #endif
             for (auto& Selection : SelectionByPlayer) Selection.Value.Units.Remove(Unit);
+            if (Formations.FormationOf(Unit->GetStableId()))
+                HandleFormationChange(Formations.MemberLost(Unit->GetStableId(), SimulationStepsExecuted), TEXT("destroyed"));
             Unit->BeginDeathPresentation();
         }
     }
@@ -2664,6 +2676,8 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
             IE_Pressed, this, &APolitikaPrototypePlayerController::ControlGroupKey, Slot);
     InputComponent->BindAction(TEXT("PrototypeSubgroupCycle"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleSubgroup);
     InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
+    InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
+    InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
     InputComponent->BindAxis(TEXT("PrototypePanRight"), this, &APolitikaPrototypePlayerController::PanRight);
@@ -3186,36 +3200,8 @@ bool APolitikaPrototypePlayerController::IsGroupMoveSlotOpen(const APolitikaProt
 #if WITH_DEV_AUTOMATION_TESTS
     if (GroupMoveSlotProbeForTest) return GroupMoveSlotProbeForTest(MapPosition);
 #endif
-    // Keep slots off the very edge of the playable area: the server rejects outside it.
-    constexpr double EdgeMarginCm = 50.0;
-    const FVector2D Size = ActiveMatch.GetPlayableMax() - ActiveMatch.GetPlayableMin();
-    if (MapPosition.X < EdgeMarginCm || MapPosition.Y < EdgeMarginCm || MapPosition.X > Size.X - EdgeMarginCm
-        || MapPosition.Y > Size.Y - EdgeMarginCm)
-        return false;
-    UWorld* World = GetWorld();
-    if (!World) return false;
-    // Ground under the slot: static world geometry only, so units standing there do not count.
-    // A hit far above or below the clicked ground is a rooftop, wall or cliff, not open ground.
-    constexpr float MaxStepCm = 120.0f;
-    constexpr float MinGroundNormalZ = 0.75f;
-    const FVector SlotWorld(ActiveMatch.GetPlayableMin().X + MapPosition.X, ActiveMatch.GetPlayableMin().Y + MapPosition.Y, GroundZ);
-    FHitResult Ground;
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaGroupMoveSlot), false);
-    if (!World->LineTraceSingleByObjectType(Ground, SlotWorld + FVector(0, 0, 2000), SlotWorld - FVector(0, 0, 2000),
-            FCollisionObjectQueryParams(ECC_WorldStatic), Params))
-        return false;
-    if (FMath::Abs(Ground.ImpactPoint.Z - GroundZ) > MaxStepCm || Ground.ImpactNormal.Z < MinGroundNormalZ) return false;
-    // Where this process has navigation (standalone, listen host), mirror the server's
-    // projection threshold so a blocked slot is replaced before it is ever sent.
-    if (const UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
-        if (const ANavigationData* NavData = NavSystem->GetDefaultNavDataInstance())
-        {
-            FNavLocation Projected;
-            if (!NavSystem->ProjectPointToNavigation(Ground.ImpactPoint, Projected, FVector(80.0f, 80.0f, 180.0f), NavData)
-                || FVector::Dist(Projected.Location, Ground.ImpactPoint) > 150.0f)
-                return false;
-        }
-    return true;
+    return APolitikaPrototypeMatch::IsGroundSlotOpen(GetWorld(), ActiveMatch.GetPlayableMin(), ActiveMatch.GetPlayableMax(),
+        MapPosition, GroundZ);
 }
 
 bool APolitikaPrototypePlayerController::GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha) const
@@ -3234,6 +3220,7 @@ void APolitikaPrototypePlayerController::ClearSelectionState()
     bSelectPressed = false;
     bBoxSelecting = false;
     CommandBatches.Reset();
+    PendingFormationOrderKinds.Reset();
     GroupMoveMarkers.Reset();
     GroupMoveMarkersSeconds = -1.0;
     // Selection and every control group end together (Return, rematch, revoked seat).
@@ -3277,6 +3264,29 @@ void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMat
     const FVector* GroundHit)
 {
     if (!ActiveMatch || Issuers.IsEmpty()) return;
+    // FORM-F3: a selection that is exactly one whole formation moves or stops that formation;
+    // the server plans its slots. Any other selection stays an ordinary per-unit batch, which
+    // makes formation members in it independent without removing them.
+    if (const FPolitikaNetFormationInfo* Whole = SelectedWholeFormation(Issuers))
+    {
+        using politika::formation::FormationOp;
+        if (const auto* FormationMove = std::get_if<politika::rules::MoveOrder>(&Order); FormationMove && GroundHit)
+        {
+            SubmitFormationRequest(ActiveMatch, FormationOp::Move, Whole->FormationId, {}, FormationMove->destination, GroundHit);
+            return;
+        }
+        if (const auto* FormationAttackMove = std::get_if<politika::rules::AttackMoveOrder>(&Order); FormationAttackMove && GroundHit)
+        {
+            SubmitFormationRequest(ActiveMatch, FormationOp::AttackMove, Whole->FormationId, {}, FormationAttackMove->destination,
+                GroundHit);
+            return;
+        }
+        if (std::holds_alternative<politika::rules::StopOrder>(Order))
+        {
+            SubmitFormationRequest(ActiveMatch, FormationOp::Stop, Whole->FormationId, {}, {});
+            return;
+        }
+    }
     FCommandBatch Batch;
     Batch.Id = NextBatchId++;
     Batch.OrderKind = static_cast<uint8>(Order.index());
@@ -3617,10 +3627,15 @@ void APolitikaPrototypeHUD::DrawHUD()
                 : bUnaligned ? FLinearColor(0.85f,0.82f,0.62f) : FLinearColor(1,0.4f,0.3f);
             const float LabelX = Screen.X - 65 * UiScale;
             const float LabelY = Screen.Y - 18 * UiScale;
-            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, 135*UiScale, 22*UiScale);
-            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d"),
+            // Own formation members carry their formation number (owner-only view, FORM-F3).
+            const APolitikaPrototypePlayerController* Viewing = Cast<APolitikaPrototypePlayerController>(Controller);
+            const FPolitikaNetFormationInfo* Formation = Viewing && Unit->GetOwnerPlayer() == Viewer
+                ? Viewing->FindOwnFormationOf(Unit->GetStableId()) : nullptr;
+            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, (Formation ? 165 : 135)*UiScale, 22*UiScale);
+            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d%s"),
                 bFriendly ? TEXT("ALLY") : bUnaligned ? TEXT("UNALIGNED") : TEXT("TARGET"),
-                Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth()), TeamColor,
+                Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth(),
+                Formation ? *FString::Printf(TEXT("  F%u"), Formation->FormationId) : TEXT("")), TeamColor,
                 LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
         }
     }
@@ -3687,7 +3702,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
     const bool bLineShape = !PrototypeOwner || PrototypeOwner->GetGroupMoveShape() == politika::formation::Shape::Line;
-    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
+    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  T form  ·  Y release  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         bLineShape ? TEXT("LINE") : TEXT("COLUMN")), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
@@ -3708,6 +3723,34 @@ void APolitikaPrototypeHUD::DrawHUD()
             DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving"), SelectedUnits.Num(), Health, MaxHealth,
                 Moving), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
+            // Formation membership (FORM-F3): which formations the selection touches, and whether
+            // the selection is one whole formation (then RMB/Q/X address the formation itself).
+            if (PrototypeOwner)
+            {
+                const FPolitikaNetFormationInfo* Whole = PrototypeOwner->SelectedWholeFormation(SelectedUnits);
+                TArray<uint32, TInlineAllocator<4>> Touched;
+                int32 Loose = 0;
+                for (const APolitikaPrototypeUnit* Unit : SelectedUnits)
+                {
+                    if (const FPolitikaNetFormationInfo* Info = PrototypeOwner->FindOwnFormationOf(Unit->GetStableId()))
+                        Touched.AddUnique(Info->FormationId);
+                    else ++Loose;
+                }
+                if (Whole)
+                    DrawText(FString::Printf(TEXT("FORMATION %u  ·  %s  ·  %d of %u members  ·  %d in formation  ·  %s%s  ·  RMB/Q/X order the formation  ·  Y release"),
+                        Whole->FormationId, Whole->Shape == static_cast<uint8>(politika::formation::Shape::Column) ? TEXT("COLUMN") : TEXT("LINE"),
+                        Whole->Members.Num(), Whole->FormedMembers, Whole->Following,
+                        Whole->State == static_cast<uint8>(politika::formation::FormationState::Degraded) ? TEXT("DEGRADED") : TEXT("ORGANIZED"),
+                        Whole->Regroups > 0 ? *FString::Printf(TEXT("  ·  %u regroup%s"), Whole->Regroups, Whole->Regroups == 1 ? TEXT("") : TEXT("s")) : TEXT("")),
+                        FLinearColor(0.55f, 0.82f, 0.95f), Left, Y, nullptr, UiScale);
+                else if (!Touched.IsEmpty())
+                    DrawText(FString::Printf(TEXT("PART OF %d FORMATION%s  ·  %d not in a formation  ·  orders go to each unit  ·  T re-forms  ·  Y releases"),
+                        Touched.Num(), Touched.Num() == 1 ? TEXT("") : TEXT("S"), Loose), FLinearColor(0.55f, 0.82f, 0.95f), Left, Y, nullptr, UiScale);
+                else
+                    DrawText(TEXT("NOT A FORMATION  ·  orders go to each unit  ·  T forms these units"), FLinearColor(0.55f, 0.82f, 0.95f),
+                        Left, Y, nullptr, UiScale);
+                Y += 26.0f * UiScale;
+            }
             // Mixed archetypes: name the Tab subgroup that receives grenade, reload and sprint.
             std::vector<std::pair<politika::selection::EntityId, FName>> Members;
             for (const APolitikaPrototypeUnit* Unit : SelectedUnits) Members.emplace_back(Unit->GetStableId(), Unit->GetArchetypeId());

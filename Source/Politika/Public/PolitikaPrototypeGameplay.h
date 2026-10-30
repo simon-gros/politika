@@ -11,6 +11,7 @@
 #include "Fog.h"
 #include "GroupSelection.h"
 #include "FormationGeometry.h"
+#include "Formation.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -107,6 +108,73 @@ struct POLITIKA_API FPolitikaSelectionSet
 {
     GENERATED_BODY()
     UPROPERTY() TArray<TWeakObjectPtr<APolitikaPrototypeUnit>> Units;
+};
+
+// Versioned formation request (FORM-F3, network_protocol 3). Like the command intent it carries
+// no participant or owner: the server derives authority from the sending connection, resolves
+// member and formation IDs in the current match and fans a formation move out into ordinary,
+// individually admitted member commands.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetFormationIntent
+{
+    GENERATED_BODY()
+    UPROPERTY() int32 ProtocolVersion = 0;
+    // politika::formation::FormationOp: Form, Release, Move, AttackMove, Stop.
+    UPROPERTY() uint8 Op = 0;
+    // Addressed formation for Move/AttackMove/Stop; zero for Form and Release.
+    UPROPERTY() uint32 FormationId = 0;
+    // politika::formation::Shape for Form; zero otherwise.
+    UPROPERTY() uint8 Shape = 0;
+    // Unit IDs for Form (2-64) and Release; empty otherwise.
+    UPROPERTY() TArray<uint64> Members;
+    // Rules-domain map coordinates for Move/AttackMove (cm from the playable minimum).
+    UPROPERTY() double DestinationX = 0.0;
+    UPROPERTY() double DestinationY = 0.0;
+    // Shares the connection's single-use command sequence.
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint32 CorrelationId = 0;
+    UPROPERTY() uint64 MatchGeneration = 0;
+};
+
+// Result of one formation request, for the issuing connection only. A formation move's
+// member commands still return their own command outcomes under the same correlation.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetFormationOutcome
+{
+    GENERATED_BODY()
+    UPROPERTY() uint32 CorrelationId = 0;
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint8 Op = 0;
+    UPROPERTY() uint32 FormationId = 0;
+    UPROPERTY() uint8 Rejection = 0;
+    UPROPERTY() bool bAccepted = false;
+    // Members of the formed or addressed formation (released units for Release).
+    UPROPERTY() int32 Members = 0;
+    // Member commands submitted for a Move/AttackMove/Stop.
+    UPROPERTY() int32 Orders = 0;
+    UPROPERTY() uint64 MatchGeneration = 0;
+};
+
+// Owner-only view of one of the participant's own formations, for HUD and input routing.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetFormationInfo
+{
+    GENERATED_BODY()
+    UPROPERTY() uint32 FormationId = 0;
+    UPROPERTY() uint8 Shape = 0;
+    UPROPERTY() uint8 State = 0;
+    UPROPERTY() bool bHasDestination = false;
+    UPROPERTY() uint8 Following = 0;
+    UPROPERTY() uint16 Regroups = 0;
+    UPROPERTY() uint16 FormedMembers = 0;
+    // Sorted unit IDs.
+    UPROPERTY() TArray<uint64> Members;
+    bool operator==(const FPolitikaNetFormationInfo& Other) const
+    {
+        return FormationId == Other.FormationId && Shape == Other.Shape && State == Other.State
+            && bHasDestination == Other.bHasDestination && Following == Other.Following && Regroups == Other.Regroups
+            && FormedMembers == Other.FormedMembers && Members == Other.Members;
+    }
 };
 
 // Public roster entry (slot, participant, faction, controller kind) for observers.
@@ -212,6 +280,7 @@ private:
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
+    friend class FPolitikaMultiplayerFormationLifecycleTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -391,6 +460,17 @@ public:
     // validated before the existing typed admission pipeline. Returns false only when
     // the source has no participant binding (no typed command is created).
     bool SubmitControllerIntent(APlayerController* Source, const FPolitikaNetCommandIntent& Intent);
+    // Formation intake (FORM-F3), with the same binding, protocol, freshness and phase guards.
+    // Form/Release change match-owned membership; a formation Move/AttackMove/Stop is planned
+    // here (server navmesh) and submitted as one ordinary command per member. Returns false
+    // only when the source has no participant binding.
+    bool SubmitFormationIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent);
+    const politika::formation::Registry& GetFormations() const { return Formations; }
+    // Advisory slot check shared by the client planner and the server's formation planner:
+    // inside the playable area, on static ground level with GroundZ and not too steep, and on
+    // the navmesh where this process has one.
+    static bool IsGroundSlotOpen(const UWorld* World, const FVector2D& PlayableMin, const FVector2D& PlayableMax,
+        const FVector2D& MapPosition, float GroundZ);
     bool IsLocalControllerBound(const APlayerController* Source) const;
     // Server connection lifecycle. A binding is the only source of command authority.
     bool BindController(APlayerController* Controller, FName& OutFailure);
@@ -661,7 +741,45 @@ private:
         TWeakObjectPtr<APolitikaPrototypeUnit> Target;
         FVector Destination = FVector::ZeroVector;
         EPolitikaPrototypeOrder Kind = EPolitikaPrototypeOrder::Idle;
+        // The formation whose move or stop produced this member command; zero for every
+        // individual order. Admission of a zero-formation order makes a member independent.
+        uint32 FormationId = 0;
     };
+    // Match-owned formations (FORM-F3). Only SubmitFormationIntent, member loss, admitted
+    // member orders and lifecycle cleanup change it; see PolitikaFormations.cpp.
+    politika::formation::Registry Formations;
+    bool bFormationsDirty = false;
+    void HandleFormationChange(const politika::formation::Change& Change, const TCHAR* Cause);
+    void RejectFormationIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent, uint32 ParticipantId,
+        politika::formation::FormationRejection Rejection);
+    void SendFormationOutcome(APlayerController* Source, const FPolitikaNetFormationIntent& Intent,
+        politika::formation::FormationRejection Rejection, uint32 FormationId, int32 Members, int32 Orders);
+    // Drops members that no longer exist or are no longer the owner's (before planning).
+    void PruneFormationMembers();
+    // Submits one ordinary Move/AttackMove per planned member; with a source, every outcome is
+    // routed back to it under the request's correlation. Returns the commands submitted.
+    int32 SubmitFormationOrders(const politika::formation::Formation& Formation, const politika::formation::MovePlan& Plan,
+        APlayerController* Source, const FPolitikaNetFormationIntent* Intent, const TCHAR* Cause);
+    bool FormationAnchorGround(const politika::formation::Point& Anchor, float& OutGroundZ) const;
+    void ProcessFormationRegroups();
+    void NoteFormationOrderAdmitted(const APolitikaPrototypeUnit* Unit, const FPendingOrder& Pending);
+    void ClearFormations(const TCHAR* Reason);
+    void SyncFormationReplication();
+#if !UE_BUILD_SHIPPING
+    // Development fixture (-PolitikaMPFormationCasualty): the first formation move loses its
+    // highest-ID following member 1.5 s into transit, so packaged runs can check regrouping.
+    int32 FormationCasualtyArmed = -1;
+    uint32 FormationCasualtyFormation = 0;
+    uint64 FormationCasualtyStep = 0;
+    void TickFormationCasualtyFixture();
+#endif
+#if WITH_DEV_AUTOMATION_TESTS
+    TFunction<bool(const FVector2D&)> FormationSlotProbeForTest;
+    // Every formation outcome sent, with its destination controller (fixture controllers have
+    // no connection for the client RPC).
+    TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
+    friend class FPolitikaMultiplayerFormationLifecycleTest;
+#endif
     // Authority: every live match unit. Observer: only units its connection currently
     // receives (fog-filtered); membership follows unit BeginPlay/EndPlay. Not replicated,
     // so the array size cannot reveal hidden enemy counts.
@@ -700,7 +818,7 @@ private:
     // generation hint are supplied by the controller intake; trusted callers omit them.
     uint64 SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
         const politika::rules::Order& Intent, uint64 RequestedIssuerId = 0, uint64 CorrelationId = 0,
-        TOptional<uint64> GenerationHint = {});
+        TOptional<uint64> GenerationHint = {}, uint32 FormationId = 0);
     bool IsCommandableUnit(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
     static bool BuildRuntimeParticipantsFromSlots(const UPolitikaPrototypeMapDefinition& Definition,
         TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants, uint32& OutLocalRuntimePlayerId,
@@ -861,6 +979,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerGroupMoveShapeTest;
+    friend class FPolitikaMultiplayerFormationLifecycleTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -874,6 +993,15 @@ public:
     // The only network command ingress. Host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
+    UFUNCTION(Server, Reliable) void ServerSubmitFormationIntent(const FPolitikaNetFormationIntent& Intent);
+    UFUNCTION(Client, Reliable) void ClientReceiveFormationOutcome(const FPolitikaNetFormationOutcome& Outcome);
+    // Owner-only view of this participant's own formations (server-written).
+    const TArray<FPolitikaNetFormationInfo>& GetOwnFormations() const { return OwnFormations; }
+    const FPolitikaNetFormationInfo* FindOwnFormationOf(uint64 UnitId) const;
+    // The formation whose whole membership is exactly this selection, or null.
+    const FPolitikaNetFormationInfo* SelectedWholeFormation(TConstArrayView<APolitikaPrototypeUnit*> Selected) const;
+    void SetOwnFormations(TArray<FPolitikaNetFormationInfo>&& Formations);
     // Fog-filtered cosmetic shot cue for this connection only. Point is the target when
     // this participant's team observes it, otherwise a point along the shooter's facing.
     UFUNCTION(Client, Unreliable) void ClientShotPresentation(APolitikaPrototypeUnit* Shooter, FVector_NetQuantize Point,
@@ -898,6 +1026,9 @@ private:
     UPROPERTY(Replicated) FName AssignedFactionId;
     UPROPERTY(Replicated) uint64 AssignedMatchGeneration = 0;
     UFUNCTION() void OnRep_Assignment();
+    UPROPERTY(ReplicatedUsing=OnRep_OwnFormations) TArray<FPolitikaNetFormationInfo> OwnFormations;
+    UFUNCTION() void OnRep_OwnFormations();
+    void LogOwnFormations(const TCHAR* Source) const;
     uint32 NextClientSequence = 1;
     uint32 NextCorrelationId = 1;
     bool SubmitIntent(APolitikaPrototypeMatch* ActiveMatch, APolitikaPrototypeUnit* Unit,
@@ -1005,6 +1136,16 @@ private:
     double GroupMoveMarkersSeconds = -1.0;
     static constexpr double GroupMoveMarkerLifetimeSeconds = 2.5;
     bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);
+    // Formations (FORM-F3): T forms the selection with the current V shape (re-forming moves
+    // members out of their old formation); Y releases the selected members. When the selection
+    // is exactly one whole formation, RMB/Q/X address that formation instead of the units.
+    void FormSelected();
+    void ReleaseSelected();
+    bool SubmitFormationRequest(APolitikaPrototypeMatch* ActiveMatch, politika::formation::FormationOp Op,
+        uint32 FormationId, TConstArrayView<APolitikaPrototypeUnit*> Members, const politika::rules::Position& Destination,
+        const FVector* GroundHit = nullptr);
+    // Pending formation move/stop correlations and their order kind, for the outcome batch.
+    TMap<uint32, uint8> PendingFormationOrderKinds;
     void ClearSelectionState();
     void OrderUnderCursor();
     void StopSelected();

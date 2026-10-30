@@ -7429,6 +7429,772 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
     result
 }
 
+// ---------------------------------------------------------------------------------------
+// `--formation-lifecycle SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// FORM-F3 on the same dedicated 1v1 fixture (20 idle units per seat), with the server's
+// development casualty fixture armed. Seat 1's client, with real X input: puts one unit in
+// group 2 and the army in group 1, forms the army with T, moves the formation (planned on
+// the server), stops the group-2 unit on its own while the formation is moving, and lets the
+// fixture kill another member. It then checks one bounded regroup of the members still
+// following, their arrival and spacing, a second formation move that uses the stored shape,
+// release with Y, re-forming, and that leaving the match retires the formation exactly once.
+// ---------------------------------------------------------------------------------------
+
+/// `RTS_FORMATION_VIEW` detail of one formation: id, shape, state, members, following,
+/// regroups and whether it has a destination.
+#[derive(Debug, Default, PartialEq)]
+struct FormationView {
+    id: u32,
+    shape: String,
+    state: String,
+    members: usize,
+    following: usize,
+    regroups: u32,
+    destination: bool,
+    ids: Vec<u64>,
+}
+
+fn formation_views(line: &str) -> Vec<FormationView> {
+    let Some(detail) = field(line, "detail") else {
+        return Vec::new();
+    };
+    if detail == "none" {
+        return Vec::new();
+    }
+    detail
+        .split(';')
+        .filter_map(|entry| {
+            let parts: Vec<&str> = entry.split(':').collect();
+            if parts.len() < 8 {
+                return None;
+            }
+            let mut ids: Vec<u64> = parts[7]
+                .trim_start_matches("ids=")
+                .split('/')
+                .filter_map(|v| v.parse().ok())
+                .collect();
+            ids.sort_unstable();
+            Some(FormationView {
+                id: parts[0].parse().ok()?,
+                shape: parts[1].to_owned(),
+                state: parts[2].to_owned(),
+                members: parts[3].split('/').next()?.parse().ok()?,
+                following: parts[4].trim_start_matches('f').parse().ok()?,
+                regroups: parts[5].trim_start_matches('r').parse().ok()?,
+                destination: parts[6] == "dest1",
+                ids,
+            })
+        })
+        .collect()
+}
+
+/// The client's latest owner-only formation view after `from`.
+fn last_formation_view(client: &Game, from: usize) -> Option<String> {
+    client.text()[from..]
+        .lines()
+        .rev()
+        .find(|l| l.contains("RTS_FORMATION_VIEW"))
+        .map(str::to_owned)
+}
+
+fn ids_field(line: &str, key: &str) -> Vec<u64> {
+    let mut ids: Vec<u64> = field(line, key)
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|v| v.parse().ok())
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// Per unit: the resolved point of its latest formation slot order and whether it arrived
+/// there (an OrderChanged Move -> arrival after that slot was sent).
+fn formation_slot_states(text: &str, units: &[u64]) -> Vec<(u64, Option<(f64, f64)>, bool)> {
+    let lines: Vec<&str> = text.lines().collect();
+    units
+        .iter()
+        .map(|unit| {
+            let id = unit.to_string();
+            let Some(last) = lines.iter().rposition(|l| {
+                l.contains("RTS_FORMATION_SLOT") && field(l, "unit") == Some(id.as_str())
+            }) else {
+                return (*unit, None, false);
+            };
+            let after = &lines[last + 1..];
+            let resolved = after
+                .iter()
+                .find(|l| {
+                    l.contains("RTS_NAVIGATION_READY") && field(l, "unit") == Some(id.as_str())
+                })
+                .and_then(|l| triple_xy(l, "resolved"));
+            let arrived = after.iter().any(|l| {
+                l.contains("RTS_GAMEPLAY_EVENT kind=OrderChanged")
+                    && field(l, "entity") == Some(id.as_str())
+                    && field(l, "previous") == Some("1")
+                    && field(l, "reason") == Some("5")
+            });
+            (*unit, resolved, arrived)
+        })
+        .collect()
+}
+
+/// Waits until every unit arrived at its latest formation slot, then checks that each stopped
+/// within 30 cm of it and that the survivors keep the spacing.
+fn formation_arrival(
+    server: &Game,
+    from: usize,
+    followers: &[u64],
+    survivors: &[u64],
+) -> (usize, usize, f64, usize) {
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        let text = server.text()[from..].to_owned();
+        let states = formation_slot_states(&text, followers);
+        if states.iter().all(|s| s.2) || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    thread::sleep(Duration::from_millis(1500));
+    let text = server.text()[from..].to_owned();
+    let states = formation_slot_states(&text, followers);
+    let arrived = states.iter().filter(|s| s.2).count();
+    let at_slot = states
+        .iter()
+        .filter(|s| {
+            s.1.zip(server_unit(&text, s.0).map(|u| u.0))
+                .is_some_and(|(slot, at)| distance(slot, at) <= 30.0)
+        })
+        .count();
+    let finals: Vec<(f64, f64)> = survivors
+        .iter()
+        .filter_map(|unit| server_unit(&server.text(), *unit).map(|s| s.0))
+        .collect();
+    let failed = text
+        .lines()
+        .filter(|l| {
+            l.contains("RTS_NAVIGATION_FAILED")
+                && field(l, "unit")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .is_some_and(|u| survivors.contains(&u))
+        })
+        .count();
+    (arrived, at_slot, min_separation(&finals), failed)
+}
+
+#[allow(clippy::too_many_lines)]
+fn formation_lifecycle_session(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPFormationCasualty".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        SHAPE_LINE_POINT.0, SHAPE_LINE_POINT.1, SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        let box_all = |client: &mut Game| -> Result<(usize, String), String> {
+            let before = client.offset();
+            client.drag_hold(
+                (24.0, 24.0),
+                (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+            )?;
+            client.release()?;
+            let line = client.wait_line(
+                &["RTS_SELECTION_SET", "source=box", "op=replace"],
+                Duration::from_secs(5),
+                before,
+            )?;
+            Ok((before, line))
+        };
+
+        // Setup: the lowest-ID clickable unit alone in group 2, the army in group 1.
+        let (before_box, boxed) = box_all(&mut client_a)?;
+        report.verdict(
+            "FORM-01-BOX-SELECTS-OWN-UNITS",
+            selection_ids(&boxed) == own,
+            boxed.trim().to_owned(),
+        );
+        let screens: Vec<(u64, f64, f64)> = client_a.text()[before_box..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SCREEN"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "unit")?.parse().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .filter(|(_, x, y)| {
+                *x > 40.0 && *x < f64::from(WIDTH) - 40.0 && *y > 220.0 && *y < 500.0
+            })
+            .collect();
+        let lone = screens
+            .iter()
+            .filter(|s| {
+                screens
+                    .iter()
+                    .filter(|o| o.0 != s.0)
+                    .all(|o| (s.1 - o.1).hypot(s.2 - o.2) >= 14.0)
+            })
+            .min_by_key(|s| s.0)
+            .copied()
+            .ok_or("no clickable own unit clear of its neighbours")?;
+        let independent = lone.0;
+        report.fact(
+            "independent_unit",
+            format!("{}@{:.0},{:.0}", lone.0, lone.1, lone.2),
+        );
+        let at = client_a.offset();
+        client_a.click(lone.1, lone.2, "1")?;
+        let clicked = wait5(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=1 "],
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "2")?;
+        let group2 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=2 "], at)?;
+        box_all(&mut client_a)?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let group1 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        report.verdict(
+            "FORM-SETUP-GROUPS",
+            selection_ids(&clicked) == vec![independent]
+                && selection_ids(&group2) == vec![independent]
+                && selection_ids(&group1) == own,
+            format!("{} | {} | {}", clicked.trim(), group2.trim(), group1.trim()),
+        );
+        report.verdict(
+            "FORM-02-GROUPS-CREATE-NO-FORMATION",
+            !server.text().contains("RTS_FORMATION_FORMED"),
+            "control groups and selection only".to_owned(),
+        );
+
+        // 1. T forms the army (Line, the default shape) as one match-owned formation.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let sent = wait5(&mut client_a, &["RTS_FORMATION_SENT", "op=form"], at)?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let outcome = wait5(&mut client_a, &["RTS_FORMATION_OUTCOME", "op=0 "], at)?;
+        let view = client_a.wait_line(
+            &["RTS_FORMATION_VIEW", "source=replicated", "formations=1 "],
+            Duration::from_secs(5),
+            at,
+        )?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let views = formation_views(&view);
+        report.verdict(
+            "FORM-F3-FORM-ADMITTED",
+            field(&sent, "members") == Some("20")
+                && ids_field(&formed, "ids") == own
+                && field(&formed, "shape") == Some("line")
+                && field(&formed, "participant") == Some("1")
+                && field(&outcome, "accepted") == Some("1")
+                && field(&outcome, "members") == Some("20")
+                && field(&outcome, "formation") == Some(formation.as_str())
+                && views.len() == 1
+                && views[0].ids == own
+                && views[0].state == "organized"
+                && !views[0].destination,
+            format!(
+                "{} | {} | {} | {}",
+                sent.trim(),
+                formed.trim(),
+                outcome.trim(),
+                view.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(500));
+        let formed_orders = server.text()[at_server..]
+            .lines()
+            .filter(|l| {
+                (l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
+                    || l.contains("RTS_ORDER_ADMITTED") && l.contains(" participant=1 ")
+            })
+            .count();
+        report.verdict(
+            "FORM-02-FORM-ISSUES-NO-ORDER",
+            formed_orders == 0,
+            format!("unit commands during Form: {formed_orders}"),
+        );
+        let leaked = client_b
+            .text()
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATION_VIEW") && !l.contains("formations=0 "))
+            .count();
+        report.verdict(
+            "FORM-F3-OWNER-ONLY",
+            leaked == 0,
+            format!("opposing client formation views: {leaked}"),
+        );
+        report.artifact("formed_png", &client_a.screenshot(evidence, "01-formed")?);
+
+        // 2. RMB with exactly the formation selected: one formation request; the server plans
+        // the slots on its navmesh and submits one ordinary Move per member.
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        let move_sent = wait5(&mut client_a, &["RTS_FORMATION_SENT", "op=move"], at)?;
+        let correlation = field(&move_sent, "correlation").unwrap_or("0").to_owned();
+        let plan = server.wait_line(
+            &["RTS_FORMATION_MOVE", &format!("formation={formation} ")],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let move_outcome = wait5(
+            &mut client_a,
+            &[
+                "RTS_FORMATION_OUTCOME",
+                &format!("correlation={correlation} "),
+            ],
+            at,
+        )?;
+        let batch_sent = wait5(
+            &mut client_a,
+            &["RTS_GROUP_ORDER_SENT", &format!("formation={formation}")],
+            at,
+        )?;
+        let batch = field(&batch_sent, "batch").unwrap_or("0").to_owned();
+
+        // 3. While it moves: recall group 2 (the lone unit) and stop it on its own.
+        thread::sleep(Duration::from_millis(400));
+        let at_recall = client_a.offset();
+        let at_stop_server = server.offset();
+        client_a.key("2")?;
+        let recalled = wait5(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=group", "count=1 "],
+            at_recall,
+        )?;
+        client_a.key("x")?;
+        let independent_line = server.wait_line(
+            &[
+                "RTS_FORMATION_MEMBER_INDEPENDENT",
+                &format!("unit={independent} "),
+            ],
+            Duration::from_secs(5),
+            at_stop_server,
+        )?;
+        let group_outcome = client_a.wait_line(
+            &["RTS_GROUP_ORDER_OUTCOME", &format!("batch={batch} ")],
+            Duration::from_secs(15),
+            at,
+        )?;
+        let move_text = server.text()[at_server..].to_owned();
+        let slots: Vec<u64> = {
+            let mut v: Vec<u64> = move_text
+                .lines()
+                .filter(|l| l.contains("RTS_FORMATION_SLOT") && l.contains("cause=move"))
+                .filter_map(|l| field(l, "unit")?.parse().ok())
+                .collect();
+            v.sort_unstable();
+            v
+        };
+        let admitted = move_text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ORDER_ADMITTED order=Move")
+                    && field(l, "correlation") == Some(correlation.as_str())
+            })
+            .count();
+        // Before the lone unit's own Stop, the client sent no unit command at all.
+        let unit_intents = server.text()[at_server..at_stop_server]
+            .lines()
+            .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
+            .count();
+        report.verdict(
+            "FORM-04-SERVER-PLAN",
+            field(&plan, "members") == Some("20")
+                && field(&plan, "orders") == Some("20")
+                && field(&plan, "unplaced") == Some("0")
+                && field(&plan, "shape") == Some("line")
+                && number(&plan, "min_separation")
+                    .is_some_and(|s| (s - SHAPE_SPACING_CM).abs() < 0.5)
+                && slots == own,
+            plan.trim().to_owned(),
+        );
+        report.verdict(
+            "FORM-06-MEMBER-ORDERS-ADMITTED-INDIVIDUALLY",
+            admitted == 20
+                && unit_intents == 0
+                && field(&move_outcome, "orders") == Some("20")
+                && field(&group_outcome, "expected") == Some("20")
+                && field(&group_outcome, "accepted") == Some("20"),
+            format!(
+                "{admitted} member Moves admitted under correlation {correlation}; client unit intents {unit_intents}; {}",
+                group_outcome.trim()
+            ),
+        );
+        let stop_received = server.text()[at_stop_server..].lines().any(|l| {
+            l.contains("MP_COMMAND_RECEIVED")
+                && l.contains(" order=3 ")
+                && field(l, "issuer") == Some(independent.to_string().as_str())
+        });
+        report.verdict(
+            "FORM-07-INDIVIDUAL-STOP-KEEPS-MEMBERSHIP",
+            selection_ids(&recalled) == vec![independent]
+                && stop_received
+                && field(&independent_line, "following") == Some("19"),
+            format!("{} | {}", recalled.trim(), independent_line.trim()),
+        );
+
+        // 4. The fixture kills the highest-ID member still following; one regroup follows the
+        // hysteresis window, for the members still following only.
+        let casualty = server.wait_line(
+            &["MP_FORMATION_CASUALTY", &format!("formation={formation} ")],
+            Duration::from_secs(10),
+            at_server,
+        )?;
+        let lost: u64 = field(&casualty, "unit")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let left = server.wait_line(
+            &[
+                "RTS_FORMATION_MEMBER_LEFT",
+                &format!("unit={lost} "),
+                "reason=destroyed",
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let scheduled = server.wait_line(
+            &[
+                "RTS_FORMATION_REGROUP_SCHEDULED",
+                &format!("formation={formation} "),
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let regroup = server.wait_line(
+            &["RTS_FORMATION_REGROUP ", &format!("formation={formation} ")],
+            Duration::from_secs(10),
+            at_server,
+        )?;
+        let followers: Vec<u64> = own
+            .iter()
+            .copied()
+            .filter(|u| *u != independent && *u != lost)
+            .collect();
+        let survivors: Vec<u64> = own.iter().copied().filter(|u| *u != lost).collect();
+        let loss_step: u64 = field(&left, "step")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let regroup_step: u64 = field(&regroup, "step")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        report.verdict(
+            "FORM-09-LOSS-DEGRADES-AND-SCHEDULES-ONE-REGROUP",
+            lost != 0
+                && lost != independent
+                && lost == *followers.iter().chain([lost].iter()).max().unwrap_or(&0)
+                && field(&left, "remaining") == Some("19")
+                && field(&scheduled, "due_step").and_then(|v| v.parse::<u64>().ok())
+                    == Some(loss_step + 40)
+                && regroup_step == loss_step + 40,
+            format!(
+                "{} | {} | {} | {}",
+                casualty.trim(),
+                left.trim(),
+                scheduled.trim(),
+                regroup.trim()
+            ),
+        );
+        let regroup_units: Vec<u64> = server.text()[at_server..]
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATION_SLOT") && l.contains("cause=regroup"))
+            .filter_map(|l| field(l, "unit")?.parse().ok())
+            .collect();
+        report.verdict(
+            "FORM-07-REGROUP-LEAVES-INDEPENDENT-MEMBER",
+            field(&regroup, "members") == Some("19")
+                && field(&regroup, "following") == Some("18")
+                && field(&regroup, "planned") == Some("18")
+                && field(&regroup, "unplaced") == Some("0")
+                && !regroup_units.is_empty()
+                && regroup_units.iter().all(|u| followers.contains(u)),
+            format!(
+                "{} regroup orders for {:?}",
+                regroup_units.len(),
+                regroup_units
+            ),
+        );
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &followers, &survivors);
+        thread::sleep(Duration::from_secs(4));
+        let after_text = server.text()[at_server..].to_owned();
+        let regroups = after_text
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATION_REGROUP "))
+            .count();
+        let stopped_followers = after_text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ORDER_ADMITTED")
+                    && !l.contains("order=Move")
+                    && field(l, "unit")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .is_some_and(|u| followers.contains(&u))
+            })
+            .count();
+        report.verdict(
+            "FORM-08-ARRIVED-SPACED-AFTER-ONE-REGROUP",
+            arrived == followers.len()
+                && at_slot == followers.len()
+                && failed == 0
+                && separation >= SHAPE_SPACING_CM - 20.0
+                && regroups == 1,
+            format!(
+                "{arrived}/{} followers arrived, {at_slot} within 30 cm of their slot, {failed} navigation failures, survivors' min separation {separation:.1} cm, regroups {regroups}",
+                followers.len()
+            ),
+        );
+        report.verdict(
+            "FORM-07-OTHER-MEMBERS-UNAFFECTED",
+            stopped_followers == 0,
+            format!("non-formation orders admitted for following members: {stopped_followers}"),
+        );
+        let view = last_formation_view(&client_a, at).unwrap_or_default();
+        let views = formation_views(&view);
+        report.verdict(
+            "FORM-F3-CLIENT-VIEW-AFTER-REGROUP",
+            views.len() == 1
+                && views[0].members == 19
+                && views[0].following == 18
+                && views[0].regroups == 1
+                && views[0].state == "organized"
+                && views[0].destination
+                && views[0].ids == survivors,
+            view.trim().to_owned(),
+        );
+        report.artifact(
+            "regrouped_png",
+            &client_a.screenshot(evidence, "02-regrouped")?,
+        );
+
+        // 5. V changes only the local shape; recalling group 1 (19 living) is the whole
+        // formation again, and its move keeps the formation's stored Line shape.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("v")?;
+        wait5(&mut client_a, &["RTS_GROUP_MOVE_SHAPE", "shape=column"], at)?;
+        client_a.key("1")?;
+        let recalled = wait5(&mut client_a, &["RTS_SELECTION_SET", "source=group"], at)?;
+        thread::sleep(Duration::from_millis(300));
+        report.artifact(
+            "whole_formation_png",
+            &client_a.screenshot(evidence, "03-whole-formation-selected")?,
+        );
+        let column = wait_screen(&mut client_a, |t| probe_screen(t, 1), "column probe")?;
+        client_a.click(column.0, column.1, "3")?;
+        let second = server.wait_line(
+            &["RTS_FORMATION_MOVE", &format!("formation={formation} ")],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &survivors, &survivors);
+        report.verdict(
+            "FORM-10-SECOND-MOVE-USES-FORMATION-SHAPE",
+            selection_ids(&recalled) == survivors
+                && field(&second, "shape") == Some("line")
+                && field(&second, "members") == Some("19")
+                && field(&second, "orders") == Some("19")
+                && arrived == survivors.len()
+                && at_slot == survivors.len()
+                && failed == 0
+                && separation >= SHAPE_SPACING_CM - 20.0,
+            format!(
+                "{} | {arrived}/19 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm",
+                second.trim()
+            ),
+        );
+
+        // 6. Y releases every member: the formation dissolves, and the next RMB is an ordinary
+        // client-planned group move in the local (Column) shape.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("y")?;
+        let dissolved = server.wait_line(
+            &[
+                "RTS_FORMATION_DISSOLVED",
+                &format!("formation={formation} "),
+                "reason=released",
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let emptied = client_a.wait_line(
+            &["RTS_FORMATION_VIEW", "source=replicated", "formations=0 "],
+            Duration::from_secs(5),
+            at,
+        )?;
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        client_a.click(line.0, line.1, "3")?;
+        let ordinary = wait5(&mut client_a, &["RTS_GROUP_MOVE_PLAN", "order=0"], at)?;
+        let formation_sends = client_a.text()[at..]
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATION_SENT") && !l.contains("op=release"))
+            .count();
+        report.verdict(
+            "FORM-09-RELEASE-DISSOLVES",
+            field(&ordinary, "shape") == Some("column")
+                && field(&ordinary, "members") == Some("19")
+                && formation_sends == 0,
+            format!(
+                "{} | {} | {}",
+                dissolved.trim(),
+                emptied.trim(),
+                ordinary.trim()
+            ),
+        );
+
+        // 7. T again forms a new formation (new ID, the current Column shape).
+        thread::sleep(Duration::from_secs(2));
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let reformed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let reformed_id = field(&reformed, "formation").unwrap_or("0").to_owned();
+        report.verdict(
+            "FORM-F3-REFORM-NEW-ID",
+            reformed_id != formation
+                && reformed_id.parse::<u32>().ok() > formation.parse::<u32>().ok()
+                && field(&reformed, "shape") == Some("column")
+                && field(&reformed, "members") == Some("19"),
+            reformed.trim().to_owned(),
+        );
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        report.artifact(
+            "reformed_png",
+            &client_a.screenshot(evidence, "04-reformed")?,
+        );
+
+        // 8. Leaving ends the match; the formation is retired exactly once and nothing of it
+        // acts afterwards.
+        let at_server = server.offset();
+        client_a.key("Escape")?;
+        let cleared = server.wait_line(
+            &["RTS_FORMATIONS_CLEARED"],
+            Duration::from_secs(15),
+            at_server,
+        )?;
+        thread::sleep(Duration::from_secs(3));
+        let after = server.text()[at_server..].to_owned();
+        let clears = after
+            .lines()
+            .filter(|l| l.contains("RTS_FORMATIONS_CLEARED"))
+            .count();
+        let cleared_at = after.find("RTS_FORMATIONS_CLEARED").unwrap_or(0);
+        let late = after[cleared_at..]
+            .lines()
+            .skip(1)
+            .filter(|l| l.contains("RTS_FORMATION_") && !l.contains("RTS_FORMATIONS_CLEARED"))
+            .count();
+        report.verdict(
+            "FORM-15-TERMINAL-RETIRES-ONCE",
+            field(&cleared, "reason") == Some("match_ended")
+                && field(&cleared, "count") == Some("1")
+                && field(&cleared, "ids") == Some(reformed_id.as_str())
+                && clears == 1
+                && late == 0,
+            format!(
+                "{}; clears {clears}; formation lines after the clear {late}",
+                cleared.trim()
+            ),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -7534,6 +8300,14 @@ fn main() {
             "politika.form.group-move-shape-evidence.v1",
             "group-move-shape",
             group_move_shape_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--formation-lifecycle") {
+        run_dedicated_session(
+            "--formation-lifecycle",
+            "politika.form.formation-lifecycle-evidence.v1",
+            "formation-lifecycle",
+            formation_lifecycle_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {
