@@ -1152,6 +1152,48 @@ int main() {
             assert(Registry.Combined(Attribute::FireInterval) == 1000);
             static_assert(pm::AttributeName(Attribute::DamageTaken) == "damage_taken" && pm::SourceName(pm::Source::Discipline) == "discipline");
         }
+
+        // DISC-D4 rout: a soldier breaks at 0 and rallies at 15; civilians never break.
+        {
+            static_assert(pd::Breaks(0, pd::UnitCategory::Military) && pd::Breaks(-1, pd::UnitCategory::Military));
+            static_assert(!pd::Breaks(1, pd::UnitCategory::Military) && !pd::Breaks(pd::kBaseline, pd::UnitCategory::Military));
+            static_assert(!pd::Breaks(0, pd::UnitCategory::NonCombat));
+            static_assert(!pd::Rallies(14999) && pd::Rallies(15000) && pd::Rallies(pd::kBaseline));
+            // A routed unit recovers 0.5 per evaluation wherever it is: 30 evaluations to rally.
+            pd::Evaluation Routed{0, pd::Trend::Steady};
+            int Evaluations = 0;
+            while (!pd::Rallies(Routed.value) && Evaluations < 100)
+            {
+                Routed = pd::Evaluate(Routed.value, pd::Service::Routed);
+                assert(Routed.trend == pd::Trend::Rising);
+                ++Evaluations;
+            }
+            assert(Evaluations == 30 && Routed.value == pd::kRallyThreshold);
+            // Unlike a lone soldier below the floor (which holds), a routed one recovers.
+            static_assert(pd::Evaluate(0, pd::Service::Isolated).value == 0);
+            static_assert(pd::Evaluate(0, pd::Service::Routed).value == 500);
+            // Rout recovery never overshoots the baseline.
+            static_assert(pd::Evaluate(pd::kBaseline, pd::Service::Routed).value == pd::kBaseline);
+            // Casualty shock is what takes a member to the threshold: 10 points is two shocks.
+            const pd::ShockResult First = pd::ApplyCasualtyShock(10000, {}, 5);
+            const pd::ShockResult Second = pd::ApplyCasualtyShock(First.value, First.window, 6);
+            assert(!pd::Breaks(First.value, pd::UnitCategory::Military) && pd::Breaks(Second.value, pd::UnitCategory::Military));
+            static_assert(pd::CrossedBand(5000, 0) == 0);
+        }
+    }
+
+    // DISC-D4: a routed issuer is refused after ownership is settled, so only its owner learns it.
+    {
+        static_assert(static_cast<std::uint8_t>(OrderRejection::Routed) == 19 && kOrderRejectionCount == 20);
+        Entity RoutedIssuer{7, 1, true, true, true, true, true, true};
+        RoutedIssuer.routed = true;
+        CommandRequest Request{7, 1, 1, 7, 70, MoveOrder{{10, 10}}};
+        assert(AdmitCommand(Request, 7, true, &RoutedIssuer, {100, 100}).rejection == OrderRejection::Routed);
+        CommandRequest Foreign = Request;
+        Foreign.participant_id = 2;
+        assert(AdmitCommand(Foreign, 7, true, &RoutedIssuer, {100, 100}).rejection == OrderRejection::Unauthorized);
+        RoutedIssuer.routed = false;
+        assert(AdmitCommand(Request, 7, true, &RoutedIssuer, {100, 100}));
     }
 
     // Faction nuclear permissions are independent of ownership and unit count.

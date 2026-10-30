@@ -10447,6 +10447,471 @@ fn discipline_effects_session(
     result
 }
 
+// ---------------------------------------------------------------------------------------
+// `--discipline-rout SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// DISC-D4 on the dedicated 1v1 fixture (20 idle units per seat). The server runs with the
+// discipline casualty fixture, the rout seed (10 points) and participant 2 on the solo-tolerant
+// doctrine as a baseline reference. Seat 1's client, with real X input, forms its 20 units into a
+// Line. J sets the adherence: the fixture sets the members to 10 and kills four at one end, and the
+// ordinary casualty shock takes the members near them to 0. Those break in the step they reach 0,
+// leave the formation, flee to seat 1's start without firing, and refuse a real group order (only
+// their owner's client sees them routed). Thirty evaluations later each rallies at 15 and takes
+// orders again.
+// ---------------------------------------------------------------------------------------
+
+/// `RTS_DISCIPLINE_ROUT` lines of one phase in `text`.
+fn rout_lines(text: &str, phase: &str) -> Vec<String> {
+    let tag = format!(" phase={phase} ");
+    text.lines()
+        .filter(|l| l.contains("RTS_DISCIPLINE_ROUT") && l.contains(&tag))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[allow(clippy::too_many_lines)]
+fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPDisciplineCasualties".into());
+    args.push("-PolitikaMPDisciplineRoutSeed=10".into());
+    args.push("-PolitikaMPDisciplineDoctrine=2:solo".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        SHAPE_LINE_POINT.0, SHAPE_LINE_POINT.1, SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        let at_b = client_b.offset();
+
+        // Setup: all 20 in group 1, T forms them and a click moves them into a Line.
+        let before = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            before,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let group1 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        if selection_ids(&group1) != own {
+            return Err(format!("control group setup failed: {}", group1.trim()));
+        }
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let formation_tag = format!(" formation={formation} ");
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        server.wait_line(
+            &["RTS_FORMATION_MOVE", &formation_tag],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &own, &own);
+        report.verdict(
+            "DISC-SETUP-LINE-ARRIVED",
+            arrived == own.len() && at_slot == own.len() && failed == 0,
+            format!(
+                "{arrived}/20 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm"
+            ),
+        );
+
+        // 1. J: the seed sets the members to 10, then four casualties at one end.
+        let rout_from = server.offset();
+        client_a.key("j")?;
+        let seeded = server.wait_line(
+            &["MP_DISCIPLINE_ROUT_SEED", &formation_tag],
+            Duration::from_secs(5),
+            rout_from,
+        )?;
+        let armed = server.wait_line(
+            &["MP_DISCIPLINE_CASUALTIES_ARMED", &formation_tag],
+            Duration::from_secs(5),
+            rout_from,
+        )?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline
+            && server.text()[rout_from..]
+                .lines()
+                .filter(|l| l.contains("MP_DISCIPLINE_CASUALTY "))
+                .count()
+                < 4
+        {
+            thread::sleep(Duration::from_millis(200));
+        }
+        thread::sleep(Duration::from_secs(1));
+        let break_text = server.text()[rout_from..].to_owned();
+        let breaks = rout_lines(&break_text, "break");
+        let broken: Vec<u64> = breaks.iter().map(|l| unit_field(l)).collect();
+        let shocks: Vec<&str> = break_text
+            .lines()
+            .filter(|l| l.contains("RTS_DISCIPLINE_SHOCK") && l.contains("in_range=1"))
+            .collect();
+        // DISC-20: a member breaks exactly in the step a shock takes it to 0, at value 0.
+        let to_zero: Vec<(u64, i64)> = shocks
+            .iter()
+            .filter(|l| {
+                int_field(l, "after") == Some(0) && int_field(l, "before").is_some_and(|b| b > 0)
+            })
+            .map(|l| (unit_field(l), int_field(l, "step").unwrap_or(-1)))
+            .collect();
+        let matched = to_zero.iter().all(|(unit, step)| {
+            breaks
+                .iter()
+                .any(|b| unit_field(b) == *unit && int_field(b, "step") == Some(*step))
+        }) && breaks.iter().all(|b| {
+            int_field(b, "value") == Some(0)
+                && to_zero
+                    .iter()
+                    .any(|(u, s)| *u == unit_field(b) && int_field(b, "step") == Some(*s))
+        });
+        let survivors_unbroken = own.len() - 4 - broken.len();
+        report.verdict(
+            "DISC-20-BREAK-AT-ZERO",
+            !breaks.is_empty() && matched && to_zero.len() == breaks.len() && survivors_unbroken > 0,
+            format!(
+                "{}; {}; {} shocks in range, {} to zero; {} broke {broken:?}; {survivors_unbroken} survivors beyond the shock stayed in the line",
+                seeded.trim(),
+                armed.trim(),
+                shocks.len(),
+                to_zero.len(),
+                breaks.len()
+            ),
+        );
+        // DISC-21: each broken member left its formation as routed in the same step and took no
+        // later shock.
+        let left_ok = breaks.iter().all(|b| {
+            let unit = unit_field(b);
+            let step = int_field(b, "step");
+            break_text.lines().any(|l| {
+                l.contains("RTS_FORMATION_MEMBER_LEFT")
+                    && unit_field(l) == unit
+                    && l.contains("reason=routed")
+                    && int_field(l, "step") == step
+            }) && !break_text.lines().any(|l| {
+                l.contains("RTS_DISCIPLINE_SHOCK")
+                    && unit_field(l) == unit
+                    && int_field(l, "step") > step
+            })
+        });
+        report.verdict(
+            "DISC-21-LEAVES-FORMATION",
+            !breaks.is_empty() && left_ok,
+            format!(
+                "{} breaks; first {}",
+                breaks.len(),
+                breaks.first().map_or("none", |l| l.trim())
+            ),
+        );
+        report.artifact("routed_png", &client_a.screenshot(evidence, "01-routed")?);
+
+        // 2. A real group order: 1 selects group 1 (the routed and the rest), a right-click moves it.
+        let at = client_a.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count="], at)?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "routed_hud_png",
+            &client_a.screenshot(evidence, "02-group-with-routed")?,
+        );
+        let column = wait_screen(&mut client_a, |t| probe_screen(t, 1), "column probe")?;
+        let order_from = server.offset();
+        let at = client_a.offset();
+        client_a.click(column.0, column.1, "3")?;
+        let outcome = client_a.wait_line(&["RTS_GROUP_ORDER_OUTCOME"], Duration::from_secs(10), at);
+        thread::sleep(Duration::from_millis(500));
+        let order_text = server.text()[order_from..].to_owned();
+        let still_routed: Vec<u64> = broken
+            .iter()
+            .copied()
+            .filter(|u| {
+                !rout_lines(&server.text()[rout_from..order_from], "rally")
+                    .iter()
+                    .any(|l| unit_field(l) == *u)
+            })
+            .collect();
+        let refused: Vec<u64> = order_text
+            .lines()
+            .filter(|l| l.contains("RTS_ORDER_REJECTED") && int_field(l, "outcome") == Some(19))
+            .map(unit_field)
+            .collect();
+        let admitted_routed = order_text
+            .lines()
+            .filter(|l| l.contains("RTS_ORDER_ADMITTED") && broken.contains(&unit_field(l)))
+            .count();
+        let mut refused_sorted = refused.clone();
+        refused_sorted.sort_unstable();
+        let mut expected = still_routed.clone();
+        expected.sort_unstable();
+        report.verdict(
+            "DISC-24-ORDERS-REFUSED",
+            !expected.is_empty()
+                && refused_sorted == expected
+                && admitted_routed == 0
+                && outcome.as_ref().is_ok_and(|l| {
+                    int_field(l, "rejected") == i64::try_from(expected.len()).ok()
+                        && int_field(l, "dominant_rejection") == Some(19)
+                }),
+            format!(
+                "refused as routed {refused_sorted:?}, routed at the order {expected:?}, routed admitted {admitted_routed}; client {}",
+                outcome.as_ref().map_or_else(|e| e.clone(), |l| l.trim().to_owned())
+            ),
+        );
+        report.artifact(
+            "refused_png",
+            &client_a.screenshot(evidence, "03-order-refused")?,
+        );
+
+        // 3. Rally: 30 evaluations after each break, at 15, on an evaluation step.
+        let deadline = Instant::now() + Duration::from_secs(45);
+        while Instant::now() < deadline
+            && rout_lines(&server.text()[rout_from..], "rally").len() < breaks.len()
+        {
+            thread::sleep(Duration::from_millis(500));
+        }
+        let rout_text = server.text()[rout_from..].to_owned();
+        let rallies = rout_lines(&rout_text, "rally");
+        let flights = rout_lines(&rout_text, "flight_end");
+        // DISC-22: each fled along a route towards seat 1's start and got closer to it.
+        let fled_ok = breaks.iter().all(|b| {
+            let unit = unit_field(b);
+            let start = number(b, "rally_distance").unwrap_or(0.0);
+            let end = flights
+                .iter()
+                .find(|f| unit_field(f) == unit)
+                .and_then(|f| number(f, "rally_distance"))
+                .or_else(|| {
+                    rallies
+                        .iter()
+                        .find(|r| unit_field(r) == unit)
+                        .and_then(|r| number(r, "rally_distance"))
+                });
+            int_field(b, "route") == Some(1)
+                && field(b, "order") == Some("1")
+                && end.is_some_and(|e| e < start - 100.0 || e <= 30.0)
+        });
+        let rally_points: Vec<&str> = breaks.iter().filter_map(|b| field(b, "rally")).collect();
+        report.verdict(
+            "DISC-22-FLEES-TO-START",
+            !breaks.is_empty() && fled_ok && rally_points.windows(2).all(|w| w[0] == w[1]),
+            format!(
+                "rally points {rally_points:?}; flights ended {}; first {}",
+                flights.len(),
+                flights.first().map_or("none", |l| l.trim())
+            ),
+        );
+        // DISC-23: between break and rally no routed unit fired or hit anything (below the
+        // baseline every shot logs its fire interval), and it took no order (DISC-24).
+        let quiet = breaks.iter().all(|b| {
+            let unit = unit_field(b);
+            let from = int_field(b, "step").unwrap_or(0);
+            let to = rallies
+                .iter()
+                .find(|r| unit_field(r) == unit)
+                .and_then(|r| int_field(r, "step"))
+                .unwrap_or(i64::MAX);
+            let shooter = format!(" shooter={unit} ");
+            !rout_text.lines().any(|l| {
+                let step = int_field(l, "step").unwrap_or(-1);
+                step > from
+                    && step < to
+                    && ((l.contains("RTS_DISCIPLINE_EFFECT")
+                        && l.contains("effect=fire_interval")
+                        && unit_field(l) == unit)
+                        || l.contains(&shooter))
+            })
+        });
+        report.verdict(
+            "DISC-23-ROUTED-DO-NOT-FIGHT",
+            !breaks.is_empty() && quiet && admitted_routed == 0,
+            format!("no shot, hit or admitted order from a routed unit between its break and its rally: {quiet}"),
+        );
+        let rally_ok = rallies.len() == breaks.len()
+            && rallies.iter().all(|r| {
+                let routed = int_field(r, "routed_steps").unwrap_or(-1);
+                int_field(r, "value") == Some(15_000)
+                    && (581..=600).contains(&routed)
+                    && int_field(r, "step").is_some_and(|s| s % 20 == 0)
+            });
+        report.verdict(
+            "DISC-26-RALLY-AT-15",
+            rally_ok,
+            format!(
+                "{} rallies for {} breaks; first {}",
+                rallies.len(),
+                breaks.len(),
+                rallies.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // 4. After the rally the same real group order is accepted by every unit.
+        let at = client_a.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count="], at)?;
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let order_from = server.offset();
+        let at = client_a.offset();
+        client_a.click(line.0, line.1, "3")?;
+        let outcome = client_a.wait_line(&["RTS_GROUP_ORDER_OUTCOME"], Duration::from_secs(10), at);
+        thread::sleep(Duration::from_millis(500));
+        let after_text = server.text()[order_from..].to_owned();
+        let readmitted = broken
+            .iter()
+            .filter(|u| {
+                after_text
+                    .lines()
+                    .any(|l| l.contains("RTS_ORDER_ADMITTED") && unit_field(l) == **u)
+            })
+            .count();
+        report.verdict(
+            "DISC-26-ORDERS-AFTER-RALLY",
+            readmitted == broken.len()
+                && outcome
+                    .as_ref()
+                    .is_ok_and(|l| int_field(l, "rejected") == Some(0)),
+            format!(
+                "{readmitted}/{} rallied units admitted; client {}",
+                broken.len(),
+                outcome
+                    .as_ref()
+                    .map_or_else(|e| e.clone(), |l| l.trim().to_owned())
+            ),
+        );
+        report.artifact("rallied_png", &client_a.screenshot(evidence, "04-rallied")?);
+
+        // Owner-only: client A saw its units routed; client B never did, nor any other value.
+        let own_routed = client_a
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE")
+                    && field(l, "owner") == Some("1")
+                    && int_field(l, "routed") == Some(1)
+            })
+            .count();
+        let seen: Vec<String> = client_b.text()[at_b..]
+            .lines()
+            .filter(|l| l.contains("MP_CLIENT_SAMPLE") && field(l, "owner") == Some("1"))
+            .map(str::to_owned)
+            .collect();
+        let leaked = seen
+            .iter()
+            .filter(|l| {
+                int_field(l, "routed") != Some(0) || int_field(l, "resolve") != Some(50_000)
+            })
+            .count();
+        report.verdict(
+            "DISC-07-OWNER-ONLY-ROUT",
+            own_routed > 0 && !seen.is_empty() && leaked == 0,
+            format!(
+                "owner samples routed {own_routed}; opposing client samples of participant 1 units {}, routed or not at 50000 {leaked}",
+                seen.len()
+            ),
+        );
+        let opponent_breaks = rout_lines(&server.text(), "break")
+            .iter()
+            .filter(|l| field(l, "participant") == Some("2"))
+            .count();
+        report.verdict(
+            "DISC-D4-BASELINE-NO-ROUT",
+            opponent_breaks == 0,
+            format!("breaks of participant 2: {opponent_breaks}"),
+        );
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 /// `RTS_DISCIPLINE_PARTICIPANT` lines of one participant in `text`.
 fn discipline_participant_samples_of(text: &str, participant: u32) -> Vec<String> {
     let tag = format!(" participant={participant} ");
@@ -10601,6 +11066,14 @@ fn main() {
             "politika.disc.discipline-effects-evidence.v1",
             "discipline-effects",
             discipline_effects_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--discipline-rout") {
+        run_dedicated_session(
+            "--discipline-rout",
+            "politika.disc.discipline-rout-evidence.v1",
+            "discipline-rout",
+            discipline_rout_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

@@ -91,6 +91,8 @@ struct Entity {
     bool observed = true;
     // False for civilians and other non-combat units: they cannot join formations (DISC-D1).
     bool military = true;
+    // A routed soldier (DISC-D4, Discipline broken) refuses every order until it rallies.
+    bool routed = false;
 };
 
 // Teams and seat layouts. A networked match has 2-4 playable seats split into two
@@ -311,9 +313,12 @@ enum class OrderRejection : std::uint8_t {
     // Fog of war: the target is not currently observed by the requester's team. Also
     // returned for unknown IDs while fog is enforced, so it is not an existence oracle.
     TargetNotVisible,
+    // DISC-D4: the issuer's Discipline broke and it is routing. Checked after ownership, so only
+    // the owner learns it.
+    Routed,
 };
 
-inline constexpr std::size_t kOrderRejectionCount = static_cast<std::size_t>(OrderRejection::TargetNotVisible) + 1;
+inline constexpr std::size_t kOrderRejectionCount = static_cast<std::size_t>(OrderRejection::Routed) + 1;
 
 struct OrderResult {
     OrderRejection rejection = OrderRejection::None;
@@ -322,7 +327,8 @@ struct OrderResult {
     }
 };
 
-enum class OrderEndReason : std::uint8_t { None, Replaced, Stopped, TargetLost, UnitDestroyed, Arrived, Obstructed, NavigationFailed };
+// Routed (DISC-D4): the unit's Discipline broke and its order gave way to the rout.
+enum class OrderEndReason : std::uint8_t { None, Replaced, Stopped, TargetLost, UnitDestroyed, Arrived, Obstructed, NavigationFailed, Routed };
 struct CommandOutcomeEvent {
     std::uint64_t step = 0, sequence = 0, correlation_id = 0, issuer_id = 0;
     OrderKind order = OrderKind::Stop;
@@ -415,6 +421,7 @@ struct MapBounds {
     if (!issuer->alive || !issuer->operational) return {OrderRejection::IssuerUnavailable};
     if (request.participant_id == 0 || issuer->owner_player != request.participant_id)
         return {OrderRejection::Unauthorized};
+    if (issuer->routed) return {OrderRejection::Routed};
     return AdmitOrder(*issuer, request.participant_id, bounds, request.intent, target);
 }
 

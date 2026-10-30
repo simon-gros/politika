@@ -18,6 +18,10 @@
 // F = (D - 50) / 50 scales damage taken, fire interval, reload time, return-to-post speed and the
 // formation regroup delay linearly, through the unit's modifier registry under one source.
 // Civilian Morale drives no combat effect.
+//
+// DISC-D4 gives the broken threshold its first consumer, the rout: a soldier whose Discipline
+// falls to it breaks, leaves its formation, stops fighting, refuses orders and flees towards its
+// side's start, recovering at the fade rate until it rallies at kRallyThreshold.
 
 #include <algorithm>
 #include <array>
@@ -38,8 +42,10 @@ enum class UnitCategory : std::uint8_t { Military, NonCombat };
 inline constexpr std::int32_t kMilliPerPoint = 1000;
 inline constexpr std::int32_t kMaximum = 100 * kMilliPerPoint;
 inline constexpr std::int32_t kBaseline = 50 * kMilliPerPoint;
-// Defined for the break consumers (DISC-D4); nothing reads it yet.
+// A military unit at or below this breaks and routs (DISC-D4).
 inline constexpr std::int32_t kBrokenThreshold = 0;
+// A routed unit rallies when its value climbs back to this: 30 evaluations from 0.
+inline constexpr std::int32_t kRallyThreshold = 15 * kMilliPerPoint;
 inline constexpr std::int32_t kNormalCeiling = 80 * kMilliPerPoint;
 
 // One evaluation per second at 20 steps per second.
@@ -76,6 +82,8 @@ enum class Service : std::uint8_t {
     // A soldier outside any formation with no friendly soldier close by, whose doctrine does not
     // tolerate solo work (DISC-D2).
     Isolated,
+    // A broken soldier fleeing (DISC-D4): it recovers at the fade rate wherever it is.
+    Routed,
 };
 
 // Faction rules that change how the meter moves (RTS_UNIT_DISCIPLINE.md section 6).
@@ -165,8 +173,21 @@ struct Evaluation {
         case Service::Isolated:
             if (current <= kIsolationFloor) return {current, Trend::Steady};
             return DriftTowards(current, kIsolationFloor);
+        case Service::Routed:
+            return DriftTowards(current, kBaseline);
     }
     return {current, Trend::Steady};
+}
+
+// DISC-D4. Only a military unit breaks: civilian Morale at the threshold has no rout (its break
+// consumers, Intimidation and Psy-Ops, belong to their own systems).
+[[nodiscard]] constexpr bool Breaks(std::int32_t milli, UnitCategory category) noexcept {
+    return category == UnitCategory::Military && milli <= kBrokenThreshold;
+}
+
+// A routed unit whose value has climbed back to the rally threshold takes orders again.
+[[nodiscard]] constexpr bool Rallies(std::int32_t milli) noexcept {
+    return milli >= kRallyThreshold;
 }
 
 // Per-unit casualty-shock budget: the window opens at the first shock and lasts

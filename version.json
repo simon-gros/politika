@@ -1,6 +1,6 @@
 {
   "game_version": "0.1.0-dev.0",
-  "network_protocol": 5,
+  "network_protocol": 6,
   "save_schema": 1,
   "persistence_schema": 1,
   "world_schema": 1

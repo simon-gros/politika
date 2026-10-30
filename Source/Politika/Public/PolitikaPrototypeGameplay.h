@@ -76,6 +76,8 @@ enum class EPolitikaUnitAutonomy : uint8 { Holding, Chasing, Returning };
 
 // HUD labels for stance and adherence (PolitikaFormations.cpp).
 FString PolitikaStanceLabel(politika::stance::CombatStance Stance);
+// The rules-domain execution order of a unit order (for OrderChangedEvent).
+politika::rules::ExecutionOrder PolitikaExecutionOrderOf(EPolitikaPrototypeOrder Order);
 FString PolitikaAdherenceLabel(politika::stance::Adherence Adherence);
 
 // Versioned remote command intent (network_protocol in version.json). It carries
@@ -323,6 +325,9 @@ public:
         ResolveTrend = static_cast<uint8>(Evaluation.trend);
         RefreshDisciplineEffects();
     }
+    // Rout (DISC-D4): a soldier whose Discipline broke flees and refuses orders until it rallies.
+    // Owner-only replicated; only the authority's fixed-step simulation changes it.
+    bool IsRouted() const { return bRouted; }
     // Authority (DISC-D3): the combined multiplier of every modifier source for one attribute,
     // in permille, and as a scale factor.
     int32 GetModifierPermille(politika::modifiers::Attribute Attribute) const { return Modifiers.Combined(Attribute); }
@@ -348,6 +353,7 @@ private:
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
+    friend class FPolitikaMultiplayerDisciplineRoutTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -466,6 +472,18 @@ private:
     UPROPERTY(Replicated) uint8 ResolveTrend = 0;
     // Authority only (DISC-D2): this unit's casualty-shock budget.
     politika::discipline::ShockWindow ResolveShock;
+    // Rout (DISC-D4), owner-only replicated for the HUD; the rally point and start step are
+    // authority-only. HomeLocation is where the unit entered the match.
+    UPROPERTY(Replicated) bool bRouted = false;
+    FVector RoutRallyPoint = FVector::ZeroVector;
+    uint64 RoutStartStep = 0;
+    FVector HomeLocation = FVector::ZeroVector;
+    // Breaks the unit: drops its order, target, grenade and engagement and, with a route, flees
+    // along it to RallyPoint as a plain Move that it cannot fire on; without one it holds.
+    void BeginRout(const FVector& RallyPoint, const FVector& ResolvedDestination, TArray<FVector>&& Route,
+        uint64 Generation, uint64 Step);
+    // Rallies the unit where it stands: idle, with a fresh post, taking orders again.
+    void EndRout();
     // Authority only (DISC-D3): attribute modifiers by source; Discipline's entries follow the
     // resolve value whenever it changes.
     politika::modifiers::Registry Modifiers;
@@ -913,6 +931,10 @@ private:
     TArray<uint64> DisciplineCasualtyVictims;
     void TriggerDisciplineCasualties(const politika::formation::Formation& Formation);
     void TickDisciplineCasualtyFixture();
+    // Development fixture (-PolitikaMPDisciplineRoutSeed=<points>, DISC-D4): when the casualty
+    // fixture arms, every living member of that formation is set to <points>, so the fixture's
+    // ordinary casualty shock takes the members near the casualties to the broken threshold.
+    int32 DisciplineRoutSeedMilli = -2;
     // Development fixture (-PolitikaMPStanceProbe, FORM-F4): when a participant's formation is
     // first set to Guard, the opponent's lowest-ID unit is moved (an ordinary Move) to a point
     // 740 cm from the nearest member (inside acquisition, outside weapon range); when it is
@@ -933,6 +955,9 @@ private:
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
+    friend class FPolitikaMultiplayerDisciplineRoutTest;
+    // The flight route of a breaking unit (the Automation world has no navigation mesh).
+    TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
     // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
     // stance, else the default. Membership changes never change it: StanceSnapshot records it
@@ -955,6 +980,13 @@ private:
     // within kCasualtyShockRadiusCm, within each unit's per-window cap. Call before the fallen
     // unit leaves its formation.
     void ApplyCasualtyShock(const APolitikaPrototypeUnit& Fallen);
+    // Rout (DISC-D4): every living military unit at or below the broken threshold that is not
+    // already routed breaks, in stable-ID order. Runs after the step's casualty shock and before
+    // the evaluation, so a member shocked to zero breaks before it could earn.
+    void ProcessDisciplineBreaks();
+    void BreakUnit(APolitikaPrototypeUnit& Unit);
+    // Where a breaking unit flees: its participant's authored start, else where it entered the match.
+    FVector RallyPointFor(const APolitikaPrototypeUnit& Unit) const;
     // The unit's resolve doctrine: its faction's, unless a participant override is set.
     politika::discipline::Doctrine DisciplineDoctrineOf(const APolitikaPrototypeUnit& Unit);
     // Participant -> Doctrine overrides: Automation, and the development fixture
@@ -1165,6 +1197,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
+    friend class FPolitikaMultiplayerDisciplineRoutTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

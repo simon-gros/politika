@@ -86,6 +86,11 @@ politika::rules::ExecutionOrder ToExecutionOrder(EPolitikaPrototypeOrder Order)
 }
 }
 
+politika::rules::ExecutionOrder PolitikaExecutionOrderOf(EPolitikaPrototypeOrder Order)
+{
+    return ToExecutionOrder(Order);
+}
+
 APolitikaPrototypeUnit::APolitikaPrototypeUnit()
 {
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube"));
@@ -155,6 +160,8 @@ void APolitikaPrototypeUnit::Configure(uint64 InStableId, uint32 InOwner, const 
     NavigationOrderSequence = 0;
     NavigationReplanCooldownSeconds = 0.0f;
     NavigationReplanAttempts = 0;
+    // Where a routed unit flees when its participant has no authored start (DISC-D4).
+    HomeLocation = GetActorLocation();
 }
 
 void APolitikaPrototypeUnit::ApplyObservedArchetypePresentation(const UPolitikaUnitArchetypeDefinition* Definition)
@@ -334,7 +341,8 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     // order, so it reports nothing to the command layer.
     if (CurrentOrder == EPolitikaPrototypeOrder::Idle)
     {
-        SimulateIdleAutonomy(DeltaSeconds);
+        // A routed unit has no stance behaviour: it stays where its flight ended (DISC-D4).
+        if (!bRouted) SimulateIdleAutonomy(DeltaSeconds);
         return politika::rules::OrderEndReason::None;
     }
     if (InfantryBehavior && SprintRemaining <= 0 && CurrentOrder == EPolitikaPrototypeOrder::AttackMove)
@@ -801,6 +809,12 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     // Decimal authored intervals such as 0.2 s must not acquire an extra 0.05 s
     // step from a positive floating-point residue after four simulation steps.
     if (CooldownRemaining <= KINDA_SMALL_NUMBER) CooldownRemaining = 0;
+    // A routed unit never acquires or fires (DISC-D4).
+    if (bRouted)
+    {
+        OrderTarget.Reset();
+        return;
+    }
     const bool bIdle = CurrentOrder == EPolitikaPrototypeOrder::Idle;
     // Idle fire follows the combat stance (FORM-F4): Hold Fire never fires on its own, and a
     // unit walking back to its post does not stop to fight. Explicit orders are not idle.
@@ -2199,7 +2213,7 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
     if (Issuer) { IssuerRules.id = Issuer->GetStableId(); IssuerRules.owner_player = Issuer->GetOwnerPlayer();
         IssuerRules.movable = Issuer->CanMove(); IssuerRules.can_attack = Issuer->CanAttack();
         IssuerRules.alive = Issuer->IsAlive(); IssuerRules.operational = Issuer->IsAlive();
-        IssuerRules.team = Issuer->GetTeamId(); }
+        IssuerRules.team = Issuer->GetTeamId(); IssuerRules.routed = Issuer->IsRouted(); }
 
     politika::rules::Entity TargetRules;
     const APolitikaPrototypeUnit* Target = Pending.Target.Get();
@@ -2254,6 +2268,7 @@ static FString DescribeRejection(politika::rules::OrderRejection Rejection)
         case politika::rules::OrderRejection::DuplicateCommand: return TEXT("That command was already processed.");
         case politika::rules::OrderRejection::RateLimited: return TEXT("Too many pending commands; try again.");
         case politika::rules::OrderRejection::TargetNotVisible: return TEXT("That target is not visible to your team.");
+        case politika::rules::OrderRejection::Routed: return TEXT("That unit is routing and will not take orders.");
         case politika::rules::OrderRejection::None: return TEXT("Order rejected.");
     }
     return TEXT("Order rejected.");
@@ -2688,6 +2703,15 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
         if (EndReason != politika::rules::OrderEndReason::None)
             QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted,
                 Unit->GetStableId(), ToExecutionOrder(PreviousOrder), ToExecutionOrder(Unit->GetCurrentOrder()), EndReason});
+#if !UE_BUILD_SHIPPING
+        // DISC-D4: where a routed unit's flight ended (arrived, or stopped by an obstruction).
+        if (Unit->IsRouted() && EndReason != politika::rules::OrderEndReason::None)
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_DISCIPLINE_ROUT phase=flight_end unit=%llu participant=%u reason=%u value=%d x=%.1f y=%.1f rally_distance=%.1f fled_steps=%llu step=%llu"),
+                Unit->GetStableId(), Unit->GetOwnerPlayer(), static_cast<uint32>(EndReason), Unit->GetResolveMilli(),
+                Unit->GetActorLocation().X, Unit->GetActorLocation().Y, FVector::Dist2D(Unit->GetActorLocation(), Unit->RoutRallyPoint),
+                SimulationStepsExecuted - Unit->RoutStartStep, SimulationStepsExecuted);
+#endif
     }
     // Team vision follows movement so acquisition, firing and target loss use current
     // positions; offline (no fog) this marks every unit observed and changes nothing.
@@ -2741,6 +2765,8 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
         }
     }
     Units.RemoveAll([](const TObjectPtr<APolitikaPrototypeUnit>& Unit) { return !IsValid(Unit) || !Unit->IsAlive(); });
+    // DISC-D4: a soldier the casualty shock took to the broken threshold routs before it could earn.
+    ProcessDisciplineBreaks();
     // Resolve follows movement and casualties: support uses this step's positions and survivors.
     UpdateUnitResolve();
     if (Objective)
@@ -3841,7 +3867,8 @@ FString APolitikaPrototypeHUD::RejectionText(uint8 Rejection)
         TEXT("The command was malformed and was not applied."),
         TEXT("That command was already processed."),
         TEXT("Too many pending commands; try again."),
-        TEXT("That target is not visible to your team.")
+        TEXT("That target is not visible to your team."),
+        TEXT("That unit is routing and will not take orders.")
     };
     static_assert(UE_ARRAY_COUNT(RejectionNames) == politika::rules::kOrderRejectionCount);
     return Rejection < UE_ARRAY_COUNT(RejectionNames) ? RejectionNames[Rejection] : TEXT("Order rejected.");
@@ -3984,15 +4011,20 @@ void APolitikaPrototypeHUD::DrawHUD()
             // Resolve (DISC-D1): the selection's average Discipline (military units), else Morale.
             int64 ResolveSum = 0;
             int32 ResolveCount = 0;
+            int32 Routed = 0;
             for (const APolitikaPrototypeUnit* Unit : SelectedUnits)
+            {
                 if (Unit->IsMilitary()) { ResolveSum += Unit->GetResolveMilli(); ++ResolveCount; }
+                Routed += Unit->IsRouted() ? 1 : 0;
+            }
             const bool bAnyMilitary = ResolveCount > 0;
             if (!bAnyMilitary)
                 for (const APolitikaPrototypeUnit* Unit : SelectedUnits) { ResolveSum += Unit->GetResolveMilli(); ++ResolveCount; }
             const int32 ResolveAverage = politika::discipline::DisplayPoints(static_cast<int32>(ResolveSum / FMath::Max(ResolveCount, 1)));
-            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving    STANCE %s    %s avg %d"), SelectedUnits.Num(), Health, MaxHealth,
+            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving    STANCE %s    %s avg %d%s"), SelectedUnits.Num(), Health, MaxHealth,
                 Moving, bMixedStance ? TEXT("MIXED") : *PolitikaStanceLabel(FirstStance),
-                bAnyMilitary ? TEXT("DISCIPLINE") : TEXT("MORALE"), ResolveAverage), Ink, Left, Y, nullptr, 1.25f * UiScale);
+                bAnyMilitary ? TEXT("DISCIPLINE") : TEXT("MORALE"), ResolveAverage,
+                Routed > 0 ? *FString::Printf(TEXT("    %d ROUTED"), Routed) : TEXT("")), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
             // Formation membership (FORM-F3): which formations the selection touches, and whether
             // the selection is one whole formation (then RMB/Q/X address the formation itself).
@@ -4054,7 +4086,9 @@ void APolitikaPrototypeHUD::DrawHUD()
                 case EPolitikaPrototypeOrder::Sprint:
                 case EPolitikaPrototypeOrder::Idle: break;
             }
-            const TCHAR* Autonomy = Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
+            // DISC-D4: a routed unit's own movement is its flight, not an order.
+            if (Selected->IsRouted()) Order = TEXT("ROUTED");
+            const TCHAR* Autonomy = Selected->IsRouted() || Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Chasing ? TEXT(" (engaging)")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Returning ? TEXT(" (returning to post)") : TEXT("");
             // Resolve (DISC-D1): Discipline on military units, Morale on civilians, with its trend.

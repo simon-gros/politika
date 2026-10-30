@@ -94,7 +94,8 @@ enum class FormationRejection : std::uint8_t {
 };
 inline constexpr std::size_t kFormationRejectionCount = static_cast<std::size_t>(FormationRejection::NotMilitary) + 1;
 
-enum class LeaveReason : std::uint8_t { Destroyed, Released, Reformed, Unavailable };
+// Routed (DISC-D4): the member's Discipline broke and it fled the ranks.
+enum class LeaveReason : std::uint8_t { Destroyed, Released, Reformed, Unavailable, Routed };
 enum class DissolveReason : std::uint8_t { Released, TooFewMembers, Reformed, MatchEnded };
 
 [[nodiscard]] constexpr std::string_view LeaveReasonName(LeaveReason reason) noexcept {
@@ -103,6 +104,7 @@ enum class DissolveReason : std::uint8_t { Released, TooFewMembers, Reformed, Ma
         case LeaveReason::Released: return "released";
         case LeaveReason::Reformed: return "reformed";
         case LeaveReason::Unavailable: return "unavailable";
+        case LeaveReason::Routed: return "routed";
     }
     return "invalid";
 }

@@ -2392,4 +2392,170 @@ bool FPolitikaMultiplayerDisciplineEffectsTest::RunTest(const FString& Parameter
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerDisciplineRoutTest,
+    "Politika.RTS.Multiplayer.DisciplineRout",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// DISC-D4: a soldier whose Discipline reaches the broken threshold routs. A row of six members at
+// 10 loses two comrades: the four survivors within 800 cm are shocked to 0, break in that step,
+// leave the formation (which dissolves) and flee to their start; they refuse orders (only their
+// owner learns why), cannot be formed, recover 0.5 per evaluation and rally after exactly 30
+// evaluations, taking orders again. A soldier attacking a dummy stops firing the step it breaks and,
+// with no route, cowers in place; a control soldier keeps firing. A civilian at 0 never routs.
+bool FPolitikaMultiplayerDisciplineRoutTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace pd = politika::discipline;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 OpponentId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    if (!TestTrue(TEXT("Both participants are bound"), HostId != 0 && OpponentId != 0 && HostId != OpponentId)) return false;
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->DisciplineDoctrineOverrides.Add(OpponentId, pd::Doctrine::SoloTolerant);
+    F.Match->bDisciplineDoctrineOverridesParsed = true;
+
+    // Row R0..R5 at 150 cm spacing, a lone shooter S with dummy D1, a control shooter C with dummy
+    // D2 and a civilian V. Every host soldier entered the match at Home.
+    const FVector Home(-1500.0, -1500.0, 42.0);
+    TArray<APolitikaPrototypeUnit*> Row;
+    for (int32 Index = 0; Index < 6; ++Index) Row.Add(F.AddUnit(HostId, {-1500.0 + Index * 150.0, 0.0}));
+    APolitikaPrototypeUnit* S = F.AddUnit(HostId, {1500.0, 1500.0});
+    APolitikaPrototypeUnit* D1 = F.AddUnit(OpponentId, {1500.0, 1800.0});
+    APolitikaPrototypeUnit* C = F.AddUnit(HostId, {1500.0, -1500.0});
+    APolitikaPrototypeUnit* D2 = F.AddUnit(OpponentId, {1500.0, -1200.0});
+    APolitikaPrototypeUnit* V = F.AddUnit(HostId, {-1500.0, 1500.0});
+    if (!TestFalse(TEXT("Fixture units spawned"), Row.Contains(nullptr) || !S || !D1 || !C || !D2 || !V)) return false;
+    TestTrue(TEXT("A unit's home is where it entered the match"), FVector::Dist2D(Row[2]->HomeLocation, FVector(-1200.0, 0.0, 0.0)) < 1.0);
+    for (APolitikaPrototypeUnit* Unit : Row) Unit->HomeLocation = Home;
+    V->SetUnitCategory(EPolitikaUnitCategory::NonCombat);
+    for (APolitikaPrototypeUnit* Dummy : {D1, D2})
+    {
+        Dummy->Health = Dummy->MaxHealth = 1000;
+        Dummy->WeaponDamage = 0.0f;
+    }
+    // A straight flight for the row; S finds no route and cowers.
+    F.Match->RoutRouteForTest = [S](const APolitikaPrototypeUnit& Unit, const FVector& Rally, TArray<FVector>& Route)
+    {
+        if (&Unit == S) return false;
+        Route = {Unit.GetActorLocation(), Rally};
+        return true;
+    };
+    const pf::Registry& Formations = F.Match->GetFormations();
+    Host->ApplySelection(Row, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    const pf::FormationId RowId = Formations.FormationOf(Row[0]->GetStableId());
+    if (!TestTrue(TEXT("The row is formed"), static_cast<bool>(RowId))) return false;
+
+    auto NextEvaluation = [&F]()
+    {
+        const uint64 Target = (F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps + 1) * pd::kEvaluationIntervalSteps;
+        for (int32 Guard = 0; F.Match->SimulationStepsExecuted < Target && Guard < 100; ++Guard) F.Step();
+    };
+    auto Kill = [&F](APolitikaPrototypeUnit* Unit) { Unit->Health = 0; F.Step(); };
+
+    // A civilian at the threshold never routs; no route in the Automation world matters to it.
+    NextEvaluation();
+    V->ApplyResolve({0, pd::Trend::Fading});
+    for (APolitikaPrototypeUnit* Unit : Row) Unit->ApplyResolve({10000, pd::Trend::Fading});
+    // DISC-D3/D4: fire before the break. S and C attack their dummies (no idle fire without an order).
+    S->SetAttackOrder(D1);
+    C->SetAttackOrder(D2);
+    F.Step(10);
+    TestTrue(TEXT("S and C fire before the break"), D1->GetHealth() < 1000 && D2->GetHealth() < 1000);
+    TestFalse(TEXT("A civilian at Morale 0 does not rout"), V->IsRouted());
+
+    // DISC-20: casualty shock to 0 breaks. R0 falls: R1..R5 lose 5 (to 5). R1 falls: R2..R5
+    // (150-600 cm away) lose 5 more, reach 0 and break in that step.
+    Kill(Row[0]);
+    TestTrue(TEXT("One shock leaves the survivors at 5, unbroken"), Row[2]->GetResolveMilli() == 5000 && !Row[2]->IsRouted());
+    const uint64 BreakStep = F.Match->SimulationStepsExecuted + 1;
+    Kill(Row[1]);
+    bool bAllBroke = true;
+    for (int32 Index = 2; Index < 6; ++Index)
+        bAllBroke &= Row[Index]->IsRouted() && Row[Index]->GetResolveMilli() == 0 && Row[Index]->RoutStartStep == BreakStep;
+    TestTrue(TEXT("DISC-20 the four survivors shocked to 0 break in the same step"), bAllBroke);
+    // DISC-21: they left the formation, which dissolved with fewer than two members.
+    bool bLeft = true;
+    for (int32 Index = 2; Index < 6; ++Index) bLeft &= !Formations.FormationOf(Row[Index]->GetStableId());
+    TestTrue(TEXT("DISC-21 routed members leave the formation; it dissolves"), bLeft && Formations.Find(RowId) == nullptr);
+    // DISC-22: each flees to its start with a plain Move and no target.
+    TestTrue(TEXT("DISC-22 a routed member flees along a route to its start"),
+        Row[2]->GetCurrentOrder() == EPolitikaPrototypeOrder::Move && FVector::Dist2D(Row[2]->RoutRallyPoint, Home) < 1.0
+        && Row[2]->GetOrderTarget() == nullptr);
+
+    // DISC-23: S breaks the step its value reaches 0 (one evaluation after the row) and stops
+    // firing; with no route it cowers.
+    NextEvaluation();
+    TestEqual(TEXT("A routed unit recovers 0.5 at its first evaluation"), Row[2]->GetResolveMilli(), 500);
+    S->ApplyResolve({0, pd::Trend::Fading});
+    F.Step();
+    TestTrue(TEXT("DISC-23 S breaks; without a route it holds where it is"),
+        S->IsRouted() && S->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle && S->GetOrderTarget() == nullptr);
+    const int32 D1AfterBreak = D1->GetHealth();
+    const int32 D2AfterBreak = D2->GetHealth();
+    const FVector SAt = S->GetActorLocation();
+    F.Step(40);
+    TestEqual(TEXT("DISC-23 a routed soldier never fires"), D1->GetHealth(), D1AfterBreak);
+    TestTrue(TEXT("DISC-23 the control soldier keeps firing"), D2->GetHealth() < D2AfterBreak);
+    TestTrue(TEXT("A cowering routed soldier does not move"), FVector::Dist2D(SAt, S->GetActorLocation()) < 0.01);
+    const double Fled = FVector::Dist2D(Row[2]->GetActorLocation(), Home);
+    TestTrue(TEXT("DISC-22 the routed members close on their start"), Fled < FVector::Dist2D(FVector(-1200.0, 0.0, 0.0), Home) - 500.0);
+
+    // The host's commands and formation requests share one client sequence.
+    auto HostMove = [&F, Host](uint64 Issuer, double X, double Y)
+    {
+        F.NextSequence.Add(Host, Host->NextClientSequence);
+        const FPolitikaNetCommandIntent Payload = F.Intent(Host, OrderKind::Move, Issuer, 0, X, Y);
+        Host->NextClientSequence = F.NextSequence[Host];
+        return F.Submit(Host, Payload);
+    };
+    // DISC-24: orders are refused with Routed, for the owner only.
+    const CommandOutcomeEvent* Refused = HostMove(Row[2]->GetStableId(), 2000.0, 2000.0);
+    TestTrue(TEXT("DISC-24 the owner's order to a routed unit is refused as Routed"),
+        Refused && !Refused->accepted && Refused->rejection == OrderRejection::Routed);
+    const CommandOutcomeEvent* Foreign = F.Submit(F.Remotes[0], F.Intent(F.Remotes[0], OrderKind::Move, Row[2]->GetStableId(), 0, 2000.0, 2000.0));
+    TestTrue(TEXT("DISC-24 another participant never learns the unit is routed"),
+        !Foreign || (!Foreign->accepted && Foreign->rejection != OrderRejection::Routed));
+    TestTrue(TEXT("A refused order changes nothing"), Row[2]->IsRouted() && Row[2]->GetCurrentOrder() != EPolitikaPrototypeOrder::Attack);
+    // DISC-25: Form refuses routed soldiers.
+    Host->ApplySelection({Row[2], Row[3], Row[4]}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    TestTrue(TEXT("DISC-25 Form refuses routed soldiers"), !Formations.FormationOf(Row[2]->GetStableId()) && Formations.All().empty());
+
+    // Arrival: the flight ends at the start; the unit stays routed there.
+    F.Step(120);
+    TestTrue(TEXT("DISC-22 the flight ends at the start, still routed"),
+        FVector::Dist2D(Row[2]->GetActorLocation(), Home) <= 18.0 && Row[2]->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle
+        && Row[2]->IsRouted());
+
+    // DISC-26: recovery 0.5 per evaluation; the rally comes at the 30th evaluation after the break.
+    const auto EvaluationsSince = [&F, BreakStep]()
+    {
+        return static_cast<int32>(F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps - BreakStep / pd::kEvaluationIntervalSteps);
+    };
+    for (int32 Guard = 0; EvaluationsSince() < 29 && Guard < 40; ++Guard) NextEvaluation();
+    TestTrue(TEXT("DISC-26 after 29 evaluations a routed unit is at 14.5, still routed"),
+        Row[2]->GetResolveMilli() == 14500 && Row[2]->IsRouted() && Row[2]->GetResolveTrend() == pd::Trend::Rising);
+    NextEvaluation();
+    TestTrue(TEXT("DISC-26 the 30th evaluation reaches 15 and rallies"),
+        Row[2]->GetResolveMilli() == pd::kRallyThreshold && !Row[2]->IsRouted() && Row[2]->GetCurrentOrder() == EPolitikaPrototypeOrder::Idle);
+    TestTrue(TEXT("DISC-26 S, broken later, is still routed"), S->IsRouted());
+    NextEvaluation();
+    TestTrue(TEXT("DISC-26 S rallies one evaluation later"), !S->IsRouted() && S->GetResolveMilli() == pd::kRallyThreshold);
+    // Rallied soldiers take orders again and can be formed.
+    const CommandOutcomeEvent* Accepted = HostMove(Row[2]->GetStableId(), 600.0, 600.0);
+    TestTrue(TEXT("DISC-26 a rallied soldier takes orders again"), Accepted && Accepted->accepted);
+    Host->ApplySelection({Row[3], Row[4], Row[5]}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    TestTrue(TEXT("DISC-26 rallied soldiers can be formed"), static_cast<bool>(Formations.FormationOf(Row[3]->GetStableId())));
+    TestFalse(TEXT("The civilian never routed"), V->IsRouted());
+
+    F.Match->RoutRouteForTest = nullptr;
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 #endif

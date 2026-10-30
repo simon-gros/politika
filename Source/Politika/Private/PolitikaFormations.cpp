@@ -297,7 +297,9 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
                 {
                     Entity.owner_player = Unit->GetOwnerPlayer();
                     Entity.alive = Unit->IsAlive();
-                    Entity.operational = Unit->IsAlive();
+                    // A routed soldier cannot be formed until it rallies (DISC-D4).
+                    Entity.operational = Unit->IsAlive() && !Unit->IsRouted();
+                    Entity.routed = Unit->IsRouted();
                     Entity.movable = Unit->CanMove();
                     Entity.military = Unit->IsMilitary();
                 }
@@ -872,6 +874,19 @@ void APolitikaPrototypeMatch::TriggerDisciplineCasualties(const pf::Formation& F
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("MP_DISCIPLINE_CASUALTIES_ARMED formation=%u participant=%u members=%d victims=%s first_step=%llu centre=%.1f,%.1f"),
         Formation.id.value, Formation.owner, Living.Num(), *Names, DisciplineCasualtiesFirstStep, Centre.X, Centre.Y);
+    // DISC-D4 seed: the members start the casualties low enough for the shock to break them.
+    if (DisciplineRoutSeedMilli == -2)
+    {
+        int32 Points = -1;
+        DisciplineRoutSeedMilli = FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPDisciplineRoutSeed="), Points)
+            ? FMath::Clamp(Points, 0, 100) * politika::discipline::kMilliPerPoint : -1;
+    }
+    if (DisciplineRoutSeedMilli < 0) return;
+    for (const APolitikaPrototypeUnit* Member : Living)
+        if (APolitikaPrototypeUnit* Unit = FindUnitByStableId(Member->GetStableId()))
+            Unit->ApplyResolve({DisciplineRoutSeedMilli, politika::discipline::Trend::Fading});
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_ROUT_SEED formation=%u participant=%u members=%d value=%d step=%llu"),
+        Formation.id.value, Formation.owner, Living.Num(), DisciplineRoutSeedMilli, SimulationStepsExecuted);
 }
 
 void APolitikaPrototypeMatch::TickDisciplineCasualtyFixture()

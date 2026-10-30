@@ -9,10 +9,14 @@
 // alliance team). Clients receive their own units' values for the HUD and nothing else.
 // DISC-D3: the value drives damage taken, fire interval, reload time, return-to-post speed and
 // the formation regroup delay through the unit's modifier registry.
+// DISC-D4: a soldier at the broken threshold routs: it leaves its formation, stops fighting,
+// refuses orders (OrderRejection::Routed) and flees to its side's start, recovering at the fade
+// rate until it rallies at politika::discipline::kRallyThreshold.
 
 #include "PolitikaPrototypeGameplay.h"
 
 #include "PolitikaBootstrap.h"
+#include "PolitikaInfantryPresentation.h"
 #include "Discipline.h"
 #include "Formation.h"
 
@@ -69,6 +73,7 @@ const TCHAR* ServiceName(pd::Service Service)
         case pd::Service::MemberHolding: return TEXT("holding");
         case pd::Service::MemberEarning: return TEXT("earning");
         case pd::Service::Isolated: return TEXT("isolated");
+        case pd::Service::Routed: return TEXT("routed");
     }
     return TEXT("invalid");
 }
@@ -245,8 +250,10 @@ void APolitikaPrototypeMatch::UpdateUnitResolve()
     {
         if (!IsValid(Unit) || !Unit->IsAlive()) continue;
         const FMemberEvaluation* Found = MemberService.Find(Unit->GetStableId());
-        // Only military units serve; Form refuses civilians, so this is a safeguard.
-        pd::Service Service = Found && Unit->IsMilitary() ? Found->Service : pd::Service::Outside;
+        // Only military units serve; Form refuses civilians, so this is a safeguard. A routed
+        // unit (never a member) recovers wherever it is (DISC-D4).
+        pd::Service Service = Unit->IsRouted() ? pd::Service::Routed
+            : Found && Unit->IsMilitary() ? Found->Service : pd::Service::Outside;
         bool bAlone = false;
         pd::Doctrine Doctrine = pd::Doctrine::Standard;
         if (Service == pd::Service::Outside && Unit->IsMilitary())
@@ -260,6 +267,21 @@ void APolitikaPrototypeMatch::UpdateUnitResolve()
         }
         const int32 Before = Unit->GetResolveMilli();
         Unit->ApplyResolve(pd::Evaluate(Before, Service, Found ? Found->Ceiling : pd::kNormalCeiling));
+        if (Service == pd::Service::Routed && pd::Rallies(Unit->GetResolveMilli()))
+        {
+            const EPolitikaPrototypeOrder PreviousOrder = Unit->GetCurrentOrder();
+#if !UE_BUILD_SHIPPING
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_DISCIPLINE_ROUT phase=rally unit=%llu participant=%u value=%d routed_steps=%llu x=%.1f y=%.1f rally_distance=%.1f order=%u step=%llu"),
+                Unit->GetStableId(), Unit->GetOwnerPlayer(), Unit->GetResolveMilli(), SimulationStepsExecuted - Unit->RoutStartStep,
+                Unit->GetActorLocation().X, Unit->GetActorLocation().Y, FVector::Dist2D(Unit->GetActorLocation(), Unit->RoutRallyPoint),
+                static_cast<uint32>(PreviousOrder), SimulationStepsExecuted);
+#endif
+            Unit->EndRout();
+            if (PreviousOrder != Unit->GetCurrentOrder())
+                QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted, Unit->GetStableId(),
+                    PolitikaExecutionOrderOf(PreviousOrder), PolitikaExecutionOrderOf(Unit->GetCurrentOrder()), politika::rules::OrderEndReason::Stopped});
+        }
 #if !UE_BUILD_SHIPPING
         const int32 After = Unit->GetResolveMilli();
         // Lone soldiers are few; list them, exempt or not, so isolation can be checked per unit.
@@ -309,6 +331,129 @@ void APolitikaPrototypeMatch::UpdateUnitResolve()
             Entry.Value.Min, Entry.Value.Average(), Entry.Value.Max, SimulationStepsExecuted);
     }
 #endif
+}
+
+// ----------------------------------------------------------------------------
+// Rout (DISC-D4)
+// ----------------------------------------------------------------------------
+// Casualty shock is what takes a soldier to the broken threshold, so breaks are checked once per
+// step after the casualties and before the evaluation. A routed soldier is no formation member,
+// so no later shock reaches it; it recovers at the fade rate (UpdateUnitResolve) and rallies at
+// kRallyThreshold.
+
+FVector APolitikaPrototypeMatch::RallyPointFor(const APolitikaPrototypeUnit& Unit) const
+{
+    if (MapDefinition)
+    {
+        const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+            [&Unit](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == Unit.GetOwnerPlayer(); });
+        const FPolitikaPrototypePlayerSlot* Slot = Participant ? MapDefinition->PlayerSlots.FindByPredicate(
+            [Participant](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Participant->SlotId; }) : nullptr;
+        if (Slot && !Slot->StartLocation.IsNearlyZero())
+            return FVector(Slot->StartLocation.X, Slot->StartLocation.Y, Unit.GetActorLocation().Z);
+    }
+    return FVector(Unit.HomeLocation.X, Unit.HomeLocation.Y, Unit.GetActorLocation().Z);
+}
+
+void APolitikaPrototypeMatch::ProcessDisciplineBreaks()
+{
+    TArray<APolitikaPrototypeUnit*> Breaking;
+    for (APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit) && Unit->IsAlive() && !Unit->IsRouted()
+            && pd::Breaks(Unit->GetResolveMilli(), Unit->IsMilitary() ? pd::UnitCategory::Military : pd::UnitCategory::NonCombat))
+            Breaking.Add(Unit);
+    Breaking.Sort([](const APolitikaPrototypeUnit& A, const APolitikaPrototypeUnit& B) { return A.GetStableId() < B.GetStableId(); });
+    for (APolitikaPrototypeUnit* Unit : Breaking) BreakUnit(*Unit);
+}
+
+void APolitikaPrototypeMatch::BreakUnit(APolitikaPrototypeUnit& Unit)
+{
+    const EPolitikaPrototypeOrder PreviousOrder = Unit.GetCurrentOrder();
+    const pf::FormationId Formation = Formations.FormationOf(Unit.GetStableId());
+    // Routed first: the formation loss and any later Form see a unit that is no longer operational.
+    Unit.bRouted = true;
+    if (Formation) LoseFormationMember(Unit.GetStableId(), pf::LeaveReason::Routed, TEXT("routed"));
+    const FVector Rally = RallyPointFor(Unit);
+    TArray<FVector> Route;
+    FVector Resolved = Rally;
+    FString Failure = TEXT("none");
+    // Already at the rally point: nothing to flee to.
+    bool bRoute = false;
+    if (FVector::Dist2D(Unit.GetActorLocation(), Rally) > 100.0)
+    {
+#if WITH_DEV_AUTOMATION_TESTS
+        if (RoutRouteForTest)
+        {
+            bRoute = RoutRouteForTest(Unit, Rally, Route);
+            Failure = bRoute ? TEXT("none") : TEXT("test_route");
+        }
+        else
+#endif
+        bRoute = ResolveNavigationRoute(&Unit, Rally, Route, Resolved, Failure, 0);
+    }
+    else Failure = TEXT("at_rally_point");
+    Unit.BeginRout(Rally, Resolved, bRoute ? MoveTemp(Route) : TArray<FVector>(), MatchGeneration, SimulationStepsExecuted);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_DISCIPLINE_ROUT phase=break unit=%llu participant=%u value=%d formation=%u previous_order=%u order=%u route=%d failure=%s x=%.1f y=%.1f rally=%.1f,%.1f rally_distance=%.1f step=%llu"),
+        Unit.GetStableId(), Unit.GetOwnerPlayer(), Unit.GetResolveMilli(), Formation.value, static_cast<uint32>(PreviousOrder),
+        static_cast<uint32>(Unit.GetCurrentOrder()), bRoute ? 1 : 0, bRoute ? TEXT("none") : *Failure, Unit.GetActorLocation().X, Unit.GetActorLocation().Y,
+        Rally.X, Rally.Y, FVector::Dist2D(Unit.GetActorLocation(), Rally), SimulationStepsExecuted);
+#endif
+    if (PreviousOrder != Unit.GetCurrentOrder() || PreviousOrder != EPolitikaPrototypeOrder::Idle)
+        QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted, Unit.GetStableId(),
+            PolitikaExecutionOrderOf(PreviousOrder), PolitikaExecutionOrderOf(Unit.GetCurrentOrder()), politika::rules::OrderEndReason::Routed});
+    LastCommandFeedback = FString::Printf(TEXT("%s broke and is routing."), *Unit.GetUnitName().ToString());
+}
+
+void APolitikaPrototypeUnit::BeginRout(const FVector& RallyPoint, const FVector& ResolvedDestination, TArray<FVector>&& Route,
+    uint64 Generation, uint64 Step)
+{
+    bRouted = true;
+    RoutRallyPoint = RallyPoint;
+    RoutStartStep = Step;
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
+    ResetAutonomy();
+    OrderTarget.Reset();
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
+    NavigationOrderSequence = 0;
+    if (Route.IsEmpty())
+    {
+        // No way back: the unit cowers where it is.
+        CurrentOrder = EPolitikaPrototypeOrder::Idle;
+        NavigationWaypoints.Reset();
+        NavigationWaypointIndex = 0;
+        NavigationMatchGeneration = 0;
+        OrderDestination = GetActorLocation();
+        return;
+    }
+    // A plain Move never acquires a target, so the unit runs without firing.
+    CurrentOrder = EPolitikaPrototypeOrder::Move;
+    OrderDestination = RallyPoint;
+    ResolvedNavigationDestination = ResolvedDestination;
+    NavigationWaypoints = MoveTemp(Route);
+    NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+    NavigationMatchGeneration = Generation;
+#if !UE_BUILD_SHIPPING
+    bAcceptanceMovementLogged = false;
+#endif
+}
+
+void APolitikaPrototypeUnit::EndRout()
+{
+    bRouted = false;
+    CurrentOrder = EPolitikaPrototypeOrder::Idle;
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
+    OrderTarget.Reset();
+    // Idle autonomy takes its new post where it rallied.
+    ResetAutonomy();
 }
 
 // ----------------------------------------------------------------------------
