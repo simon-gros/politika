@@ -108,7 +108,7 @@ Concord, Directorate and Ascendancy campaigns may use distinct propaganda missio
 
 ## 6. Suggested technical contracts
 
-[Military Discipline](RTS_UNIT_DISCIPLINE.md) (proposed 30 October 2026) makes the military side of `UnitResolve` concrete: baseline 50, earned in coherent formations up to 80, fading back to the baseline outside them, with `FormationDisciplineSupport`, `MassArmyDisciplineBonus` and `ConcordNoSoloDisciplinePenalty` below mapped to its DISC-D1/D2 slices.
+[Military Discipline](RTS_UNIT_DISCIPLINE.md) (30 October 2026; DISC-D1 implemented, [record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)) makes the military side of `UnitResolve` concrete: baseline 50, earned in coherent formations up to 80, fading back to the baseline outside them, with `FormationDisciplineSupport`, `MassArmyDisciplineBonus` and `ConcordNoSoloDisciplinePenalty` below mapped to its DISC-D1/D2 slices.
 
 Use one `UnitResolve` component/property for every combat and non-combat unit, with `UnitCategory` selecting the HUD label `Discipline` or `Morale`. The meter uses unified value, limits, loss, recovery and break rules. Do not store separate `BattlefieldMorale`, `UnitDiscipline` and `NonCombatUnitMorale` components for the same mechanic.
 

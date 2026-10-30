@@ -1,6 +1,6 @@
 # POLITIKA — Military Discipline: earned in formation
 
-**Status: PROPOSED DESIGN — 30 October 2026. Not implemented.** This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. In this first stage it has **no effect on any other attribute**; §7 lists the attributes it will drive later and how they plug in.
+**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)); DISC-D2 to D4 are not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. In this first stage it has **no effect on any other attribute**; §7 lists the attributes it will drive later and how they plug in.
 
 **Authority:** [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) owns the single `UnitResolve` meter and its break rules; [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns formations, stances and Cohesion (this document is its §6 made concrete and replaces the FORM-F5 sketch); [Engine Outline](ENGINE_OUTLINE.md) owns sequencing. The numbers below are first values for implementation and testing, not balance.
 
@@ -28,14 +28,14 @@ All values are authoritative integers in **milli-points** (`0…100 000` for 0�
 | Decay outside formation | −0.5 per second towards `B`, never below `B` | 80 → 50 takes 60 s; earned Discipline outlasts a short break |
 | Decay while in formation but not eligible | none | Holding steady; an out-of-place member neither gains nor loses |
 
-Display rounds down to whole points. The HUD shows the value and a trend arrow (▲ gaining, ▼ fading, nothing when steady).
+Display rounds down to whole points. The HUD shows the value and its trend as a word (`rising`, `fading`, nothing when steady).
 
 ## 3. When a member earns Discipline
 
 At each evaluation a unit is **eligible** only if all of these hold:
 
 1. It is a military unit, alive, and under its owner's control.
-2. It is a member of a formation, and **following** it. A member made independent by an individual order (FORM-F3) is not acting as part of the formation and does not gain. Autonomous stance chases (FORM-F4) do not make a member independent, so a Guard member who chases and returns keeps earning.
+2. It is a member of a formation, and **following** it. A member made independent by an individual order (FORM-F3) is not acting as part of the formation and does not gain. Independence exists once the formation has a move: before its first formation move every member counts as following. Autonomous stance chases (FORM-F4) do not make a member independent, so a Guard member who chases and returns keeps earning.
 3. It has **support**: at least `min(2, members − 1)` other members of the **same formation** within **400 cm** of it. At the 150 cm formation spacing every member of a closed Line or Column has two neighbours in range. A member stranded by a long route, a chase or a failed slot does not gain until it rejoins.
 
 Rules that keep the gain honest:
@@ -63,8 +63,8 @@ Rules that keep the gain honest:
 - **Server-owned.** The value lives on the authoritative unit and is updated only in the fixed-step simulation, after movement and before event publication, so a step's support uses that step's positions. Clients never compute it.
 - **Owner-only exact value.** The owning player receives each own unit's value and trend. Opponents and allies receive nothing in DISC-D1; a coarse visible band for enemies (for example "steady / shaken") belongs with intelligence rules later.
 - **Replication** adds the value to the existing owner-only unit state; `network_protocol` 4 → 5.
-- **HUD:** selected unit `DISCIPLINE 72 ▲`; multi-selection `DISCIPLINE avg 64`; the formation line adds `DISCIPLINE avg 68 ▲`; unit labels add `D72` only while the unit is selected, to avoid more label clutter.
-- **Development logs:** `RTS_DISCIPLINE_SAMPLE` every 100 steps (formation, members, eligible count, min/avg/max), and `RTS_DISCIPLINE_BAND` when a unit crosses 60, 70, 80, 90 or 100, or returns to `B`. No per-unit log every evaluation.
+- **HUD:** a selected unit's line ends `DISCIPLINE 72 rising` (`MORALE` on a civilian); a multi-selection, including a whole formation, shows `DISCIPLINE avg 64` over its military units. Unit labels and the formation line are unchanged, to avoid more label clutter.
+- **Development logs:** every 100 steps `RTS_DISCIPLINE_SAMPLE` per formation (members, earning, holding, min/avg/max), `RTS_DISCIPLINE_PARTICIPANT` per participant (members and units outside formations) and `RTS_DISCIPLINE_HOLDING` for each member that is not earning; `RTS_DISCIPLINE_BAND` when a unit crosses 60, 70, 80, 90 or 100, or lands back on `B`. The client's `MP_CLIENT_SAMPLE` carries `resolve=` for every unit it receives. No per-unit log every evaluation.
 
 ## 6. Faction rules (canon) and when they arrive
 
