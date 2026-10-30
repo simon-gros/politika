@@ -6952,15 +6952,17 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
 //
 // Same dedicated 1v1 fixture as `--group-orders` (20 idle units per seat). Seat 1's client
 // box-selects its 20 units with real X input and right-clicks three destinations: a Line
-// move to the control point, V then a Column move, and V then a Line move so close to the
+// move clear of the control point (a capture would end the match), V then a Column move, and V then a Line move so close to the
 // western playable edge that part of the nominal line is outside it. For each move the
 // client's plan and per-unit slots are checked against what the server received, projected
 // and routed, and against where every unit actually stopped.
 // ---------------------------------------------------------------------------------------
 
-/// Ground probe points (world cm): a Column destination south-west of the control point and
-/// a Line destination 100 cm inside the western playable edge (x = -2000).
-const SHAPE_COLUMN_POINT: (f64, f64) = (-900.0, -950.0);
+/// Ground probe points (world cm), all well outside the control point's 300 cm capture radius
+/// at (0, 150): a Line destination east of seat 1, a Column destination west of it, and a Line
+/// destination 100 cm inside the western playable edge (x = -2000).
+const SHAPE_LINE_POINT: (f64, f64) = (-450.0, -1000.0);
+const SHAPE_COLUMN_POINT: (f64, f64) = (-1000.0, -1050.0);
 const SHAPE_EDGE_POINT: (f64, f64) = (-1900.0, -650.0);
 /// The planner's slot spacing (`politika::formation::Layout::spacingCm`).
 const SHAPE_SPACING_CM: f64 = 150.0;
@@ -7243,8 +7245,13 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
     let display_a = Display::start(evidence, "client-a")?;
     let mut args_a = client_args(client_options, true, false, false);
     args_a.push(format!(
-        "-PolitikaMPGroundProbe={}:{}/{}:{}",
-        SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1, SHAPE_EDGE_POINT.0, SHAPE_EDGE_POINT.1
+        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
+        SHAPE_LINE_POINT.0,
+        SHAPE_LINE_POINT.1,
+        SHAPE_COLUMN_POINT.0,
+        SHAPE_COLUMN_POINT.1,
+        SHAPE_EDGE_POINT.0,
+        SHAPE_EDGE_POINT.1
     ));
     let mut client_a = Game::launch(
         &client_options.binary,
@@ -7318,12 +7325,8 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             boxed.trim().to_owned(),
         );
 
-        // 1. Line (the default) to the control point.
-        let objective = wait_screen(
-            &mut client_a,
-            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
-            "objective",
-        )?;
+        // 1. Line (the default), clear of the control point so no capture ends the match.
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
         shape_move(
             &mut client_a,
             &mut server,
@@ -7333,7 +7336,7 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             &ShapeMove {
                 id: "LINE",
                 shape: "line",
-                screen: objective,
+                screen: line,
                 expect_rejected: false,
             },
         )?;
@@ -7365,7 +7368,7 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             "client_a_column_hud_png",
             &client_a.screenshot(evidence, "02-column-selected")?,
         );
-        let column = wait_screen(&mut client_a, |t| probe_screen(t, 0), "column probe")?;
+        let column = wait_screen(&mut client_a, |t| probe_screen(t, 1), "column probe")?;
         shape_move(
             &mut client_a,
             &mut server,
@@ -7390,7 +7393,7 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             field(&shape, "shape") == Some("line"),
             shape.trim().to_owned(),
         );
-        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 1), "edge probe")?;
+        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 2), "edge probe")?;
         shape_move(
             &mut client_a,
             &mut server,
@@ -7404,6 +7407,16 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
                 expect_rejected: true,
             },
         )?;
+        // The fixture's match stayed Active throughout: no objective capture or result.
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
         Ok(())
     })();
     report.artifact("server_log", &server.log);
