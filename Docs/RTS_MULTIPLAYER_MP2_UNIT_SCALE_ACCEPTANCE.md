@@ -26,7 +26,7 @@ Not qualified here:
   - `MP_UNIT_SCALE_SEAT` and `MP_UNIT_SCALE_FIXTURE` record per-seat counts, the largest radius used and the closest opposing pair at spawn.
 - **Load driver.** After `MP_MATCH_ACTIVE` the units hold for 200 steps (10 s, phase `idle`). Then the server submits one attack-move per seated unit through the trusted `SubmitMove` path that offline opponent seats use (phase `engage`).
   - Each unit's destination is the objective plus its offset from its seat start, so seats converge from their own sides.
-  - The orders bypass the remote intake queue (16 pending per participant) on purpose: no multi-unit client command exists yet (see §F).
+  - The orders bypass the remote intake queue on purpose: when this was measured no multi-unit client command existed (see §F). Since `9ab0300` the queue bound is 16 plus living units and group orders exist ([group orders record](RTS_GROUP_ORDERS_4C_ACCEPTANCE.md)).
 - **Measurements.**
   - `MP_UNIT_SCALE_WINDOW`: once a second, the step count, mean and maximum step cost, units alive and units destroyed.
   - `MP_UNIT_SCALE_STEP_SUMMARY`: once per phase at the result or a disconnect, with nearest-rank p50/p95/p99/max.
@@ -173,7 +173,7 @@ Since `cf60cc9` the fixture and harness accept at most 20 per seat (the skirmish
   - Proposed provisional technical cap until F44 is fixed: **50 units per participant**. That keeps 2v2 and 3v1 at or below about 200 units total. 3v1 and 2v1 are not run here (inferred from total units). *Superseded by §G: with the 400 KB/s send rate, the proposal is 100 per participant.*
   - The step budget is not the binding limit at these counts. Bandwidth is.
 - **Not covered and next.**
-  - Multi-unit selection and group commands: there is no box selection, and the 16-command intake queue would reject a large army order sent one unit at a time.
+  - Multi-unit selection and group commands: implemented in `9ab0300`/`f4878c5` with a queue bound of 16 plus living units ([group orders record](RTS_GROUP_ORDERS_4C_ACCEPTANCE.md)).
   - AI-filled seats (no skirmish AI exists).
   - F35 (disconnect policy beyond ending the match).
   - A Shipping server measurement.

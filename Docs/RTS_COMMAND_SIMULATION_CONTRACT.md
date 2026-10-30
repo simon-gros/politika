@@ -41,7 +41,7 @@ No save, content, world or network schema changed. The portable `Order` alternat
   2. Check `ProtocolVersion`.
   3. Consume the single-use `ClientSequenceGuard` sequence.
   4. `DecodeIntent` (bounded variant and shape, finite coordinates).
-  5. Enforce the 16-command per-participant queue bound.
+  5. Enforce the per-participant queue bound: 16 plus the participant's living units (`politika::selection::PendingCommandLimit`, capped by the 300-unit game limit), so a whole-selection group order fits ([group orders record](RTS_GROUP_ORDERS_4C_ACCEPTANCE.md)).
   6. Resolve entity IDs in the current match only.
   7. Enter the unchanged `SubmitCommand` → `AdmitPendingOrders` → `AdmitCommand` pipeline.
 - **Teams and fog.** `AdmitOrder` now also treats allied targets as `FriendlyTarget`. Under networked fog it treats unobserved or unknown targets as `TargetNotVisible`.

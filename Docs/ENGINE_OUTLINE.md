@@ -1,4 +1,4 @@
-# POLITIKA Engine — foundational outline
+**Multi-unit and drag selection with per-unit admitted group orders IMPLEMENTED 30 Oct 2026 ([record](RTS_GROUP_ORDERS_4C_ACCEPTANCE.md)); economy, production queue and rematch parts open.** # POLITIKA Engine — foundational outline
 
 Status: first-pass architecture, 2026-10-27  
 Target runtime: Unreal Engine 5.8.3  
