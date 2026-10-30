@@ -65,7 +65,7 @@ The first attempt (`group-move-shape-attempt0-objective-capture/`) ordered the L
 - **Facing and width control.** The facing always follows the travel direction; there is no right-drag to set facing or frontage, and no formation preview before the click.
 - **Blocked slots on a dedicated client.** A dedicated client has no navmesh, so its pre-check uses bounds and ground only. A slot on ground the navmesh excludes (for example a null-area modifier) still reaches the server and fails that one member with `NavigationFailed`. The skirmish map has no such area in the tested region; the listen host and standalone game use the navmesh check.
 - **Mixed movement classes and footprints.** One spacing (150 cm) for all members; the map has only infantry.
-- **Speed matching, regroup and hysteresis.** Members move at their own speed and do not wait for each other; nothing reforms after casualties (FORM-F3).
-- **First FORM fixture items that need F3:** member loss during transit, explicit formation Stop and match-return cleanup of formation state.
+- **Speed matching.** Members move at their own speed and do not wait for each other. Regroup after casualties with hysteresis was added by FORM-F3 ([record](RTS_FORMATION_F3_LIFECYCLE_ACCEPTANCE.md)) for explicit formations only.
+- **First FORM fixture items that need F3:** member loss during transit, explicit formation Stop and match-return cleanup of formation state — covered by the [FORM-F3 record](RTS_FORMATION_F3_LIFECYCLE_ACCEPTANCE.md).
 - **Attack-move** uses the same planner but was not driven in the packaged run (Automation covers Move only; the code path is shared).
 - 300-unit orders on large maps still need batched intents (F47).
