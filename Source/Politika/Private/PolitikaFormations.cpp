@@ -536,7 +536,31 @@ void APolitikaPrototypeMatch::PruneFormationMembers()
 void APolitikaPrototypeMatch::LoseFormationMember(uint64 UnitId, pf::LeaveReason Reason, const TCHAR* Cause)
 {
     const TMap<uint64, ps::CombatStance> StancesBefore = StanceSnapshot();
-    HandleFormationChange(Formations.MemberLost(UnitId, SimulationStepsExecuted, Reason), Cause);
+    // DISC-D3: the survivors' average Discipline (after this step's casualty shock) sets how soon
+    // the formation closes its ranks.
+    int64 SurvivorSum = 0;
+    int32 Survivors = 0;
+    if (const pf::Formation* Formation = Formations.Find(Formations.FormationOf(UnitId)))
+        for (const pf::MemberSlot& Member : Formation->members)
+            if (const APolitikaPrototypeUnit* Unit = FindUnitByStableId(Member.id);
+                Member.id != UnitId && Unit && Unit->IsAlive())
+            {
+                SurvivorSum += Unit->GetResolveMilli();
+                ++Survivors;
+            }
+    const int32 SurvivorAverage = Survivors > 0 ? static_cast<int32>(SurvivorSum / Survivors) : politika::discipline::kBaseline;
+    const uint64 RegroupDelay = politika::discipline::RegroupDelaySteps(SurvivorAverage, pf::kRegroupDelaySteps);
+    const pf::Change Change = Formations.MemberLost(UnitId, SimulationStepsExecuted, Reason, RegroupDelay);
+#if !UE_BUILD_SHIPPING
+    for (const pf::Change::Scheduled& Regroup : Change.regroups)
+        if (RegroupDelay != pf::kRegroupDelaySteps)
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_DISCIPLINE_EFFECT effect=regroup_delay formation=%u lost=%llu survivors=%d value=%d permille=%d base_steps=%llu steps=%llu due=%llu step=%llu"),
+                Regroup.formation.value, UnitId, Survivors, SurvivorAverage,
+                politika::discipline::EffectPermille(politika::modifiers::Attribute::RegroupDelay, SurvivorAverage),
+                pf::kRegroupDelaySteps, RegroupDelay, Regroup.dueStep, SimulationStepsExecuted);
+#endif
+    HandleFormationChange(Change, Cause);
     PreserveStances(StancesBefore);
 }
 

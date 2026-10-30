@@ -48,11 +48,19 @@ bool APolitikaPrototypeUnit::CanUseGrenade(const APolitikaPrototypeUnit* Target)
 void APolitikaPrototypeUnit::BeginReload()
 {
     if (!HasAuthority() || !CanReload()) return;
-    ReloadRemaining = InfantryBehavior->ReloadSeconds;
+    // Discipline shortens or lengthens the reload (DISC-D3).
+    const int32 Permille = GetModifierPermille(politika::modifiers::Attribute::ReloadTime);
+    ReloadRemaining = InfantryBehavior->ReloadSeconds * static_cast<float>(Permille) / static_cast<float>(politika::modifiers::kNeutral);
+#if !UE_BUILD_SHIPPING
+    if (Permille != politika::modifiers::kNeutral)
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_DISCIPLINE_EFFECT effect=reload_time unit=%llu participant=%u value=%d permille=%d base_seconds=%.3f seconds=%.3f step=%llu"),
+            StableId, OwnerPlayer, GetResolveMilli(), Permille, InfantryBehavior->ReloadSeconds, ReloadRemaining, AuthorityStep());
+#endif
     InfantryPresentation->Reload(ReloadRemaining);
     MulticastAbilityPresentation(0, ReloadRemaining);
-    UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_BEGIN unit=%llu ammo=%d seconds=%.2f"),
-        StableId, Ammo, ReloadRemaining);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_BEGIN unit=%llu ammo=%d seconds=%.2f step=%llu"),
+        StableId, Ammo, ReloadRemaining, AuthorityStep());
 }
 
 void APolitikaPrototypeUnit::BeginGrenade(APolitikaPrototypeUnit* Target)
@@ -122,8 +130,7 @@ void APolitikaPrototypeMatch::AdvanceGrenades(float DeltaSeconds)
         {
             if (!Candidate || !Candidate->IsAlive() || !Candidate->IsAttackable()
                 || AreAllied(Candidate, P) || FVector::Dist(Candidate->GetActorLocation(), Position) > P.Radius) continue;
-            Candidate->PendingDamage += P.Damage;
-            Candidate->bPendingBlastDamage = true;
+            Candidate->ReceiveWeaponHit(P.Damage, nullptr, true);
             ++Victims;
         }
 #if !UE_BUILD_SHIPPING

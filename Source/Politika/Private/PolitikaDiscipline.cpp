@@ -6,8 +6,9 @@
 // casualty shock. Support is measured from the step's actual positions among living members of
 // the unit's own formation, so selection, control groups, a neighbouring formation or a dead
 // member never count. Isolation is measured among living friendly soldiers (same owner, or same
-// alliance team). Clients receive their own units' values for the HUD and nothing else. The
-// value drives no other attribute yet.
+// alliance team). Clients receive their own units' values for the HUD and nothing else.
+// DISC-D3: the value drives damage taken, fire interval, reload time, return-to-post speed and
+// the formation regroup delay through the unit's modifier registry.
 
 #include "PolitikaPrototypeGameplay.h"
 
@@ -308,4 +309,78 @@ void APolitikaPrototypeMatch::UpdateUnitResolve()
             Entry.Value.Min, Entry.Value.Average(), Entry.Value.Max, SimulationStepsExecuted);
     }
 #endif
+}
+
+// ----------------------------------------------------------------------------
+// Discipline effects (DISC-D3)
+// ----------------------------------------------------------------------------
+// Each consumer reads the unit's combined modifier once per use. RTS_DISCIPLINE_EFFECT lists every
+// use whose multiplier is not neutral, with the unit's value, so a run can check the formula per
+// use; at the baseline the multipliers are exactly 1000 and nothing is logged.
+
+namespace
+{
+#if !UE_BUILD_SHIPPING
+const TCHAR* AttributeLogName(politika::modifiers::Attribute Value)
+{
+    // The same names as politika::modifiers::AttributeName.
+    using politika::modifiers::Attribute;
+    switch (Value)
+    {
+        case Attribute::DamageTaken: return TEXT("damage_taken");
+        case Attribute::Spread: return TEXT("spread");
+        case Attribute::FireInterval: return TEXT("fire_interval");
+        case Attribute::ReloadTime: return TEXT("reload_time");
+        case Attribute::ReturnSpeed: return TEXT("return_speed");
+        case Attribute::RegroupDelay: return TEXT("regroup_delay");
+    }
+    return TEXT("invalid");
+}
+#endif
+} // namespace
+
+void APolitikaPrototypeUnit::ReceiveWeaponHit(float Damage, const APolitikaPrototypeUnit* Shooter, bool bBlast)
+{
+    if (!HasAuthority() || !IsAlive() || !(Damage > 0.0f)) return;
+    namespace pm = politika::modifiers;
+    const int32 Permille = GetModifierPermille(pm::Attribute::DamageTaken);
+    const int64 BaseMilli = FMath::RoundToInt64(static_cast<double>(Damage) * 1000.0);
+    const int64 AppliedMilli = BaseMilli * Permille / pm::kNeutral;
+    PendingWeaponDamageMilli += AppliedMilli;
+    if (bBlast) bPendingBlastDamage = true;
+#if !UE_BUILD_SHIPPING
+    if (Permille != pm::kNeutral)
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_DISCIPLINE_EFFECT effect=%s unit=%llu participant=%u shooter=%llu value=%d permille=%d base_milli=%lld applied_milli=%lld blast=%d step=%llu"),
+            AttributeLogName(pm::Attribute::DamageTaken), StableId, OwnerPlayer, Shooter ? Shooter->GetStableId() : 0ull,
+            ResolveMilli, Permille, BaseMilli, AppliedMilli, bBlast ? 1 : 0, AuthorityStep());
+#else
+    (void)Shooter;
+#endif
+}
+
+float APolitikaPrototypeUnit::NextFireInterval(float DeltaSeconds)
+{
+    namespace pm = politika::modifiers;
+    const int32 Permille = GetModifierPermille(pm::Attribute::FireInterval);
+    // At the neutral multiplier the weapon's own interval runs unchanged and nothing is owed.
+    if (Permille == pm::kNeutral)
+    {
+        FireIntervalCarryMilliSteps = 0;
+        return WeaponCooldown;
+    }
+    if (!(DeltaSeconds > 0.0f)) return WeaponCooldown * static_cast<float>(Permille) / static_cast<float>(pm::kNeutral);
+    // The countdown fires on the step it reaches zero, so the weapon's interval is this many
+    // whole steps; the modifier scales that, and the fraction of a step is owed to the next shot.
+    const int32 BaseSteps = FMath::Max(1, FMath::CeilToInt((WeaponCooldown - KINDA_SMALL_NUMBER) / DeltaSeconds));
+    const int64 MilliSteps = static_cast<int64>(BaseSteps) * Permille + FireIntervalCarryMilliSteps;
+    const int32 Steps = FMath::Max<int32>(1, static_cast<int32>(MilliSteps / 1000));
+    FireIntervalCarryMilliSteps = static_cast<int32>(FMath::Max<int64>(0, MilliSteps - static_cast<int64>(Steps) * 1000));
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_DISCIPLINE_EFFECT effect=%s unit=%llu participant=%u value=%d permille=%d base_steps=%d steps=%d carry=%d step=%llu"),
+        AttributeLogName(pm::Attribute::FireInterval), StableId, OwnerPlayer, ResolveMilli, Permille, BaseSteps, Steps,
+        FireIntervalCarryMilliSteps, AuthorityStep());
+#endif
+    return static_cast<float>(Steps) * DeltaSeconds;
 }

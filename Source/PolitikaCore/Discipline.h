@@ -13,15 +13,21 @@
 // per window), a soldier alone outside any formation drifts below the baseline unless its doctrine
 // tolerates solo work (Atlantic Concord), and mass-formation doctrine (Red Directorate, Iron
 // Ascendancy) raises the ceiling to the maximum for a formation with enough earning members.
-// The value still has no effect on any other attribute.
+//
+// DISC-D3 gives a military unit's Discipline its first effects: one normalized factor
+// F = (D - 50) / 50 scales damage taken, fire interval, reload time, return-to-post speed and the
+// formation regroup delay linearly, through the unit's modifier registry under one source.
+// Civilian Morale drives no combat effect.
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
 
 #include "FormationGeometry.h"
+#include "Modifiers.h"
 #include "Rules.h"
 
 namespace politika::discipline {
@@ -188,6 +194,56 @@ struct ShockResult {
     window.taken += charge;
     const std::int32_t after = std::max(current - charge, 0);
     return {after, current - after, window};
+}
+
+// DISC-D3 effects (RTS_UNIT_DISCIPLINE.md section 7).
+//
+// The factor F in permille: 0 at the baseline, +600 at the normal ceiling of 80, +1000 at 100,
+// -400 at the isolation floor of 30 and -1000 at 0.
+[[nodiscard]] constexpr std::int32_t FactorPermille(std::int32_t milli) noexcept {
+    return (std::clamp(milli, 0, kMaximum) - kBaseline) * 1000 / kBaseline;
+}
+
+// Each attribute's multiplier is 1000 + F * numerator / denominator permille, so at F = +1:
+// damage taken and spread -20%, fire interval and reload time -15%, return speed +33%, regroup
+// delay -37.5% (40 -> 25 steps); at 80 (F = +0.6) -12%, -12%, -9%, -9%, +20% and 40 -> 31 steps.
+// Below the baseline the same coefficients apply with the negative factor.
+struct Effect {
+    modifiers::Attribute attribute;
+    std::int32_t numerator;
+    std::int32_t denominator;
+};
+inline constexpr std::array<Effect, 6> kEffects{{
+    {modifiers::Attribute::DamageTaken, -1, 5},
+    {modifiers::Attribute::Spread, -1, 5},
+    {modifiers::Attribute::FireInterval, -3, 20},
+    {modifiers::Attribute::ReloadTime, -3, 20},
+    {modifiers::Attribute::ReturnSpeed, 1, 3},
+    {modifiers::Attribute::RegroupDelay, -3, 8},
+}};
+
+// The multiplier Discipline `milli` gives `attribute`, in permille. Truncates towards zero.
+[[nodiscard]] constexpr std::int32_t EffectPermille(modifiers::Attribute attribute, std::int32_t milli) noexcept {
+    for (const Effect& effect : kEffects)
+        if (effect.attribute == attribute)
+            return modifiers::kNeutral + FactorPermille(milli) * effect.numerator / effect.denominator;
+    return modifiers::kNeutral;
+}
+
+// Writes Discipline's entries into a unit's registry, replacing the previous ones. Civilian
+// Morale drives no combat effect, so a non-combat unit's entries stay neutral.
+constexpr void ApplyEffects(modifiers::Registry& registry, std::int32_t milli, UnitCategory category) noexcept {
+    for (const Effect& effect : kEffects)
+        registry.Set(modifiers::Source::Discipline, effect.attribute,
+            category == UnitCategory::Military ? EffectPermille(effect.attribute, milli) : modifiers::kNeutral);
+}
+
+// The FORM-F3 regroup delay (`baseSteps`, formation::kRegroupDelaySteps) of a formation whose
+// surviving members average `averageMilli`, rounded to the nearest step and never below one.
+[[nodiscard]] constexpr std::uint64_t RegroupDelaySteps(std::int32_t averageMilli, std::uint64_t baseSteps) noexcept {
+    const std::int64_t permille = EffectPermille(modifiers::Attribute::RegroupDelay, averageMilli);
+    const std::int64_t steps = (static_cast<std::int64_t>(baseSteps) * permille + modifiers::kNeutral / 2) / modifiers::kNeutral;
+    return static_cast<std::uint64_t>(std::max<std::int64_t>(steps, 1));
 }
 
 // Whole points as displayed (rounded down).

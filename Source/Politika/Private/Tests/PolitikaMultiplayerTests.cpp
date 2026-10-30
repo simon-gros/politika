@@ -1615,14 +1615,21 @@ bool FPolitikaMultiplayerFormationLifecycleTest::RunTest(const FString& Paramete
     const uint64 LossStep = F.Match->SimulationStepsExecuted;
     TestTrue(TEXT("FORM-09 the dead member leaves; the formation is degraded"),
         Formations.Find(Id)->members.size() == 7 && Formations.Find(Id)->state == pf::FormationState::Degraded);
-    TestTrue(TEXT("A regroup is scheduled after the hysteresis window"), Formations.Find(Id)->regroupDueStep
-        == LossStep + pf::kRegroupDelaySteps);
+    // DISC-D3: the window follows the survivors' average Discipline after the casualty shock.
+    int64 SurvivorSum = 0;
+    for (const pf::MemberSlot& Member : Formations.Find(Id)->members)
+        SurvivorSum += F.Match->FindUnitByStableId(Member.id)->GetResolveMilli();
+    const uint64 RegroupDelay = politika::discipline::RegroupDelaySteps(
+        static_cast<int32>(SurvivorSum / static_cast<int64>(Formations.Find(Id)->members.size())), pf::kRegroupDelaySteps);
+    const uint64 DueStep = LossStep + RegroupDelay;
+    TestTrue(TEXT("A regroup is scheduled after the Discipline-scaled hysteresis window"), Formations.Find(Id)->regroupDueStep
+        == DueStep);
     F.Step(5);
     Own[6]->PendingDamage = static_cast<float>(Own[6]->GetHealth() + 1);
     F.Step();
     TestTrue(TEXT("A second loss inside the window keeps the same regroup"), Formations.Find(Id)->regroupDueStep
-        == LossStep + pf::kRegroupDelaySteps);
-    while (F.Match->SimulationStepsExecuted < LossStep + pf::kRegroupDelaySteps - 1)
+        == DueStep);
+    while (F.Match->SimulationStepsExecuted < DueStep - 1)
     {
         F.Step();
         TestEqual(TEXT("Nothing is re-sent before the regroup is due"), F.Match->PendingOrders.Num(), 0);
@@ -2203,6 +2210,183 @@ bool FPolitikaMultiplayerDisciplineStressTest::RunTest(const FString& Parameters
     Kill(Row[4]);
     TestEqual(TEXT("DISC-10 a new window: R5 loses 5 again"), Row[5]->GetResolveMilli(), BeforeLate[0] - pd::kCasualtyShock);
     TestEqual(TEXT("DISC-10 R6's window is still spent"), Row[6]->GetResolveMilli(), BeforeLate[1]);
+
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerDisciplineEffectsTest,
+    "Politika.RTS.Multiplayer.DisciplineEffects",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// DISC-D3: Discipline's first effects, measured as before/after combat outcomes. Three host
+// soldiers stand at earned values: a formation member at 80, a member of a supported pair at the
+// baseline 50 and a lone soldier at the isolation floor 30. The same opposing fire costs them
+// 61, 70 and 75 health over seven hits; in the same 182 steps they fire 20, 19 and 18 shots; their
+// reloads take 2.73, 3.00 and 3.18 s; walking back to a post they cover 180, 150 and 130 cm in ten
+// steps. A formation at 80 closes its ranks 33 steps after a loss, one at the baseline after 41
+// (both survivors' averages after the casualty shock). Civilian Morale drives nothing.
+bool FPolitikaMultiplayerDisciplineEffectsTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace pd = politika::discipline;
+    namespace pm = politika::modifiers;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 OpponentId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    if (!TestTrue(TEXT("Both participants are bound"), HostId != 0 && OpponentId != 0 && HostId != OpponentId)) return false;
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    // Opposing soldiers stand alone; as the Concord they stay at the baseline, so their own fire
+    // and the damage they take are unmodified.
+    F.Match->DisciplineDoctrineOverrides.Add(OpponentId, pd::Doctrine::SoloTolerant);
+    F.Match->bDisciplineDoctrineOverridesParsed = true;
+
+    // Host: formation A (row of 3), pair B, lone soldier C, trio Z (formed later, at the baseline).
+    TArray<APolitikaPrototypeUnit*> A, B, Z;
+    for (int32 Index = 0; Index < 3; ++Index) A.Add(F.AddUnit(HostId, {-1500.0 + Index * 150.0, 1500.0}));
+    for (int32 Index = 0; Index < 2; ++Index) B.Add(F.AddUnit(HostId, {0.0 + Index * 150.0, 1500.0}));
+    APolitikaPrototypeUnit* C = F.AddUnit(HostId, {1500.0, 1500.0});
+    for (int32 Index = 0; Index < 3; ++Index) Z.Add(F.AddUnit(HostId, {-1500.0 + Index * 150.0, -1500.0}));
+    APolitikaPrototypeUnit* V = F.AddUnit(HostId, {1500.0, -1500.0});
+    if (!TestFalse(TEXT("Fixture units spawned"), A.Contains(nullptr) || B.Contains(nullptr) || Z.Contains(nullptr) || !C || !V))
+        return false;
+    V->SetUnitCategory(EPolitikaUnitCategory::NonCombat);
+    const pf::Registry& Formations = F.Match->GetFormations();
+    Host->ApplySelection(A, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    const pf::FormationId AId = Formations.FormationOf(A[0]->GetStableId());
+    if (!TestTrue(TEXT("Formation A is formed"), static_cast<bool>(AId))) return false;
+
+    auto NextEvaluation = [&F]()
+    {
+        const uint64 Target = (F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps + 1) * pd::kEvaluationIntervalSteps;
+        for (int32 Guard = 0; F.Match->SimulationStepsExecuted < Target && Guard < 100; ++Guard) F.Step();
+    };
+    // Earned values: 30 evaluations bring A to 80, 40 bring C to 30.
+    for (int32 Index = 0; Index < 40; ++Index) NextEvaluation();
+    APolitikaPrototypeUnit* A1 = A[1];
+    APolitikaPrototypeUnit* B1 = B[0];
+    if (!TestTrue(TEXT("Earned values: formation member 80, pair 50, lone soldier 30"),
+        A1->GetResolveMilli() == pd::kNormalCeiling && B1->GetResolveMilli() == pd::kBaseline
+        && C->GetResolveMilli() == pd::kIsolationFloor)) return false;
+    // One registry entry per attribute from one source, matching section 7.
+    TestTrue(TEXT("Damage taken: 880 at 80, 1000 at 50, 1080 at 30"),
+        A1->GetModifierPermille(pm::Attribute::DamageTaken) == 880 && B1->GetModifierPermille(pm::Attribute::DamageTaken) == 1000
+        && C->GetModifierPermille(pm::Attribute::DamageTaken) == 1080);
+    TestTrue(TEXT("Every attribute is neutral at the baseline"),
+        B1->GetModifierPermille(pm::Attribute::FireInterval) == 1000 && B1->GetModifierPermille(pm::Attribute::ReloadTime) == 1000
+        && B1->GetModifierPermille(pm::Attribute::ReturnSpeed) == 1000 && B1->GetModifierPermille(pm::Attribute::Spread) == 1000);
+    TestTrue(TEXT("Spread is registered (880 at 80) for a later indirect-fire consumer"),
+        A1->GetModifierPermille(pm::Attribute::Spread) == 880);
+    // Civilian Morale drives no combat effect, whatever its value.
+    V->ApplyResolve({pd::kNormalCeiling, pd::Trend::Rising});
+    TestTrue(TEXT("A civilian's modifiers stay neutral"), V->GetModifierPermille(pm::Attribute::DamageTaken) == 1000
+        && V->GetModifierPermille(pm::Attribute::FireInterval) == 1000 && V->GetModifierPermille(pm::Attribute::ReturnSpeed) == 1000);
+
+    // Defense: one opposing shooter per target, 10 damage every 10 steps, seven hits in 61 steps.
+    TArray<APolitikaPrototypeUnit*> Targets = {A1, B1, C};
+    TArray<APolitikaPrototypeUnit*> Shooters;
+    for (APolitikaPrototypeUnit* Target : Targets)
+    {
+        APolitikaPrototypeUnit* Shooter = F.AddUnit(OpponentId, {Target->GetActorLocation().X, Target->GetActorLocation().Y - 300.0});
+        if (!TestNotNull(TEXT("Opposing shooter spawned"), Shooter)) return false;
+        Shooter->SetAttackOrder(Target);
+        Shooters.Add(Shooter);
+    }
+    F.Step(61);
+    TestEqual(TEXT("DISC-D3 defense at 80: seven hits cost 61 (8.8 each, fraction carried)"), A1->GetHealth(), 39);
+    TestEqual(TEXT("DISC-D3 defense at 50: seven hits cost 70"), B1->GetHealth(), 30);
+    TestEqual(TEXT("DISC-D3 defense at 30: seven hits cost 75 (10.8 each)"), C->GetHealth(), 25);
+    TestTrue(TEXT("Values held during the exchange"), A1->GetResolveMilli() == pd::kNormalCeiling
+        && B1->GetResolveMilli() == pd::kBaseline && C->GetResolveMilli() == pd::kIsolationFloor);
+    for (APolitikaPrototypeUnit* Shooter : Shooters) Shooter->StopOrder();
+
+    // Fire interval: the same three fire at baseline dummies for 182 steps. A 10-step interval
+    // becomes 9.1 steps at 80 (nine 9s and a 10) and 10.6 at 30 (10, 11, 10, 11, 11).
+    NextEvaluation();
+    TArray<APolitikaPrototypeUnit*> Dummies;
+    for (APolitikaPrototypeUnit* Shooter : Targets)
+    {
+        APolitikaPrototypeUnit* Dummy = F.AddUnit(OpponentId, {Shooter->GetActorLocation().X, Shooter->GetActorLocation().Y + 300.0});
+        if (!TestNotNull(TEXT("Dummy spawned"), Dummy)) return false;
+        Dummy->Health = Dummy->MaxHealth = 1000;
+        Shooter->SetAttackOrder(Dummy);
+        Dummies.Add(Dummy);
+    }
+    F.Step(182);
+    TestEqual(TEXT("DISC-D3 fire interval at 80: 20 shots in 182 steps"), 1000 - Dummies[0]->GetHealth(), 200);
+    TestEqual(TEXT("DISC-D3 fire interval at 50: 19 shots in 182 steps"), 1000 - Dummies[1]->GetHealth(), 190);
+    TestEqual(TEXT("DISC-D3 fire interval at 30: 18 shots in 182 steps"), 1000 - Dummies[2]->GetHealth(), 180);
+    TestTrue(TEXT("Values held while firing"), A1->GetResolveMilli() == pd::kNormalCeiling
+        && B1->GetResolveMilli() == pd::kBaseline && C->GetResolveMilli() == pd::kIsolationFloor);
+    for (APolitikaPrototypeUnit* Shooter : Targets) Shooter->StopOrder();
+
+    // Reload: the default 3 s magazine reload.
+    UPolitikaInfantryBehaviorDefinition* Behavior = NewObject<UPolitikaInfantryBehaviorDefinition>();
+    TArray<float> Reloads;
+    for (APolitikaPrototypeUnit* Unit : Targets)
+    {
+        Unit->ConfigureInfantryBehavior(Behavior);
+        Unit->Ammo = 0;
+        Unit->BeginReload();
+        Reloads.Add(Unit->ReloadRemaining);
+    }
+    TestTrue(TEXT("DISC-D3 reload: 2.73 s at 80, 3.00 s at 50, 3.18 s at 30"),
+        FMath::IsNearlyEqual(Reloads[0], 2.73f, 0.001f) && FMath::IsNearlyEqual(Reloads[1], 3.0f, 0.001f)
+        && FMath::IsNearlyEqual(Reloads[2], 3.18f, 0.001f));
+    for (APolitikaPrototypeUnit* Unit : Targets) Unit->ConfigureInfantryBehavior(nullptr);
+
+    // Return to post: ten steps of the walk back at 300 cm/s (15 cm per step at the baseline).
+    TArray<double> Covered;
+    for (APolitikaPrototypeUnit* Unit : Targets)
+    {
+        const FVector Start = Unit->GetActorLocation();
+        Unit->Post = Start + FVector(1000.0, 0.0, 0.0);
+        Unit->bHasPost = true;
+        Unit->Autonomy = EPolitikaUnitAutonomy::Returning;
+        Unit->NavigationWaypoints = {Unit->Post};
+        Unit->NavigationWaypointIndex = 0;
+        Unit->ResolvedNavigationDestination = Unit->Post;
+        for (int32 Index = 0; Index < 10; ++Index) Unit->SimulateIdleAutonomy(0.05f);
+        Covered.Add(FVector::Dist2D(Start, Unit->GetActorLocation()));
+        Unit->SetActorLocation(Start);
+        Unit->Autonomy = EPolitikaUnitAutonomy::Holding;
+        Unit->NavigationWaypoints.Reset();
+    }
+    TestTrue(TEXT("DISC-D3 return speed: 180 cm at 80, 150 cm at 50, 130 cm at 30 in ten steps"),
+        FMath::IsNearlyEqual(Covered[0], 180.0, 0.1) && FMath::IsNearlyEqual(Covered[1], 150.0, 0.1)
+        && FMath::IsNearlyEqual(Covered[2], 130.05, 0.1));
+
+    // Regroup delay: Z forms at the baseline; both formations get a destination; one member of
+    // each falls. Survivors lose 5 to the shock first: A averages 75 (33 steps), Z 45 (41 steps).
+    Host->ApplySelection(Z, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    const pf::FormationId ZId = Formations.FormationOf(Z[0]->GetStableId());
+    if (!TestTrue(TEXT("Formation Z is formed"), static_cast<bool>(ZId) && ZId != AId)) return false;
+    auto At = [&F](pf::EntityId Id)
+    {
+        const APolitikaPrototypeUnit* Unit = F.Match->FindUnitByStableId(Id);
+        return Unit ? pf::Point{Unit->GetActorLocation().X, Unit->GetActorLocation().Y} : pf::Point{};
+    };
+    auto Always = [](pf::Point) { return true; };
+    TestTrue(TEXT("Both formations have a destination"),
+        F.Match->Formations.PlanMove(HostId, AId, {-1350.0, 1800.0}, false, At, Always).rejection == pf::FormationRejection::None
+        && F.Match->Formations.PlanMove(HostId, ZId, {-1350.0, -1800.0}, false, At, Always).rejection == pf::FormationRejection::None);
+    TestEqual(TEXT("Z is at the baseline"), Z[1]->GetResolveMilli(), pd::kBaseline);
+    A[2]->Health = 0;
+    Z[2]->Health = 0;
+    F.Step();
+    const uint64 LossStep = F.Match->SimulationStepsExecuted;
+    const pf::Formation* AFormation = Formations.Find(AId);
+    const pf::Formation* ZFormation = Formations.Find(ZId);
+    if (!TestTrue(TEXT("Both formations survive with a regroup scheduled"), AFormation && ZFormation)) return false;
+    TestTrue(TEXT("Survivors took the shock"), A1->GetResolveMilli() == 75000 && Z[1]->GetResolveMilli() == 45000);
+    TestEqual(TEXT("DISC-D3 regroup delay at 75: 33 steps"), static_cast<int64>(AFormation->regroupDueStep - LossStep), int64(33));
+    TestEqual(TEXT("DISC-D3 regroup delay at 45: 41 steps"), static_cast<int64>(ZFormation->regroupDueStep - LossStep), int64(41));
+    TestEqual(TEXT("The delay follows the documented formula"), static_cast<int64>(pd::RegroupDelaySteps(75000, pf::kRegroupDelaySteps)), int64(33));
 
     F.Match->FormationSlotProbeForTest = nullptr;
     return true;

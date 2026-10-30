@@ -7961,6 +7961,24 @@ fn formation_lifecycle_session(
         let regroup_step: u64 = field(&regroup, "step")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
+        // DISC-D3: the survivors' Discipline scales the 40-step window; the server logs the
+        // scaled delay whenever it differs from 40.
+        let delay_line = server.text()[at_server..]
+            .lines()
+            .find(|l| {
+                l.contains("RTS_DISCIPLINE_EFFECT")
+                    && l.contains(" effect=regroup_delay ")
+                    && l.contains(&format!(" formation={formation} "))
+            })
+            .map(str::to_owned);
+        let regroup_delay: u64 = delay_line.as_deref().map_or(40, |l| {
+            let permille = discipline_effect_permille(int_field(l, "value").unwrap_or(-1), -3, 8);
+            if int_field(l, "permille") == Some(permille) {
+                u64::try_from(((40 * permille + 500) / 1000).max(1)).unwrap_or(0)
+            } else {
+                0
+            }
+        });
         report.verdict(
             "FORM-09-LOSS-DEGRADES-AND-SCHEDULES-ONE-REGROUP",
             lost != 0
@@ -7968,14 +7986,18 @@ fn formation_lifecycle_session(
                 && lost == *followers.iter().chain([lost].iter()).max().unwrap_or(&0)
                 && field(&left, "remaining") == Some("19")
                 && field(&scheduled, "due_step").and_then(|v| v.parse::<u64>().ok())
-                    == Some(loss_step + 40)
-                && regroup_step == loss_step + 40,
+                    == Some(loss_step + regroup_delay)
+                && regroup_step == loss_step + regroup_delay
+                && delay_line
+                    .as_deref()
+                    .is_none_or(|l| int_field(l, "steps") == i64::try_from(regroup_delay).ok()),
             format!(
-                "{} | {} | {} | {}",
+                "{} | {} | {} | {} | regroup delay {regroup_delay} steps ({})",
                 casualty.trim(),
                 left.trim(),
                 scheduled.trim(),
-                regroup.trim()
+                regroup.trim(),
+                delay_line.as_deref().map_or("baseline", str::trim)
             ),
         );
         let regroup_units: Vec<u64> = server.text()[at_server..]
@@ -9841,6 +9863,590 @@ fn discipline_stress_session(
     result
 }
 
+// `--discipline-effects SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// DISC-D3 on the dedicated 1v1 fixture (20 idle units per seat). The server runs with the stance
+// probe, the discipline casualty fixture and participant 2 on the solo-tolerant (Atlantic Concord)
+// doctrine, so every opposing soldier stays at the baseline and shows unmodified numbers. Seat 1's
+// client, with real X input, forms its 20 units into a Line and lets them earn Discipline 80. H
+// (Guard) makes the probe walk one opposing unit close: the members fire at it on a shorter
+// interval, take less damage from its hits, chase it on their leash and walk back to their posts
+// faster. J sets the adherence, which makes the fixture kill four members: the formation closes its
+// ranks after a delay shortened by the survivors' Discipline. R reloads the members that fired,
+// faster than the baseline. Every effect is checked against the documented formula on the server
+// log and against the opposing side's baseline behaviour.
+// ---------------------------------------------------------------------------------------
+
+/// The DISC-D3 multiplier in permille for Discipline `value` (milli-points):
+/// 1000 + F * numerator / denominator with F = (D - 50) / 50 in permille, truncating as the server does.
+fn discipline_effect_permille(value: i64, numerator: i64, denominator: i64) -> i64 {
+    let factor = (value.clamp(0, 100_000) - 50_000) * 1000 / 50_000;
+    1000 + factor * numerator / denominator
+}
+
+/// `RTS_DISCIPLINE_EFFECT` lines of one effect in `text`.
+fn discipline_effects_of(text: &str, effect: &str) -> Vec<String> {
+    let tag = format!(" effect={effect} ");
+    text.lines()
+        .filter(|l| l.contains("RTS_DISCIPLINE_EFFECT") && l.contains(&tag))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[allow(clippy::too_many_lines)]
+fn discipline_effects_session(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPStanceProbe".into());
+    args.push("-PolitikaMPDisciplineCasualties".into());
+    args.push("-PolitikaMPDisciplineDoctrine=2:solo".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
+        SHAPE_LINE_POINT.0,
+        SHAPE_LINE_POINT.1,
+        SHAPE_COLUMN_POINT.0,
+        SHAPE_COLUMN_POINT.1,
+        DISC_LONE_POINT.0,
+        DISC_LONE_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        let at_b = client_b.offset();
+
+        // Setup: all 20 in group 1, T forms them and a click moves them into a Line.
+        let before = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            before,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let group1 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        if selection_ids(&group1) != own {
+            return Err(format!("control group setup failed: {}", group1.trim()));
+        }
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let formation_tag = format!(" formation={formation} ");
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        server.wait_line(
+            &["RTS_FORMATION_MOVE", &formation_tag],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &own, &own);
+        report.verdict(
+            "DISC-SETUP-LINE-ARRIVED",
+            arrived == own.len() && at_slot == own.len() && failed == 0,
+            format!(
+                "{arrived}/20 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm"
+            ),
+        );
+
+        // The Line earns Discipline 80 (30 evaluations of service).
+        let earned = server.wait_line(
+            &["RTS_DISCIPLINE_SAMPLE", &formation_tag, "min=80000 "],
+            Duration::from_secs(90),
+            at_server,
+        );
+        report.verdict(
+            "DISC-D3-SETUP-EARNED-80",
+            earned.as_ref().is_ok_and(|l| {
+                int_field(l, "members") == Some(20) && int_field(l, "max") == Some(80_000)
+            }),
+            earned
+                .as_ref()
+                .map_or_else(|e| e.clone(), |l| l.trim().to_owned()),
+        );
+        earned?;
+        let at = client_a.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=20 "], at)?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "earned_png",
+            &client_a.screenshot(evidence, "01-formation-at-80")?,
+        );
+
+        // 1. H (Guard): the probe walks one opposing unit close; members engage it, chase it on
+        // their leash, kill it and walk back to their posts.
+        let probe_from = server.offset();
+        client_a.key("h")?;
+        let probe = server.wait_line(
+            &["MP_STANCE_PROBE", "phase=guard", "placed=1"],
+            Duration::from_secs(5),
+            probe_from,
+        )?;
+        let probe_unit = unit_field(&probe);
+        server.wait_line(
+            &["RTS_UNIT_DESTROYED", &format!("unit={probe_unit}")],
+            Duration::from_secs(60),
+            probe_from,
+        )?;
+        // Wait until every chaser that started back has arrived (or given up).
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let text = server.text()[probe_from..].to_owned();
+            let started = text
+                .lines()
+                .filter(|l| l.contains("RTS_STANCE_RETURN") && l.contains("phase=start"))
+                .count();
+            let ended = text
+                .lines()
+                .filter(|l| {
+                    l.contains("RTS_STANCE_RETURN")
+                        && (l.contains("phase=arrived") || l.contains("phase=failed"))
+                })
+                .count();
+            if (started > 0 && ended >= started) || Instant::now() >= deadline {
+                break;
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+        thread::sleep(Duration::from_secs(1));
+        let probe_text = server.text()[probe_from..].to_owned();
+        report.artifact(
+            "engaged_png",
+            &client_a.screenshot(evidence, "02-after-probe")?,
+        );
+
+        // DISC-D3 defense: every hit on a member is scaled once by 1000 + F * (-1/5); a member's
+        // health loss is the sum of its scaled hits (the fraction is carried). The probe, at the
+        // baseline, loses whole base hits.
+        let hits: Vec<String> = discipline_effects_of(&probe_text, "damage_taken")
+            .into_iter()
+            .filter(|l| field(l, "participant") == Some("1"))
+            .collect();
+        let formula_ok = hits.iter().all(|l| {
+            let value = int_field(l, "value").unwrap_or(-1);
+            let permille = int_field(l, "permille").unwrap_or(-1);
+            let base = int_field(l, "base_milli").unwrap_or(-1);
+            permille == discipline_effect_permille(value, -1, 5)
+                && int_field(l, "applied_milli") == Some(base * permille / 1000)
+        });
+        let mut per_member: Vec<(u64, i64, i64)> = Vec::new();
+        for line in &hits {
+            let unit = unit_field(line);
+            let applied = int_field(line, "applied_milli").unwrap_or(0);
+            match per_member.iter_mut().find(|m| m.0 == unit) {
+                Some(entry) => entry.1 += applied,
+                None => per_member.push((unit, applied, 0)),
+            }
+        }
+        for member in &mut per_member {
+            member.2 = probe_text
+                .lines()
+                .filter(|l| {
+                    l.contains("RTS_HEALTH_CHANGED") && l.contains(&format!(" unit={} ", member.0))
+                })
+                .filter_map(|l| Some(int_field(l, "before")? - int_field(l, "after")?))
+                .sum();
+        }
+        let health_ok = per_member.iter().all(|m| m.2 == m.1 / 1000);
+        let base_hit = hits.first().and_then(|l| int_field(l, "base_milli"));
+        let probe_losses: Vec<i64> = probe_text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_HEALTH_CHANGED") && l.contains(&format!(" unit={probe_unit} "))
+            })
+            .filter_map(|l| Some(int_field(l, "before")? - int_field(l, "after")?))
+            .collect();
+        let member_base = discipline_effects_of(&probe_text, "fire_interval")
+            .first()
+            .and_then(|l| int_field(l, "base_steps"));
+        let shooters: Vec<u64> = {
+            let mut ids: Vec<u64> = hits
+                .iter()
+                .filter_map(|l| field(l, "shooter")?.parse().ok())
+                .collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        let probe_whole = !probe_losses.is_empty()
+            && !probe_text.lines().any(|l| {
+                l.contains("RTS_DISCIPLINE_EFFECT") && l.contains(&format!(" unit={probe_unit} "))
+            });
+        let near_80 = hits
+            .iter()
+            .filter(|l| int_field(l, "value").is_some_and(|v| v >= 79_000))
+            .count();
+        report.verdict(
+            "DISC-D3-DEFENSE-SCALES-HITS",
+            !hits.is_empty() && formula_ok && health_ok && near_80 > 0 && probe_whole,
+            format!(
+                "{} hits on members from {shooters:?} (probe unit {probe_unit}), {near_80} at a value of 79 or more; first {}; per member (unit, applied milli, health lost) {per_member:?}; the probe at the baseline lost {probe_losses:?} (base hit {base_hit:?} milli, unscaled)",
+                hits.len(),
+                hits.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // DISC-D3 fire interval: the weapon's whole-step interval scaled by 1000 + F * (-3/20),
+        // with the fraction carried shot to shot; no member fires before its interval is over.
+        let shots: Vec<String> = discipline_effects_of(&probe_text, "fire_interval")
+            .into_iter()
+            .filter(|l| field(l, "participant") == Some("1"))
+            .collect();
+        let mut chain_ok = true;
+        let mut never_early = true;
+        let mut short_gaps = 0;
+        // Per member: (step, scaled steps, carry) of each shot.
+        type Shots = Vec<(i64, i64, i64)>;
+        let mut by_unit: Vec<(u64, Shots)> = Vec::new();
+        for line in &shots {
+            let unit = unit_field(line);
+            let step = int_field(line, "step").unwrap_or(-1);
+            let steps = int_field(line, "steps").unwrap_or(-1);
+            let carry = int_field(line, "carry").unwrap_or(-1);
+            let base = int_field(line, "base_steps").unwrap_or(-1);
+            let value = int_field(line, "value").unwrap_or(-1);
+            let permille = int_field(line, "permille").unwrap_or(-1);
+            let entry = match by_unit.iter_mut().position(|u| u.0 == unit) {
+                Some(index) => &mut by_unit[index],
+                None => {
+                    by_unit.push((unit, Vec::new()));
+                    by_unit.last_mut().ok_or("unit list")?
+                }
+            };
+            let previous = entry.1.last().copied();
+            let owed = previous.map_or(0, |p| p.2);
+            chain_ok &= permille == discipline_effect_permille(value, -3, 20)
+                && steps * 1000 + carry == base * permille + owed
+                && (0..1000).contains(&carry);
+            if let Some((previous_step, previous_steps, _)) = previous {
+                never_early &= step - previous_step >= previous_steps;
+                if step - previous_step == previous_steps && previous_steps < base {
+                    short_gaps += 1;
+                }
+            }
+            entry.1.push((step, steps, carry));
+        }
+        // The probe's own cadence at the baseline, from the steps of its hits on members.
+        let mut probe_steps: Vec<i64> = hits.iter().filter_map(|l| int_field(l, "step")).collect();
+        probe_steps.dedup();
+        let probe_gaps: Vec<i64> = probe_steps.windows(2).map(|w| w[1] - w[0]).collect();
+        let shortest = shots.iter().filter_map(|l| int_field(l, "steps")).min();
+        report.verdict(
+            "DISC-D3-FIRE-INTERVAL-SHORTER",
+            !shots.is_empty() && chain_ok && never_early && short_gaps > 0,
+            format!(
+                "{} member shots by {} members; member weapon base interval {member_base:?} steps, shortest scaled interval {shortest:?}; {short_gaps} consecutive shots exactly one scaled interval apart below the base; the probe at the baseline fired at gaps {probe_gaps:?}; first {}",
+                shots.len(),
+                by_unit.len(),
+                shots.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // DISC-D3 return speed: 1000 + F / 3; measured from the logged start and arrival
+        // (the unit moves on every step between them except the arrival step).
+        let returns: Vec<String> = discipline_effects_of(&probe_text, "return_speed");
+        let mut measured: Vec<(u64, f64, f64, f64)> = Vec::new();
+        let mut return_ok = !returns.is_empty();
+        for line in &returns {
+            let unit = unit_field(line);
+            let value = int_field(line, "value").unwrap_or(-1);
+            let permille = int_field(line, "permille").unwrap_or(-1);
+            let base = number(line, "base_speed").unwrap_or(0.0);
+            let speed = number(line, "speed").unwrap_or(0.0);
+            return_ok &= permille == discipline_effect_permille(value, 1, 3)
+                && (speed - base * permille as f64 / 1000.0).abs() <= 0.2;
+            let start_step = int_field(line, "step").unwrap_or(-1);
+            let tag = format!(" unit={unit} ");
+            let start = probe_text.lines().find(|l| {
+                l.contains("RTS_STANCE_RETURN")
+                    && l.contains(&tag)
+                    && l.contains("phase=start")
+                    && int_field(l, "step") == Some(start_step)
+            });
+            let arrival = probe_text.lines().find(|l| {
+                l.contains("RTS_STANCE_RETURN")
+                    && l.contains(&tag)
+                    && l.contains("phase=arrived")
+                    && int_field(l, "step").is_some_and(|s| s > start_step)
+            });
+            if let (Some(start), Some(arrival)) = (start, arrival) {
+                let moving_steps = int_field(arrival, "step").unwrap_or(0) - start_step - 1;
+                let covered = number(start, "displacement").unwrap_or(0.0)
+                    - number(arrival, "displacement").unwrap_or(0.0);
+                if moving_steps > 0 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let per_step = covered / moving_steps as f64;
+                    measured.push((unit, per_step, speed * 0.05, base * 0.05));
+                }
+            }
+        }
+        let paced = measured
+            .iter()
+            .all(|m| (m.1 - m.2).abs() <= m.2 * 0.03 && m.1 > m.3 * 1.05);
+        report.verdict(
+            "DISC-D3-RETURN-FASTER",
+            return_ok && !measured.is_empty() && paced,
+            format!(
+                "{} returns logged; measured (unit, cm per step, scaled, baseline) {measured:?}; first {}",
+                returns.len(),
+                returns.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // 2. J: the fixture kills four members. The regroup delay follows the survivors' average
+        // after the casualty shock: round(40 * (1000 + F * (-3/8)) / 1000) steps.
+        let at_server = server.offset();
+        client_a.key("j")?;
+        let armed = server.wait_line(
+            &["MP_DISCIPLINE_CASUALTIES_ARMED", &formation_tag],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let regroup = server.wait_line(
+            &["RTS_FORMATION_REGROUP ", &formation_tag],
+            Duration::from_secs(15),
+            at_server,
+        );
+        thread::sleep(Duration::from_millis(500));
+        let casualty_text = server.text()[at_server..].to_owned();
+        let delays = discipline_effects_of(&casualty_text, "regroup_delay");
+        let delay = delays.iter().find(|l| l.contains(&formation_tag));
+        let scheduled = casualty_text
+            .lines()
+            .find(|l| l.contains("RTS_FORMATION_REGROUP_SCHEDULED") && l.contains(&formation_tag));
+        let delay_ok = delay.is_some_and(|l| {
+            let value = int_field(l, "value").unwrap_or(-1);
+            let permille = int_field(l, "permille").unwrap_or(-1);
+            let steps = int_field(l, "steps").unwrap_or(-1);
+            permille == discipline_effect_permille(value, -3, 8)
+                && steps == ((40 * permille + 500) / 1000).max(1)
+                && int_field(l, "due") == int_field(l, "step").map(|s| s + steps)
+                && steps < 40
+                && scheduled.is_some_and(|s| int_field(s, "due_step") == int_field(l, "due"))
+                && regroup
+                    .as_ref()
+                    .is_ok_and(|r| int_field(r, "step") == int_field(l, "due"))
+        });
+        report.verdict(
+            "DISC-D3-REGROUP-SOONER",
+            delay_ok,
+            format!(
+                "{}; {}; {}; {}",
+                armed.trim(),
+                delay.map_or("no regroup_delay effect", |l| l.trim()),
+                scheduled.map_or("no regroup scheduled", str::trim),
+                regroup
+                    .as_ref()
+                    .map_or_else(|e| e.clone(), |l| l.trim().to_owned())
+            ),
+        );
+        report.artifact(
+            "regrouped_png",
+            &client_a.screenshot(evidence, "03-after-casualties")?,
+        );
+
+        // 3. R: the members that fired reload; 3 s scaled by 1000 + F * (-3/20).
+        let at = client_a.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count="], at)?;
+        let at_server = server.offset();
+        client_a.key("r")?;
+        thread::sleep(Duration::from_secs(5));
+        let reload_text = server.text()[at_server..].to_owned();
+        let reloads = discipline_effects_of(&reload_text, "reload_time");
+        let mut reload_measured: Vec<(u64, f64, i64, i64)> = Vec::new();
+        let mut reload_ok = !reloads.is_empty();
+        for line in &reloads {
+            let unit = unit_field(line);
+            let value = int_field(line, "value").unwrap_or(-1);
+            let permille = int_field(line, "permille").unwrap_or(-1);
+            let base = number(line, "base_seconds").unwrap_or(0.0);
+            let seconds = number(line, "seconds").unwrap_or(0.0);
+            reload_ok &= permille == discipline_effect_permille(value, -3, 20)
+                && (seconds - base * permille as f64 / 1000.0).abs() <= 0.002;
+            let tag = format!(" unit={unit} ");
+            let begin = reload_text
+                .lines()
+                .find(|l| l.contains("INFANTRY_RELOAD_BEGIN") && l.contains(&tag))
+                .and_then(|l| int_field(l, "step"));
+            let complete = reload_text
+                .lines()
+                .find(|l| l.contains("INFANTRY_RELOAD_COMPLETE") && l.contains(&tag))
+                .and_then(|l| int_field(l, "step"));
+            #[allow(clippy::cast_possible_truncation)]
+            let expected = (seconds / 0.05).ceil() as i64;
+            #[allow(clippy::cast_possible_truncation)]
+            let baseline = (base / 0.05).ceil() as i64;
+            match (begin, complete) {
+                (Some(b), Some(c)) => {
+                    reload_ok &=
+                        (expected - 1..=expected).contains(&(c - b)) && c - b < baseline - 1;
+                    reload_measured.push((unit, seconds, c - b, baseline));
+                }
+                _ => reload_ok = false,
+            }
+        }
+        report.verdict(
+            "DISC-D3-RELOAD-SHORTER",
+            reload_ok,
+            format!(
+                "{} reloads; (unit, scaled seconds, measured steps, baseline steps) {reload_measured:?}; first {}",
+                reloads.len(),
+                reloads.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // The opposing side stayed at the baseline: no effect line names one of its units, and
+        // every effect logged for participant 1 comes from a value away from the baseline.
+        let all_effects: Vec<String> = server
+            .text()
+            .lines()
+            .filter(|l| l.contains("RTS_DISCIPLINE_EFFECT"))
+            .map(str::to_owned)
+            .collect();
+        let opposing = all_effects
+            .iter()
+            .filter(|l| field(l, "participant") == Some("2"))
+            .count();
+        let at_baseline = all_effects
+            .iter()
+            .filter(|l| int_field(l, "value") == Some(50_000))
+            .count();
+        let opponent_min = discipline_participant_samples_of(&server.text(), 2)
+            .iter()
+            .filter_map(|l| int_field(l, "min"))
+            .min();
+        report.verdict(
+            "DISC-D3-BASELINE-NEUTRAL",
+            !all_effects.is_empty() && opposing == 0 && at_baseline == 0 && opponent_min == Some(50_000),
+            format!(
+                "{} effect lines, naming participant 2: {opposing}, at value 50000: {at_baseline}; participant 2 minimum over the run {opponent_min:?}",
+                all_effects.len()
+            ),
+        );
+
+        // DISC-07: the opposing client still receives the default value only.
+        let seen: Vec<String> = client_b.text()[at_b..]
+            .lines()
+            .filter(|l| l.contains("MP_CLIENT_SAMPLE") && field(l, "owner") == Some("1"))
+            .map(str::to_owned)
+            .collect();
+        let leaked = seen
+            .iter()
+            .filter(|l| int_field(l, "resolve") != Some(50_000))
+            .count();
+        let own_above = client_a
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE")
+                    && field(l, "owner") == Some("1")
+                    && int_field(l, "resolve").is_some_and(|v| v > 50_000)
+            })
+            .count();
+        report.verdict(
+            "DISC-07-OWNER-ONLY",
+            !seen.is_empty() && leaked == 0 && own_above > 0,
+            format!(
+                "opposing client samples of participant 1 units {}, with a value other than 50000 {leaked}; owner samples above 50000 {own_above}",
+                seen.len()
+            ),
+        );
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 /// `RTS_DISCIPLINE_PARTICIPANT` lines of one participant in `text`.
 fn discipline_participant_samples_of(text: &str, participant: u32) -> Vec<String> {
     let tag = format!(" participant={participant} ");
@@ -9987,6 +10593,14 @@ fn main() {
             "politika.disc.discipline-stress-evidence.v1",
             "discipline-stress",
             discipline_stress_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--discipline-effects") {
+        run_dedicated_session(
+            "--discipline-effects",
+            "politika.disc.discipline-effects-evidence.v1",
+            "discipline-effects",
+            discipline_effects_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

@@ -30,7 +30,8 @@ inline constexpr std::size_t kMaxFormationsPerParticipant = 10;
 // A Release names at most one participant's whole force.
 inline constexpr std::size_t kMaxReleaseIds = static_cast<std::size_t>(rules::kMaxUnitsPerParticipant);
 // Regroup hysteresis in authoritative steps (0.05 s): losses within this window share one
-// regroup, and two regroups of one formation are at least this far apart.
+// regroup, and two regroups of one formation are at least this far apart. This is the value at
+// baseline Discipline; the server scales it per loss (DISC-D3).
 inline constexpr std::uint64_t kRegroupDelaySteps = 40;
 // A regroup re-sends a member only when its slot moved at least this far.
 inline constexpr double kRegroupMinShiftCm = 1.0;
@@ -347,10 +348,12 @@ public:
     // A member died or left authoritative control. Losing the second-to-last member
     // dissolves the formation; otherwise it is Degraded and, when it has a destination and
     // members still following it, one regroup is scheduled (coalesced and rate-limited).
-    Change MemberLost(EntityId member, std::uint64_t step, LeaveReason reason = LeaveReason::Destroyed) {
+    // `regroupDelaySteps` replaces kRegroupDelaySteps for this loss (Discipline, DISC-D3).
+    Change MemberLost(EntityId member, std::uint64_t step, LeaveReason reason = LeaveReason::Destroyed,
+        std::uint64_t regroupDelaySteps = kRegroupDelaySteps) {
         Change change;
         if (!FormationOf(member)) return Reject(change, FormationRejection::NotMember);
-        RemoveMember(member, reason, DissolveReason::TooFewMembers, step, change);
+        RemoveMember(member, reason, DissolveReason::TooFewMembers, step, change, regroupDelaySteps);
         return change;
     }
 
@@ -491,7 +494,8 @@ private:
     Formation* Mutable(FormationId id) noexcept { return const_cast<Formation*>(Find(id)); }
     Formation* MutableOwned(FormationId id, std::uint32_t owner) noexcept { return const_cast<Formation*>(FindOwned(id, owner)); }
 
-    void RemoveMember(EntityId member, LeaveReason leave, DissolveReason dissolve, std::uint64_t step, Change& change) {
+    void RemoveMember(EntityId member, LeaveReason leave, DissolveReason dissolve, std::uint64_t step, Change& change,
+        std::uint64_t regroupDelaySteps = kRegroupDelaySteps) {
         for (auto it = formations_.begin(); it != formations_.end(); ++it) {
             const auto found = std::lower_bound(it->members.begin(), it->members.end(), member,
                 [](const MemberSlot& slot, EntityId value) { return slot.id < value; });
@@ -508,8 +512,9 @@ private:
             // A Free formation keeps its membership but does not close its ranks.
             if (it->adherence != stance::Adherence::Free && it->hasDestination && it->FollowingCount() > 0
                 && it->regroupDueStep == 0) {
-                const std::uint64_t earliest = std::max(step + kRegroupDelaySteps,
-                    it->regroups > 0 ? it->lastRegroupStep + kRegroupDelaySteps : 0);
+                regroupDelaySteps = std::max<std::uint64_t>(regroupDelaySteps, 1);
+                const std::uint64_t earliest = std::max(step + regroupDelaySteps,
+                    it->regroups > 0 ? it->lastRegroupStep + regroupDelaySteps : 0);
                 it->regroupDueStep = std::max<std::uint64_t>(earliest, 1);
                 change.regroups.push_back({it->id, it->regroupDueStep});
             }

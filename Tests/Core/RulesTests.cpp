@@ -712,6 +712,15 @@ int main() {
         assert(Formations.Find(FormationId{4})->FollowingCount() == 0);
         assert(Formations.NoteOrderAdmitted(5, FormationId{4}) == false && !Formations.Find(FormationId{4})->Find(5)->following);
         assert(Formations.MemberLost(5, 500).regroups.empty());
+        // DISC-D3: the server passes a Discipline-scaled delay per loss; it also sets the spacing
+        // after the previous regroup.
+        (void)Formations.PlanMove(1, FormationId{4}, {3000, 1000}, false, At, Always);
+        const Change Disciplined = Formations.MemberLost(6, 600, LeaveReason::Destroyed, 31);
+        assert(Disciplined.regroups.size() == 1 && Disciplined.regroups[0].dueStep == 631);
+        (void)Formations.PlanRegroup(FormationId{4}, 631, At, Always);
+        const Change Veteran = Formations.MemberLost(4, 640, LeaveReason::Destroyed, 25);
+        assert(Veteran.regroups.size() == 1 && Veteran.regroups[0].dueStep == 665);
+        (void)Formations.PlanRegroup(FormationId{4}, 665, At, Always);
 
         // Per-participant limit, counted after formations this Form would empty.
         Registry Limited;
@@ -1081,6 +1090,67 @@ int main() {
             assert(Low.value == 0 && Low.applied == 3000 && Low.window.taken == 5000);
             const pd::ShockResult Floor = pd::ApplyCasualtyShock(0, Low.window, 11);
             assert(Floor.value == 0 && Floor.applied == 0 && Floor.window.taken == 10000);
+        }
+
+        // DISC-D3 effects: one factor F = (D - 50) / 50, linear coefficients per attribute.
+        {
+            namespace pm = politika::modifiers;
+            using pm::Attribute;
+            static_assert(pd::FactorPermille(50000) == 0 && pd::FactorPermille(80000) == 600);
+            static_assert(pd::FactorPermille(100000) == 1000 && pd::FactorPermille(30000) == -400);
+            static_assert(pd::FactorPermille(0) == -1000 && pd::FactorPermille(-7) == -1000 && pd::FactorPermille(150000) == 1000);
+            static_assert(pd::FactorPermille(71000) == 420 && pd::FactorPermille(30500) == -390);
+            // At the baseline every attribute is unchanged.
+            for (const pd::Effect& Effect : pd::kEffects) assert(pd::EffectPermille(Effect.attribute, pd::kBaseline) == 1000);
+            // The 80 and 100 columns of section 7.
+            static_assert(pd::EffectPermille(Attribute::DamageTaken, 80000) == 880);
+            static_assert(pd::EffectPermille(Attribute::DamageTaken, 100000) == 800);
+            static_assert(pd::EffectPermille(Attribute::Spread, 80000) == 880);
+            static_assert(pd::EffectPermille(Attribute::Spread, 100000) == 800);
+            static_assert(pd::EffectPermille(Attribute::FireInterval, 80000) == 910);
+            static_assert(pd::EffectPermille(Attribute::FireInterval, 100000) == 850);
+            static_assert(pd::EffectPermille(Attribute::ReloadTime, 80000) == 910);
+            static_assert(pd::EffectPermille(Attribute::ReloadTime, 100000) == 850);
+            static_assert(pd::EffectPermille(Attribute::ReturnSpeed, 80000) == 1200);
+            static_assert(pd::EffectPermille(Attribute::ReturnSpeed, 100000) == 1333);
+            static_assert(pd::EffectPermille(Attribute::RegroupDelay, 80000) == 775);
+            static_assert(pd::EffectPermille(Attribute::RegroupDelay, 100000) == 625);
+            // Below the baseline the same coefficients work against the unit; never immunity.
+            static_assert(pd::EffectPermille(Attribute::DamageTaken, 30000) == 1080);
+            static_assert(pd::EffectPermille(Attribute::DamageTaken, 0) == 1200);
+            static_assert(pd::EffectPermille(Attribute::FireInterval, 30000) == 1060);
+            static_assert(pd::EffectPermille(Attribute::ReturnSpeed, 30000) == 867);
+            static_assert(pd::EffectPermille(Attribute::RegroupDelay, 30000) == 1150);
+            // Monotonic: more Discipline never takes more damage or shoots slower.
+            for (std::int32_t Value = 0; Value < pd::kMaximum; Value += 500)
+            {
+                assert(pd::EffectPermille(Attribute::DamageTaken, Value + 500) <= pd::EffectPermille(Attribute::DamageTaken, Value));
+                assert(pd::EffectPermille(Attribute::FireInterval, Value + 500) <= pd::EffectPermille(Attribute::FireInterval, Value));
+                assert(pd::EffectPermille(Attribute::ReturnSpeed, Value + 500) >= pd::EffectPermille(Attribute::ReturnSpeed, Value));
+                assert(pd::EffectPermille(Attribute::DamageTaken, Value) >= 800);
+            }
+            // Regroup delay 40 steps: 31 at 80, 25 at 100, 46 at 30, 55 at 0, never below one step.
+            static_assert(pd::RegroupDelaySteps(50000, 40) == 40 && pd::RegroupDelaySteps(80000, 40) == 31);
+            static_assert(pd::RegroupDelaySteps(100000, 40) == 25 && pd::RegroupDelaySteps(30000, 40) == 46);
+            static_assert(pd::RegroupDelaySteps(0, 40) == 55 && pd::RegroupDelaySteps(100000, 1) == 1);
+
+            // The registry: one entry per source and attribute, replaced rather than stacked.
+            pm::Registry Registry;
+            assert(Registry.Combined(Attribute::DamageTaken) == 1000 && Registry.Of(pm::Source::Discipline, Attribute::Spread) == 1000);
+            pd::ApplyEffects(Registry, 80000, pd::UnitCategory::Military);
+            assert(Registry.Combined(Attribute::DamageTaken) == 880 && Registry.Combined(Attribute::ReturnSpeed) == 1200);
+            pd::ApplyEffects(Registry, 80000, pd::UnitCategory::Military);
+            assert(Registry.Combined(Attribute::DamageTaken) == 880); // applied twice, counted once
+            pd::ApplyEffects(Registry, 30000, pd::UnitCategory::Military);
+            assert(Registry.Combined(Attribute::DamageTaken) == 1080 && Registry.Combined(Attribute::FireInterval) == 1060);
+            // Civilian Morale drives no combat effect.
+            pd::ApplyEffects(Registry, 30000, pd::UnitCategory::NonCombat);
+            for (const pd::Effect& Effect : pd::kEffects) assert(Registry.Combined(Effect.attribute) == 1000);
+            Registry.Set(pm::Source::Discipline, Attribute::FireInterval, -4);
+            assert(Registry.Combined(Attribute::FireInterval) == 0);
+            Registry.Clear(pm::Source::Discipline);
+            assert(Registry.Combined(Attribute::FireInterval) == 1000);
+            static_assert(pm::AttributeName(Attribute::DamageTaken) == "damage_taken" && pm::SourceName(pm::Source::Discipline) == "discipline");
         }
     }
 

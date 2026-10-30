@@ -204,8 +204,9 @@ bool FPolitikaCommandCoordinatorAcceptanceAutomationTest::RunTest(const FString&
         State.FriendlyHealth = Friendly->Health;
         State.IssuerCooldown = Issuer->CooldownRemaining;
         State.HostileCooldown = Hostile->CooldownRemaining;
-        State.IssuerPendingDamage = Issuer->PendingDamage;
-        State.HostilePendingDamage = Hostile->PendingDamage;
+        // Direct and weapon damage (DISC-D3 keeps weapon hits in milli-health).
+        State.IssuerPendingDamage = Issuer->PendingDamage + static_cast<float>(Issuer->PendingWeaponDamageMilli) / 1000.0f;
+        State.HostilePendingDamage = Hostile->PendingDamage + static_cast<float>(Hostile->PendingWeaponDamageMilli) / 1000.0f;
         State.IssuerOrder = Issuer->CurrentOrder;
         State.IssuerTarget = Issuer->OrderTarget.Get();
         State.IssuerDestination = Issuer->OrderDestination;

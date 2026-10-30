@@ -489,9 +489,9 @@ APolitikaPrototypeUnit::ERouteStatus APolitikaPrototypeUnit::EnsureRouteTo(const
     return bRouteReady ? ERouteStatus::Ready : ERouteStatus::Failed;
 }
 
-politika::rules::OrderEndReason APolitikaPrototypeUnit::AdvanceAlongRoute(float DeltaSeconds)
+politika::rules::OrderEndReason APolitikaPrototypeUnit::AdvanceAlongRoute(float DeltaSeconds, float SpeedScale)
 {
-    float RemainingDistance = MoveSpeed * (SprintRemaining > 0 && InfantryBehavior ? InfantryBehavior->SprintMultiplier : 1) * DeltaSeconds;
+    float RemainingDistance = MoveSpeed * (SprintRemaining > 0 && InfantryBehavior ? InfantryBehavior->SprintMultiplier : 1) * SpeedScale * DeltaSeconds;
     int32 WaypointsConsumed = 0;
     while (RemainingDistance > KINDA_SMALL_NUMBER && NavigationWaypointIndex < NavigationWaypoints.Num()
         && WaypointsConsumed < 16)
@@ -598,6 +598,12 @@ void APolitikaPrototypeUnit::EndEngagement(const TCHAR* Reason)
     if (bReturn)
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STANCE_RETURN unit=%llu phase=start displacement=%.1f post=%.1f,%.1f step=%llu"),
             StableId, Displacement, Post.X, Post.Y, AuthorityStep());
+    if (const int32 Permille = GetModifierPermille(politika::modifiers::Attribute::ReturnSpeed);
+        bReturn && Permille != politika::modifiers::kNeutral)
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_DISCIPLINE_EFFECT effect=return_speed unit=%llu participant=%u value=%d permille=%d base_speed=%.1f speed=%.1f displacement=%.1f step=%llu"),
+            StableId, OwnerPlayer, ResolveMilli, Permille, MoveSpeed, MoveSpeed * GetModifierScale(politika::modifiers::Attribute::ReturnSpeed),
+            Displacement, AuthorityStep());
 #endif
 }
 
@@ -650,7 +656,10 @@ void APolitikaPrototypeUnit::SimulateIdleAutonomy(float DeltaSeconds)
             case ERouteStatus::Failed: GiveUp(TEXT("route")); return;
             case ERouteStatus::Ready: break;
         }
-        if (AdvanceAlongRoute(DeltaSeconds) != politika::rules::OrderEndReason::None) GiveUp(TEXT("obstructed"));
+        // Discipline sets the pace back to the post (DISC-D3).
+        if (AdvanceAlongRoute(DeltaSeconds, GetModifierScale(politika::modifiers::Attribute::ReturnSpeed))
+            != politika::rules::OrderEndReason::None)
+            GiveUp(TEXT("obstructed"));
         return;
     }
     if (!IdleBehavior.chase)
@@ -761,7 +770,7 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
             {
                 ReloadRemaining = 0;
                 Ammo = InfantryBehavior->MagazineCapacity;
-                UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_COMPLETE unit=%llu ammo=%d"), StableId, Ammo);
+                UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_RELOAD_COMPLETE unit=%llu ammo=%d step=%llu"), StableId, Ammo, AuthorityStep());
             }
             return;
         }
@@ -842,20 +851,26 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     }
     if (Target->IsAttackable() && FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= WeaponRange && CooldownRemaining <= 0.0f)
     {
-        Target->PendingDamage += WeaponDamage;
-        CooldownRemaining = WeaponCooldown;
+        Target->ReceiveWeaponHit(WeaponDamage, this, false);
+        CooldownRemaining = NextFireInterval(DeltaSeconds);
         if (InfantryBehavior) --Ammo;
         if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get())
-            Match->DistributeShotPresentation(this, Target, WeaponCooldown);
-        else InfantryPresentation->Shot(Target->GetActorLocation(), WeaponCooldown);
+            Match->DistributeShotPresentation(this, Target, CooldownRemaining);
+        else InfantryPresentation->Shot(Target->GetActorLocation(), CooldownRemaining);
     }
 }
 
 int32 APolitikaPrototypeUnit::ApplyPendingDamage()
 {
-    if (!HasAuthority() || PendingDamage <= 0.0f || !IsAlive()) return 0;
+    if (!HasAuthority() || (PendingDamage <= 0.0f && PendingWeaponDamageMilli <= 0) || !IsAlive()) return 0;
     const int32 HealthBefore = Health;
-    Health = FMath::Max(0, Health - FMath::CeilToInt(PendingDamage));
+    // Direct damage (fixtures) rounds up as before; weapon hits carry their fraction (DISC-D3).
+    const int64 WeaponMilli = PendingWeaponDamageMilli + WeaponDamageCarryMilli;
+    const int64 WeaponWhole = WeaponMilli / 1000;
+    WeaponDamageCarryMilli = WeaponMilli % 1000;
+    PendingWeaponDamageMilli = 0;
+    const int64 Total = static_cast<int64>(FMath::Max(0, FMath::CeilToInt(PendingDamage))) + WeaponWhole;
+    Health = static_cast<int32>(FMath::Max<int64>(0, Health - Total));
     PendingDamage = 0.0f;
     const int32 AppliedDamage = HealthBefore - Health;
 #if !UE_BUILD_SHIPPING

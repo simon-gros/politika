@@ -14,6 +14,7 @@
 #include "Formation.h"
 #include "Stance.h"
 #include "Discipline.h"
+#include "Modifiers.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -308,14 +309,26 @@ public:
     // civilians. Owner-only replicated; only the authority's fixed-step evaluation changes it.
     EPolitikaUnitCategory GetUnitCategory() const { return UnitCategory; }
     bool IsMilitary() const { return UnitCategory == EPolitikaUnitCategory::Military; }
-    void SetUnitCategory(EPolitikaUnitCategory InCategory) { UnitCategory = InCategory; }
+    void SetUnitCategory(EPolitikaUnitCategory InCategory)
+    {
+        UnitCategory = InCategory;
+        RefreshDisciplineEffects();
+    }
     int32 GetResolveMilli() const { return ResolveMilli; }
     politika::discipline::Trend GetResolveTrend() const { return static_cast<politika::discipline::Trend>(ResolveTrend); }
-    // Authority: stores one evaluation's result.
+    // Authority: stores one evaluation's result and its effects (DISC-D3).
     void ApplyResolve(const politika::discipline::Evaluation& Evaluation)
     {
         ResolveMilli = Evaluation.value;
         ResolveTrend = static_cast<uint8>(Evaluation.trend);
+        RefreshDisciplineEffects();
+    }
+    // Authority (DISC-D3): the combined multiplier of every modifier source for one attribute,
+    // in permille, and as a scale factor.
+    int32 GetModifierPermille(politika::modifiers::Attribute Attribute) const { return Modifiers.Combined(Attribute); }
+    float GetModifierScale(politika::modifiers::Attribute Attribute) const
+    {
+        return static_cast<float>(Modifiers.Combined(Attribute)) / static_cast<float>(politika::modifiers::kNeutral);
     }
 private:
     friend class APolitikaPrototypeMatch;
@@ -334,6 +347,7 @@ private:
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
+    friend class FPolitikaMultiplayerDisciplineEffectsTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -410,6 +424,14 @@ private:
     // Authority-only simulation internals below are never replicated.
     UPROPERTY() float CooldownRemaining = 0.0f;
     UPROPERTY() float PendingDamage = 0.0f;
+    // DISC-D3: weapon hits this step in milli-health, after the damage-taken modifier, and the
+    // fraction below one health point carried to the next hit so a 12% reduction of an 8-point
+    // hit is not lost to rounding. Integer, so every run of a schedule gives the same health.
+    int64 PendingWeaponDamageMilli = 0;
+    int64 WeaponDamageCarryMilli = 0;
+    // DISC-D3: fraction of a step (in thousandths) owed by a fire interval that the fire-interval
+    // modifier made shorter or longer than a whole number of steps.
+    int32 FireIntervalCarryMilliSteps = 0;
     UPROPERTY(Replicated) bool bAttackable = false;
     // Owner-only: an opponent sees movement and fire, not the issued order.
     UPROPERTY(Replicated) EPolitikaPrototypeOrder CurrentOrder = EPolitikaPrototypeOrder::Idle;
@@ -444,6 +466,20 @@ private:
     UPROPERTY(Replicated) uint8 ResolveTrend = 0;
     // Authority only (DISC-D2): this unit's casualty-shock budget.
     politika::discipline::ShockWindow ResolveShock;
+    // Authority only (DISC-D3): attribute modifiers by source; Discipline's entries follow the
+    // resolve value whenever it changes.
+    politika::modifiers::Registry Modifiers;
+    void RefreshDisciplineEffects()
+    {
+        politika::discipline::ApplyEffects(Modifiers, ResolveMilli,
+            UnitCategory == EPolitikaUnitCategory::Military ? politika::discipline::UnitCategory::Military
+                                                           : politika::discipline::UnitCategory::NonCombat);
+    }
+    // A weapon hit from Shooter (DISC-D3: scaled by this unit's damage-taken modifier, once per hit).
+    void ReceiveWeaponHit(float Damage, const APolitikaPrototypeUnit* Shooter, bool bBlast);
+    // The countdown to the next shot after firing (DISC-D3: the weapon's interval in whole steps
+    // scaled by the fire-interval modifier, with the fraction carried to the next shot).
+    float NextFireInterval(float DeltaSeconds);
     politika::stance::IdleBehavior IdleBehavior = politika::stance::BehaviorFor(politika::stance::kDefaultStance, std::nullopt);
     // Where the unit stood when it last became idle; chases are leashed to it.
     FVector Post = FVector::ZeroVector;
@@ -467,7 +503,8 @@ private:
     enum class ERouteStatus : uint8 { Ready, Waiting, Failed };
     ERouteStatus EnsureRouteTo(const FVector& Destination, float DeltaSeconds);
     // Advances along the current waypoints for one step; Obstructed/NavigationFailed or None.
-    politika::rules::OrderEndReason AdvanceAlongRoute(float DeltaSeconds);
+    // SpeedScale multiplies the unit's speed for this step (Discipline's return speed, DISC-D3).
+    politika::rules::OrderEndReason AdvanceAlongRoute(float DeltaSeconds, float SpeedScale = 1.0f);
     uint64 AuthorityStep() const;
 };
 
@@ -895,6 +932,7 @@ private:
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
+    friend class FPolitikaMultiplayerDisciplineEffectsTest;
 #endif
     // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
     // stance, else the default. Membership changes never change it: StanceSnapshot records it
@@ -1126,6 +1164,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerDisciplineStressTest;
+    friend class FPolitikaMultiplayerDisciplineEffectsTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
