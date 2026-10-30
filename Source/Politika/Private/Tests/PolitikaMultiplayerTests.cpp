@@ -1336,4 +1336,126 @@ bool FPolitikaMultiplayerControlGroupsTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerGroupMoveShapeTest,
+    "Politika.RTS.Multiplayer.GroupMoveShape",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPolitikaMultiplayerGroupMoveShapeTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    using politika::formation::Shape;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    uint32 EnemyId = 0;
+    for (APolitikaPrototypePlayerController* Remote : F.Remotes) EnemyId = F.Match->GetBoundParticipantId(Remote);
+    if (!TestTrue(TEXT("Host and enemy are bound"), HostId != 0 && EnemyId != 0)) return false;
+
+    // FORM-F2 first fixture: eight own infantry in a loose cluster, ordered east.
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 8; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 4) * 40.0, -1200.0 + (Index / 4) * 40.0}));
+    APolitikaPrototypeUnit* EnemyUnit = F.AddUnit(EnemyId, {1500, 1500});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !EnemyUnit)) return false;
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    if (!TestEqual(TEXT("Eight own units selected"), Host->GetCommandableSelectedUnits(F.Match).Num(), 8)) return false;
+
+    // Every candidate is open unless a test probe says otherwise (no physics in this world).
+    Host->GroupMoveSlotProbeForTest = [](const FVector2D&) { return true; };
+    const FVector Ground(-300.0, -1180.0, 42.0);
+    const FVector2D Map(Ground.X - F.Match->GetPlayableMin().X, Ground.Y - F.Match->GetPlayableMin().Y);
+    auto Destinations = [&F]()
+    {
+        TMap<uint64, FVector> Out;
+        for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+            if (const APolitikaPrototypeUnit* Unit = Pending.Unit.Get()) Out.Add(Unit->GetStableId(), Pending.Destination);
+        return Out;
+    };
+    auto MinSeparation = [](const TMap<uint64, FVector>& Points)
+    {
+        double Best = TNumericLimits<double>::Max();
+        for (const auto& A : Points)
+            for (const auto& B : Points)
+                if (A.Key < B.Key) Best = FMath::Min(Best, FVector::Dist2D(A.Value, B.Value));
+        return Best;
+    };
+
+    TestTrue(TEXT("Line is the default group-move shape"), Host->GetGroupMoveShape() == Shape::Line);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{Map.X, Map.Y}}, &Ground);
+    TMap<uint64, FVector> Line = Destinations();
+    TestEqual(TEXT("FORM-04 one move request per member"), Line.Num(), 8);
+    TestTrue(TEXT("FORM-04 line destinations are distinct and a full spacing apart"), FMath::Abs(MinSeparation(Line) - 150.0) < 0.01);
+    double SumY = 0.0;
+    bool bOneRank = true;
+    for (const auto& Entry : Line)
+    {
+        SumY += Entry.Value.Y;
+        bOneRank &= FMath::IsNearlyEqual(Entry.Value.X, Ground.X, 0.01);
+    }
+    TestTrue(TEXT("FORM-04 an eastward line of eight is one rank across the travel direction"), bOneRank);
+    TestTrue(TEXT("FORM-04 the line is centred on the clicked point"), FMath::IsNearlyEqual(SumY / 8.0, Ground.Y, 0.01));
+    TArray<FVector> Markers;
+    float Alpha = 0.0f;
+    TestTrue(TEXT("Slot markers are shown for the planned destinations"), Host->GetGroupMoveMarkers(Markers, Alpha) && Markers.Num() == 8);
+    F.Step();
+    TestEqual(TEXT("FORM-06 every member's request is admitted on its own"),
+        Host->CommandBatches.Last().Tally.accepted, 8u);
+
+    // V switches to Column: two files deep along the travel direction.
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V cycles to Column"), Host->GetGroupMoveShape() == Shape::Column);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{Map.X, Map.Y}}, &Ground);
+    TMap<uint64, FVector> Column = Destinations();
+    FBox2D Extent(ForceInit);
+    for (const auto& Entry : Column) Extent += FVector2D(Entry.Value.X, Entry.Value.Y);
+    TestEqual(TEXT("FORM-04 column has one destination per member"), Column.Num(), 8);
+    TestTrue(TEXT("FORM-04 column is four ranks deep and two files wide"),
+        FMath::IsNearlyEqual(Extent.GetSize().X, 450.0, 0.01) && FMath::IsNearlyEqual(Extent.GetSize().Y, 150.0, 0.01));
+    F.Step();
+    Host->CycleGroupMoveShape();
+
+    // FORM-05: blocked candidates are replaced by spare slots, never sent.
+    Host->GroupMoveSlotProbeForTest = [&Map](const FVector2D& Candidate) { return Candidate.Y >= Map.Y - 200.0; };
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{Map.X, Map.Y}}, &Ground);
+    TMap<uint64, FVector> Blocked = Destinations();
+    bool bAllOpen = true;
+    for (const auto& Entry : Blocked) bAllOpen &= Entry.Value.Y - F.Match->GetPlayableMin().Y >= Map.Y - 200.0 - 0.01;
+    TestTrue(TEXT("FORM-05 no member is sent to a blocked slot"), Blocked.Num() == 8 && bAllOpen);
+    TestTrue(TEXT("FORM-05 replacements keep full spacing"), FMath::Abs(MinSeparation(Blocked) - 150.0) < 0.01);
+    F.Step();
+
+    // A member with no open slot keeps the plain shared-point order instead of a bad slot.
+    Host->GroupMoveSlotProbeForTest = [](const FVector2D&) { return false; };
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{Map.X, Map.Y}}, &Ground);
+    bool bAllShared = true;
+    for (const auto& Entry : Destinations()) bAllShared &= FVector::Dist2D(Entry.Value, Ground) < 0.01;
+    TestTrue(TEXT("No open slot at all: every member is sent to the clicked point"), bAllShared);
+    F.Step();
+    Host->GroupMoveSlotProbeForTest = [](const FVector2D&) { return true; };
+
+    // Unchanged paths: one unit goes to the exact point; Attack shares its target; no ground hit
+    // (scripted callers) keeps the shared point.
+    Host->SubmitGroupIntent(F.Match, {Own[0]}, nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    TestTrue(TEXT("A single unit moves to the exact clicked point"),
+        F.Match->PendingOrders.Num() == 1 && FVector::Dist2D(F.Match->PendingOrders[0].Destination, Ground) < 0.01);
+    F.Step();
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}});
+    bAllShared = true;
+    for (const auto& Entry : Destinations()) bAllShared &= FVector::Dist2D(Entry.Value, Ground) < 0.01;
+    TestTrue(TEXT("Without a ground hit the group shares one point"), bAllShared);
+    F.Step();
+
+    // FORM-02: the shape is local presentation; it never creates organization or bonus state,
+    // and Return/rematch cleanup drops the markers.
+    Host->ClearSelectionState();
+    TestFalse(TEXT("Markers cleared with the selection state"), Host->GetGroupMoveMarkers(Markers, Alpha));
+    Host->GroupMoveSlotProbeForTest = nullptr;
+    return true;
+}
+
 #endif

@@ -6947,6 +6947,475 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
     result
 }
 
+// FORM-F2 group-move geometry (RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md §4, §10):
+// `--group-move-shape SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// Same dedicated 1v1 fixture as `--group-orders` (20 idle units per seat). Seat 1's client
+// box-selects its 20 units with real X input and right-clicks three destinations: a Line
+// move to the control point, V then a Column move, and V then a Line move so close to the
+// western playable edge that part of the nominal line is outside it. For each move the
+// client's plan and per-unit slots are checked against what the server received, projected
+// and routed, and against where every unit actually stopped.
+// ---------------------------------------------------------------------------------------
+
+/// Ground probe points (world cm): a Column destination south-west of the control point and
+/// a Line destination 100 cm inside the western playable edge (x = -2000).
+const SHAPE_COLUMN_POINT: (f64, f64) = (-900.0, -950.0);
+const SHAPE_EDGE_POINT: (f64, f64) = (-1900.0, -650.0);
+/// The planner's slot spacing (`politika::formation::Layout::spacingCm`).
+const SHAPE_SPACING_CM: f64 = 150.0;
+
+fn pair(line: &str, key: &str) -> Option<(f64, f64)> {
+    let (x, y) = field(line, key)?.split_once(',')?;
+    Some((x.parse().ok()?, y.parse().ok()?))
+}
+
+/// `key=(x,y,z)` from an RTS_NAVIGATION_READY line, as (x, y).
+fn triple_xy(line: &str, key: &str) -> Option<(f64, f64)> {
+    let value = field(line, key)?
+        .trim_start_matches('(')
+        .trim_end_matches(')');
+    let mut parts = value.split(',');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+fn min_separation(points: &[(f64, f64)]) -> f64 {
+    let mut best = f64::INFINITY;
+    for (index, a) in points.iter().enumerate() {
+        for b in &points[index + 1..] {
+            best = best.min(distance(*a, *b));
+        }
+    }
+    best
+}
+
+struct ShapeMove<'a> {
+    id: &'a str,
+    shape: &'a str,
+    screen: (f64, f64),
+    /// The planner must skip at least one out-of-bounds or blocked candidate.
+    expect_rejected: bool,
+}
+
+/// Issues one right-click group move with the current selection and checks the plan, the
+/// server intake/projection and the arrivals.
+#[allow(clippy::too_many_lines)]
+fn shape_move(
+    client: &mut Game,
+    server: &mut Game,
+    evidence: &Path,
+    report: &mut Report,
+    own: &[u64],
+    step: &ShapeMove,
+) -> Result<(), String> {
+    let id = step.id;
+    let before_client = client.offset();
+    let before_server = server.offset();
+    client.click(step.screen.0, step.screen.1, "3")?;
+    let plan = client.wait_line(
+        &["RTS_GROUP_MOVE_PLAN", "order=0"],
+        Duration::from_secs(5),
+        before_client,
+    )?;
+    let batch = field(&plan, "batch").unwrap_or("0").to_owned();
+    let outcome = client.wait_line(
+        &["RTS_GROUP_ORDER_OUTCOME", &format!("batch={batch} ")],
+        Duration::from_secs(15),
+        before_client,
+    )?;
+    thread::sleep(Duration::from_millis(300));
+    report.artifact(
+        &format!("{id}_ordered_png"),
+        &client.screenshot(evidence, &format!("{id}-ordered"))?,
+    );
+    let client_text = client.text()[before_client..].to_owned();
+    let mut slots: Vec<(u64, i64, (f64, f64), (f64, f64))> = client_text
+        .lines()
+        .filter(|l| l.contains("RTS_GROUP_MOVE_SLOT") && field(l, "batch") == Some(batch.as_str()))
+        .filter_map(|l| {
+            Some((
+                field(l, "unit")?.parse().ok()?,
+                field(l, "slot")?.parse().ok()?,
+                (number(l, "x")?, number(l, "y")?),
+                (number(l, "world_x")?, number(l, "world_y")?),
+            ))
+        })
+        .collect();
+    slots.sort_by_key(|s| s.0);
+    let slot_units: Vec<u64> = slots.iter().map(|s| s.0).collect();
+    let size = pair(&plan, "playable_size").unwrap_or((0.0, 0.0));
+    let map_points: Vec<(f64, f64)> = slots.iter().map(|s| s.2).collect();
+    let in_bounds = map_points
+        .iter()
+        .all(|p| p.0 >= 50.0 && p.1 >= 50.0 && p.0 <= size.0 - 50.0 && p.1 <= size.1 - 50.0);
+    let placed = slots.iter().filter(|s| s.1 >= 0).count();
+    let separation = min_separation(&map_points);
+    let rejected: usize = field(&plan, "rejected")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    report.fact(&format!("{id}_plan"), plan.trim());
+    report.verdict(
+        &format!("FORM-04-{id}-PLAN"),
+        field(&plan, "shape") == Some(step.shape)
+            && field(&plan, "members") == Some("20")
+            && field(&plan, "unplaced") == Some("0")
+            && slot_units == own
+            && placed == own.len()
+            && (separation - SHAPE_SPACING_CM).abs() < 0.5
+            && in_bounds
+            && (rejected > 0) == step.expect_rejected,
+        format!(
+            "{} slots for {} own units, {placed} placed, min separation {separation:.1} cm, in bounds {in_bounds}, rejected {rejected}",
+            slots.len(),
+            own.len()
+        ),
+    );
+
+    // Geometry along the plan's facing: Line spans 10 slots across and 2 ranks deep;
+    // Column spans 2 files across and 10 ranks deep (when no slot was replaced).
+    if let Some(facing) = pair(&plan, "facing") {
+        let right = (-facing.1, facing.0);
+        let (mut across, mut along) = (Vec::new(), Vec::new());
+        for p in &map_points {
+            across.push(p.0 * right.0 + p.1 * right.1);
+            along.push(p.0 * facing.0 + p.1 * facing.1);
+        }
+        let span = |v: &[f64]| {
+            v.iter().copied().fold(f64::MIN, f64::max) - v.iter().copied().fold(f64::MAX, f64::min)
+        };
+        let (width, depth) = (span(&across), span(&along));
+        report.fact(
+            &format!("{id}_extent"),
+            format!(
+                "across {width:.1} cm, along {depth:.1} cm, facing {:.4},{:.4}",
+                facing.0, facing.1
+            ),
+        );
+        if !step.expect_rejected {
+            let (want_width, want_depth) = if step.shape == "column" {
+                (SHAPE_SPACING_CM, 9.0 * SHAPE_SPACING_CM)
+            } else {
+                (9.0 * SHAPE_SPACING_CM, SHAPE_SPACING_CM)
+            };
+            report.verdict(
+                &format!("FORM-04-{id}-SHAPE"),
+                (width - want_width).abs() < 0.5 && (depth - want_depth).abs() < 0.5,
+                format!(
+                    "across {width:.1} (want {want_width}), along {depth:.1} (want {want_depth})"
+                ),
+            );
+        }
+    }
+
+    // The server received one ordinary Move per unit at exactly the client's slot, projected
+    // it within its own 150 cm threshold and routed it; all were admitted on their own.
+    let server_text = server.text()[before_server..].to_owned();
+    let mut received: Vec<u64> = server_text
+        .lines()
+        .filter(|l| {
+            l.contains("MP_COMMAND_RECEIVED")
+                && l.contains(" participant=1 ")
+                && l.contains(" order=0 ")
+        })
+        .filter_map(|l| field(l, "issuer")?.parse().ok())
+        .collect();
+    received.sort_unstable();
+    let ready: Vec<(u64, (f64, f64), (f64, f64))> = server_text
+        .lines()
+        .filter(|l| l.contains("RTS_NAVIGATION_READY"))
+        .filter_map(|l| {
+            Some((
+                field(l, "unit")?.parse().ok()?,
+                triple_xy(l, "requested")?,
+                triple_xy(l, "resolved")?,
+            ))
+        })
+        .filter(|r| own.contains(&r.0))
+        .collect();
+    let matched = slots
+        .iter()
+        .filter(|s| {
+            ready
+                .iter()
+                .any(|r| r.0 == s.0 && distance(r.1, s.3) < 1.0 && distance(r.1, r.2) <= 150.0)
+        })
+        .count();
+    let resolved: Vec<(f64, f64)> = ready.iter().map(|r| r.2).collect();
+    let resolved_separation = min_separation(&resolved);
+    report.verdict(
+        &format!("FORM-05-{id}-SERVER-ROUTES"),
+        received == own
+            && matched == own.len()
+            && ready.len() == own.len()
+            && field(&outcome, "accepted") == Some("20")
+            && field(&outcome, "rejected") == Some("0"),
+        format!(
+            "{} intents received, {matched}/{} slots routed at the sent point, resolved min separation {resolved_separation:.1} cm; {}",
+            received.len(),
+            own.len(),
+            outcome.trim()
+        ),
+    );
+
+    // Every unit arrives at its own slot: no navigation failure, and the final positions
+    // keep the spacing instead of stacking on one point.
+    let deadline = Instant::now() + Duration::from_secs(40);
+    let arrived = |text: &str| {
+        own.iter()
+            .filter(|unit| {
+                text.lines().any(|l| {
+                    l.contains("RTS_GAMEPLAY_EVENT kind=OrderChanged")
+                        && field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(**unit)
+                        && field(l, "previous") == Some("1")
+                        && field(l, "reason") == Some("5")
+                })
+            })
+            .count()
+    };
+    while Instant::now() < deadline && arrived(&server.text()[before_server..]) < own.len() {
+        thread::sleep(Duration::from_millis(500));
+    }
+    thread::sleep(Duration::from_millis(1500));
+    let server_text = server.text()[before_server..].to_owned();
+    let failed = server_text
+        .lines()
+        .filter(|l| {
+            (l.contains("RTS_NAVIGATION_FAILED")
+                && field(l, "unit")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .is_some_and(|u| own.contains(&u)))
+                || (l.contains("kind=OrderChanged")
+                    && field(l, "reason") == Some("7")
+                    && field(l, "entity")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .is_some_and(|u| own.contains(&u)))
+        })
+        .count();
+    let finals: Vec<(f64, f64)> = own
+        .iter()
+        .filter_map(|unit| server_unit(&server_text, *unit).map(|s| s.0))
+        .collect();
+    let final_separation = min_separation(&finals);
+    let at_slot = slots
+        .iter()
+        .filter(|s| {
+            ready.iter().any(|r| {
+                r.0 == s.0
+                    && server_unit(&server_text, s.0).is_some_and(|f| distance(f.0, r.2) <= 30.0)
+            })
+        })
+        .count();
+    let count = arrived(&server_text);
+    report.artifact(
+        &format!("{id}_arrived_png"),
+        &client.screenshot(evidence, &format!("{id}-arrived"))?,
+    );
+    report.verdict(
+        &format!("FORM-{id}-ARRIVED-SPACED"),
+        count == own.len()
+            && failed == 0
+            && finals.len() == own.len()
+            && at_slot == own.len()
+            && final_separation >= SHAPE_SPACING_CM - 20.0,
+        format!(
+            "{count}/{} arrived, {failed} navigation failures, {at_slot} stopped within 30 cm of their resolved slot, final min separation {final_separation:.1} cm",
+            own.len()
+        ),
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1, SHAPE_EDGE_POINT.0, SHAPE_EDGE_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(evidence, "01-start")?,
+        );
+
+        let before_box = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        let boxed = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            before_box,
+        )?;
+        report.verdict(
+            "FORM-01-BOX-SELECTS-OWN-UNITS",
+            selection_ids(&boxed) == own,
+            boxed.trim().to_owned(),
+        );
+
+        // 1. Line (the default) to the control point.
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective",
+        )?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "LINE",
+                shape: "line",
+                screen: objective,
+                expect_rejected: false,
+            },
+        )?;
+
+        // 2. V: Column, sent nothing by itself.
+        let before_v = client_a.offset();
+        let before_v_server = server.offset();
+        client_a.key("v")?;
+        let shape =
+            client_a.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
+        thread::sleep(Duration::from_millis(500));
+        let sent = client_a.text()[before_v..]
+            .lines()
+            .filter(|l| l.contains("RTS_COMMAND_INTENT_SENT"))
+            .count();
+        let received = server.text()[before_v_server..]
+            .lines()
+            .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
+            .count();
+        report.verdict(
+            "FORM-02-SHAPE-KEY-IS-LOCAL",
+            field(&shape, "shape") == Some("column") && sent == 0 && received == 0,
+            format!(
+                "{}; intents sent {sent}, server received {received}",
+                shape.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_column_hud_png",
+            &client_a.screenshot(evidence, "02-column-selected")?,
+        );
+        let column = wait_screen(&mut client_a, |t| probe_screen(t, 0), "column probe")?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "COLUMN",
+                shape: "column",
+                screen: column,
+                expect_rejected: false,
+            },
+        )?;
+
+        // 3. V again: Line next to the western edge; out-of-bounds slots are replaced.
+        let before_v = client_a.offset();
+        client_a.key("v")?;
+        let shape =
+            client_a.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
+        report.verdict(
+            "FORM-SHAPE-CYCLES-BACK-TO-LINE",
+            field(&shape, "shape") == Some("line"),
+            shape.trim().to_owned(),
+        );
+        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 1), "edge probe")?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "EDGE",
+                shape: "line",
+                screen: edge,
+                expect_rejected: true,
+            },
+        )?;
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -7044,6 +7513,14 @@ fn main() {
             "politika.grp.control-groups-evidence.v1",
             "control-groups",
             control_groups_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--group-move-shape") {
+        run_dedicated_session(
+            "--group-move-shape",
+            "politika.form.group-move-shape-evidence.v1",
+            "group-move-shape",
+            group_move_shape_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

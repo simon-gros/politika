@@ -2663,6 +2663,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
         InputComponent->BindAction<FPolitikaControlGroupKey>(FName(*FString::Printf(TEXT("PrototypeControlGroup%d"), Slot)),
             IE_Pressed, this, &APolitikaPrototypePlayerController::ControlGroupKey, Slot);
     InputComponent->BindAction(TEXT("PrototypeSubgroupCycle"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleSubgroup);
+    InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
     InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APolitikaPrototypePlayerController::ReturnToMenu);
     InputComponent->BindAxis(TEXT("PrototypePanForward"), this, &APolitikaPrototypePlayerController::PanForward);
     InputComponent->BindAxis(TEXT("PrototypePanRight"), this, &APolitikaPrototypePlayerController::PanRight);
@@ -3167,11 +3168,74 @@ void APolitikaPrototypePlayerController::CycleSubgroup()
 #endif
 }
 
+void APolitikaPrototypePlayerController::CycleGroupMoveShape()
+{
+    // A local presentation preference for the next group move; it changes no unit or order.
+    GroupMoveShape = politika::formation::NextShape(GroupMoveShape);
+    const bool bLine = GroupMoveShape == politika::formation::Shape::Line;
+    ShowLocalFeedback(FString::Printf(TEXT("Group move shape: %s  ·  V to change"), bLine ? TEXT("LINE") : TEXT("COLUMN")));
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GROUP_MOVE_SHAPE participant=%u shape=%s"), GetCommandPlayerId(),
+        UTF8_TO_TCHAR(politika::formation::ShapeName(GroupMoveShape).data()));
+#endif
+}
+
+bool APolitikaPrototypePlayerController::IsGroupMoveSlotOpen(const APolitikaPrototypeMatch& ActiveMatch,
+    const FVector2D& MapPosition, float GroundZ) const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+    if (GroupMoveSlotProbeForTest) return GroupMoveSlotProbeForTest(MapPosition);
+#endif
+    // Keep slots off the very edge of the playable area: the server rejects outside it.
+    constexpr double EdgeMarginCm = 50.0;
+    const FVector2D Size = ActiveMatch.GetPlayableMax() - ActiveMatch.GetPlayableMin();
+    if (MapPosition.X < EdgeMarginCm || MapPosition.Y < EdgeMarginCm || MapPosition.X > Size.X - EdgeMarginCm
+        || MapPosition.Y > Size.Y - EdgeMarginCm)
+        return false;
+    UWorld* World = GetWorld();
+    if (!World) return false;
+    // Ground under the slot: static world geometry only, so units standing there do not count.
+    // A hit far above or below the clicked ground is a rooftop, wall or cliff, not open ground.
+    constexpr float MaxStepCm = 120.0f;
+    constexpr float MinGroundNormalZ = 0.75f;
+    const FVector SlotWorld(ActiveMatch.GetPlayableMin().X + MapPosition.X, ActiveMatch.GetPlayableMin().Y + MapPosition.Y, GroundZ);
+    FHitResult Ground;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaGroupMoveSlot), false);
+    if (!World->LineTraceSingleByObjectType(Ground, SlotWorld + FVector(0, 0, 2000), SlotWorld - FVector(0, 0, 2000),
+            FCollisionObjectQueryParams(ECC_WorldStatic), Params))
+        return false;
+    if (FMath::Abs(Ground.ImpactPoint.Z - GroundZ) > MaxStepCm || Ground.ImpactNormal.Z < MinGroundNormalZ) return false;
+    // Where this process has navigation (standalone, listen host), mirror the server's
+    // projection threshold so a blocked slot is replaced before it is ever sent.
+    if (const UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
+        if (const ANavigationData* NavData = NavSystem->GetDefaultNavDataInstance())
+        {
+            FNavLocation Projected;
+            if (!NavSystem->ProjectPointToNavigation(Ground.ImpactPoint, Projected, FVector(80.0f, 80.0f, 180.0f), NavData)
+                || FVector::Dist(Projected.Location, Ground.ImpactPoint) > 150.0f)
+                return false;
+        }
+    return true;
+}
+
+bool APolitikaPrototypePlayerController::GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha) const
+{
+    OutMarkers.Reset();
+    if (GroupMoveMarkers.IsEmpty() || GroupMoveMarkersSeconds < 0.0) return false;
+    const double Age = FPlatformTime::Seconds() - GroupMoveMarkersSeconds;
+    if (Age > GroupMoveMarkerLifetimeSeconds) return false;
+    OutMarkers = GroupMoveMarkers;
+    OutAlpha = static_cast<float>(FMath::Clamp(1.0 - Age / GroupMoveMarkerLifetimeSeconds, 0.0, 1.0));
+    return true;
+}
+
 void APolitikaPrototypePlayerController::ClearSelectionState()
 {
     bSelectPressed = false;
     bBoxSelecting = false;
     CommandBatches.Reset();
+    GroupMoveMarkers.Reset();
+    GroupMoveMarkersSeconds = -1.0;
     // Selection and every control group end together (Return, rematch, revoked seat).
 #if !UE_BUILD_SHIPPING
     if (!ControlGroups.Empty())
@@ -3209,7 +3273,8 @@ APolitikaPrototypeUnit* APolitikaPrototypePlayerController::GetCommandableSelect
 }
 
 void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch,
-    TConstArrayView<APolitikaPrototypeUnit*> Issuers, APolitikaPrototypeUnit* Target, const politika::rules::Order& Order)
+    TConstArrayView<APolitikaPrototypeUnit*> Issuers, APolitikaPrototypeUnit* Target, const politika::rules::Order& Order,
+    const FVector* GroundHit)
 {
     if (!ActiveMatch || Issuers.IsEmpty()) return;
     FCommandBatch Batch;
@@ -3226,8 +3291,64 @@ void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMat
         TEXT("RTS_GROUP_ORDER_SENT participant=%u batch=%u order=%u issuers=%d first_correlation=%u last_correlation=%u"),
         GetCommandPlayerId(), Batch.Id, Batch.OrderKind, Issuers.Num(), Batch.FirstCorrelation, Batch.LastCorrelation);
 #endif
-    // The same requested point for every issuer (§3 step 4); spacing is a later feature.
-    for (APolitikaPrototypeUnit* Issuer : Issuers) SubmitIntent(ActiveMatch, Issuer, Target, Order);
+    const auto* Move = std::get_if<politika::rules::MoveOrder>(&Order);
+    const auto* AttackMove = std::get_if<politika::rules::AttackMoveOrder>(&Order);
+    if (!GroundHit || Issuers.Num() < 2 || (!Move && !AttackMove))
+    {
+        // One shared order: Attack, Stop, Guard, abilities and single-unit moves.
+        for (APolitikaPrototypeUnit* Issuer : Issuers) SubmitIntent(ActiveMatch, Issuer, Target, Order);
+        return;
+    }
+    // FORM-F2: one distinct Line/Column destination per member, facing the travel direction.
+    // Each is still an ordinary single-issuer Move/AttackMove that the server admits on its own.
+    using namespace politika::formation;
+    const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();
+    const politika::rules::Position AnchorPosition = Move ? Move->destination : AttackMove->destination;
+    const Point Anchor{AnchorPosition.x, AnchorPosition.y};
+    std::vector<Member> Members;
+    Members.reserve(static_cast<std::size_t>(Issuers.Num()));
+    for (const APolitikaPrototypeUnit* Issuer : Issuers)
+        if (Issuer)
+            Members.push_back({Issuer->GetStableId(),
+                {Issuer->GetActorLocation().X - PlayableMin.X, Issuer->GetActorLocation().Y - PlayableMin.Y}});
+    const float GroundZ = static_cast<float>(GroundHit->Z);
+    const Plan SlotPlan = PlanGroupMove(Members, Anchor, GroupMoveShape,
+        [this, ActiveMatch, GroundZ](Point Candidate) { return IsGroupMoveSlotOpen(*ActiveMatch, {Candidate.x, Candidate.y}, GroundZ); });
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_GROUP_MOVE_PLAN participant=%u batch=%u order=%u shape=%s members=%d anchor=%.1f,%.1f playable_min=%.1f,%.1f playable_size=%.1f,%.1f facing=%.4f,%.4f checked=%d rejected=%d unplaced=%d min_separation=%.1f"),
+        GetCommandPlayerId(), Batch.Id, Batch.OrderKind, UTF8_TO_TCHAR(ShapeName(SlotPlan.shape).data()), static_cast<int32>(SlotPlan.assignments.size()),
+        Anchor.x, Anchor.y, PlayableMin.X, PlayableMin.Y, ActiveMatch->GetPlayableMax().X - PlayableMin.X,
+        ActiveMatch->GetPlayableMax().Y - PlayableMin.Y, SlotPlan.facing.x, SlotPlan.facing.y, static_cast<int32>(SlotPlan.candidatesChecked),
+        static_cast<int32>(SlotPlan.candidatesRejected), static_cast<int32>(SlotPlan.unplaced),
+        std::isfinite(MinimumSeparation(SlotPlan)) ? MinimumSeparation(SlotPlan) : -1.0);
+#endif
+    GroupMoveMarkers.Reset();
+    const auto SlotFor = [&SlotPlan](const APolitikaPrototypeUnit* Issuer) -> const Assignment*
+    {
+        if (!Issuer) return nullptr;
+        const auto Found = std::lower_bound(SlotPlan.assignments.begin(), SlotPlan.assignments.end(), Issuer->GetStableId(),
+            [](const Assignment& Candidate, EntityId Id) { return Candidate.id < Id; });
+        return Found != SlotPlan.assignments.end() && Found->id == Issuer->GetStableId() ? &*Found : nullptr;
+    };
+    for (APolitikaPrototypeUnit* Issuer : Issuers)
+    {
+        const Assignment* Slot = SlotFor(Issuer);
+        const Point Destination = Slot ? Slot->destination : Anchor;
+        const politika::rules::Position Position{Destination.x, Destination.y};
+#if !UE_BUILD_SHIPPING
+        if (Issuer)
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_GROUP_MOVE_SLOT participant=%u batch=%u unit=%llu slot=%d x=%.1f y=%.1f world_x=%.1f world_y=%.1f"),
+                GetCommandPlayerId(), Batch.Id, Issuer->GetStableId(),
+                Slot && Slot->slot != kNoSlot ? static_cast<int32>(Slot->slot) : -1, Destination.x, Destination.y,
+                PlayableMin.X + Destination.x, PlayableMin.Y + Destination.y);
+#endif
+        GroupMoveMarkers.Add(FVector(PlayableMin.X + Destination.x, PlayableMin.Y + Destination.y, GroundHit->Z));
+        if (Move) SubmitIntent(ActiveMatch, Issuer, Target, politika::rules::MoveOrder{Position});
+        else SubmitIntent(ActiveMatch, Issuer, Target, politika::rules::AttackMoveOrder{Position});
+    }
+    GroupMoveMarkersSeconds = FPlatformTime::Seconds();
 }
 
 bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome)
@@ -3279,7 +3400,8 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}},
+            &Hit.ImpactPoint);
     }
 }
 
@@ -3305,7 +3427,8 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
     {
         const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
             Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
-        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}});
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}},
+            &Hit.ImpactPoint);
     }
     else
         ShowLocalFeedback(TEXT("Attack-move rejected: click valid map ground."));
@@ -3501,6 +3624,34 @@ void APolitikaPrototypeHUD::DrawHUD()
                 LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
         }
     }
+    // Latest group move's destinations (FORM-F2): small fading rings where each member was sent.
+    if (const APolitikaPrototypePlayerController* Planner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
+    {
+        TArray<FVector> Markers;
+        float Alpha = 0.0f;
+        if (Planner->GetGroupMoveMarkers(Markers, Alpha))
+        {
+            const FLinearColor Ring(0.35f, 0.9f, 0.65f, 0.9f * Alpha);
+            const float Thickness = FMath::Max(1.0f, 1.5f * UiScale);
+            for (const FVector& Marker : Markers)
+            {
+                // Project a 40 cm ground circle so the ring keeps the camera's perspective.
+                constexpr int32 Segments = 12;
+                FVector2D Previous;
+                bool bHasPrevious = false;
+                for (int32 Index = 0; Index <= Segments; ++Index)
+                {
+                    const double Angle = 2.0 * UE_DOUBLE_PI * Index / Segments;
+                    FVector2D Screen;
+                    const bool bOnScreen = Planner->ProjectWorldLocationToScreen(
+                        Marker + FVector(40.0 * FMath::Cos(Angle), 40.0 * FMath::Sin(Angle), 4.0), Screen, true);
+                    if (bOnScreen && bHasPrevious) DrawLine(Previous.X, Previous.Y, Screen.X, Screen.Y, Ring, Thickness);
+                    Previous = Screen;
+                    bHasPrevious = bOnScreen;
+                }
+            }
+        }
+    }
     DrawText(TEXT("POLITIKA  /  RTS DEVELOPMENT SLICE"), Ink, Left, Y, nullptr, 1.5f * UiScale); Y += 34.0f * UiScale;
     const ENetMode NetMode = GetNetMode();
     if (NetMode != NM_Standalone)
@@ -3534,9 +3685,11 @@ void APolitikaPrototypeHUD::DrawHUD()
         }
     }
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
-    DrawText(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  WASD pan  ·  wheel zoom  ·  Esc menu"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
-    const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
+    const bool bLineShape = !PrototypeOwner || PrototypeOwner->GetGroupMoveShape() == politika::formation::Shape::Line;
+    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
+        bLineShape ? TEXT("LINE") : TEXT("COLUMN")), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
         APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];
         if (SelectedUnits.Num() > 1)

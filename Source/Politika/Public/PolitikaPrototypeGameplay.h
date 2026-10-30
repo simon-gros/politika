@@ -10,6 +10,7 @@
 #include "Rules.h"
 #include "Fog.h"
 #include "GroupSelection.h"
+#include "FormationGeometry.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -626,6 +627,7 @@ private:
     friend struct FPolitikaMultiplayerFixture;
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
+    friend class FPolitikaMultiplayerGroupMoveShapeTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
     // Automation-only: treat a listen-mode test world as a dedicated server (no local seat).
     bool bTestDedicatedHosting = false;
@@ -858,6 +860,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFogMemoryTest;
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
+    friend class FPolitikaMultiplayerGroupMoveShapeTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -906,6 +909,10 @@ public:
     // HUD read-only view of the numbered control groups (4C-G) and the active Tab subgroup.
     const politika::selection::ControlGroups& GetControlGroups() const { return ControlGroups; }
     int32 GetActiveSubgroup() const { return ActiveSubgroup; }
+    // HUD read-only view of the group-move shape (FORM-F2) and the latest planned slots.
+    politika::formation::Shape GetGroupMoveShape() const { return GroupMoveShape; }
+    // World positions of the latest group move's destinations while they are still fresh.
+    bool GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha) const;
 private:
 #if !UE_BUILD_SHIPPING
     // Development-only hostile-input probe: sends forged intents through the real RPC.
@@ -978,8 +985,25 @@ private:
     };
     TArray<FCommandBatch> CommandBatches;
     uint32 NextBatchId = 1;
+    // Move and attack-move groups get one distinct destination per member (FORM-F2): pass the
+    // clicked ground point as GroundHit. Without it every member gets the same order.
     void SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Issuers,
-        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order);
+        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order, const FVector* GroundHit = nullptr);
+    // Group-move geometry (FORM-F2): local presentation choice of Line or Column, cycled by V.
+    // It is not a formation: no membership, stance or bonus exists, and the server admits and
+    // routes every member's destination as an ordinary Move.
+    politika::formation::Shape GroupMoveShape = politika::formation::Shape::Line;
+    void CycleGroupMoveShape();
+    // Advisory check of one candidate slot on this process: inside the playable area, on
+    // ground level with the clicked point and not too steep, and on the local navmesh when
+    // this process has one. The server's own projection and route stay authoritative.
+    bool IsGroupMoveSlotOpen(const APolitikaPrototypeMatch& ActiveMatch, const FVector2D& MapPosition, float GroundZ) const;
+#if WITH_DEV_AUTOMATION_TESTS
+    TFunction<bool(const FVector2D&)> GroupMoveSlotProbeForTest;
+#endif
+    TArray<FVector> GroupMoveMarkers;
+    double GroupMoveMarkersSeconds = -1.0;
+    static constexpr double GroupMoveMarkerLifetimeSeconds = 2.5;
     bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);
     void ClearSelectionState();
     void OrderUnderCursor();

@@ -3,6 +3,7 @@
 #include "Fog.h"
 #include "UnitScale.h"
 #include "GroupSelection.h"
+#include "FormationGeometry.h"
 
 #include <cassert>
 #include <iterator>
@@ -434,6 +435,129 @@ int main() {
         // A narrow view moves the bar right of the command panel instead of under it.
         static_assert(GroupBarSlotRect(1, 1280, 720, 1.0).min.x == 446.0 && GroupBarSlotRect(0, 1280, 720, 1.0).max.x == 1140.0);
         static_assert(GroupBarSlotAt({450, 670}, 1280, 720, 1.0) == 1 && GroupBarSlotAt({300, 670}, 1280, 720, 1.0) == kControlGroupSlots);
+    }
+
+    // FORM-F2 group-move geometry: Line/Column slots, facing, unique legal destinations and a
+    // deterministic, crossing-free assignment. Geometry only; no formation state exists.
+    {
+        using namespace politika::formation;
+        const auto Always = [](Point) { return true; };
+        const auto Near = [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; };
+        static_assert(NextShape(Shape::Line) == Shape::Column && NextShape(Shape::Column) == Shape::Line);
+        static_assert(ShapeName(Shape::Column) == "column" && Frontage(Shape::Line, 8, {}) == 8
+            && Frontage(Shape::Line, 20, {}) == 10 && Frontage(Shape::Column, 20, {}) == 2 && Frontage(Shape::Column, 1, {}) == 1);
+
+        // Eight units: one centred rank of eight for Line; four ranks of two for Column.
+        const std::vector<Slot> Line8 = RelativeSlots(Shape::Line, 8, 0, {});
+        assert(Line8.size() == 8 && Line8.front().lateral == -525.0 && Line8.back().lateral == 525.0);
+        assert(std::all_of(Line8.begin(), Line8.end(), [](const Slot& s) { return s.forward == 0.0 && s.rank == 0; }));
+        const std::vector<Slot> Column8 = RelativeSlots(Shape::Column, 8, 0, {});
+        assert(Column8[0].lateral == -75.0 && Column8[1].lateral == 75.0 && Column8[0].forward == 225.0);
+        assert(Column8[7].forward == -225.0 && Column8[7].rank == 3);
+        // A partial last rank is centred; spares are full ranks behind the block.
+        const std::vector<Slot> Line13 = RelativeSlots(Shape::Line, 13, 13, {});
+        assert(Line13.size() == 26 && Line13[10].rank == 1 && Line13[10].lateral == -150.0 && Line13[12].lateral == 150.0);
+        assert(Line13[13].rank == 2 && Line13[13].lateral == -675.0 && Line13[13].forward == -225.0);
+        assert(RelativeSlots(Shape::Line, 0, 4, {}).empty());
+
+        // Eight units standing in a cluster west of the anchor, ordered due east.
+        std::vector<Member> Group;
+        for (EntityId Id = 1; Id <= 8; ++Id)
+            Group.push_back({Id, {1000.0 + static_cast<double>((Id - 1) % 4) * 40.0, 2000.0 + static_cast<double>((Id - 1) / 4) * 40.0}});
+        const Point Anchor{3000.0, 2020.0};
+        const Plan Line = PlanGroupMove(Group, Anchor, Shape::Line, Always);
+        assert(Line.assignments.size() == 8 && Line.unplaced == 0 && Line.candidatesRejected == 0);
+        assert(Near(Line.facing, {1.0, 0.0}));
+        // FORM-04: unique, finite destinations a full spacing apart, centred on the anchor.
+        assert(std::abs(MinimumSeparation(Line) - 150.0) < 1e-9);
+        Point Sum{0, 0};
+        for (const Assignment& A : Line.assignments) {
+            assert(IsFinite(A.destination) && A.slot < 8 && A.destination.x == 3000.0);
+            Sum = {Sum.x + A.destination.x, Sum.y + A.destination.y};
+        }
+        assert(std::abs(Sum.x / 8 - Anchor.x) < 1e-9 && std::abs(Sum.y / 8 - Anchor.y) < 1e-9);
+        for (std::size_t Index = 1; Index < Line.assignments.size(); ++Index)
+            assert(Line.assignments[Index - 1].id < Line.assignments[Index].id);
+        // Facing east, right is +y: members keep their left-to-right order, so nobody crosses.
+        const auto DestinationOf = [](const Plan& P, EntityId Id) {
+            return std::find_if(P.assignments.begin(), P.assignments.end(), [Id](const Assignment& A) { return A.id == Id; })->destination;
+        };
+        assert(DestinationOf(Line, 1).y < DestinationOf(Line, 5).y && DestinationOf(Line, 4).y < DestinationOf(Line, 8).y);
+
+        // Input order and duplicates do not change the plan.
+        std::vector<Member> Shuffled(Group.rbegin(), Group.rend());
+        Shuffled.push_back(Group[2]);
+        const Plan Again = PlanGroupMove(Shuffled, Anchor, Shape::Line, Always);
+        assert(Again.assignments.size() == 8);
+        for (std::size_t Index = 0; Index < 8; ++Index)
+            assert(Again.assignments[Index].id == Line.assignments[Index].id
+                && Near(Again.assignments[Index].destination, Line.assignments[Index].destination));
+
+        // Column: two files along the travel direction; the front pair is the east-most pair.
+        const Plan Column = PlanGroupMove(Group, Anchor, Shape::Column, Always);
+        assert(Column.assignments.size() == 8 && std::abs(MinimumSeparation(Column) - 150.0) < 1e-9);
+        double MinX = 1e9, MaxX = -1e9, MinY = 1e9, MaxY = -1e9;
+        for (const Assignment& A : Column.assignments) {
+            MinX = std::min(MinX, A.destination.x); MaxX = std::max(MaxX, A.destination.x);
+            MinY = std::min(MinY, A.destination.y); MaxY = std::max(MaxY, A.destination.y);
+        }
+        assert(MaxX - MinX == 450.0 && MaxY - MinY == 150.0);
+        assert(DestinationOf(Column, 4).x == 3225.0 && DestinationOf(Column, 1).x == 2775.0);
+
+        // Facing follows the travel direction (here due north, -y), so the line runs east-west.
+        const Plan North = PlanGroupMove(Group, {1060.0, 0.0}, Shape::Line, Always);
+        assert(Near(North.facing, {0.0, -1.0}) && std::abs(MinimumSeparation(North) - 150.0) < 1e-9);
+        assert(std::all_of(North.assignments.begin(), North.assignments.end(), [](const Assignment& A) { return A.destination.y == 0.0; }));
+        // An anchor inside the group gives no travel direction: the fallback facing is used.
+        const Plan InPlace = PlanGroupMove(Group, {1060.0, 2020.0}, Shape::Line, Always, {}, {0.0, 2.0});
+        assert(Near(InPlace.facing, {0.0, 1.0}));
+
+        // Blocked slots (here: everything with y < 1800, the three left-most of the line) are
+        // skipped and replaced by spare slots in the rank behind, never by an overlapping
+        // destination: 5 nominal + 3 spare placed after 14 probes.
+        std::size_t Probes = 0;
+        const auto Open = [&Probes](Point P) { ++Probes; return P.y >= 1800.0; };
+        const Plan Blocked = PlanGroupMove(Group, Anchor, Shape::Line, Open);
+        assert(Blocked.unplaced == 0 && Blocked.candidatesRejected == 6 && Probes == Blocked.candidatesChecked && Probes == 14);
+        assert(std::all_of(Blocked.assignments.begin(), Blocked.assignments.end(),
+            [](const Assignment& A) { return A.slot != kNoSlot && A.destination.y >= 1800.0; }));
+        assert(std::count_if(Blocked.assignments.begin(), Blocked.assignments.end(),
+            [](const Assignment& A) { return A.destination.x == 2850.0; }) == 3);
+        assert(std::abs(MinimumSeparation(Blocked) - 150.0) < 1e-9);
+        // With no legal slot at all, everyone keeps the plain shared-point order, and the
+        // projection is probed at most twice per member.
+        Probes = 0;
+        const auto Nowhere = [&Probes](Point) { ++Probes; return false; };
+        const Plan None = PlanGroupMove(Group, Anchor, Shape::Column, Nowhere);
+        assert(None.unplaced == 8 && Probes == 16 && std::isinf(MinimumSeparation(None)));
+        assert(std::all_of(None.assignments.begin(), None.assignments.end(),
+            [&](const Assignment& A) { return A.slot == kNoSlot && Near(A.destination, Anchor); }));
+        // Too few legal slots: the rear-most members fall back to the anchor, the rest are placed.
+        int Allowed = 5;
+        const Plan Partial = PlanGroupMove(Group, Anchor, Shape::Line, [&Allowed](Point) { return Allowed-- > 0; });
+        assert(Partial.unplaced == 3 && std::count_if(Partial.assignments.begin(), Partial.assignments.end(),
+            [](const Assignment& A) { return A.slot == kNoSlot; }) == 3);
+
+        // A single member goes exactly where it was ordered, without a projection probe.
+        Probes = 0;
+        const Plan Single = PlanGroupMove(std::span<const Member>(Group.data(), 1), Anchor, Shape::Line, Nowhere);
+        assert(Single.assignments.size() == 1 && Near(Single.assignments[0].destination, Anchor) && Probes == 0);
+        // Malformed input fails closed to the shared point.
+        assert(PlanGroupMove(std::span<const Member>{}, Anchor, Shape::Line, Always).assignments.empty());
+        const Plan BadAnchor = PlanGroupMove(Group, {std::nan(""), 0.0}, Shape::Line, Always);
+        assert(BadAnchor.unplaced == 8);
+        Layout Zero; Zero.spacingCm = 0.0;
+        assert(PlanGroupMove(Group, Anchor, Shape::Line, Always, Zero).unplaced == 8);
+        std::vector<Member> Huge;
+        for (EntityId Id = 1; Id <= 301; ++Id) Huge.push_back({Id, {0.0, static_cast<double>(Id)}});
+        assert(PlanGroupMove(Huge, Anchor, Shape::Line, Always).unplaced == 301);
+        // The skirmish-map cap of 20: Line is two ranks of ten, every slot distinct.
+        std::vector<Member> Twenty;
+        for (EntityId Id = 1; Id <= 20; ++Id) Twenty.push_back({Id, {500.0 + static_cast<double>(Id % 5) * 100.0, 500.0 + static_cast<double>(Id / 5) * 100.0}});
+        const Plan Twenty20 = PlanGroupMove(Twenty, {4000.0, 600.0}, Shape::Line, Always);
+        assert(Twenty20.unplaced == 0 && std::abs(MinimumSeparation(Twenty20) - 150.0) < 1e-9);
+        const Plan Column20 = PlanGroupMove(Twenty, {4000.0, 600.0}, Shape::Column, Always);
+        assert(Column20.unplaced == 0 && std::abs(MinimumSeparation(Column20) - 150.0) < 1e-9);
     }
 
     // Alliance: same owner or shared non-zero team. The Unaligned (owner 0, no team) is hostile to all.
