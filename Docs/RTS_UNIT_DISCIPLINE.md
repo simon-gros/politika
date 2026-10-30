@@ -1,6 +1,6 @@
 # POLITIKA — Military Discipline: earned in formation
 
-**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)). **DISC-D2 IMPLEMENTED 30 October 2026** (casualty shock, isolation with the Concord exemption, the Directorate/Ascendancy mass ceiling; see the [DISC-D2 record](RTS_UNIT_DISCIPLINE_D2_ACCEPTANCE.md)) except the faction baseline from Population Morale (DISC-13), which waits for a Population Morale system. DISC-D3 and D4 are not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. In this first stage it has **no effect on any other attribute**; §7 lists the attributes it will drive later and how they plug in.
+**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)). **DISC-D2 IMPLEMENTED 30 October 2026** (casualty shock, isolation with the Concord exemption, the Directorate/Ascendancy mass ceiling; see the [DISC-D2 record](RTS_UNIT_DISCIPLINE_D2_ACCEPTANCE.md)) except the faction baseline from Population Morale (DISC-13), which waits for a Population Morale system. **DISC-D3 IMPLEMENTED 30 October 2026** (one per-unit modifier registry; Discipline drives damage taken, fire interval, reload time, return-to-post speed and the regroup delay; see the [DISC-D3 record](RTS_UNIT_DISCIPLINE_D3_ACCEPTANCE.md)) except spread, which waits for indirect fire. DISC-D4 is not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. DISC-D1 and D2 gave it **no effect on any other attribute**; §7 lists the attributes it drives from DISC-D3 and how they plug in.
 
 **Authority:** [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) owns the single `UnitResolve` meter and its break rules; [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns formations, stances and Cohesion (this document is its §6 made concrete and replaces the FORM-F5 sketch); [Engine Outline](ENGINE_OUTLINE.md) owns sequencing. The numbers below are first values for implementation and testing, not balance.
 
@@ -97,21 +97,23 @@ These are the existing binding rules from [Propaganda and Morale](PROPAGANDA_AND
 
 The 32-member threshold cannot be reached on the skirmish test map (20 units per player); it is tested in Automation and belongs to the large maps (300 units per player).
 
-## 7. What Discipline will affect later (design only, not in DISC-D1)
+## 7. What Discipline affects (DISC-D3)
 
 Every effect reads one normalized factor, `F = (D − 50) / 50`, in `[−1, +1]`: `0` at baseline, `+0.6` at the normal ceiling of 80 and `+1` at the Directorate/Ascendancy ceiling of 100. Effects scale linearly with `F`. Each consuming system has its own coefficient and cap, is listed in one modifier registry with a source ID, and never stacks Discipline twice.
 
 | Attribute | At 80 (`F = +0.6`) | At 100 (`F = +1`) | Arrives with |
 |---|---|---|---|
 | **Defense** (damage taken from every weapon hit) | −12% | −20% | DISC-D3 |
-| Weapon accuracy / spread | spread −12% | spread −20% | DISC-D3 |
-| Aim and reload time | −9% | −15% | DISC-D3 |
+| Weapon accuracy / spread | spread −12% | spread −20% | DISC-D3 registers it; consumed with indirect fire (direct fire never rolls) |
+| Aim (fire interval) and reload time | −9% | −15% | DISC-D3 |
 | Suppression resistance | +18% | +30% | Suppression system |
 | Stance obedience | Guard/Aggressive return to post 20% faster | 33% faster | DISC-D3 |
-| Regroup | Regroup delay 40 → 30 steps | 40 → 25 steps | DISC-D3 |
+| Regroup | Regroup delay 40 → 31 steps | 40 → 25 steps | DISC-D3 |
 | Break threshold consumers | Psy-Ops, Intimidation and rout need the meter to fall from its current value, so high Discipline buys time | | DISC-D4 |
 
 Below baseline (isolation, casualties; DISC-D2) the same coefficients apply with the negative factor, so a shaken unit takes more damage and shoots worse. **Defense** is a multiplier on damage taken, applied once per hit after armour and before health; it is not extra health and never reaches immunity (its largest reduction is the 20% above). Civilian Morale does not drive combat effects; its later effects (work rate, panic) belong to [Propaganda and Morale](PROPAGANDA_AND_MORALE.md).
+
+**As implemented (DISC-D3).** `F` is integer permille. Each multiplier is `1000 + F × coefficient` permille, truncated toward zero: damage taken and spread −1/5, fire interval and reload time −3/20, return speed +1/3, regroup delay −3/8 (rounded to the nearest step, at least one). The unit's registry (`Modifiers.h`) holds one entry per source and attribute and is rewritten when Discipline changes. Weapon damage is applied in milli-health and the fire interval in milli-steps, each with the fraction carried per unit, so a −12% on an 8-point hit or a 4-step interval is not lost to rounding. The regroup delay uses the surviving members' average after that step's casualty shock. At exactly 50 every quantity is unchanged.
 
 ## 8. Delivery slices
 
@@ -119,12 +121,12 @@ Below baseline (isolation, casualties; DISC-D2) the same coefficients apply with
 |---|---|---|
 | **DISC-D1** | Meter on military units (spawn at `B`), a combat/non-combat unit category with Form refusing non-combat units, formation gain / ceiling / decay (§2–4), owner-only replication, HUD, logs, `network_protocol` 5. **No effect on any other attribute.** | DISC-01 to DISC-09 |
 | DISC-D2 | Stress: casualty shock to nearby members (−5, capped −15 per 5 s), isolation drift below `B` (floor 30) with the Concord exemption, faction mass bonus, faction baseline from Population Morale. **Implemented 30 Oct 2026** except the Population Morale baseline | DISC-10 to DISC-12 accepted; DISC-13 deferred |
-| DISC-D3 | First effects (§7): defense, accuracy, aim/reload, stance return speed, regroup delay | Measured before/after combat outcomes |
+| DISC-D3 | First effects (§7): defense, accuracy, aim/reload, stance return speed, regroup delay. **Implemented 30 Oct 2026** except spread (no consumer until indirect fire) | DISC-14, DISC-16 to DISC-19 accepted; DISC-15 deferred |
 | DISC-D4 | Break threshold consumers: rout, Psy-Ops, Intimidation (their own documents) | Their own acceptance |
 
 Possible later doctrine, not decided: Maintain adherence earning faster; veteran units keeping a higher personal floor; commander talents and research raising the ceiling ([Commander Talents](COMMANDER_TALENT_SYSTEM.md), [Research](RTS_TECHNOLOGICAL_RESEARCH.md)).
 
-## 9. Acceptance matrix (DISC-D1 and DISC-D2)
+## 9. Acceptance matrix (DISC-D1 to DISC-D3)
 
 | ID | Requirement |
 |---|---|
@@ -141,6 +143,14 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 | DISC-11 | (D2) Isolation drift applies to lone units except Concord units. |
 | DISC-12 | (D2) The mass bonus (ceiling 100) applies only to Directorate/Ascendancy formations with ≥ 32 eligible members. |
 | DISC-13 | (D2) Faction baseline follows Population Morale within its documented bounds. |
+| DISC-14 | (D3) Damage taken from every weapon hit scales with `F` per §7, once per hit, and never falls below 80% of the hit. |
+| DISC-15 | (D3) Spread scales with `F` per §7 for weapons that roll scatter. |
+| DISC-16 | (D3) Fire interval and reload time scale with `F` per §7. |
+| DISC-17 | (D3) Guard/Aggressive return-to-post speed scales with `F` per §7. |
+| DISC-18 | (D3) A formation's regroup delay follows its survivors' average Discipline per §7. |
+| DISC-19 | (D3) At the baseline every effect is neutral and earlier behaviour is unchanged; civilian Morale drives no combat effect; Discipline enters each attribute once. |
+
+**DISC-D3 packaged check (skirmish map, 20 units):** form 20 units into a Line and let them earn 80; with the opponent held at 50, walk one opposing soldier into the Line under Guard and confirm each hit on a member is scaled to 88% while the opponent's losses are unscaled, members fire on a shorter interval than the opponent's, and members walk back to their posts 20% faster; trigger the casualty fixture and confirm the regroup comes on the scaled step; reload and confirm the shorter reload; confirm the opponent's units log no effect and its client still receives only the default.
 
 **DISC-D2 packaged check (skirmish map, 20 units):** send one soldier far from the army and confirm it fades 2.5 per 5 s to 30 and holds; with the opponent on the solo-tolerant doctrine, walk one opposing soldier away from its comrades and confirm it stays at 50; trigger four casualties at one end of a 19-unit Line and confirm the shock reaches only members within 800 cm and stops at 15; walk the lone soldier back and confirm it recovers to 50 in 40 evaluations; confirm the opposing client still receives only the default. The 32-member mass ceiling cannot be reached on this map (20 per participant) and is accepted by Automation.
 
@@ -148,7 +158,8 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 
 ## 10. Open decisions
 
-- Rates, ceiling and decay above are first values; tune once DISC-D3 effects make them matter.
+- Rates, ceiling and decay above are first values; tune now that DISC-D3 effects make them matter.
+- DISC-D3 coefficients are the first values of §7, not balance. Whether a HUD should show the effect (for example "−12% damage") beside the value.
 - Whether opponents may see a coarse band of visible enemy units' Discipline (intelligence rules).
 - Whether Discipline should be saved with a persistent campaign army (no campaign persistence exists yet).
 - Whether vehicles and crewed weapons earn Discipline the same way as infantry, or through their crew.
