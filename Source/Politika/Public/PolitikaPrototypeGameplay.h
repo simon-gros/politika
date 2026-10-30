@@ -935,6 +935,12 @@ private:
     // fixture arms, every living member of that formation is set to <points>, so the fixture's
     // ordinary casualty shock takes the members near the casualties to the broken threshold.
     int32 DisciplineRoutSeedMilli = -2;
+    // Development fixture (-PolitikaMPDisciplineRoutWitness, DISC-D4): at a participant's first
+    // rout the opponent's lowest-ID unit walks (an ordinary Move) to open ground 1000 cm from the
+    // rally point, inside its sight and outside weapon range, so the opposing client receives the
+    // routed units and a packaged run can check that their routed state never reaches it.
+    int32 RoutWitnessArmed = -1;
+    void TriggerRoutWitness(const APolitikaPrototypeUnit& Routed);
     // Development fixture (-PolitikaMPStanceProbe, FORM-F4): when a participant's formation is
     // first set to Guard, the opponent's lowest-ID unit is moved (an ordinary Move) to a point
     // 740 cm from the nearest member (inside acquisition, outside weapon range); when it is

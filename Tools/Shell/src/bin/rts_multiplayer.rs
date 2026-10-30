@@ -10460,6 +10460,14 @@ fn discipline_effects_session(
 // orders again.
 // ---------------------------------------------------------------------------------------
 
+/// Units destroyed in `text`.
+fn destroyed_units(text: &str) -> Vec<u64> {
+    text.lines()
+        .filter(|l| l.contains("RTS_UNIT_DESTROYED"))
+        .map(unit_field)
+        .collect()
+}
+
 /// `RTS_DISCIPLINE_ROUT` lines of one phase in `text`.
 fn rout_lines(text: &str, phase: &str) -> Vec<String> {
     let tag = format!(" phase={phase} ");
@@ -10479,6 +10487,7 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
     args.push("-PolitikaMPUnitScaleHold".into());
     args.push("-PolitikaMPDisciplineCasualties".into());
     args.push("-PolitikaMPDisciplineRoutSeed=10".into());
+    args.push("-PolitikaMPDisciplineRoutWitness".into());
     args.push("-PolitikaMPDisciplineDoctrine=2:solo".into());
     let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
     report.fact("server_command", server.command.join(" "));
@@ -10639,7 +10648,15 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
                     .iter()
                     .any(|(u, s)| *u == unit_field(b) && int_field(b, "step") == Some(*s))
         });
-        let survivors_unbroken = own.len() - 4 - broken.len();
+        let victims: Vec<u64> = field(&armed, "victims")
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        let survivors_unbroken = own
+            .iter()
+            .filter(|u| !victims.contains(u) && !broken.contains(u))
+            .count();
         report.verdict(
             "DISC-20-BREAK-AT-ZERO",
             !breaks.is_empty() && matched && to_zero.len() == breaks.len() && survivors_unbroken > 0,
@@ -10695,13 +10712,16 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
         let outcome = client_a.wait_line(&["RTS_GROUP_ORDER_OUTCOME"], Duration::from_secs(10), at);
         thread::sleep(Duration::from_millis(500));
         let order_text = server.text()[order_from..].to_owned();
+        // A fixture victim can break from an earlier casualty and then fall itself.
+        let fallen = destroyed_units(&server.text()[rout_from..order_from]);
         let still_routed: Vec<u64> = broken
             .iter()
             .copied()
             .filter(|u| {
-                !rout_lines(&server.text()[rout_from..order_from], "rally")
-                    .iter()
-                    .any(|l| unit_field(l) == *u)
+                !fallen.contains(u)
+                    && !rout_lines(&server.text()[rout_from..order_from], "rally")
+                        .iter()
+                        .any(|l| unit_field(l) == *u)
             })
             .collect();
         let refused: Vec<u64> = order_text
@@ -10736,14 +10756,30 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
             &client_a.screenshot(evidence, "03-order-refused")?,
         );
 
-        // 3. Rally: 30 evaluations after each break, at 15, on an evaluation step.
+        // 3. Rally: 30 evaluations after each break, at 15, on an evaluation step. Units that fell
+        // while routed are reported and left out.
         let deadline = Instant::now() + Duration::from_secs(45);
-        while Instant::now() < deadline
-            && rout_lines(&server.text()[rout_from..], "rally").len() < breaks.len()
-        {
+        loop {
+            let text = server.text()[rout_from..].to_owned();
+            let fallen = destroyed_units(&text);
+            let living = broken.iter().filter(|u| !fallen.contains(u)).count();
+            if rout_lines(&text, "rally").len() >= living || Instant::now() >= deadline {
+                break;
+            }
             thread::sleep(Duration::from_millis(500));
         }
         let rout_text = server.text()[rout_from..].to_owned();
+        let fallen = destroyed_units(&rout_text);
+        let breaks: Vec<String> = breaks
+            .into_iter()
+            .filter(|b| !fallen.contains(&unit_field(b)))
+            .collect();
+        let fell_routed: Vec<u64> = broken
+            .iter()
+            .copied()
+            .filter(|u| fallen.contains(u))
+            .collect();
+        let broken: Vec<u64> = breaks.iter().map(|l| unit_field(l)).collect();
         let rallies = rout_lines(&rout_text, "rally");
         let flights = rout_lines(&rout_text, "flight_end");
         // DISC-22: each fled along a route towards seat 1's start and got closer to it.
@@ -10769,7 +10805,8 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
             "DISC-22-FLEES-TO-START",
             !breaks.is_empty() && fled_ok && rally_points.windows(2).all(|w| w[0] == w[1]),
             format!(
-                "rally points {rally_points:?}; flights ended {}; first {}",
+                "{} living routed units; fell while routed {fell_routed:?}; rally points {rally_points:?}; flights ended {}; first {}",
+                breaks.len(),
                 flights.len(),
                 flights.first().map_or("none", |l| l.trim())
             ),
@@ -10800,12 +10837,19 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
             !breaks.is_empty() && quiet && admitted_routed == 0,
             format!("no shot, hit or admitted order from a routed unit between its break and its rally: {quiet}"),
         );
-        let rally_ok = rallies.len() == breaks.len()
-            && rallies.iter().all(|r| {
-                let routed = int_field(r, "routed_steps").unwrap_or(-1);
-                int_field(r, "value") == Some(15_000)
-                    && (581..=600).contains(&routed)
-                    && int_field(r, "step").is_some_and(|s| s % 20 == 0)
+        // The first evaluation is the break step itself when it falls on one (the break comes
+        // first in the step), else the next; the rally is 29 evaluations after that.
+        let rally_ok = !breaks.is_empty()
+            && rallies.len() == breaks.len()
+            && breaks.iter().all(|b| {
+                let step = int_field(b, "step").unwrap_or(-1);
+                let expected = (step + 19) / 20 * 20 + 29 * 20;
+                rallies.iter().any(|r| {
+                    unit_field(r) == unit_field(b)
+                        && int_field(r, "value") == Some(15_000)
+                        && int_field(r, "step") == Some(expected)
+                        && int_field(r, "routed_steps") == Some(expected - step)
+                })
             });
         report.verdict(
             "DISC-26-RALLY-AT-15",
@@ -10874,12 +10918,26 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
                 int_field(l, "routed") != Some(0) || int_field(l, "resolve") != Some(50_000)
             })
             .count();
+        let seen_routed = seen
+            .iter()
+            .filter(|l| {
+                field(l, "entity")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .is_some_and(|e| broken.contains(&e))
+            })
+            .count();
+        let witness = server
+            .text()
+            .lines()
+            .find(|l| l.contains("MP_DISCIPLINE_ROUT_WITNESS"))
+            .map(str::to_owned);
         report.verdict(
             "DISC-07-OWNER-ONLY-ROUT",
-            own_routed > 0 && !seen.is_empty() && leaked == 0,
+            own_routed > 0 && seen_routed > 0 && leaked == 0,
             format!(
-                "owner samples routed {own_routed}; opposing client samples of participant 1 units {}, routed or not at 50000 {leaked}",
-                seen.len()
+                "owner samples routed {own_routed}; opposing client samples of participant 1 units {} ({seen_routed} of units that routed), routed or not at 50000 {leaked}; {}",
+                seen.len(),
+                witness.as_deref().map_or("no witness line", str::trim)
             ),
         );
         let opponent_breaks = rout_lines(&server.text(), "break")

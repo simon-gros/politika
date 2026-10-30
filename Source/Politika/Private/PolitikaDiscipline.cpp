@@ -404,7 +404,73 @@ void APolitikaPrototypeMatch::BreakUnit(APolitikaPrototypeUnit& Unit)
         QueueGameplayEvent(politika::rules::OrderChangedEvent{SimulationStepsExecuted, Unit.GetStableId(),
             PolitikaExecutionOrderOf(PreviousOrder), PolitikaExecutionOrderOf(Unit.GetCurrentOrder()), politika::rules::OrderEndReason::Routed});
     LastCommandFeedback = FString::Printf(TEXT("%s broke and is routing."), *Unit.GetUnitName().ToString());
+#if !UE_BUILD_SHIPPING
+    TriggerRoutWitness(Unit);
+#endif
 }
+
+#if !UE_BUILD_SHIPPING
+void APolitikaPrototypeMatch::TriggerRoutWitness(const APolitikaPrototypeUnit& Routed)
+{
+    if (RoutWitnessArmed < 0) RoutWitnessArmed = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPDisciplineRoutWitness")) ? 1 : 0;
+    if (RoutWitnessArmed != 1) return;
+    RoutWitnessArmed = 2; // once per match
+    APolitikaPrototypeUnit* Witness = nullptr;
+    for (APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() != 0 && Unit->GetOwnerPlayer() != Routed.GetOwnerPlayer()
+            && Routed.IsHostileTo(Unit) && (!Witness || Unit->GetStableId() < Witness->GetStableId()))
+            Witness = Unit;
+    if (!Witness)
+    {
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=0 reason=no_unit"));
+        return;
+    }
+    // 1000 cm from the rally point, first towards the witness's own side, turning in 15 degree
+    // steps until the point is open ground inside the map, 900 cm clear of the control point (the
+    // witness must not stand on it), and its straight walk keeps 900 cm from every soldier of the
+    // routed side that can still fire, so the witness does not fight.
+    const FVector2D Rally(Routed.RoutRallyPoint);
+    const FVector2D From(Witness->GetActorLocation());
+    const FVector2D Base = (From - Rally).GetSafeNormal();
+    const FVector2D ObjectivePoint = Objective ? FVector2D(Objective->GetActorLocation()) : FVector2D(TNumericLimits<double>::Max());
+    TArray<FVector2D> Avoid;
+    for (const APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit) && Unit->IsAlive() && !Unit->IsRouted() && Unit->GetOwnerPlayer() == Routed.GetOwnerPlayer())
+            Avoid.Add(FVector2D(Unit->GetActorLocation()));
+    const auto Clearance = [&Avoid, &From](const FVector2D& To)
+    {
+        double Best = TNumericLimits<double>::Max();
+        const FVector2D Segment = To - From;
+        const double Length = Segment.SizeSquared();
+        for (const FVector2D& Point : Avoid)
+        {
+            const double T = Length > 0.0 ? FMath::Clamp(FVector2D::DotProduct(Point - From, Segment) / Length, 0.0, 1.0) : 0.0;
+            Best = FMath::Min(Best, FVector2D::Distance(Point, From + Segment * T));
+        }
+        return Best;
+    };
+    constexpr double DistanceCm = 1000.0;
+    for (int32 Turn = 0; Turn <= 24; ++Turn)
+    {
+        const double Degrees = 15.0 * ((Turn + 1) / 2) * (Turn % 2 == 0 ? 1.0 : -1.0);
+        const FVector2D Point = Rally + Base.GetRotated(Degrees) * DistanceCm;
+        const FVector2D MapPoint = Point - PlayableMin;
+        float GroundZ = Witness->GetActorLocation().Z;
+        if (Clearance(Point) < 900.0 || FVector2D::Distance(Point, ObjectivePoint) < 900.0 || MapPoint.X < 200.0 || MapPoint.Y < 200.0
+            || MapPoint.X > PlayableMax.X - PlayableMin.X - 200.0 || MapPoint.Y > PlayableMax.Y - PlayableMin.Y - 200.0
+            || !FormationAnchorGround({MapPoint.X, MapPoint.Y}, GroundZ)
+            || !IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, MapPoint, GroundZ))
+            continue;
+        SubmitMove(Witness->GetOwnerPlayer(), Witness, FVector(Point.X, Point.Y, GroundZ));
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=1 unit=%llu owner=%u x=%.1f y=%.1f rally=%.1f,%.1f rally_distance=%.1f clearance=%.1f turn_deg=%.0f step=%llu"),
+            Witness->GetStableId(), Witness->GetOwnerPlayer(), Point.X, Point.Y, Rally.X, Rally.Y, DistanceCm, Clearance(Point),
+            Degrees, SimulationStepsExecuted);
+        return;
+    }
+    UE_LOG(LogPolitikaStartup, Display, TEXT("MP_DISCIPLINE_ROUT_WITNESS placed=0 reason=no_open_point"));
+}
+#endif
 
 void APolitikaPrototypeUnit::BeginRout(const FVector& RallyPoint, const FVector& ResolvedDestination, TArray<FVector>&& Route,
     uint64 Generation, uint64 Step)
