@@ -6965,12 +6965,14 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
 /// Ground probe points (world cm), all well outside the control point's 300 cm capture radius
 /// at (0, 150): a Line destination east of seat 1, a Column destination west of it, a Dispersed
 /// destination whose 2025 x 1350 cm block clears the control point by 500 cm and the map edge by
-/// 90 cm when ordered from the Column, a Perimeter centre south-west of seat 1, and a Line
-/// destination 100 cm inside the western playable edge (x = -2000).
+/// 90 cm when ordered from the Column, a Perimeter centre in the middle of a triangle of the
+/// Dispersed block (about 280 cm from the nearest of its soldiers, so the right-click hits the
+/// ground, not a soldier, and the 479.4 cm ring stays inside the map and 1250 cm clear of the
+/// control point), and a Line destination 100 cm inside the western playable edge (x = -2000).
 const SHAPE_LINE_POINT: (f64, f64) = (-450.0, -1000.0);
 const SHAPE_COLUMN_POINT: (f64, f64) = (-1000.0, -1050.0);
 const SHAPE_DISPERSED_POINT: (f64, f64) = (-750.0, -850.0);
-const SHAPE_PERIMETER_POINT: (f64, f64) = (-1350.0, -1100.0);
+const SHAPE_PERIMETER_POINT: (f64, f64) = (-850.0, -1360.0);
 const SHAPE_EDGE_POINT: (f64, f64) = (-1900.0, -650.0);
 /// The planner's slot spacing (`politika::formation::Layout::spacingCm`).
 const SHAPE_SPACING_CM: f64 = 150.0;
