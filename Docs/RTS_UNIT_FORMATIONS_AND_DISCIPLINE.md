@@ -118,7 +118,7 @@ These dimensions must be independently adjustable:
 
 ## 6. Discipline and Cohesion: one meter, two levels of organization
 
-**Concrete rule (30 October 2026):** [Military Discipline](RTS_UNIT_DISCIPLINE.md) defines how military units earn Discipline by serving in a coherent formation (support = fellow members within 400 cm), how it fades outside one, its faction rules and the attributes it will drive later. The candidate formulas below remain background.
+**Concrete rule (30 October 2026):** [Military Discipline](RTS_UNIT_DISCIPLINE.md) defines how military units earn Discipline by serving in a coherent formation (support = fellow members within 400 cm), how it fades outside one, its faction rules and the attributes it will drive later. Civilians and other non-combat units carry the same meter as Morale but **cannot be formation members**. The candidate formulas below remain background.
 
 `UnitResolve` is an authoritative **per-individual numeric meter**. Combat display = Discipline; non-combat display = Morale. Its existing depletion, recovery and `BrokenThreshold` remain the domain of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md). Faction Population Morale is distinct, already defined, and can influence soldiers' baseline resolve. **Cohesion is not an additional psychological meter.**
 
