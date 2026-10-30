@@ -32,6 +32,8 @@ These are current source bindings, **not** the intended final default profile. A
 | V | Cycle the group-move shape, Line / Column, for the next multi-unit Move or Attack-move and the next T; local, sends nothing; an existing formation keeps its own shape | \`PrototypeGroupMoveShape\` action → \`CycleGroupMoveShape\`; [FORM-F2 record](RTS_FORMATION_F2_GROUP_MOVE_ACCEPTANCE.md) |
 | T | Form the selected units (2–64) into one match-owned formation in the current V shape; members already in another formation move into the new one | \`PrototypeFormFormation\` action → \`FormSelected\`; [FORM-F3 record](RTS_FORMATION_F3_LIFECYCLE_ACCEPTANCE.md) |
 | Y | Release the selected units from their formations; a formation left with one member dissolves | \`PrototypeReleaseFormation\` action → \`ReleaseSelected\`; sends nothing when no selected unit is a member |
+| H | Cycle combat stance Hold Ground → Guard → Aggressive → Hold Fire. With exactly one whole formation selected it sets the formation's stance (and clears members' own); otherwise it sets each selected unit's own stance. Sends no order | \`PrototypeCycleStance\` action → \`CycleStanceSelected\`; [FORM-F4 record](RTS_FORMATION_F4_STANCE_ACCEPTANCE.md) |
+| J | Cycle a whole formation's adherence Flexible → Maintain → Free. Any other selection sends nothing | \`PrototypeCycleAdherence\` action → \`CycleAdherenceSelected\` |
 | Right mouse, hostile unit | Attempt Attack on hit target | \`OrderUnderCursor\`; shared order admission |
 | Q | Attack-Move to the point currently under the cursor | \`PrototypeAttackMove\` action → \`AttackMoveSelected\` on press, no separate confirm cursor state |
 | X | Stop selected unit | \`PrototypeStop\` action → \`StopSelected\` on press |
@@ -48,7 +50,7 @@ These are current source bindings, **not** the intended final default profile. A
 
 ### Future formation and stance controls (design only)
 
-**FORM-F3 (30 October 2026)** implemented Form (**T**) and Release (**Y**, which covers Detach and Disband) and formation-addressed Move / Attack-move / Stop; see the [FORM-F3 record](RTS_FORMATION_F3_LIFECYCLE_ACCEPTANCE.md). Reinforce, stance, adherence, facing/width drag and Cohesion below remain design only.
+**FORM-F3 (30 October 2026)** implemented Form (**T**) and Release (**Y**, which covers Detach and Disband) and formation-addressed Move / Attack-move / Stop; see the [FORM-F3 record](RTS_FORMATION_F3_LIFECYCLE_ACCEPTANCE.md). Reinforce, facing/width drag and Cohesion below remain design only. **FORM-F4 (30 October 2026)** implemented stance (**H**) and adherence (**J**) as cycling keys; Withdraw and a stance panel remain design only.
 
 [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) proposes explicit **Form / Reinforce / Detach / Disband** actions, with independent **shape/facing**, **combat stance** (Aggressive, Guard, Hold Ground, Hold Fire; Withdraw deferred) and **formation adherence** (Maintain, Flexible, Free). Distinguish local selected/control-group state from persistent organization, show per-member admission/slot/navigation outcomes, and display derived Cohesion alongside the *same* per-unit Discipline resolve. A facing/slot preview is advisory, not gameplay authority.
 

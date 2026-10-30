@@ -92,6 +92,6 @@ Screenshots (`formation-lifecycle-1/client-a-*.png`): formation 1 formed, the cl
 - **Reinforce** (adding units to an existing formation without forming a new one), facing/width drag and a pre-click preview.
 - **Packaged Attack-move and formation Stop.** Both go through the same server planner and are covered by Automation (Stop) and the shared path (Attack-move); the packaged run drives Move only.
 - **Partial-formation selections** are ordinary per-unit batches; there is no "select whole formation" gesture besides control groups or box selection.
-- **HUD wording.** The selected-formation line reports `N in formation` for members currently following the formation's move; directly after Form (before any formation move) it reads `0 in formation`, which looks wrong. Rename to "following" in the next HUD touch.
+- **HUD wording.** The selected-formation line reported `N in formation` for members currently following the formation's move; directly after Form it read `0 in formation`. Fixed in FORM-F4: it now reads `N following its move` ([FORM-F4 record](RTS_FORMATION_F4_STANCE_ACCEPTANCE.md)).
 - **Dedicated-client navmesh precheck** for non-formation group moves (FORM-F2 limit) is unchanged; formation moves are checked on the server.
 - 300-unit orders on large maps still need batched intents (F47); a 64-member formation move is 64 reliable member orders on the server side but one client RPC.
