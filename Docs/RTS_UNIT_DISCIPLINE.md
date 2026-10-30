@@ -1,6 +1,6 @@
 # POLITIKA — Military Discipline: earned in formation
 
-**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)); DISC-D2 to D4 are not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. In this first stage it has **no effect on any other attribute**; §7 lists the attributes it will drive later and how they plug in.
+**Status: PROPOSED DESIGN — 30 October 2026. DISC-D1 IMPLEMENTED 30 October 2026** (the meter, formation gain, ceiling 80, decay, Form refusing civilians, owner-only HUD; see the [DISC-D1 record](RTS_UNIT_DISCIPLINE_D1_ACCEPTANCE.md)). **DISC-D2 IMPLEMENTED 30 October 2026** (casualty shock, isolation with the Concord exemption, the Directorate/Ascendancy mass ceiling; see the [DISC-D2 record](RTS_UNIT_DISCIPLINE_D2_ACCEPTANCE.md)) except the faction baseline from Population Morale (DISC-13), which waits for a Population Morale system. DISC-D3 and D4 are not implemented. This document turns the per-unit resolve meter of [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) §6 into a concrete, implementable rule for **military** units: Discipline is **earned by serving in a coherent formation** and fades outside one. In this first stage it has **no effect on any other attribute**; §7 lists the attributes it will drive later and how they plug in.
 
 **Authority:** [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) owns the single `UnitResolve` meter and its break rules; [Military Formations, Tactical Stances, Cohesion and Discipline](RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md) owns formations, stances and Cohesion (this document is its §6 made concrete and replaces the FORM-F5 sketch); [Engine Outline](ENGINE_OUTLINE.md) owns sequencing. The numbers below are first values for implementation and testing, not balance.
 
@@ -19,14 +19,18 @@ All values are authoritative integers in **milli-points** (`0…100 000` for 0�
 | Quantity | Value | Notes |
 |---|---|---|
 | Range | 0–100 | `UnitResolve` maximum 100 |
-| Baseline `B` | 50 | Later from faction Population Morale (§6); a constant in DISC-D1 |
+| Baseline `B` | 50 | Later from faction Population Morale (§6); a constant in DISC-D1 and DISC-D2 |
 | Broken threshold | 0 | Defined, not used until DISC-D4 |
 | Spawn value | `B` | |
 | Evaluation cadence | every 20 steps (1 s at 20 steps/s) | Cheap and deterministic; no per-frame updates |
 | Formation gain | +1.0 per second while **eligible** (§3) | 50 → 80 takes 30 s of service |
 | Formation ceiling | `B + 30` = 80 (normal) | Directorate/Ascendancy mass bonus raises it to 100 (§6) |
 | Decay outside formation | −0.5 per second towards `B`, never below `B` | 80 → 50 takes 60 s; earned Discipline outlasts a short break |
+| Recovery outside formation (DISC-D2) | +0.5 per second back to `B` from below, when not alone | 30 → 50 takes 40 s |
 | Decay while in formation but not eligible | none | Holding steady; an out-of-place member neither gains nor loses |
+| Above a lower ceiling (DISC-D2) | −0.5 per second down to the ceiling while earning | A mass formation that drops below 32 earning members fades from 100 back to 80 |
+| Isolation floor (DISC-D2) | 30 | A soldier alone (§3A) fades at −0.5 per second to 30 and holds there; 50 → 30 takes 40 s |
+| Casualty shock (DISC-D2) | −5 per fallen fellow member within 800 cm | At most −15 per unit in a 5 s (100-step) window that opens at its first shock; never below 0 |
 
 Display rounds down to whole points. The HUD shows the value and its trend as a word (`rising`, `fading`, nothing when steady).
 
@@ -46,6 +50,20 @@ Rules that keep the gain honest:
 - **Adherence and stance do not change the gain** in DISC-D1. (Later doctrine may, for example, let Maintain earn faster; see §8.)
 - **Free adherence still earns** when members happen to stay together, because support is measured, not assumed.
 
+## 3A. Stress (DISC-D2)
+
+**Isolation.** At each evaluation a **military** unit that is **not a formation member** and has **no living friendly military unit within 400 cm** is *alone*. Friendly means the same owner, or the same alliance team. Enemy soldiers, civilians and dead units never count as company. A lone unit fades at −0.5 per second towards the isolation floor of 30 (from above the baseline it fades through it), and holds at 30. As soon as a comrade is within 400 cm it is no longer alone and returns to `B` at 0.5 per second. Exceptions:
+
+- **Atlantic Concord** units (solo-tolerant doctrine) are never penalized for being alone: they return to `B` like any other unit outside a formation.
+- **Civilians** have no isolation drift: they cannot form formations and have no formation support to lose.
+- **Formation members are never isolated**, even when stranded or independent: membership is the support. A stranded member holds (§3).
+
+**Casualty shock.** When a formation member dies, every **surviving member of the same formation** within **800 cm** of where it fell loses 5 points at once, in the step of the death. Each unit has its own window: its first shock opens a 100-step (5 s) window in which it loses at most 15 points; the next shock after the window opens a new one. Shock never takes the meter below 0. Non-members nearby, other formations and opponents are not shocked. Shock applies to every faction, including the Concord. Members dying in the same step do not shock each other.
+
+**Mass formations.** For a Red Directorate or Iron Ascendancy formation, the ceiling for its earning members is 100 at an evaluation where **at least 32 members earn** (§3), and 80 otherwise. A member above the ceiling (because the formation shrank) fades down to it at 0.5 per second; a holding member keeps its value.
+
+**Doctrine.** A unit's doctrine comes from its content faction ID: `faction.red_directorate` and `faction.iron_ascendancy` are mass-formation, `faction.atlantic_concord` is solo-tolerant, everything else (Meridian Pact, Unaligned and the prototype test factions) is standard. Development builds accept `-PolitikaMPDisciplineDoctrine=<participant>:<standard|mass|solo>[,…]` so the test map's test factions can stand in for real ones.
+
 ## 4. Lifecycle
 
 | Event | Effect on Discipline |
@@ -53,7 +71,7 @@ Rules that keep the gain honest:
 | Spawn | Starts at `B` |
 | Form (T) | No change; earning starts at the next evaluation if eligible |
 | Release (Y), dissolve, becoming the last member | No immediate change; decay towards `B` starts |
-| Member death | Its value disappears with it. Survivors' values are unchanged in DISC-D1 (casualty shock is DISC-D2) |
+| Member death | Its value disappears with it. Surviving members of its formation within 800 cm take casualty shock (DISC-D2, §3A) |
 | Individual order on a member | Stops earning until the next formation move makes it follow again; no loss |
 | Joining a different formation | Keeps its value; earns under the new formation |
 | Match Terminal / Return | Values are dropped with the match; not saved |
@@ -64,11 +82,11 @@ Rules that keep the gain honest:
 - **Owner-only exact value.** The owning player receives each own unit's value and trend. Opponents and allies receive nothing in DISC-D1; a coarse visible band for enemies (for example "steady / shaken") belongs with intelligence rules later.
 - **Replication** adds the value to the existing owner-only unit state; `network_protocol` 4 → 5.
 - **HUD:** a selected unit's line ends `DISCIPLINE 72 rising` (`MORALE` on a civilian); a multi-selection, including a whole formation, shows `DISCIPLINE avg 64` over its military units. Unit labels and the formation line are unchanged, to avoid more label clutter.
-- **Development logs:** every 100 steps `RTS_DISCIPLINE_SAMPLE` per formation (members, earning, holding, min/avg/max), `RTS_DISCIPLINE_PARTICIPANT` per participant (members and units outside formations) and `RTS_DISCIPLINE_HOLDING` for each member that is not earning; `RTS_DISCIPLINE_BAND` when a unit crosses 60, 70, 80, 90 or 100, or lands back on `B`. The client's `MP_CLIENT_SAMPLE` carries `resolve=` for every unit it receives. No per-unit log every evaluation.
+- **Development logs:** every 100 steps `RTS_DISCIPLINE_SAMPLE` per formation (members, earning, holding, min/avg/max), `RTS_DISCIPLINE_PARTICIPANT` per participant (members and units outside formations) and `RTS_DISCIPLINE_HOLDING` for each member that is not earning; `RTS_DISCIPLINE_BAND` when a unit crosses 60, 70, 80, 90 or 100, falls through 40, 30, 20, 10 or 0, or lands back on `B` from either side. DISC-D2 adds `RTS_DISCIPLINE_SHOCK` for every surviving member at each formation casualty (in range or not, with distance and the window), `RTS_DISCIPLINE_ISOLATED` every 100 steps for each lone soldier (with its doctrine and whether it is exempt), `RTS_DISCIPLINE_MASS` every 100 steps for a formation at the mass ceiling, and `RTS_DISCIPLINE_DOCTRINE_OVERRIDE` for a development override. The client's `MP_CLIENT_SAMPLE` carries `resolve=` for every unit it receives. No per-unit log every evaluation.
 
 ## 6. Faction rules (canon) and when they arrive
 
-These are the existing binding rules from [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and the formations document §6, expressed in this model. They need real faction identities on units and arrive in **DISC-D2**, not DISC-D1.
+These are the existing binding rules from [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) and the formations document §6, expressed in this model. **DISC-D2 implements** the mass bonus and the Concord exemption (§3A); the faction baseline from Population Morale waits for a Population Morale system, so `B` is still the constant 50 for every faction.
 
 | Faction | Rule in this model |
 |---|---|
@@ -100,7 +118,7 @@ Below baseline (isolation, casualties; DISC-D2) the same coefficients apply with
 | Slice | Scope | Acceptance focus |
 |---|---|---|
 | **DISC-D1** | Meter on military units (spawn at `B`), a combat/non-combat unit category with Form refusing non-combat units, formation gain / ceiling / decay (§2–4), owner-only replication, HUD, logs, `network_protocol` 5. **No effect on any other attribute.** | DISC-01 to DISC-09 |
-| DISC-D2 | Stress: casualty shock to nearby members (−5, capped −15 per 5 s), isolation drift below `B` (floor 30) with the Concord exemption, faction mass bonus, faction baseline from Population Morale | DISC-10 to DISC-13 |
+| DISC-D2 | Stress: casualty shock to nearby members (−5, capped −15 per 5 s), isolation drift below `B` (floor 30) with the Concord exemption, faction mass bonus, faction baseline from Population Morale. **Implemented 30 Oct 2026** except the Population Morale baseline | DISC-10 to DISC-12 accepted; DISC-13 deferred |
 | DISC-D3 | First effects (§7): defense, accuracy, aim/reload, stance return speed, regroup delay | Measured before/after combat outcomes |
 | DISC-D4 | Break threshold consumers: rout, Psy-Ops, Intimidation (their own documents) | Their own acceptance |
 
@@ -124,6 +142,8 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 | DISC-12 | (D2) The mass bonus (ceiling 100) applies only to Directorate/Ascendancy formations with ≥ 32 eligible members. |
 | DISC-13 | (D2) Faction baseline follows Population Morale within its documented bounds. |
 
+**DISC-D2 packaged check (skirmish map, 20 units):** send one soldier far from the army and confirm it fades 2.5 per 5 s to 30 and holds; with the opponent on the solo-tolerant doctrine, walk one opposing soldier away from its comrades and confirm it stays at 50; trigger four casualties at one end of a 19-unit Line and confirm the shock reaches only members within 800 cm and stops at 15; walk the lone soldier back and confirm it recovers to 50 in 40 evaluations; confirm the opposing client still receives only the default. The 32-member mass ceiling cannot be reached on this map (20 per participant) and is accepted by Automation.
+
 **DISC-D1 packaged check (skirmish map, 20 units):** form 20 units into a Line and move them; sample the server log until the members reach 80 (about 30 s of service); confirm the HUD shows `DISCIPLINE 80`; make one member independent with an individual order and confirm it stops gaining; send one member beyond 400 cm and confirm it holds; release and confirm decay to 50 over about 60 s; confirm the opposing client logs nothing.
 
 ## 10. Open decisions
@@ -132,3 +152,5 @@ Possible later doctrine, not decided: Maintain adherence earning faster; veteran
 - Whether opponents may see a coarse band of visible enemy units' Discipline (intelligence rules).
 - Whether Discipline should be saved with a persistent campaign army (no campaign persistence exists yet).
 - Whether vehicles and crewed weapons earn Discipline the same way as infantry, or through their crew.
+- DISC-D2 first values: shock radius 800 cm and shock to formation members only; allied soldiers count as company against isolation; isolation floor 30; recovery at the fade rate. Tune with DISC-D3.
+- Whether lone soldiers should get a coarse HUD cue ("alone"); DISC-D2 shows only the value and its trend.
