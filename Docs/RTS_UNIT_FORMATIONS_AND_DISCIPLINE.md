@@ -1,6 +1,6 @@
 # POLITIKA — Military Formations, Tactical Stances, Cohesion and Discipline
 
-**Status: CORE FEATURE DESIGN / PROPOSED — 29 October 2026. NOT IMPLEMENTED OR ACCEPTED.**
+**Status: CORE FEATURE DESIGN / PROPOSED — 29 October 2026.** **FORM-F2 IMPLEMENTED 30 October 2026** — Line and Column group-move geometry: one legal slot per member, facing the travel direction, deterministic crossing-free assignment, V cycles the shape; see the [FORM-F2 record](RTS_FORMATION_F2_GROUP_MOVE_ACCEPTANCE.md). It is geometry only: formation identity, membership, lifecycle, regroup, stances, adherence, Cohesion and Discipline effects (FORM-F3 to F8) remain **not implemented**.
 
 **Authority:** [Engine Outline](ENGINE_OUTLINE.md) owns implementation sequence and acceptance promotion; [Selection and Group Orders](RTS_SELECTION_AND_GROUP_ORDERS.md) owns local selection/control groups and multi-issuer order semantics; [Propaganda and Morale](PROPAGANDA_AND_MORALE.md) owns the *single* per-unit `UnitResolve`; [Runtime Navigation Acceptance](RTS_RUNTIME_NAVIGATION_ACCEPTANCE.md) owns existing route evidence. This specialist document owns **proposed** persistent formation identities, shapes, tactical stances, cohesion, eligibility, interaction boundaries and FORM acceptance. The schema examples, balance functions and type names herein are design candidates, not code already present in the project.
 
@@ -184,7 +184,7 @@ All items below are **proposed work**, not verification that any formation featu
 | --- | --- | --- |
 | FORM-F0 | Finish relevant NAV lifecycle/failure qualifications; benchmark multiunit query/collision performance | Existing navigation authority |
 | FORM-F1 | 4C owned-unit multi-selection with individual per-member Move/Stop, explicit mixed outcomes and generation cleanup | Group commands |
-| FORM-F2 | Eight-unit Line/Column geometry, facing, unique legal slots and bounded deterministic slot assignment | F1 and NAV baseline |
+| FORM-F2 | Eight-unit Line/Column geometry, facing, unique legal slots and bounded deterministic slot assignment — **implemented 30 Oct 2026** ([record](RTS_FORMATION_F2_GROUP_MOVE_ACCEPTANCE.md)) | F1 and NAV baseline |
 | FORM-F3 | Formation ID/membership/lifecycle, casualties/detach, independent Stop and no route corruption, bounded regroup | F2 |
 | FORM-F4 | Combat stances and independent adherence, explicit per-member override semantics | F3 |
 | FORM-F5 | Derived Cohesion and capped canonical `UnitResolve` faction effects | F3–F4 plus actual resolve implementation |

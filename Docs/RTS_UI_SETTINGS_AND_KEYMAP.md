@@ -28,7 +28,8 @@ These are current source bindings, **not** the intended final default profile. A
 | Left mouse | Click selects one owned live unit (empty/other click clears); drag past a DPI-scaled threshold box-selects owned units; Shift+click toggles, Shift+drag adds, Ctrl+drag removes; Ctrl+click or a double click selects the clicked unit's archetype on screen; a click on the group bar acts on that slot | \`BeginSelectPress\`/\`EndSelectPress\`, \`SelectUnderCursor\`, \`BoxSelect\`, \`SelectSameArchetype\`; 4C and 4C-G records |
 | 0–9 | Recall control group (double tap also centres the camera); Ctrl replaces, Shift adds, Alt moves the selection into the slot | \`PrototypeControlGroup0\`–\`9\` actions → \`ControlGroupKey\`; the handler reads the modifier; [4C-G record](RTS_CONTROL_GROUPS_4CG_ACCEPTANCE.md) |
 | Tab / Shift+Tab | Cycle the selection's archetype subgroups; grenade, reload and sprint use the active subgroup | \`PrototypeSubgroupCycle\` action → \`CycleSubgroup\`; never edits saved groups |
-| Right mouse, ground | Issue normal Move to world-hit map position | \`OrderUnderCursor\`; admission/nav can reject |
+| Right mouse, ground | Issue normal Move to world-hit map position; with two or more units selected each gets its own Line or Column slot (FORM-F2) | \`OrderUnderCursor\`; admission/nav can reject per unit |
+| V | Cycle the group-move shape, Line / Column, for the next multi-unit Move or Attack-move; local, sends nothing | \`PrototypeGroupMoveShape\` action → \`CycleGroupMoveShape\`; [FORM-F2 record](RTS_FORMATION_F2_GROUP_MOVE_ACCEPTANCE.md) |
 | Right mouse, hostile unit | Attempt Attack on hit target | \`OrderUnderCursor\`; shared order admission |
 | Q | Attack-Move to the point currently under the cursor | \`PrototypeAttackMove\` action → \`AttackMoveSelected\` on press, no separate confirm cursor state |
 | X | Stop selected unit | \`PrototypeStop\` action → \`StopSelected\` on press |

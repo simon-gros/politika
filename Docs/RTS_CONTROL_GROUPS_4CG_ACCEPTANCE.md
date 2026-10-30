@@ -71,4 +71,4 @@ Screenshots (`control-groups-1/client-a-0*.png`): groups assigned with the bar c
 - Mixed-archetype Tab cycling in a packaged session: the skirmish map has one archetype per seat, so the packaged run sees one subgroup. The `ControlGroups` Automation test covers two archetypes, subgroup reload and wrap-around.
 - Dead-member pruning and generation clearing in a packaged session (Automation covers both).
 - Key rebinding and a conflict UI (UI-C); controller and touch alternatives (GRP-22); DPI scales other than 1 on a physical display.
-- Formation spacing: a recalled group still moves to one shared point and stacks. 300-unit orders on large maps still need batched intents (F47).
+- Formation spacing: resolved by FORM-F2 ([record](RTS_FORMATION_F2_GROUP_MOVE_ACCEPTANCE.md)); a recalled group now moves in Line or Column slots. 300-unit orders on large maps still need batched intents (F47).
