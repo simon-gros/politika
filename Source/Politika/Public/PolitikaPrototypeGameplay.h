@@ -13,6 +13,7 @@
 #include "FormationGeometry.h"
 #include "Formation.h"
 #include "Stance.h"
+#include "Discipline.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
 
@@ -303,6 +304,19 @@ public:
     // allows ends, and a Hold Fire unit drops any target it picked by itself.
     void ApplyStance(politika::stance::CombatStance Effective, std::optional<politika::stance::Adherence> FormationAdherence);
     const politika::stance::IdleBehavior& GetIdleBehavior() const { return IdleBehavior; }
+    // Resolve (DISC-D1): one attribute, shown as Discipline on military units and Morale on
+    // civilians. Owner-only replicated; only the authority's fixed-step evaluation changes it.
+    EPolitikaUnitCategory GetUnitCategory() const { return UnitCategory; }
+    bool IsMilitary() const { return UnitCategory == EPolitikaUnitCategory::Military; }
+    void SetUnitCategory(EPolitikaUnitCategory InCategory) { UnitCategory = InCategory; }
+    int32 GetResolveMilli() const { return ResolveMilli; }
+    politika::discipline::Trend GetResolveTrend() const { return static_cast<politika::discipline::Trend>(ResolveTrend); }
+    // Authority: stores one evaluation's result.
+    void ApplyResolve(const politika::discipline::Evaluation& Evaluation)
+    {
+        ResolveMilli = Evaluation.value;
+        ResolveTrend = static_cast<uint8>(Evaluation.trend);
+    }
 private:
     friend class APolitikaPrototypeMatch;
 #if WITH_DEV_AUTOMATION_TESTS
@@ -318,6 +332,7 @@ private:
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
+    friend class FPolitikaMultiplayerFormationDisciplineTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -421,6 +436,11 @@ private:
     // 255: no override.
     UPROPERTY(Replicated) uint8 StanceOverride = 255;
     UPROPERTY(Replicated) EPolitikaUnitAutonomy Autonomy = EPolitikaUnitAutonomy::Holding;
+    // Resolve (DISC-D1), owner-only replicated for the HUD.
+    UPROPERTY(Replicated) EPolitikaUnitCategory UnitCategory = EPolitikaUnitCategory::Military;
+    UPROPERTY(Replicated) int32 ResolveMilli = politika::discipline::kBaseline;
+    // politika::discipline::Trend of the latest evaluation.
+    UPROPERTY(Replicated) uint8 ResolveTrend = 0;
     politika::stance::IdleBehavior IdleBehavior = politika::stance::BehaviorFor(politika::stance::kDefaultStance, std::nullopt);
     // Where the unit stood when it last became idle; chases are leashed to it.
     FVector Post = FVector::ZeroVector;
@@ -860,6 +880,7 @@ private:
     TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
+    friend class FPolitikaMultiplayerFormationDisciplineTest;
 #endif
     // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
     // stance, else the default. Membership changes never change it: StanceSnapshot records it
@@ -871,6 +892,11 @@ private:
     // Member loss with the stance of a dissolved formation's survivor preserved.
     void LoseFormationMember(uint64 UnitId, politika::formation::LeaveReason Reason, const TCHAR* Cause);
     bool SubmitStanceIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent, uint32 ParticipantId);
+    // Resolve (DISC-D1): every kEvaluationIntervalSteps, each formation member that follows its
+    // formation with enough fellow members close by earns Discipline up to the ceiling; other
+    // members hold; every unit outside a formation fades back to the baseline. Runs after the
+    // step's movement and casualties, so support uses this step's positions and survivors.
+    void UpdateUnitResolve();
     // Authority: every live match unit. Observer: only units its connection currently
     // receives (fog-filtered); membership follows unit BeginPlay/EndPlay. Not replicated,
     // so the array size cannot reveal hidden enemy counts.
@@ -1072,6 +1098,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerGroupMoveShapeTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
+    friend class FPolitikaMultiplayerFormationDisciplineTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

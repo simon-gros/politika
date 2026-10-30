@@ -6,6 +6,7 @@
 #include "FormationGeometry.h"
 #include "Formation.h"
 #include "Stance.h"
+#include "Discipline.h"
 
 #include <cassert>
 #include <iterator>
@@ -577,7 +578,7 @@ int main() {
         for (EntityId Id = 1; Id <= 8; ++Id) Eight.push_back(Unit(Id, 1));
         const auto At = [](EntityId Id) { return Point{1000.0 + static_cast<double>(Id) * 10.0, 1000.0}; };
         static_assert(OpName(FormationOp::AttackMove) == "attack_move" && StateName(FormationState::Degraded) == "degraded");
-        static_assert(kFormationRejectionCount == 15 && !FormationId{} && FormationId{3});
+        static_assert(kFormationRejectionCount == 16 && !FormationId{} && FormationId{3});
 
         // Payload shape checks fail closed before any authoritative state is read.
         const EntityId Two[] = {4, 7};
@@ -623,6 +624,9 @@ int main() {
         assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::MemberUnavailable);
         Bad = Eight; Bad[5].id = 2;
         assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::DuplicateMember);
+        // DISC-D1: civilians cannot serve in formations.
+        Bad = Eight; Bad[4].military = false;
+        assert(Formations.Form(1, Bad, Shape::Line, 1).rejection == FormationRejection::NotMilitary);
         assert(Formations.Empty());
         const Change Formed = Formations.Form(1, Eight, Shape::Column, 1);
         assert(Formed.Accepted() && Formed.formed == FormationId{1} && Formed.dissolved.empty());
@@ -944,6 +948,67 @@ int main() {
         memory.Clear(Count);
         assert(Cleared == 2 && memory.Contacts().empty());
         static_assert(ContactClearReasonName(ContactClearReason::Revealed) == "revealed");
+    }
+
+    // DISC-D1: one resolve attribute (Discipline / Morale), earned only in formation.
+    {
+        namespace pd = politika::discipline;
+        using pd::Service;
+        using pd::Trend;
+        static_assert(pd::kBaseline == 50000 && pd::kNormalCeiling == 80000 && pd::kMaximum == 100000);
+        static_assert(static_cast<int>(pd::UnitCategory::Military) == 0);
+        static_assert(pd::RequiredSupport(2) == 1 && pd::RequiredSupport(3) == 2 && pd::RequiredSupport(20) == 2);
+        // Earning: +1 point per evaluation up to the ceiling, never past it.
+        static_assert(pd::Evaluate(50000, Service::MemberEarning).value == 51000);
+        static_assert(pd::Evaluate(50000, Service::MemberEarning).trend == Trend::Rising);
+        static_assert(pd::Evaluate(79500, Service::MemberEarning).value == 80000);
+        static_assert(pd::Evaluate(80000, Service::MemberEarning).value == 80000);
+        static_assert(pd::Evaluate(80000, Service::MemberEarning).trend == Trend::Steady);
+        static_assert(pd::Evaluate(90000, Service::MemberEarning).value == 90000); // above a lower ceiling: held
+        static_assert(pd::Evaluate(99500, Service::MemberEarning, pd::kMaximum).value == 100000);
+        // Holding: no gain, no loss.
+        static_assert(pd::Evaluate(64000, Service::MemberHolding).value == 64000);
+        static_assert(pd::Evaluate(64000, Service::MemberHolding).trend == Trend::Steady);
+        // Outside: fade half a point towards the baseline, never below it.
+        static_assert(pd::Evaluate(80000, Service::Outside).value == 79500);
+        static_assert(pd::Evaluate(80000, Service::Outside).trend == Trend::Fading);
+        static_assert(pd::Evaluate(50200, Service::Outside).value == 50000);
+        static_assert(pd::Evaluate(50000, Service::Outside).value == 50000);
+        static_assert(pd::Evaluate(50000, Service::Outside).trend == Trend::Steady);
+        static_assert(pd::Evaluate(40000, Service::Outside).value == 40000);
+        // Out-of-range input is clamped.
+        static_assert(pd::Evaluate(250000, Service::Outside).value == 99500);
+        static_assert(pd::Evaluate(-5, Service::MemberHolding).value == 0);
+        // 30 evaluations from the baseline reach the ceiling; 60 bring it back.
+        {
+            std::int32_t Value = pd::kBaseline;
+            for (int Second = 0; Second < 30; ++Second) Value = pd::Evaluate(Value, Service::MemberEarning).value;
+            assert(Value == pd::kNormalCeiling);
+            assert(pd::Evaluate(Value, Service::MemberEarning).value == pd::kNormalCeiling);
+            for (int Second = 0; Second < 59; ++Second) Value = pd::Evaluate(Value, Service::Outside).value;
+            assert(Value == 50500);
+            assert(pd::Evaluate(Value, Service::Outside).value == pd::kBaseline);
+        }
+        static_assert(pd::DisplayPoints(72999) == 72 && pd::DisplayPoints(-1) == 0 && pd::DisplayPoints(100001) == 100);
+        // Band crossings: rising through 60/70/80/90/100, fading only when landing on the baseline.
+        static_assert(pd::CrossedBand(59000, 60000) == 60);
+        static_assert(pd::CrossedBand(60000, 61000) == std::nullopt);
+        static_assert(pd::CrossedBand(79000, 80000) == 80);
+        static_assert(pd::CrossedBand(99000, 100000) == 100);
+        static_assert(pd::CrossedBand(50000, 51000) == std::nullopt);
+        static_assert(pd::CrossedBand(50500, 50000) == 50);
+        static_assert(pd::CrossedBand(70000, 69500) == std::nullopt);
+        // Support: other members within 400 cm; each counts once; unavailable members never count.
+        const double NaN = std::numeric_limits<double>::quiet_NaN();
+        const politika::formation::Point Line[] = {{0, 0}, {150, 0}, {300, 0}, {450, 0}, {1000, 0}, {NaN, NaN}};
+        assert(pd::SupportCount(Line, 0) == 2);       // 150 and 300; 450 is beyond 400 cm
+        assert(pd::SupportCount(Line, 1) == 3);
+        assert(pd::SupportCount(Line, 3) == 2);       // 150 and 300; 1000 is 550 cm away
+        assert(pd::SupportCount(Line, 4) == 0);       // stranded
+        assert(pd::SupportCount(Line, 5) == 0);       // unavailable
+        assert(pd::SupportCount(Line, 9) == 0);       // out of range
+        const politika::formation::Point Edge[] = {{0, 0}, {400, 0}};
+        assert(pd::SupportCount(Edge, 0) == 1);       // exactly 400 cm supports
     }
 
     // Faction nuclear permissions are independent of ownership and unit count.

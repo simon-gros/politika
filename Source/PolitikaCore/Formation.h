@@ -88,8 +88,10 @@ enum class FormationRejection : std::uint8_t {
     FormationLimit,
     NotMember,
     InvalidDestination,
+    // A civilian or other non-combat unit: only military units serve in formations (DISC-D1).
+    NotMilitary,
 };
-inline constexpr std::size_t kFormationRejectionCount = static_cast<std::size_t>(FormationRejection::InvalidDestination) + 1;
+inline constexpr std::size_t kFormationRejectionCount = static_cast<std::size_t>(FormationRejection::NotMilitary) + 1;
 
 enum class LeaveReason : std::uint8_t { Destroyed, Released, Reformed, Unavailable };
 enum class DissolveReason : std::uint8_t { Released, TooFewMembers, Reformed, MatchEnded };
@@ -297,6 +299,7 @@ public:
             if (entity.id == 0 || entity.owner_player != participant || !entity.alive || !entity.operational
                 || !entity.movable)
                 return Reject(change, FormationRejection::MemberUnavailable);
+            if (!entity.military) return Reject(change, FormationRejection::NotMilitary);
             ids.push_back(entity.id);
         }
         std::sort(ids.begin(), ids.end());

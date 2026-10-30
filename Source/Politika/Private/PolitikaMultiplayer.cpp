@@ -125,6 +125,10 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, EffectiveStance, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, StanceOverride, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, Autonomy, COND_OwnerOnly);
+    // Resolve (DISC-D1): Discipline / Morale for the owner's HUD only.
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, UnitCategory, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveMilli, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveTrend, COND_OwnerOnly);
 }
 
 void APolitikaPrototypeObjective::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -1411,9 +1415,11 @@ void APolitikaPrototypeMatch::SampleObservedState(const TCHAR* Reason)
         FVector2D Screen(-1.0, -1.0);
         if (Viewer) Viewer->ProjectWorldLocationToScreen(Location, Screen, true);
         UE_LOG(LogPolitikaStartup, Display,
-            TEXT("MP_CLIENT_SAMPLE reason=%s generation=%llu entity=%llu owner=%u team=%u health=%d x=%.1f y=%.1f screen_x=%.0f screen_y=%.0f viewer=%u units=%d"),
+            TEXT("MP_CLIENT_SAMPLE reason=%s generation=%llu entity=%llu owner=%u team=%u health=%d x=%.1f y=%.1f screen_x=%.0f screen_y=%.0f viewer=%u units=%d resolve=%d"),
             Reason, MatchGeneration, Unit->GetStableId(), Unit->GetOwnerPlayer(), Unit->GetTeamId(), Unit->GetHealth(),
-            Location.X, Location.Y, Screen.X, Screen.Y, LocalRuntimePlayerId, Units.Num());
+            Location.X, Location.Y, Screen.X, Screen.Y, LocalRuntimePlayerId, Units.Num(),
+            // Owner-only replicated (DISC-D1): another participant's unit always reads the baseline here.
+            Unit->GetResolveMilli());
     }
     if (Objective)
     {

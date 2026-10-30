@@ -1898,4 +1898,155 @@ bool FPolitikaMultiplayerFormationStanceTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationDisciplineTest,
+    "Politika.RTS.Multiplayer.FormationDiscipline",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// DISC-D1: one resolve attribute (Discipline / Morale). Every unit starts at the baseline; a
+// military formation member earns +1 point per evaluation (20 steps) while it follows its
+// formation with enough fellow members of the same formation within 400 cm, up to 80; other
+// members hold; units outside a formation fade 0.5 per evaluation back to the baseline. Form
+// refuses civilians. Owner-only replication is checked by the packaged --formation-discipline run.
+bool FPolitikaMultiplayerFormationDisciplineTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    namespace pd = politika::discipline;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    if (!TestTrue(TEXT("Host is bound"), HostId != 0)) return false;
+
+    // Four soldiers in a 150 cm row; a civilian beside them; two pairs P and Q laid out so each
+    // P member's only neighbour is a Q member and the other way round.
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 4; ++Index) Own.Add(F.AddUnit(HostId, {-1500.0 + Index * 150.0, -1200.0}));
+    APolitikaPrototypeUnit* Civilian = F.AddUnit(HostId, {-1500.0, -1050.0});
+    APolitikaPrototypeUnit* P1 = F.AddUnit(HostId, {-1500.0, 0.0});
+    APolitikaPrototypeUnit* P2 = F.AddUnit(HostId, {-500.0, 0.0});
+    APolitikaPrototypeUnit* Q1 = F.AddUnit(HostId, {-1400.0, 0.0});
+    APolitikaPrototypeUnit* Q2 = F.AddUnit(HostId, {-400.0, 0.0});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !Civilian || !P1 || !P2 || !Q1 || !Q2)) return false;
+    Civilian->SetUnitCategory(EPolitikaUnitCategory::NonCombat);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    const pf::Registry& Formations = F.Match->GetFormations();
+    TArray<APolitikaPrototypeUnit*> All = Own;
+    All.Append({Civilian, P1, P2, Q1, Q2});
+
+    // Steps until the next evaluation has run (evaluations fall on multiples of 20 steps).
+    auto NextEvaluation = [&F]()
+    {
+        const uint64 Target = (F.Match->SimulationStepsExecuted / pd::kEvaluationIntervalSteps + 1) * pd::kEvaluationIntervalSteps;
+        for (int32 Guard = 0; F.Match->SimulationStepsExecuted < Target && Guard < 100; ++Guard) F.Step();
+    };
+    auto Evaluations = [&NextEvaluation](int32 Count) { for (int32 Index = 0; Index < Count; ++Index) NextEvaluation(); };
+    auto Values = [](TConstArrayView<APolitikaPrototypeUnit*> Units)
+    {
+        TArray<int32> Result;
+        for (const APolitikaPrototypeUnit* Unit : Units) Result.Add(Unit->GetResolveMilli());
+        return Result;
+    };
+
+    // DISC-01: every unit starts at the baseline; the civilian is the only non-combat unit.
+    TestTrue(TEXT("DISC-01 every unit starts at the baseline"),
+        !All.ContainsByPredicate([](const APolitikaPrototypeUnit* Unit) { return Unit->GetResolveMilli() != pd::kBaseline; }));
+    TestTrue(TEXT("DISC-01 soldiers are military, the civilian is not"),
+        Own[0]->IsMilitary() && P1->IsMilitary() && !Civilian->IsMilitary());
+
+    // DISC-01: Form refuses a civilian, through the controller's own request path, and changes nothing.
+    Host->ApplySelection({Own[0], Own[1], Civilian}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    const FPolitikaNetFormationOutcome* Refused = F.Match->TestFormationOutcomes.Num() > 0 ? &F.Match->TestFormationOutcomes.Last().Value : nullptr;
+    TestTrue(TEXT("DISC-01 Form with a civilian is refused as NotMilitary"), Refused && !Refused->bAccepted
+        && Refused->Rejection == static_cast<uint8>(pf::FormationRejection::NotMilitary));
+    TestTrue(TEXT("The refused Form created no formation"), Formations.Empty());
+
+    // Outside any formation at the baseline: nothing changes at an evaluation.
+    NextEvaluation();
+    TestTrue(TEXT("DISC-06 units outside a formation stay at the baseline"),
+        !All.ContainsByPredicate([](const APolitikaPrototypeUnit* Unit) { return Unit->GetResolveMilli() != pd::kBaseline; }));
+
+    // DISC-02: Form changes no value; earning starts at the next evaluation.
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms one formation of four"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Id = Formations.All().front().id;
+    TestTrue(TEXT("DISC-02 Form changes no value"), Values(Own) == TArray<int32>({50000, 50000, 50000, 50000}));
+    Host->ApplySelection({P1, P2}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    Host->ApplySelection({Q1, Q2}, SelectionOp::Replace, TEXT("automation"));
+    Host->FormSelected();
+    TestEqual(TEXT("P and Q are formed"), static_cast<int32>(Formations.All().size()), 3);
+
+    // DISC-03: every supported member gains exactly one point; DISC-05: neighbouring formations
+    // do not support each other; the civilian never earns.
+    NextEvaluation();
+    TestTrue(TEXT("DISC-03 supported members gain one point"), Values(Own) == TArray<int32>({51000, 51000, 51000, 51000}));
+    TestTrue(TEXT("DISC-03 a gaining member shows Rising"), Own[0]->GetResolveTrend() == pd::Trend::Rising);
+    TestTrue(TEXT("DISC-05 a neighbouring formation gives no support"),
+        Values({P1, P2, Q1, Q2}) == TArray<int32>({50000, 50000, 50000, 50000}) && P1->GetResolveTrend() == pd::Trend::Steady);
+    TestEqual(TEXT("DISC-01 the civilian never earns"), Civilian->GetResolveMilli(), pd::kBaseline);
+
+    // DISC-04: a stranded member (1050 cm from the nearest member) holds; the others gain.
+    Own[3]->SetActorLocation(FVector(-150.0, -1200.0, 42.0));
+    NextEvaluation();
+    TestTrue(TEXT("DISC-04 a stranded member holds, the others gain"), Values(Own) == TArray<int32>({52000, 52000, 52000, 51000}));
+    TestTrue(TEXT("DISC-04 a holding member shows Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
+
+    // DISC-04: an independent member holds. A formation move makes every member follow it (the
+    // Automation world has no navmesh, so nobody moves); an individual Stop makes Own[0] independent.
+    const FVector Ground(-300.0, -1180.0, 42.0);
+    const FVector2D Map(Ground.X - F.Match->GetPlayableMin().X, Ground.Y - F.Match->GetPlayableMin().Y);
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    F.Step();
+    Host->SubmitGroupIntent(F.Match, {Own[0]}, nullptr, StopOrder{});
+    F.Step();
+    const pf::Formation* Formation = Formations.Find(Id);
+    if (!TestTrue(TEXT("Own[0] is now independent of the formation's move"), Formation && Formation->hasDestination
+        && Formation->Find(Own[0]->GetStableId()) && !Formation->Find(Own[0]->GetStableId())->following)) return false;
+    const TArray<int32> BeforeIndependent = Values(Own);
+    NextEvaluation();
+    TestEqual(TEXT("DISC-04 an independent member holds"), Own[0]->GetResolveMilli(), BeforeIndependent[0]);
+    TestEqual(TEXT("A following, supported member still gains"), Own[1]->GetResolveMilli(), BeforeIndependent[1] + 1000);
+
+    // DISC-05: a dead member gives no support. Own[2]'s only remaining neighbour is Own[0].
+    Own[1]->Health = 0;
+    F.Step();
+    if (!TestNull(TEXT("The dead member left the formation"), Formations.Find(Id)->Find(Own[1]->GetStableId()))) return false;
+    const int32 Own2Before = Own[2]->GetResolveMilli();
+    NextEvaluation();
+    TestEqual(TEXT("DISC-05 a dead member gives no support"), Own[2]->GetResolveMilli(), Own2Before);
+
+    // DISC-03: back in the ranks, members climb to the ceiling and never past it.
+    Own[3]->SetActorLocation(FVector(-1350.0, -1200.0, 42.0));
+    NextEvaluation();
+    TestEqual(TEXT("A member back in the ranks gains again"), Own[3]->GetResolveMilli(), 52000);
+    Evaluations(40);
+    TestEqual(TEXT("DISC-03 the gain stops at the ceiling of 80"), Own[3]->GetResolveMilli(), pd::kNormalCeiling);
+    TestEqual(TEXT("DISC-03 every following member reaches the ceiling"), Own[2]->GetResolveMilli(), pd::kNormalCeiling);
+    TestTrue(TEXT("At the ceiling the trend is Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
+    TestEqual(TEXT("The independent member still holds"), Own[0]->GetResolveMilli(), BeforeIndependent[0]);
+
+    // DISC-06: after Release values fade 0.5 per evaluation to the baseline and never below it.
+    Host->ApplySelection({Own[0], Own[2], Own[3]}, SelectionOp::Replace, TEXT("automation"));
+    Host->ReleaseSelected();
+    TestTrue(TEXT("Release dissolves the formation"), Formations.Find(Id) == nullptr);
+    TestEqual(TEXT("Release changes no value"), Own[3]->GetResolveMilli(), pd::kNormalCeiling);
+    NextEvaluation();
+    TestEqual(TEXT("DISC-06 a released unit fades half a point"), Own[3]->GetResolveMilli(), pd::kNormalCeiling - 500);
+    TestTrue(TEXT("A fading unit shows Fading"), Own[3]->GetResolveTrend() == pd::Trend::Fading);
+    Evaluations(58);
+    TestEqual(TEXT("After 59 evaluations a released unit is half a point above the baseline"), Own[3]->GetResolveMilli(), pd::kBaseline + 500);
+    Evaluations(5);
+    TestTrue(TEXT("DISC-06 every released unit is back at the baseline and not below it"),
+        Values({Own[0], Own[2], Own[3]}) == TArray<int32>({pd::kBaseline, pd::kBaseline, pd::kBaseline}));
+    TestTrue(TEXT("At the baseline the trend is Steady"), Own[3]->GetResolveTrend() == pd::Trend::Steady);
+    TestEqual(TEXT("The civilian stayed at the baseline throughout"), Civilian->GetResolveMilli(), pd::kBaseline);
+
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 #endif

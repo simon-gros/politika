@@ -89,6 +89,8 @@ struct Entity {
     // Requester-relative knowledge: false when fog of war hides this entity from the
     // requesting participant's team. Callers set it; the default keeps fog-free rules.
     bool observed = true;
+    // False for civilians and other non-combat units: they cannot join formations (DISC-D1).
+    bool military = true;
 };
 
 // Teams and seat layouts. A networked match has 2-4 playable seats split into two

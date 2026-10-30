@@ -8753,6 +8753,522 @@ fn formation_stance_session(options: &DedicatedOptions, report: &mut Report) -> 
     result
 }
 
+// ---------------------------------------------------------------------------------------
+// `--formation-discipline SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// DISC-D1 on the same dedicated 1v1 fixture (20 idle units per seat), with the server's
+// development stance probe armed. Seat 1's client, with real X input: puts one lone unit in
+// control group 2 and the army in group 1, forms the army with T and moves it into a Line.
+// Every unit starts at Discipline 50; members earn 1 point per second up to 80. An individual
+// Stop on the group-2 unit makes it independent and it holds its value. H (Guard) makes the
+// probe walk an opposing unit next to the formation, so the opposing client receives the
+// formation's units for a while: their replicated Discipline must read the baseline there.
+// Y releases the formation and every unit fades back to 50, never below it.
+// ---------------------------------------------------------------------------------------
+
+/// Integer value of ` key=value`.
+fn int_field(line: &str, key: &str) -> Option<i64> {
+    field(line, key)?.parse().ok()
+}
+
+/// `RTS_DISCIPLINE_PARTICIPANT participant=1` lines in `text`.
+fn discipline_participant_samples(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|l| l.contains("RTS_DISCIPLINE_PARTICIPANT") && l.contains(" participant=1 "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[allow(clippy::too_many_lines)]
+fn formation_discipline_session(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    args.push("-PolitikaMPStanceProbe".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        SHAPE_LINE_POINT.0, SHAPE_LINE_POINT.1, SHAPE_COLUMN_POINT.0, SHAPE_COLUMN_POINT.1
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let wait5 = |game: &mut Game, fragments: &[&str], from: usize| {
+            game.wait_line(fragments, Duration::from_secs(5), from)
+        };
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+
+        // DISC-01: before any formation every own unit is at the baseline.
+        let first = server.wait(
+            &["RTS_DISCIPLINE_PARTICIPANT", " participant=1 "],
+            Duration::from_secs(10),
+        )?;
+        report.verdict(
+            "DISC-01-BASELINE-AT-START",
+            int_field(&first, "units") == Some(20)
+                && int_field(&first, "members") == Some(0)
+                && int_field(&first, "min") == Some(50_000)
+                && int_field(&first, "max") == Some(50_000),
+            first.trim().to_owned(),
+        );
+
+        let box_all = |client: &mut Game| -> Result<(usize, String), String> {
+            let before = client.offset();
+            client.drag_hold(
+                (24.0, 24.0),
+                (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+            )?;
+            client.release()?;
+            let line = client.wait_line(
+                &["RTS_SELECTION_SET", "source=box", "op=replace"],
+                Duration::from_secs(5),
+                before,
+            )?;
+            Ok((before, line))
+        };
+
+        // Setup: the lowest-ID clickable unit alone in group 2, the army in group 1.
+        let (before_box, _) = box_all(&mut client_a)?;
+        let screens: Vec<(u64, f64, f64)> = client_a.text()[before_box..]
+            .lines()
+            .filter(|l| l.contains("RTS_SELECTION_SCREEN"))
+            .filter_map(|l| {
+                Some((
+                    field(l, "unit")?.parse().ok()?,
+                    number(l, "x")?,
+                    number(l, "y")?,
+                ))
+            })
+            .filter(|(_, x, y)| {
+                *x > 40.0 && *x < f64::from(WIDTH) - 40.0 && *y > 220.0 && *y < 500.0
+            })
+            .collect();
+        let lone = screens
+            .iter()
+            .filter(|s| {
+                screens
+                    .iter()
+                    .filter(|o| o.0 != s.0)
+                    .all(|o| (s.1 - o.1).hypot(s.2 - o.2) >= 14.0)
+            })
+            .min_by_key(|s| s.0)
+            .copied()
+            .ok_or("no clickable own unit clear of its neighbours")?;
+        let independent = lone.0;
+        report.fact(
+            "independent_unit",
+            format!("{}@{:.0},{:.0}", lone.0, lone.1, lone.2),
+        );
+        let at = client_a.offset();
+        client_a.click(lone.1, lone.2, "1")?;
+        wait5(
+            &mut client_a,
+            &["RTS_SELECTION_SET", "source=click", "count=1 "],
+            at,
+        )?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "2")?;
+        let group2 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=2 "], at)?;
+        box_all(&mut client_a)?;
+        let at = client_a.offset();
+        client_a.modified_key("ctrl", "1")?;
+        let group1 = wait5(&mut client_a, &["RTS_CONTROL_GROUP_ASSIGN", "slot=1 "], at)?;
+        if selection_ids(&group2) != vec![independent] || selection_ids(&group1) != own {
+            return Err(format!(
+                "control group setup failed: {} | {}",
+                group2.trim(),
+                group1.trim()
+            ));
+        }
+
+        // 1. T forms the army (Line). DISC-02: Form changes no value.
+        let at_server = server.offset();
+        client_a.key("t")?;
+        let formed =
+            server.wait_line(&["RTS_FORMATION_FORMED"], Duration::from_secs(5), at_server)?;
+        let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+        let formed_step = int_field(&formed, "step").unwrap_or(0);
+
+        // 2. Move the formation into its Line.
+        let line = wait_screen(&mut client_a, |t| probe_screen(t, 0), "line probe")?;
+        let at_server = server.offset();
+        client_a.click(line.0, line.1, "3")?;
+        server.wait_line(
+            &["RTS_FORMATION_MOVE", &format!("formation={formation} ")],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let (arrived, at_slot, separation, failed) =
+            formation_arrival(&server, at_server, &own, &own);
+        report.verdict(
+            "DISC-SETUP-LINE-ARRIVED",
+            arrived == own.len() && at_slot == own.len() && failed == 0,
+            format!(
+                "{arrived}/20 arrived, {at_slot} at slot, {failed} failures, min separation {separation:.1} cm"
+            ),
+        );
+        let early: Vec<String> = server
+            .text()
+            .lines()
+            .filter(|l| l.contains("RTS_DISCIPLINE_BAND") && l.contains(" participant=1 "))
+            .filter(|l| int_field(l, "step").is_some_and(|s| s <= formed_step))
+            .map(str::to_owned)
+            .collect();
+        let gained: Vec<String> = server
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_DISCIPLINE_SAMPLE")
+                    && l.contains(&format!(" formation={formation} "))
+            })
+            .map(str::to_owned)
+            .collect();
+        report.verdict(
+            "DISC-02-FORM-CHANGES-NOTHING",
+            early.is_empty() && !gained.is_empty(),
+            format!(
+                "formed at step {formed_step}; band crossings at or before Form {}; first sample {}",
+                early.len(),
+                gained.first().map_or("none", |l| l.trim())
+            ),
+        );
+
+        // 3. Members earn: between two consecutive formation samples (5 evaluations) the average
+        // rises by exactly 5 points while every member earns below the ceiling.
+        let sample_at = server.offset();
+        let first_sample = server.wait_line(
+            &[
+                "RTS_DISCIPLINE_SAMPLE",
+                &format!(" formation={formation} "),
+                "earning=20 ",
+            ],
+            Duration::from_secs(15),
+            sample_at,
+        )?;
+        let after_first = server.offset();
+        let second_sample = server.wait_line(
+            &["RTS_DISCIPLINE_SAMPLE", &format!(" formation={formation} ")],
+            Duration::from_secs(10),
+            after_first,
+        )?;
+        let rise = int_field(&second_sample, "avg").unwrap_or(0)
+            - int_field(&first_sample, "avg").unwrap_or(0);
+        report.verdict(
+            "DISC-03-MEMBERS-EARN-ONE-POINT-PER-SECOND",
+            int_field(&second_sample, "earning") == Some(20)
+                && rise == 5_000
+                && int_field(&second_sample, "max").is_some_and(|m| m <= 80_000),
+            format!("{} | {}", first_sample.trim(), second_sample.trim()),
+        );
+        report.artifact("earning_png", &client_a.screenshot(evidence, "01-earning")?);
+
+        // 4. Group 2 + X: an individual Stop makes the lone unit independent; it holds.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("2")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=1 "], at)?;
+        client_a.key("x")?;
+        let made = server.wait_line(
+            &[
+                "RTS_FORMATION_MEMBER_INDEPENDENT",
+                &format!(" unit={independent} "),
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let at_hold = server.offset();
+        let mut holds = Vec::new();
+        for _ in 0..3 {
+            let from = server.offset();
+            holds.push(server.wait_line(
+                &["RTS_DISCIPLINE_HOLDING", &format!(" unit={independent} ")],
+                Duration::from_secs(10),
+                from,
+            )?);
+        }
+        let held: Vec<i64> = holds.iter().filter_map(|l| int_field(l, "value")).collect();
+        let others_rose = server.text()[at_hold..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_DISCIPLINE_SAMPLE")
+                    && l.contains(&format!(" formation={formation} "))
+            })
+            .filter_map(|l| int_field(l, "max"))
+            .collect::<Vec<_>>();
+        report.verdict(
+            "DISC-04-INDEPENDENT-MEMBER-HOLDS",
+            held.len() == 3
+                && held.windows(2).all(|w| w[0] == w[1])
+                && others_rose.windows(2).all(|w| w[1] >= w[0])
+                && others_rose.last().copied().unwrap_or(0) > held[0],
+            format!(
+                "{}; held values {held:?}; formation max over the same samples {others_rose:?}",
+                made.trim()
+            ),
+        );
+        report.artifact(
+            "independent_png",
+            &client_a.screenshot(evidence, "02-independent-holds")?,
+        );
+
+        // 5. Group 1 + H (Guard): the probe walks an opposing unit next to the formation, so the
+        // opposing client receives the formation's units while it lives.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        let at_b = client_b.offset();
+        client_a.key("1")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=20 "], at)?;
+        client_a.key("h")?;
+        let probe = server.wait_line(
+            &["MP_STANCE_PROBE", "phase=guard"],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        let probe_unit = unit_field(&probe);
+        let _ = server.wait_line(
+            &["RTS_UNIT_DESTROYED", &format!("unit={probe_unit}")],
+            Duration::from_secs(60),
+            at_server,
+        );
+
+        // 6. DISC-03: every following member reaches 80 and never passes it.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let ceiling = loop {
+            let text = server.text();
+            let reached: Vec<u64> = text
+                .lines()
+                .filter(|l| {
+                    l.contains("RTS_DISCIPLINE_BAND")
+                        && l.contains(" band=80 ")
+                        && l.contains("direction=rising")
+                })
+                .map(unit_field)
+                .filter(|u| own.contains(u))
+                .collect();
+            let alive: Vec<u64> = own
+                .iter()
+                .copied()
+                .filter(|u| *u != independent && server_unit(&text, *u).is_some_and(|s| s.2 > 0))
+                .collect();
+            if alive.iter().all(|u| reached.contains(u)) || Instant::now() >= deadline {
+                break (reached, alive);
+            }
+            thread::sleep(Duration::from_millis(500));
+        };
+        let after_ceiling = server.offset();
+        let next = server.wait_line(
+            &["RTS_DISCIPLINE_SAMPLE", &format!(" formation={formation} ")],
+            Duration::from_secs(10),
+            after_ceiling,
+        )?;
+        let above = server
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_DISCIPLINE_BAND")
+                    && (l.contains(" band=90 ") || l.contains(" band=100 "))
+            })
+            .count();
+        report.verdict(
+            "DISC-03-CEILING-80",
+            ceiling.1.iter().all(|u| ceiling.0.contains(u))
+                && !ceiling.1.is_empty()
+                && above == 0
+                && int_field(&next, "max") == Some(80_000),
+            format!(
+                "{} of {} following members crossed 80 rising; crossings of 90/100 {above}; next sample {}",
+                ceiling.0.len(),
+                ceiling.1.len(),
+                next.trim()
+            ),
+        );
+        report.artifact(
+            "ceiling_png",
+            &client_a.screenshot(evidence, "03-ceiling-selected")?,
+        );
+
+        // 7. DISC-07: the opposing client received the formation's units but only the baseline.
+        let seen: Vec<String> = client_b.text()[at_b..]
+            .lines()
+            .filter(|l| l.contains("MP_CLIENT_SAMPLE") && field(l, "owner") == Some("1"))
+            .map(str::to_owned)
+            .collect();
+        let leaked = seen
+            .iter()
+            .filter(|l| int_field(l, "resolve") != Some(50_000))
+            .count();
+        let own_view = client_a
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE")
+                    && field(l, "owner") == Some("1")
+                    && int_field(l, "resolve").is_some_and(|v| v > 50_000)
+            })
+            .count();
+        report.verdict(
+            "DISC-07-OWNER-ONLY",
+            !seen.is_empty() && leaked == 0 && own_view > 0,
+            format!(
+                "opposing client samples of participant 1 units {}, with a value other than 50000 {leaked}; owner samples above 50000 {own_view}; {}",
+                seen.len(),
+                probe.trim()
+            ),
+        );
+
+        // 8. Y releases the formation: every unit fades 0.5 per second back to 50 and stops there.
+        let at = client_a.offset();
+        let at_server = server.offset();
+        client_a.key("y")?;
+        let dissolved = server.wait_line(
+            &[
+                "RTS_FORMATION_DISSOLVED",
+                &format!("formation={formation} "),
+            ],
+            Duration::from_secs(5),
+            at_server,
+        )?;
+        wait5(&mut client_a, &["RTS_FORMATION_VIEW", "formations=0 "], at)?;
+        thread::sleep(Duration::from_secs(3));
+        let at = client_a.offset();
+        client_a.key("2")?;
+        wait5(&mut client_a, &["RTS_SELECTION_SET", "count=1 "], at)?;
+        report.artifact(
+            "fading_png",
+            &client_a.screenshot(evidence, "04-fading-selected-unit")?,
+        );
+        let deadline = Instant::now() + Duration::from_secs(80);
+        let samples = loop {
+            let samples = discipline_participant_samples(&server.text()[at_server..]);
+            let settled = samples.last().is_some_and(|l| {
+                int_field(l, "outside") == Some(20) && int_field(l, "max") == Some(50_000)
+            });
+            if settled || Instant::now() >= deadline {
+                break samples;
+            }
+            thread::sleep(Duration::from_secs(1));
+        };
+        let maxima: Vec<i64> = samples.iter().filter_map(|l| int_field(l, "max")).collect();
+        let minima: Vec<i64> = samples.iter().filter_map(|l| int_field(l, "min")).collect();
+        let faded: Vec<u64> = server.text()[at_server..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_DISCIPLINE_BAND")
+                    && l.contains(" band=50 ")
+                    && l.contains("direction=fading")
+            })
+            .map(unit_field)
+            .filter(|u| own.contains(u))
+            .collect();
+        let survivors = own
+            .iter()
+            .filter(|u| server_unit(&server.text(), **u).is_some_and(|s| s.2 > 0))
+            .count();
+        let settle_step = samples
+            .iter()
+            .find(|l| int_field(l, "max") == Some(50_000))
+            .and_then(|l| int_field(l, "step"));
+        let release_step = int_field(&dissolved, "step").unwrap_or(0);
+        report.verdict(
+            "DISC-06-RELEASE-FADES-TO-BASELINE",
+            maxima.last() == Some(&50_000)
+                && minima.iter().all(|m| *m >= 50_000)
+                && maxima.windows(2).all(|w| w[0] - w[1] <= 2_500 && w[1] <= w[0])
+                && faded.len() == survivors,
+            format!(
+                "{}; sample maxima {maxima:?}; minima never below {:?}; {} of {survivors} units landed on 50 fading; all at 50 by step {settle_step:?} ({} steps after release)",
+                dissolved.trim(),
+                minima.iter().min(),
+                faded.len(),
+                settle_step.map_or(-1, |s| s - release_step)
+            ),
+        );
+        report.artifact(
+            "baseline_png",
+            &client_a.screenshot(evidence, "05-baseline")?,
+        );
+
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -8874,6 +9390,14 @@ fn main() {
             "politika.form.formation-stance-evidence.v1",
             "formation-stance",
             formation_stance_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--formation-discipline") {
+        run_dedicated_session(
+            "--formation-discipline",
+            "politika.disc.formation-discipline-evidence.v1",
+            "formation-discipline",
+            formation_discipline_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {

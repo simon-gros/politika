@@ -63,6 +63,16 @@ public:
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };
 
+// Military units show their resolve as Discipline and can serve in formations; civilians and
+// other non-combat units show the same attribute as Morale and cannot (RTS_UNIT_DISCIPLINE.md).
+// Values match politika::discipline::UnitCategory.
+UENUM(BlueprintType)
+enum class EPolitikaUnitCategory : uint8
+{
+    Military,
+    NonCombat,
+};
+
 UCLASS(BlueprintType)
 class POLITIKA_API UPolitikaUnitArchetypeDefinition final : public UPrimaryDataAsset
 {
@@ -74,6 +84,8 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Identity") int32 SchemaVersion = CurrentSchemaVersion;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Identity") FName FactionId;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Display") FText DisplayName;
+    // Appended with a Military default, so every existing archetype keeps its meaning.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Identity") EPolitikaUnitCategory UnitCategory = EPolitikaUnitCategory::Military;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="1")) int32 MaxHealth = 1;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(Units="cm/s", ClampMin="0")) float MovementSpeedCmPerSecond = 0.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat") FName WeaponId;

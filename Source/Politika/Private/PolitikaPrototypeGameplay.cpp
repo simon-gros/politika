@@ -1200,6 +1200,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         Unit->ConfigureInfantryPresentation(Definition->InfantryPresentation);
         Unit->ConfigureInfantryBehavior(Definition->InfantryBehavior);
         Unit->SetArchetypeId(Definition->StableId);
+        Unit->SetUnitCategory(Definition->UnitCategory);
         Unit->SetTeamId(Slot ? Slot->TeamId : politika::rules::kUnalignedTeam);
         Unit->SetSightRadius(Definition->SightRadiusCm);
         Unit->AuthorityMatch = this;
@@ -2722,6 +2723,8 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
         }
     }
     Units.RemoveAll([](const TObjectPtr<APolitikaPrototypeUnit>& Unit) { return !IsValid(Unit) || !Unit->IsAlive(); });
+    // Resolve follows movement and casualties: support uses this step's positions and survivors.
+    UpdateUnitResolve();
     if (Objective)
     {
         const bool bWasContested = Objective->IsContested();
@@ -3960,8 +3963,18 @@ void APolitikaPrototypeHUD::DrawHUD()
             const politika::stance::CombatStance FirstStance = SelectedUnits[0]->GetEffectiveStance();
             const bool bMixedStance = SelectedUnits.ContainsByPredicate(
                 [FirstStance](const APolitikaPrototypeUnit* Unit) { return Unit->GetEffectiveStance() != FirstStance; });
-            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving    STANCE %s"), SelectedUnits.Num(), Health, MaxHealth,
-                Moving, bMixedStance ? TEXT("MIXED") : *PolitikaStanceLabel(FirstStance)), Ink, Left, Y, nullptr, 1.25f * UiScale);
+            // Resolve (DISC-D1): the selection's average Discipline (military units), else Morale.
+            int64 ResolveSum = 0;
+            int32 ResolveCount = 0;
+            for (const APolitikaPrototypeUnit* Unit : SelectedUnits)
+                if (Unit->IsMilitary()) { ResolveSum += Unit->GetResolveMilli(); ++ResolveCount; }
+            const bool bAnyMilitary = ResolveCount > 0;
+            if (!bAnyMilitary)
+                for (const APolitikaPrototypeUnit* Unit : SelectedUnits) { ResolveSum += Unit->GetResolveMilli(); ++ResolveCount; }
+            const int32 ResolveAverage = politika::discipline::DisplayPoints(static_cast<int32>(ResolveSum / FMath::Max(ResolveCount, 1)));
+            DrawText(FString::Printf(TEXT("%d UNITS SELECTED    HP %d / %d    %d moving    STANCE %s    %s avg %d"), SelectedUnits.Num(), Health, MaxHealth,
+                Moving, bMixedStance ? TEXT("MIXED") : *PolitikaStanceLabel(FirstStance),
+                bAnyMilitary ? TEXT("DISCIPLINE") : TEXT("MORALE"), ResolveAverage), Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
             // Formation membership (FORM-F3): which formations the selection touches, and whether
             // the selection is one whole formation (then RMB/Q/X address the formation itself).
@@ -4026,9 +4039,16 @@ void APolitikaPrototypeHUD::DrawHUD()
             const TCHAR* Autonomy = Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Chasing ? TEXT(" (engaging)")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Returning ? TEXT(" (returning to post)") : TEXT("");
-            DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s%s    STANCE %s%s"), *Selected->GetUnitName().ToString(),
+            // Resolve (DISC-D1): Discipline on military units, Morale on civilians, with its trend.
+            const politika::discipline::Trend ResolveTrend = Selected->GetResolveTrend();
+            DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s%s    STANCE %s%s    %s %d%s"), *Selected->GetUnitName().ToString(),
                 Selected->GetHealth(), Selected->GetMaxHealth(), Order, Autonomy, *PolitikaStanceLabel(Selected->GetEffectiveStance()),
-                Selected->GetStanceOverride() ? TEXT(" (own)") : TEXT("")), Ink, Left, Y, nullptr, 1.25f * UiScale);
+                Selected->GetStanceOverride() ? TEXT(" (own)") : TEXT(""),
+                Selected->IsMilitary() ? TEXT("DISCIPLINE") : TEXT("MORALE"),
+                politika::discipline::DisplayPoints(Selected->GetResolveMilli()),
+                ResolveTrend == politika::discipline::Trend::Rising ? TEXT(" rising")
+                    : ResolveTrend == politika::discipline::Trend::Fading ? TEXT(" fading") : TEXT("")),
+                Ink, Left, Y, nullptr, 1.25f * UiScale);
             Y += 30.0f * UiScale;
             if (Selected->HasInfantryBehavior())
             {

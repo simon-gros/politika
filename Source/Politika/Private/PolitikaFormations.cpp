@@ -68,6 +68,7 @@ FString FormationRejectionText(pf::FormationRejection Rejection)
         case pf::FormationRejection::FormationLimit: return TEXT("You already lead ten formations.");
         case pf::FormationRejection::NotMember: return TEXT("None of those units is in a formation.");
         case pf::FormationRejection::InvalidDestination: return TEXT("That destination is not open ground.");
+        case pf::FormationRejection::NotMilitary: return TEXT("Civilians cannot form formations.");
     }
     return TEXT("Formation request rejected.");
 }
@@ -298,6 +299,7 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
                     Entity.alive = Unit->IsAlive();
                     Entity.operational = Unit->IsAlive();
                     Entity.movable = Unit->CanMove();
+                    Entity.military = Unit->IsMilitary();
                 }
                 else
                 {
