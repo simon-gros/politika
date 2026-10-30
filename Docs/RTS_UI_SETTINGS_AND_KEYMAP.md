@@ -25,21 +25,23 @@ These are current source bindings, **not** the intended final default profile. A
 
 | Input | Current actual behavior | Evidence and caveat |
 | --- | --- | --- |
-| Left mouse | Single owned live-unit selection; empty/other click clears selection | \`SelectUnderCursor\` |
+| Left mouse | Click selects one owned live unit (empty/other click clears); drag past a DPI-scaled threshold box-selects owned units; Shift+click toggles, Shift+drag adds, Ctrl+drag removes; Ctrl+click or a double click selects the clicked unit's archetype on screen; a click on the group bar acts on that slot | \`BeginSelectPress\`/\`EndSelectPress\`, \`SelectUnderCursor\`, \`BoxSelect\`, \`SelectSameArchetype\`; 4C and 4C-G records |
+| 0–9 | Recall control group (double tap also centres the camera); Ctrl replaces, Shift adds, Alt moves the selection into the slot | \`PrototypeControlGroup0\`–\`9\` actions → \`ControlGroupKey\`; the handler reads the modifier; [4C-G record](RTS_CONTROL_GROUPS_4CG_ACCEPTANCE.md) |
+| Tab / Shift+Tab | Cycle the selection's archetype subgroups; grenade, reload and sprint use the active subgroup | \`PrototypeSubgroupCycle\` action → \`CycleSubgroup\`; never edits saved groups |
 | Right mouse, ground | Issue normal Move to world-hit map position | \`OrderUnderCursor\`; admission/nav can reject |
 | Right mouse, hostile unit | Attempt Attack on hit target | \`OrderUnderCursor\`; shared order admission |
 | Q | Attack-Move to the point currently under the cursor | \`PrototypeAttackMove\` action → \`AttackMoveSelected\` on press, no separate confirm cursor state |
 | X | Stop selected unit | \`PrototypeStop\` action → \`StopSelected\` on press |
 | G | Guard selected unit (provisional prototype semantics) | \`GuardSelected\` |
-| E | Eligible selected infantry uses grenade ability | \`GrenadeSelected\`; capability/target checks still apply |
-| R | Eligible selected infantry reloads | \`ReloadSelected\`; not a control-group command |
-| F | Eligible selected infantry uses sprint | \`SprintSelected\`; **F is occupied**, so an unmodified F camera-focus proposal conflicts |
+| E | First unit of the active Tab subgroup uses grenade ability | \`GrenadeSelected\`; capability/target checks still apply |
+| R | Eligible infantry of the active Tab subgroup reload | \`ReloadSelected\`; not a control-group command |
+| F | Eligible infantry of the active Tab subgroup sprint | \`SprintSelected\`; **F is occupied**, so an unmodified F camera-focus proposal conflicts |
 | Escape | Exit current prototype match to main menu | \`ReturnToMenu\`; **not** a pause/options popup |
 | W / S | Camera forward / backward | Legacy \`PrototypePanForward\` axis |
 | A / D | Camera left / right | Legacy \`PrototypePanRight\` axis |
 | Mouse wheel | Zoom camera | Legacy \`PrototypeZoom\` axis |
 
-**Resolved collision (29 October 2026):** A and S used to be both camera axes and the Attack-Move/Stop orders, so camera navigation with a selection issued orders and each order press nudged the camera (this broke the PAC-10 grenade aim under load; see [Test-map terrain and camera controls](TEST_MAP_TERRAIN.md#pac-10-camera-pan-assertion-harness-defect-fixed)). By owner decision, W/A/S/D stay camera-only and the orders moved to **Q** and **X**. G/E/R/F are config action mappings too. The `input.bindings` audit check rejects any order key that reuses an axis key, and the packaged `rts_interaction` replay holds A+S with a selected unit and requires zero command intents. This is a prototype keymap, not the remappable UI-C profile. The HUD currently labels Attack-Move "Q + ground", but its source invokes an immediate cursor-ray action when Q is pressed, so documentation/tooltip must not imply a two-step target-confirm workflow exists. The Canvas rows are drawn, not buttons: accessibility and click behavior are not yet supported.
+**Resolved collision (29 October 2026):** A and S used to be both camera axes and the Attack-Move/Stop orders, so camera navigation with a selection issued orders and each order press nudged the camera (this broke the PAC-10 grenade aim under load; see [Test-map terrain and camera controls](TEST_MAP_TERRAIN.md#pac-10-camera-pan-assertion-harness-defect-fixed)). By owner decision, W/A/S/D stay camera-only and the orders moved to **Q** and **X**. G/E/R/F are config action mappings too. The `input.bindings` audit check rejects any order key that reuses an axis key and, since 4C-G, any key chord that drives two actions, and the packaged `rts_interaction` replay holds A+S with a selected unit and requires zero command intents. This is a prototype keymap, not the remappable UI-C profile. The HUD currently labels Attack-Move "Q + ground", but its source invokes an immediate cursor-ray action when Q is pressed, so documentation/tooltip must not imply a two-step target-confirm workflow exists. The Canvas rows are drawn, not buttons: accessibility and click behavior are not yet supported.
 
 ### Future formation and stance controls (design only)
 
