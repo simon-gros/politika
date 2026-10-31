@@ -6956,8 +6956,9 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
 // Same dedicated 1v1 fixture as `--group-orders` (20 idle units per seat). Seat 1's client
 // box-selects its 20 units with real X input and right-clicks five destinations: a Line
 // move clear of the control point (a capture would end the match), V then a Column move, V then
-// a Dispersed move and V then a Perimeter move (FORM-F6), and V back to Line for a move so close
-// to the western playable edge that part of the nominal line is outside it. For each move the
+// a Dispersed move and V then a Perimeter move (FORM-F6), V then Wedge, Echelon Left and Echelon
+// Right moves (FORM-F6 part two), Shift+V back to Echelon Left and V twice to Line for a move so
+// close to the western playable edge that part of the nominal line is outside it. For each move the
 // client's plan and per-unit slots are checked against what the server received, projected
 // and routed, and against where every unit actually stopped.
 // ---------------------------------------------------------------------------------------
@@ -6968,11 +6969,20 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
 /// 90 cm when ordered from the Column, a Perimeter centre in the middle of a triangle of the
 /// Dispersed block (about 280 cm from the nearest of its soldiers, so the right-click hits the
 /// ground, not a soldier, and the 479.4 cm ring stays inside the map and 1250 cm clear of the
-/// control point), and a Line destination 100 cm inside the western playable edge (x = -2000).
+/// control point), a Wedge point 490 cm outside that ring (its 675 x 650 cm arrowhead stays
+/// clear of the ring and 850 cm from the control point), an Echelon Left point 800 cm from the
+/// Wedge (its 1061 cm diagonal stays inside the map), an Echelon Right point 740 cm off the Echelon
+/// Left diagonal (its own diagonal ends 900 cm from the control point), and a Line destination
+/// 100 cm inside the western playable edge (x = -2000), 630 cm from the nearest Echelon Right
+/// slot. Every point is at least 490 cm from where the previous move's soldiers stand, so the
+/// right-click hits the ground.
 const SHAPE_LINE_POINT: (f64, f64) = (-450.0, -1000.0);
 const SHAPE_COLUMN_POINT: (f64, f64) = (-1000.0, -1050.0);
 const SHAPE_DISPERSED_POINT: (f64, f64) = (-750.0, -850.0);
 const SHAPE_PERIMETER_POINT: (f64, f64) = (-850.0, -1360.0);
+const SHAPE_WEDGE_POINT: (f64, f64) = (-1300.0, -500.0);
+const SHAPE_ECHELON_LEFT_POINT: (f64, f64) = (-1300.0, -1300.0);
+const SHAPE_ECHELON_RIGHT_POINT: (f64, f64) = (-800.0, -750.0);
 const SHAPE_EDGE_POINT: (f64, f64) = (-1900.0, -650.0);
 /// The planner's slot spacing (`politika::formation::Layout::spacingCm`).
 const SHAPE_SPACING_CM: f64 = 150.0;
@@ -7139,7 +7149,9 @@ fn shape_move(
 
     // Geometry along the plan's facing: Line spans 10 slots across and 2 ranks deep; Column spans
     // 2 files across and 10 ranks deep; Dispersed spans 4.5 staggered files of 450 cm across and
-    // 4 ranks deep (when no slot was replaced).
+    // 4 ranks deep; a Wedge of 20 spans 4.5 files across and 5 ranks of sqrt(3)/2 spacing deep;
+    // an Echelon is the Line turned 45 degrees, (9 + 1) x 150 / sqrt(2) both ways (when no slot
+    // was replaced).
     if let Some(facing) = pair(&plan, "facing").filter(|_| step.shape != "perimeter") {
         let right = (-facing.1, facing.0);
         let (mut across, mut along) = (Vec::new(), Vec::new());
@@ -7165,15 +7177,70 @@ fn shape_move(
                     4.5 * SHAPE_DISPERSED_SPACING_CM,
                     3.0 * SHAPE_DISPERSED_SPACING_CM,
                 ),
+                "wedge" => (
+                    4.5 * SHAPE_SPACING_CM,
+                    5.0 * SHAPE_SPACING_CM * 3.0_f64.sqrt() / 2.0,
+                ),
+                "echelon-left" | "echelon-right" => (
+                    10.0 * SHAPE_SPACING_CM * std::f64::consts::FRAC_1_SQRT_2,
+                    10.0 * SHAPE_SPACING_CM * std::f64::consts::FRAC_1_SQRT_2,
+                ),
                 _ => (9.0 * SHAPE_SPACING_CM, SHAPE_SPACING_CM),
             };
             report.verdict(
                 &format!("FORM-04-{id}-SHAPE"),
                 (width - want_width).abs() < 0.5 && (depth - want_depth).abs() < 0.5,
                 format!(
-                    "across {width:.1} (want {want_width}), along {depth:.1} (want {want_depth})"
+                    "across {width:.1} (want {want_width:.1}), along {depth:.1} (want {want_depth:.1})"
                 ),
             );
+            // Wedge: one member alone at the point, a rank (sqrt(3)/2 spacing) ahead of the
+            // rest. Echelon: the held-back flank's end slot is 1200 / sqrt(2) cm behind the
+            // other flank's end slot (the right end on Echelon Right, the left end on Left).
+            let mut order: Vec<usize> = (0..along.len()).collect();
+            order.sort_by(|a, b| along[*b].total_cmp(&along[*a]));
+            match step.shape {
+                "wedge" => {
+                    let lead = order
+                        .get(1)
+                        .map_or(0.0, |second| along[order[0]] - along[*second]);
+                    let want = SHAPE_SPACING_CM * 3.0_f64.sqrt() / 2.0;
+                    report.verdict(
+                        &format!("FORM-F6-{id}-POINT"),
+                        (lead - want).abs() < 0.5,
+                        format!("the point slot leads the next by {lead:.1} cm (want {want:.1})"),
+                    );
+                }
+                "echelon-left" | "echelon-right" => {
+                    let by_across = |pick: fn(f64, f64) -> bool| {
+                        (0..across.len())
+                            .reduce(|best, i| {
+                                if pick(across[i], across[best]) {
+                                    i
+                                } else {
+                                    best
+                                }
+                            })
+                            .unwrap_or(0)
+                    };
+                    let (right_end, left_end) = (by_across(|a, b| a > b), by_across(|a, b| a < b));
+                    let (back, front) = if step.shape == "echelon-right" {
+                        (right_end, left_end)
+                    } else {
+                        (left_end, right_end)
+                    };
+                    let held = along[front] - along[back];
+                    let want = 1200.0 * std::f64::consts::FRAC_1_SQRT_2;
+                    report.verdict(
+                        &format!("FORM-F6-{id}-FLANK-HELD-BACK"),
+                        (held - want).abs() < 0.5,
+                        format!(
+                            "the held-back end slot is {held:.1} cm behind the other end (want {want:.1})"
+                        ),
+                    );
+                }
+                _ => {}
+            }
         }
     }
 
@@ -7313,18 +7380,23 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
 
     let display_a = Display::start(evidence, "client-a")?;
     let mut args_a = client_args(client_options, true, false, false);
+    let probes = [
+        SHAPE_LINE_POINT,
+        SHAPE_COLUMN_POINT,
+        SHAPE_DISPERSED_POINT,
+        SHAPE_PERIMETER_POINT,
+        SHAPE_WEDGE_POINT,
+        SHAPE_ECHELON_LEFT_POINT,
+        SHAPE_ECHELON_RIGHT_POINT,
+        SHAPE_EDGE_POINT,
+    ];
     args_a.push(format!(
-        "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}/{}:{}/{}:{}",
-        SHAPE_LINE_POINT.0,
-        SHAPE_LINE_POINT.1,
-        SHAPE_COLUMN_POINT.0,
-        SHAPE_COLUMN_POINT.1,
-        SHAPE_DISPERSED_POINT.0,
-        SHAPE_DISPERSED_POINT.1,
-        SHAPE_PERIMETER_POINT.0,
-        SHAPE_PERIMETER_POINT.1,
-        SHAPE_EDGE_POINT.0,
-        SHAPE_EDGE_POINT.1
+        "-PolitikaMPGroundProbe={}",
+        probes
+            .iter()
+            .map(|(x, y)| format!("{x}:{y}"))
+            .collect::<Vec<_>>()
+            .join("/")
     ));
     let mut client_a = Game::launch(
         &client_options.binary,
@@ -7414,17 +7486,19 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             },
         )?;
 
-        // V cycles Line, Column, Dispersed, Perimeter, Line. Each press is local: the client
-        // sends nothing and the server receives nothing; the HUD names the new shape.
-        let press_v = |client: &mut Game,
-                       server: &Game,
-                       report: &mut Report,
-                       verdict: &str,
-                       want: &str|
+        // V cycles Line, Column, Dispersed, Perimeter, Wedge, Echelon Left, Echelon Right, Line;
+        // Shift+V steps back. Each press is local: the client sends nothing and the server
+        // receives nothing; the HUD names the new shape.
+        let press_shape_key = |client: &mut Game,
+                               server: &Game,
+                               report: &mut Report,
+                               verdict: &str,
+                               want: &str,
+                               backward: bool|
          -> Result<(), String> {
             let before_v = client.offset();
             let before_v_server = server.offset();
-            client.key("v")?;
+            client.key(if backward { "shift+v" } else { "v" })?;
             let shape =
                 client.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
             thread::sleep(Duration::from_millis(500));
@@ -7436,20 +7510,33 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
                 .lines()
                 .filter(|l| l.contains("MP_COMMAND_RECEIVED") && l.contains(" participant=1 "))
                 .count();
+            let direction = if backward { "1" } else { "0" };
             report.verdict(
                 verdict,
-                field(&shape, "shape") == Some(want) && sent == 0 && received == 0,
+                field(&shape, "shape") == Some(want)
+                    && field(&shape, "backward") == Some(direction)
+                    && sent == 0
+                    && received == 0,
                 format!(
                     "{}; intents sent {sent}, server received {received}",
                     shape.trim()
                 ),
             );
+            let name = if backward {
+                format!("hud-{want}-selected-back")
+            } else {
+                format!("hud-{want}-selected")
+            };
             report.artifact(
-                &format!("client_a_{want}_hud_png"),
-                &client.screenshot(evidence, &format!("hud-{want}-selected"))?,
+                &format!("client_a_{}_png", name.replace('-', "_")),
+                &client.screenshot(evidence, &name)?,
             );
             Ok(())
         };
+        let press_v =
+            |client: &mut Game, server: &Game, report: &mut Report, verdict: &str, want: &str| {
+                press_shape_key(client, server, report, verdict, want, false)
+            };
 
         // 2. V: Column.
         press_v(
@@ -7520,7 +7607,61 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             },
         )?;
 
-        // 5. V again: back to Line, next to the western edge; out-of-bounds slots are replaced.
+        // 5-7. V: Wedge, Echelon Left and Echelon Right (FORM-F6 part two), each one spacing
+        // between neighbours.
+        let turned = [
+            ("WEDGE", "wedge", "FORM-F6-SHAPE-KEY-WEDGE", 4),
+            (
+                "ECHELON-LEFT",
+                "echelon-left",
+                "FORM-F6-SHAPE-KEY-ECHELON-LEFT",
+                5,
+            ),
+            (
+                "ECHELON-RIGHT",
+                "echelon-right",
+                "FORM-F6-SHAPE-KEY-ECHELON-RIGHT",
+                6,
+            ),
+        ];
+        for (id, shape, verdict, probe) in turned {
+            press_v(&mut client_a, &server, report, verdict, shape)?;
+            let point = wait_screen(
+                &mut client_a,
+                |t| probe_screen(t, probe),
+                &format!("{shape} probe"),
+            )?;
+            shape_move(
+                &mut client_a,
+                &mut server,
+                evidence,
+                report,
+                &own,
+                &ShapeMove {
+                    id,
+                    shape,
+                    screen: point,
+                    expect_rejected: Some(false),
+                },
+            )?;
+        }
+
+        // 8. Shift+V steps back to Echelon Left; V twice returns to Line through Echelon Right.
+        press_shape_key(
+            &mut client_a,
+            &server,
+            report,
+            "FORM-F6-SHIFT-V-STEPS-BACK",
+            "echelon-left",
+            true,
+        )?;
+        press_v(
+            &mut client_a,
+            &server,
+            report,
+            "FORM-F6-SHAPE-KEY-FORWARD-AGAIN",
+            "echelon-right",
+        )?;
         press_v(
             &mut client_a,
             &server,
@@ -7528,7 +7669,8 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
             "FORM-SHAPE-CYCLES-BACK-TO-LINE",
             "line",
         )?;
-        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 4), "edge probe")?;
+        // 9. Line next to the western edge; out-of-bounds slots are replaced.
+        let edge = wait_screen(&mut client_a, |t| probe_screen(t, 7), "edge probe")?;
         shape_move(
             &mut client_a,
             &mut server,

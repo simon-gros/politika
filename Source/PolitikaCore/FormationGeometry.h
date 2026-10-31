@@ -1,9 +1,10 @@
 #pragma once
 
 // Portable group-move geometry (RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md §4 and §10, FORM-F2;
-// Dispersed and Perimeter FORM-F6). A selected group ordered to a point gets one distinct
-// destination per member, laid out as a Line, a Column or a staggered Dispersed block facing the
-// direction of travel, or as a Perimeter ring around the point. This is geometry only: formation identity,
+// Dispersed, Perimeter, Wedge and Echelon FORM-F6). A selected group ordered to a point gets one
+// distinct destination per member, laid out as a Line, a Column, a staggered Dispersed block, a
+// Wedge or a Line turned into an Echelon, all facing the direction of travel, or as a Perimeter
+// ring around the point. This is geometry only: formation identity,
 // membership and regroup live in Formation.h (FORM-F3), and every destination is still sent
 // as an ordinary single-issuer Move that the server admits and routes on its own.
 
@@ -34,24 +35,42 @@ enum class Shape : std::uint8_t {
     Dispersed, // staggered ranks 450 cm apart: a blast catches one soldier, but no fellow member
                // stands within the 400 cm Discipline support radius (Discipline.h)
     Perimeter, // a ring around the anchor: all-round defence of a point, fire divided
+    Wedge,     // an arrowhead, one member at the point and each rank one wider: a breakthrough
+               // that exposes its leading member
+    EchelonLeft,  // a Line turned 45 degrees with its left flank held back
+    EchelonRight, // a Line turned 45 degrees with its right flank held back
 };
 
-inline constexpr std::size_t kShapeCount = 4;
+inline constexpr std::size_t kShapeCount = 7;
 
 [[nodiscard]] constexpr std::string_view ShapeName(Shape shape) noexcept {
     switch (shape) {
     case Shape::Column: return "column";
     case Shape::Dispersed: return "dispersed";
     case Shape::Perimeter: return "perimeter";
+    case Shape::Wedge: return "wedge";
+    case Shape::EchelonLeft: return "echelon-left";
+    case Shape::EchelonRight: return "echelon-right";
     case Shape::Line: break;
     }
     return "line";
 }
 
-// The V key's cycle: Line, Column, Dispersed, Perimeter, Line.
+// The V key's cycle: Line, Column, Dispersed, Perimeter, Wedge, Echelon Left, Echelon Right,
+// Line. Shift+V steps it backwards.
 [[nodiscard]] constexpr Shape NextShape(Shape shape) noexcept {
     const auto next = static_cast<std::uint8_t>((static_cast<std::size_t>(shape) + 1) % kShapeCount);
     return static_cast<std::size_t>(shape) < kShapeCount ? static_cast<Shape>(next) : Shape::Line;
+}
+
+[[nodiscard]] constexpr Shape PreviousShape(Shape shape) noexcept {
+    const auto previous = static_cast<std::uint8_t>((static_cast<std::size_t>(shape) + kShapeCount - 1) % kShapeCount);
+    return static_cast<std::size_t>(shape) < kShapeCount ? static_cast<Shape>(previous) : Shape::Line;
+}
+
+// +1 for Echelon Right, -1 for Echelon Left, 0 for the other shapes.
+[[nodiscard]] constexpr int EchelonSide(Shape shape) noexcept {
+    return shape == Shape::EchelonRight ? 1 : shape == Shape::EchelonLeft ? -1 : 0;
 }
 
 struct Layout {
@@ -78,8 +97,9 @@ struct Layout {
     return shape == Shape::Dispersed ? layout.dispersedSpacingCm : layout.spacingCm;
 }
 
-// Files per rank of the lattice shapes (Line, Column, Dispersed). A Perimeter has no ranks of
-// files; its rings are described by PerimeterRadius and RingCapacity.
+// Files per rank of the lattice shapes (Line, Column, Dispersed; an Echelon is a Line turned). A
+// Perimeter has no ranks of files; its rings are described by PerimeterRadius and RingCapacity.
+// A Wedge's rank r holds r + 1 files.
 [[nodiscard]] constexpr std::size_t Frontage(Shape shape, std::size_t count, const Layout& layout) noexcept {
     const std::size_t width = shape == Shape::Column ? layout.columnFiles
         : shape == Shape::Dispersed                  ? layout.dispersedFrontage
@@ -88,6 +108,8 @@ struct Layout {
 }
 
 inline constexpr double kPi = 3.14159265358979323846;
+inline constexpr double kHalfSqrt2 = 0.70710678118654752440;
+inline constexpr double kHalfSqrt3 = 0.86602540378443864676;
 
 // The most slots a ring of `radius` holds with every neighbouring chord at least `spacing`.
 [[nodiscard]] inline std::size_t RingCapacity(double radius, double spacing) noexcept {
@@ -162,14 +184,75 @@ struct Slot {
     return slots;
 }
 
+// Wedge slots on a triangular lattice: rank r holds r + 1 slots one spacing apart, and ranks are
+// sqrt(3)/2 spacings apart, so every neighbour in the rank and in the ranks beside it is exactly
+// one spacing away. Ranks fill from the point backwards; a partial last rank takes the lattice
+// positions nearest its centre line (ties: the left one), so it stays on the lattice. The nominal
+// slots are shifted so their centroid is the anchor; `spare` slots continue full ranks behind.
+[[nodiscard]] inline std::vector<Slot> WedgeSlots(std::size_t count, std::size_t spare, const Layout& layout) {
+    std::vector<Slot> slots;
+    const double spacing = layout.spacingCm;
+    if (count == 0 || !(spacing > 0.0) || !std::isfinite(spacing)) return slots;
+    slots.reserve(count + spare + count);
+    const double rankStep = spacing * kHalfSqrt3;
+    const auto addRank = [&](std::size_t rank, std::size_t width) {
+        std::vector<double> files(rank + 1);
+        for (std::size_t file = 0; file <= rank; ++file)
+            files[file] = (static_cast<double>(file) - static_cast<double>(rank) * 0.5) * spacing;
+        if (width < files.size()) {
+            std::stable_sort(files.begin(), files.end(), [](double a, double b) { return std::abs(a) < std::abs(b); });
+            files.resize(width);
+            std::sort(files.begin(), files.end());
+        }
+        for (const double lateral : files) slots.push_back({lateral, -static_cast<double>(rank) * rankStep, rank});
+    };
+    std::size_t rank = 0;
+    for (std::size_t left = count; left > 0; ++rank) {
+        const std::size_t width = std::min(left, rank + 1);
+        addRank(rank, width);
+        left -= width;
+    }
+    for (; slots.size() < count + spare; ++rank) addRank(rank, rank + 1);
+    slots.resize(count + spare);
+    double lateralSum = 0.0, forwardSum = 0.0;
+    for (std::size_t index = 0; index < count; ++index) {
+        lateralSum += slots[index].lateral;
+        forwardSum += slots[index].forward;
+    }
+    const double lateralShift = lateralSum / static_cast<double>(count);
+    const double forwardShift = forwardSum / static_cast<double>(count);
+    for (Slot& slot : slots) {
+        slot.lateral -= lateralShift;
+        slot.forward -= forwardShift;
+    }
+    return slots;
+}
+
+// Turns a Line-frame offset by 45 degrees so that the `side` flank (+1 right, -1 left) falls back:
+// a file one spacing to that side of the centre ends up 0.71 spacings behind it. A rotation keeps
+// every distance, so an Echelon keeps the Line's spacing; `side` -side undoes the turn, and
+// `side` 0 leaves the offset as it is.
+[[nodiscard]] constexpr Slot EchelonTurn(Slot slot, int side) noexcept {
+    if (side == 0) return slot;
+    const double s = static_cast<double>(side) * kHalfSqrt2;
+    return {slot.lateral * kHalfSqrt2 + slot.forward * s, slot.forward * kHalfSqrt2 - slot.lateral * s, slot.rank};
+}
+
 // Line, Column and Dispersed: the first `count` slots form a block centred on the anchor, rank by
 // rank from the front, each rank centred (the last one may be partial). The next `spare` slots
 // extend full-width ranks behind it and replace nominal slots that turn out to be illegal.
 // Dispersed ranks are staggered: odd ranks sit half a spacing to the right, and the block is
-// shifted back by a quarter spacing so it stays centred. Perimeter slots come from RingSlots.
+// shifted back by a quarter spacing so it stays centred. An Echelon is the Line block turned by
+// EchelonTurn. Perimeter slots come from RingSlots, Wedge slots from WedgeSlots.
 [[nodiscard]] inline std::vector<Slot> RelativeSlots(Shape shape, std::size_t count, std::size_t spare,
     const Layout& layout) {
     if (shape == Shape::Perimeter) return RingSlots(count, spare, layout);
+    if (shape == Shape::Wedge) return WedgeSlots(count, spare, layout);
+    if (const int side = EchelonSide(shape); side != 0) {
+        std::vector<Slot> slots = RelativeSlots(Shape::Line, count, spare, layout);
+        for (Slot& slot : slots) slot = EchelonTurn(slot, side);
+        return slots;
+    }
     std::vector<Slot> slots;
     if (count == 0) return slots;
     const std::size_t frontage = Frontage(shape, count, layout);
@@ -244,8 +327,10 @@ struct Plan {
 // Plans one destination per member. `isLegal(Point)` is the caller's projection check for a
 // candidate (map bounds, ground, navigation); it is called at most 2 x members times, in slot
 // order. The result depends only on the member set, never on input order:
-//  - lattice shapes: members are ordered front to back along the facing and left to right inside
-//    each rank, and matched to the legal slots in the same order, so neighbours do not cross paths;
+//  - lattice shapes and the Wedge: members are ordered front to back along the facing and left to
+//    right inside each rank, and matched to the legal slots in the same order, so neighbours do
+//    not cross paths; for an Echelon the members' offsets are first turned back into the Line's
+//    frame, so its ranks and files are the Line's;
 //  - Perimeter: members and legal slots are both ordered clockwise around the anchor and matched
 //    in that cyclic order, at the rotation with the least total squared travel (ties: the lowest
 //    rotation); when legal slots run short, the members farthest from the anchor are unplaced;
@@ -392,8 +477,9 @@ template <class IsLegal>
     for (const Member& member : members) {
         const Point offset = IsFinite(member.position)
             ? Point{member.position.x - centroid.x, member.position.y - centroid.y} : Point{0.0, 0.0};
-        locals.push_back({member.id, offset.x * right.x + offset.y * right.y,
-            offset.x * plan.facing.x + offset.y * plan.facing.y});
+        const Slot local = EchelonTurn({offset.x * right.x + offset.y * right.y,
+            offset.x * plan.facing.x + offset.y * plan.facing.y, 0}, -EchelonSide(shape));
+        locals.push_back({member.id, local.lateral, local.forward});
     }
     std::sort(locals.begin(), locals.end(), [](const Local& a, const Local& b) {
         if (a.forward != b.forward) return a.forward > b.forward;

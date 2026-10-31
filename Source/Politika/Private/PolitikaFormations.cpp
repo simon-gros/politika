@@ -88,6 +88,9 @@ const TCHAR* ShapeText(pf::Shape Shape)
         case pf::Shape::Column: return TEXT("column");
         case pf::Shape::Dispersed: return TEXT("dispersed");
         case pf::Shape::Perimeter: return TEXT("perimeter");
+        case pf::Shape::Wedge: return TEXT("wedge");
+        case pf::Shape::EchelonLeft: return TEXT("echelon left");
+        case pf::Shape::EchelonRight: return TEXT("echelon right");
         case pf::Shape::Line: break;
     }
     return TEXT("line");

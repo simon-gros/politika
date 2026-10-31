@@ -447,10 +447,14 @@ int main() {
         const auto Always = [](Point) { return true; };
         const auto Near = [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; };
         static_assert(NextShape(Shape::Line) == Shape::Column && NextShape(Shape::Column) == Shape::Dispersed
-            && NextShape(Shape::Dispersed) == Shape::Perimeter && NextShape(Shape::Perimeter) == Shape::Line
-            && NextShape(static_cast<Shape>(9)) == Shape::Line);
+            && NextShape(Shape::Dispersed) == Shape::Perimeter && NextShape(Shape::Perimeter) == Shape::Wedge
+            && NextShape(Shape::Wedge) == Shape::EchelonLeft && NextShape(Shape::EchelonLeft) == Shape::EchelonRight
+            && NextShape(Shape::EchelonRight) == Shape::Line && NextShape(static_cast<Shape>(9)) == Shape::Line);
+        static_assert(PreviousShape(Shape::Line) == Shape::EchelonRight && PreviousShape(Shape::Column) == Shape::Line
+            && PreviousShape(Shape::Wedge) == Shape::Perimeter && PreviousShape(static_cast<Shape>(9)) == Shape::Line);
         static_assert(ShapeName(Shape::Dispersed) == "dispersed" && ShapeName(Shape::Perimeter) == "perimeter"
-            && ShapeName(Shape::Line) == "line" && kShapeCount == 4);
+            && ShapeName(Shape::Wedge) == "wedge" && ShapeName(Shape::EchelonLeft) == "echelon-left"
+            && ShapeName(Shape::EchelonRight) == "echelon-right" && ShapeName(Shape::Line) == "line" && kShapeCount == 7);
         static_assert(ShapeName(Shape::Column) == "column" && Frontage(Shape::Line, 8, {}) == 8
             && Frontage(Shape::Line, 20, {}) == 10 && Frontage(Shape::Column, 20, {}) == 2 && Frontage(Shape::Column, 1, {}) == 1);
 
@@ -708,7 +712,135 @@ int main() {
         assert(std::abs(MinimumSeparation(Pair) - 600.0) < 1e-9);
         Layout BadRing; BadRing.perimeterMaxRadiusCm = 100.0;
         assert(RingSlots(20, 0, BadRing).empty() && PlanGroupMove(Twenty, Centre, Shape::Perimeter, Always, BadRing).unplaced == 20);
-        assert(PlanGroupMove(Twenty, Centre, static_cast<Shape>(4), Always).unplaced == 20);
+        assert(PlanGroupMove(Twenty, Centre, static_cast<Shape>(7), Always).unplaced == 20);
+    }
+
+    // FORM-F6 Wedge and Echelon: an arrowhead on a triangular lattice and a Line turned 45
+    // degrees, both one spacing between neighbours and centred on the anchor.
+    {
+        using namespace politika::formation;
+        const auto Always = [](Point) { return true; };
+        const auto Distance = [](Point a, Point b) { return std::hypot(a.x - b.x, a.y - b.y); };
+        const auto Closest = [](const std::vector<Slot>& Slots) {
+            double Best = 1e18;
+            for (std::size_t A = 0; A < Slots.size(); ++A)
+                for (std::size_t B = A + 1; B < Slots.size(); ++B)
+                    Best = std::min(Best, std::hypot(Slots[A].lateral - Slots[B].lateral, Slots[A].forward - Slots[B].forward));
+            return Best;
+        };
+        const auto Mean = [](const std::vector<Slot>& Slots, std::size_t Count) {
+            Point Sum{0.0, 0.0};
+            for (std::size_t Index = 0; Index < Count; ++Index) Sum = {Sum.x + Slots[Index].lateral, Sum.y + Slots[Index].forward};
+            return Point{Sum.x / static_cast<double>(Count), Sum.y / static_cast<double>(Count)};
+        };
+        static_assert(EchelonSide(Shape::EchelonRight) == 1 && EchelonSide(Shape::EchelonLeft) == -1 && EchelonSide(Shape::Wedge) == 0);
+
+        // Wedge of 20: ranks of 1, 2, 3, 4, 5 and a partial 5 of 6, sqrt(3)/2 spacings apart;
+        // the point alone in front, centred laterally, the nominal centroid on the anchor.
+        const std::vector<Slot> Wedge20 = RelativeSlots(Shape::Wedge, 20, 20, {});
+        assert(Wedge20.size() == 40 && Wedge20[0].rank == 0 && Wedge20[1].rank == 1 && Wedge20[14].rank == 4 && Wedge20[15].rank == 5);
+        assert(Wedge20[19].rank == 5 && Wedge20[20].rank == 6);
+        assert(std::abs(Closest(Wedge20) - 150.0) < 1e-9);
+        assert(std::abs(Mean(Wedge20, 20).x) < 1e-9 && std::abs(Mean(Wedge20, 20).y) < 1e-9);
+        assert(std::all_of(Wedge20.begin() + 1, Wedge20.end(), [&](const Slot& S) { return S.forward < Wedge20[0].forward; }));
+        assert(std::abs(Wedge20[0].forward - Wedge20[1].forward - 150.0 * kHalfSqrt3) < 1e-9);
+        assert(std::abs(Wedge20[1].lateral - Wedge20[0].lateral + 75.0) < 1e-9 && std::abs(Wedge20[2].lateral - Wedge20[1].lateral - 150.0) < 1e-9);
+        // The partial last rank keeps lattice positions: five of the six, the right-most left out.
+        assert(std::abs(Wedge20[15].lateral - Wedge20[10].lateral + 75.0) < 1e-9);
+        assert(std::abs(Wedge20[19].lateral - Wedge20[15].lateral - 600.0) < 1e-9);
+        // Every rank-r slot of a full rank has its lattice neighbours one spacing away; nothing
+        // is closer, also for the partial rank against the rank in front (checked by Closest).
+        const std::vector<Slot> Wedge7 = RelativeSlots(Shape::Wedge, 7, 0, {});
+        assert(Wedge7.size() == 7 && Wedge7[6].rank == 3 && std::abs(Closest(Wedge7) - 150.0) < 1e-9);
+        assert(std::abs(Mean(Wedge7, 7).x) < 1e-9 && std::abs(Mean(Wedge7, 7).y) < 1e-9);
+        const std::vector<Slot> Wedge8 = RelativeSlots(Shape::Wedge, 8, 0, {});
+        assert(std::abs(Closest(Wedge8) - 150.0) < 1e-9 && std::abs(Mean(Wedge8, 8).x) < 1e-9);
+        assert(RelativeSlots(Shape::Wedge, 0, 4, {}).empty() && RelativeSlots(Shape::Wedge, 1, 0, {})[0].forward == 0.0);
+        Layout BadWedge; BadWedge.spacingCm = std::nan("");
+        assert(WedgeSlots(20, 0, BadWedge).empty());
+
+        std::vector<Member> Twenty;
+        for (EntityId Id = 1; Id <= 20; ++Id)
+            Twenty.push_back({Id, {500.0 + static_cast<double>(Id % 5) * 100.0, 500.0 + static_cast<double>(Id / 5) * 100.0}});
+        std::vector<Member> Reversed(Twenty.rbegin(), Twenty.rend());
+        const Point Target{4000.0, 600.0};
+        const Plan Arrow = PlanGroupMove(Twenty, Target, Shape::Wedge, Always);
+        assert(Arrow.shape == Shape::Wedge && Arrow.unplaced == 0 && Arrow.candidatesRejected == 0 && Arrow.assignments.size() == 20);
+        assert(std::abs(MinimumSeparation(Arrow) - 150.0) < 1e-9);
+        // The point member stands farthest along the travel direction.
+        const auto Point0 = std::find_if(Arrow.assignments.begin(), Arrow.assignments.end(), [](const Assignment& A) { return A.slot == 0; });
+        for (const Assignment& A : Arrow.assignments)
+            assert(A.slot == 0 || (A.destination.x - Target.x) * Arrow.facing.x + (A.destination.y - Target.y) * Arrow.facing.y
+                < (Point0->destination.x - Target.x) * Arrow.facing.x + (Point0->destination.y - Target.y) * Arrow.facing.y);
+        // Every Wedge member has a fellow member within the support radius: it can earn.
+        for (const Assignment& A : Arrow.assignments)
+            assert(std::count_if(Arrow.assignments.begin(), Arrow.assignments.end(), [&](const Assignment& B) {
+                return B.id != A.id && Distance(A.destination, B.destination) <= politika::discipline::kSupportRadiusCm;
+            }) >= 2);
+        const Plan ArrowAgain = PlanGroupMove(Reversed, Target, Shape::Wedge, Always);
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(ArrowAgain.assignments[Index].id == Arrow.assignments[Index].id
+                && Distance(ArrowAgain.assignments[Index].destination, Arrow.assignments[Index].destination) == 0.0);
+
+        // Echelon Right: the Line block turned so the right flank falls back; distances unchanged.
+        const std::vector<Slot> Line20 = RelativeSlots(Shape::Line, 20, 20, {});
+        const std::vector<Slot> Right20 = RelativeSlots(Shape::EchelonRight, 20, 20, {});
+        const std::vector<Slot> Left20 = RelativeSlots(Shape::EchelonLeft, 20, 20, {});
+        assert(Right20.size() == 40 && Left20.size() == 40 && std::abs(Closest(Right20) - 150.0) < 1e-9 && std::abs(Closest(Left20) - 150.0) < 1e-9);
+        for (std::size_t Index = 0; Index < 40; ++Index) {
+            assert(Right20[Index].rank == Line20[Index].rank && Left20[Index].rank == Line20[Index].rank);
+            const Slot Back = EchelonTurn(Right20[Index], -1);
+            assert(std::abs(Back.lateral - Line20[Index].lateral) < 1e-9 && std::abs(Back.forward - Line20[Index].forward) < 1e-9);
+        }
+        // Front rank of ten: the right-most file is the farthest back, the left-most the farthest
+        // forward, 9 x 150 / sqrt(2) apart in depth.
+        assert(Right20[9].forward < Right20[0].forward && std::abs(Right20[0].forward - Right20[9].forward - 1350.0 * kHalfSqrt2) < 1e-9);
+        assert(Left20[0].forward < Left20[9].forward && std::abs(Left20[9].forward - Left20[0].forward - 1350.0 * kHalfSqrt2) < 1e-9);
+        // Left is the mirror image of Right: the same slot of the mirrored Line, turned right.
+        for (std::size_t Index = 0; Index < 40; ++Index) {
+            const Slot Mirrored = EchelonTurn({-Line20[Index].lateral, Line20[Index].forward, 0}, 1);
+            assert(std::abs(Left20[Index].forward - Mirrored.forward) < 1e-9 && std::abs(Left20[Index].lateral + Mirrored.lateral) < 1e-9);
+        }
+        assert(std::abs(Mean(Right20, 20).x) < 1e-9 && std::abs(Mean(Right20, 20).y) < 1e-9);
+
+        for (const Shape Echelon : {Shape::EchelonLeft, Shape::EchelonRight}) {
+            const Plan Stepped = PlanGroupMove(Twenty, Target, Echelon, Always);
+            assert(Stepped.shape == Echelon && Stepped.unplaced == 0 && Stepped.assignments.size() == 20);
+            assert(std::abs(MinimumSeparation(Stepped) - 150.0) < 1e-9);
+            const Plan SteppedAgain = PlanGroupMove(Reversed, Target, Echelon, Always);
+            for (std::size_t Index = 0; Index < 20; ++Index)
+                assert(SteppedAgain.assignments[Index].id == Stepped.assignments[Index].id
+                    && Distance(SteppedAgain.assignments[Index].destination, Stepped.assignments[Index].destination) == 0.0);
+        }
+
+        // A row of ten walking north keeps its left-to-right order in every new shape: the
+        // left-most member takes a left-most slot of its rank (no crossing).
+        std::vector<Member> Row;
+        for (EntityId Id = 1; Id <= 10; ++Id) Row.push_back({Id, {0.0, static_cast<double>(Id) * 150.0}});
+        for (const Shape Turned : {Shape::Wedge, Shape::EchelonLeft, Shape::EchelonRight}) {
+            const Plan North = PlanGroupMove(Row, {5000.0, 825.0}, Turned, Always);
+            assert(North.unplaced == 0 && std::abs(North.facing.x - 1.0) < 1e-9);
+            // Facing +x, right is +y: within a rank, slot lateral order equals member y order.
+            for (const Assignment& A : North.assignments)
+                for (const Assignment& B : North.assignments) {
+                    const std::vector<Slot> Slots = RelativeSlots(Turned, 10, 10, {});
+                    if (A.id < B.id && Slots[A.slot].rank == Slots[B.slot].rank) assert(Slots[A.slot].lateral < Slots[B.slot].lateral);
+                }
+        }
+
+        // Blocked slots are replaced from the spares behind; unique legal slots only.
+        std::size_t Probes = 0;
+        const auto South = [&Probes](Point P) { ++Probes; return P.y <= 1000.0; };
+        for (const Shape Turned : {Shape::Wedge, Shape::EchelonRight}) {
+            Probes = 0;
+            const Plan Blocked = PlanGroupMove(Twenty, Target, Turned, South);
+            assert(Probes == Blocked.candidatesChecked && Probes <= 40);
+            assert(std::all_of(Blocked.assignments.begin(), Blocked.assignments.end(),
+                [](const Assignment& A) { return A.slot == kNoSlot || A.destination.y <= 1000.0; }));
+            assert(MinimumSeparation(Blocked) >= 150.0 - 1e-9);
+        }
+        Layout BadEchelon; BadEchelon.spacingCm = -1.0;
+        assert(PlanGroupMove(Twenty, Target, Shape::EchelonLeft, Always, BadEchelon).unplaced == 20);
     }
 
     // FORM-F3 formation instances: explicit Form/Release, one formation per unit, member loss,
@@ -733,7 +865,10 @@ int main() {
         assert(CheckIntentShape({0, 0, 1, Two}) == FormationRejection::None);
         assert(CheckIntentShape({0, 0, 2, Two}) == FormationRejection::None);
         assert(CheckIntentShape({0, 0, 3, Two}) == FormationRejection::None);
-        assert(CheckIntentShape({0, 0, 4, Two}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 4, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 5, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 6, Two}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 7, Two}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 5, 0, Two}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 0, 0, Two, 1.0, 0.0}) == FormationRejection::MalformedCommand);
         assert(CheckIntentShape({0, 0, 0, Dup}) == FormationRejection::DuplicateMember);

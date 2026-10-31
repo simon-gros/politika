@@ -3468,11 +3468,13 @@ void APolitikaPrototypePlayerController::CycleSubgroup()
 void APolitikaPrototypePlayerController::CycleGroupMoveShape()
 {
     // A local presentation preference for the next group move; it changes no unit or order.
-    GroupMoveShape = politika::formation::NextShape(GroupMoveShape);
-    ShowLocalFeedback(FString::Printf(TEXT("Group move shape: %s  ·  V to change"), *PolitikaShapeLabel(GroupMoveShape)));
+    // Shift+V steps the cycle backwards, as Shift+Tab does for subgroups.
+    const bool bBackward = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+    GroupMoveShape = bBackward ? politika::formation::PreviousShape(GroupMoveShape) : politika::formation::NextShape(GroupMoveShape);
+    ShowLocalFeedback(FString::Printf(TEXT("Group move shape: %s  ·  V next, Shift+V back"), *PolitikaShapeLabel(GroupMoveShape)));
 #if !UE_BUILD_SHIPPING
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GROUP_MOVE_SHAPE participant=%u shape=%s"), GetCommandPlayerId(),
-        UTF8_TO_TCHAR(politika::formation::ShapeName(GroupMoveShape).data()));
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GROUP_MOVE_SHAPE participant=%u shape=%s backward=%d"), GetCommandPlayerId(),
+        UTF8_TO_TCHAR(politika::formation::ShapeName(GroupMoveShape).data()), bBackward ? 1 : 0);
 #endif
 }
 
@@ -3985,7 +3987,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
-    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
+    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         *PolitikaShapeLabel(HelpShape)), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {

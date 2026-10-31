@@ -1462,8 +1462,70 @@ bool FPolitikaMultiplayerGroupMoveShapeTest::RunTest(const FString& Parameters)
         FMath::IsNearlyEqual(MinSeparation(Perimeter), 600.0 * FMath::Sin(UE_DOUBLE_PI / 8.0), 0.01));
     F.Step();
     TestEqual(TEXT("FORM-F6 every perimeter member's request is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+
+    // V then Wedge: an arrowhead of eight (ranks of one, two, three and two) pointing east, every
+    // neighbour one spacing apart, its centroid on the clicked point.
+    auto Centroid = [](const TMap<uint64, FVector>& Points)
+    {
+        FVector2D Sum(0.0, 0.0);
+        for (const auto& Entry : Points) Sum += FVector2D(Entry.Value.X, Entry.Value.Y);
+        return Points.IsEmpty() ? Sum : Sum / static_cast<double>(Points.Num());
+    };
     Host->CycleGroupMoveShape();
-    TestTrue(TEXT("V returns to Line after Perimeter"), Host->GetGroupMoveShape() == Shape::Line);
+    TestTrue(TEXT("V cycles to Wedge"), Host->GetGroupMoveShape() == Shape::Wedge);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+        MoveOrder{{WideMap.X, WideMap.Y}}, &WideGround);
+    TMap<uint64, FVector> Wedge = Destinations();
+    double PointX = -TNumericLimits<double>::Max(), SecondX = -TNumericLimits<double>::Max();
+    FBox2D WedgeExtent(ForceInit);
+    for (const auto& Entry : Wedge)
+    {
+        WedgeExtent += FVector2D(Entry.Value.X, Entry.Value.Y);
+        if (Entry.Value.X > PointX) { SecondX = PointX; PointX = Entry.Value.X; }
+        else SecondX = FMath::Max(SecondX, Entry.Value.X);
+    }
+    TestEqual(TEXT("FORM-F6 wedge has one destination per member"), Wedge.Num(), 8);
+    TestTrue(TEXT("FORM-F6 wedge neighbours are one spacing apart"), FMath::Abs(MinSeparation(Wedge) - 150.0) < 0.01);
+    TestTrue(TEXT("FORM-F6 one member leads the wedge, a rank ahead of the rest"),
+        FMath::IsNearlyEqual(PointX - SecondX, 150.0 * UE_DOUBLE_SQRT_3 / 2.0, 0.01));
+    TestTrue(TEXT("FORM-F6 an eastward wedge of eight is four ranks deep and three files wide"),
+        FMath::IsNearlyEqual(WedgeExtent.GetSize().X, 450.0 * UE_DOUBLE_SQRT_3 / 2.0, 0.01) && FMath::IsNearlyEqual(WedgeExtent.GetSize().Y, 300.0, 0.01));
+    TestTrue(TEXT("FORM-F6 the wedge is centred on the clicked point"), FVector2D::Distance(Centroid(Wedge), FVector2D(WideGround)) < 0.01);
+    F.Step();
+    TestEqual(TEXT("FORM-F6 every wedge member's request is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+
+    // V then Echelon Left and Echelon Right: one rank of eight turned 45 degrees. Facing east,
+    // right is +Y: on Echelon Right the member farthest to +Y is the farthest back (lowest X), on
+    // Echelon Left the member farthest to -Y.
+    for (const Shape Echelon : {Shape::EchelonLeft, Shape::EchelonRight})
+    {
+        Host->CycleGroupMoveShape();
+        const bool bRight = Echelon == Shape::EchelonRight;
+        TestTrue(bRight ? TEXT("V cycles to Echelon Right") : TEXT("V cycles to Echelon Left"), Host->GetGroupMoveShape() == Echelon);
+        Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr,
+            MoveOrder{{WideMap.X, WideMap.Y}}, &WideGround);
+        TMap<uint64, FVector> Stepped = Destinations();
+        FVector Rear(TNumericLimits<double>::Max(), 0.0, 0.0);
+        FVector Flank(0.0, bRight ? -TNumericLimits<double>::Max() : TNumericLimits<double>::Max(), 0.0);
+        FBox2D SteppedExtent(ForceInit);
+        for (const auto& Entry : Stepped)
+        {
+            SteppedExtent += FVector2D(Entry.Value.X, Entry.Value.Y);
+            if (Entry.Value.X < Rear.X) Rear = Entry.Value;
+            if (bRight ? Entry.Value.Y > Flank.Y : Entry.Value.Y < Flank.Y) Flank = Entry.Value;
+        }
+        TestEqual(TEXT("FORM-F6 echelon has one destination per member"), Stepped.Num(), 8);
+        TestTrue(TEXT("FORM-F6 echelon neighbours are one spacing apart"), FMath::Abs(MinSeparation(Stepped) - 150.0) < 0.01);
+        TestTrue(TEXT("FORM-F6 the held-back flank member is the rear-most"), FVector::Dist2D(Rear, Flank) < 0.01);
+        TestTrue(TEXT("FORM-F6 an echelon of eight is a 45 degree diagonal of 1050 cm"),
+            FMath::IsNearlyEqual(SteppedExtent.GetSize().X, 1050.0 * UE_DOUBLE_INV_SQRT_2, 0.01)
+            && FMath::IsNearlyEqual(SteppedExtent.GetSize().Y, 1050.0 * UE_DOUBLE_INV_SQRT_2, 0.01));
+        TestTrue(TEXT("FORM-F6 the echelon is centred on the clicked point"), FVector2D::Distance(Centroid(Stepped), FVector2D(WideGround)) < 0.01);
+        F.Step();
+        TestEqual(TEXT("FORM-F6 every echelon member's request is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+    }
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("V returns to Line after Echelon Right"), Host->GetGroupMoveShape() == Shape::Line);
     for (int32 Index = 0; Index < Own.Num(); ++Index) Own[Index]->SetActorLocation(ClusterHome[Index]);
 
     // FORM-05: blocked candidates are replaced by spare slots, never sent.
@@ -2110,10 +2172,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationShapesTest,
     "Politika.RTS.Multiplayer.FormationShapes",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-// FORM-F6 Dispersed and Perimeter as formation shapes: Form stores the V choice, the server plans
-// the formation's moves and regroups in that shape, a Dispersed formation's members stand beyond
-// each other's 400 cm support radius and hold their Discipline, and a Perimeter formation's
-// ring neighbours support each other and earn it.
+// FORM-F6 Dispersed, Perimeter, Wedge and Echelon as formation shapes: Form stores the V choice,
+// the server plans the formation's moves and regroups in that shape, a Dispersed formation's
+// members stand beyond each other's 400 cm support radius and hold their Discipline, and the
+// neighbours of a Perimeter ring and of a Wedge support each other and earn it.
 bool FPolitikaMultiplayerFormationShapesTest::RunTest(const FString& Parameters)
 {
     using politika::selection::SelectionOp;
@@ -2241,6 +2303,68 @@ bool FPolitikaMultiplayerFormationShapesTest::RunTest(const FString& Parameters)
         FMath::IsNearlyEqual(ClosedSeparation, 600.0 * FMath::Sin(UE_DOUBLE_PI / 7.0), 0.01));
     TestTrue(TEXT("FORM-F6 regroup orders go to members off their new slot"), Planned(Ring.value).Num() >= 1 && Planned(Ring.value).Num() <= 7);
     F.Step();
+
+    // Wedge: release, V, T with the seven survivors; a formation move west from the ring's centre
+    // is an arrowhead pointing west whose members support each other and earn.
+    TArray<APolitikaPrototypeUnit*> Survivors(Own.GetData(), 7);
+    Host->ApplySelection(Survivors, SelectionOp::Replace, TEXT("automation"));
+    Host->ReleaseSelected();
+    TestTrue(TEXT("Release dissolves the Perimeter formation"), Formations.Empty());
+    Host->CycleGroupMoveShape();
+    if (!TestTrue(TEXT("V selects Wedge"), Host->GetGroupMoveShape() == pf::Shape::Wedge)) return false;
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms the Wedge formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Arrow = Formations.All().front().id;
+    TestTrue(TEXT("FORM-F6 the formation stores the Wedge shape"), Formations.Find(Arrow)->shape == pf::Shape::Wedge
+        && Host->GetOwnFormations().Num() == 1 && Host->GetOwnFormations()[0].Shape == static_cast<uint8>(pf::Shape::Wedge));
+    const FVector West(-1300.0, -700.0, 42.0);
+    const FVector2D WestMap(West.X - F.Match->GetPlayableMin().X, West.Y - F.Match->GetPlayableMin().Y);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{WestMap.X, WestMap.Y}}, &West);
+    const TMap<APolitikaPrototypeUnit*, FVector> ArrowSlots = Planned(Arrow.value);
+    TestEqual(TEXT("FORM-F6 one Wedge member order per member"), ArrowSlots.Num(), 7);
+    TestTrue(TEXT("FORM-F6 Wedge members are planned one spacing apart"), FMath::Abs(MinSeparation(ArrowSlots) - 150.0) < 0.01);
+    // The ring's survivors are centred a little off the clicked point, so the travel direction is
+    // a few degrees off due west: the leader is still most of a rank ahead of everyone else.
+    TArray<double> ByX;
+    for (const auto& Entry : ArrowSlots) ByX.Add(Entry.Value.X);
+    ByX.Sort();
+    TestTrue(TEXT("FORM-F6 a single member leads the westward Wedge"), ByX.Num() == 7 && ByX[1] - ByX[0] > 100.0);
+    F.Step();
+    StandOnSlots(ArrowSlots);
+    auto SurvivorValues = [&Survivors]()
+    {
+        TArray<int32> Result;
+        for (const APolitikaPrototypeUnit* Unit : Survivors) Result.Add(Unit->GetResolveMilli());
+        return Result;
+    };
+    TArray<int32> ArrowExpected = SurvivorValues();
+    for (int32& Value : ArrowExpected) Value += 1000;
+    NextEvaluation();
+    TestTrue(TEXT("FORM-F6 Wedge neighbours support each other: every member gains one point"), SurvivorValues() == ArrowExpected);
+
+    // Echelon Right: release, V twice (Echelon Left, then Right), T; a move back east puts the
+    // right (+Y) flank farthest back.
+    Host->ReleaseSelected();
+    Host->CycleGroupMoveShape();
+    Host->CycleGroupMoveShape();
+    if (!TestTrue(TEXT("V twice selects Echelon Right"), Host->GetGroupMoveShape() == pf::Shape::EchelonRight)) return false;
+    Host->FormSelected();
+    if (!TestEqual(TEXT("T forms the Echelon formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Stepped = Formations.All().front().id;
+    TestTrue(TEXT("FORM-F6 the formation stores the Echelon Right shape"), Formations.Find(Stepped)->shape == pf::Shape::EchelonRight);
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, MoveOrder{{Map.X, Map.Y}}, &Ground);
+    const TMap<APolitikaPrototypeUnit*, FVector> SteppedSlots = Planned(Stepped.value);
+    TestEqual(TEXT("FORM-F6 one Echelon member order per member"), SteppedSlots.Num(), 7);
+    TestTrue(TEXT("FORM-F6 Echelon members are planned one spacing apart"), FMath::Abs(MinSeparation(SteppedSlots) - 150.0) < 0.01);
+    FVector Rear(TNumericLimits<double>::Max(), 0.0, 0.0), RightFlank(0.0, -TNumericLimits<double>::Max(), 0.0);
+    for (const auto& Entry : SteppedSlots)
+    {
+        if (Entry.Value.X < Rear.X) Rear = Entry.Value;
+        if (Entry.Value.Y > RightFlank.Y) RightFlank = Entry.Value;
+    }
+    TestTrue(TEXT("FORM-F6 the eastward Echelon Right holds its right (+Y) flank farthest back"), FVector::Dist2D(Rear, RightFlank) < 0.01);
+    F.Step();
+    Host->ReleaseSelected();
 
     Host->GroupMoveSlotProbeForTest = nullptr;
     F.Match->FormationSlotProbeForTest = nullptr;

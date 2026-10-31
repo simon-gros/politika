@@ -126,7 +126,8 @@ struct POLITIKA_API FPolitikaSelectionSet
 };
 
 // Versioned formation request (FORM-F3, network_protocol 3; stance and adherence FORM-F4,
-// network_protocol 4; Dispersed and Perimeter shapes FORM-F6, network_protocol 7). Like the command intent it carries no participant or owner: the server
+// network_protocol 4; Dispersed and Perimeter shapes FORM-F6, network_protocol 7; Wedge and
+// Echelon Left/Right FORM-F6, network_protocol 8). Like the command intent it carries no participant or owner: the server
 // derives authority from the sending connection, resolves member and formation IDs in the
 // current match and fans a formation move out into ordinary, individually admitted member
 // commands. A stance or adherence change is not an order and submits none.
@@ -140,7 +141,8 @@ struct POLITIKA_API FPolitikaNetFormationIntent
     // Addressed formation for Move/AttackMove/Stop/SetAdherence and a whole-formation SetStance;
     // zero for Form, Release and a per-unit SetStance.
     UPROPERTY() uint32 FormationId = 0;
-    // politika::formation::Shape for Form (Line, Column, Dispersed, Perimeter); zero otherwise.
+    // politika::formation::Shape for Form (Line, Column, Dispersed, Perimeter, Wedge, Echelon
+    // Left, Echelon Right); zero otherwise.
     UPROPERTY() uint8 Shape = 0;
     // Unit IDs for Form (2-64), Release and a per-unit SetStance; empty otherwise.
     UPROPERTY() TArray<uint64> Members;
