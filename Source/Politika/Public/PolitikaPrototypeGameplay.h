@@ -127,7 +127,8 @@ struct POLITIKA_API FPolitikaSelectionSet
 
 // Versioned formation request (FORM-F3, network_protocol 3; stance and adherence FORM-F4,
 // network_protocol 4; Dispersed and Perimeter shapes FORM-F6, network_protocol 7; Wedge and
-// Echelon Left/Right FORM-F6, network_protocol 8). Like the command intent it carries no participant or owner: the server
+// Echelon Left/Right FORM-F6, network_protocol 8; right-drag facing and frontage FORM-FD,
+// network_protocol 9). Like the command intent it carries no participant or owner: the server
 // derives authority from the sending connection, resolves member and formation IDs in the
 // current match and fans a formation move out into ordinary, individually admitted member
 // commands. A stance or adherence change is not an order and submits none.
@@ -152,6 +153,12 @@ struct POLITIKA_API FPolitikaNetFormationIntent
     // Rules-domain map coordinates for Move/AttackMove (cm from the playable minimum).
     UPROPERTY() double DestinationX = 0.0;
     UPROPERTY() double DestinationY = 0.0;
+    // FORM-FD right-drag, Move/AttackMove only: a map-space unit facing, or {0, 0} to face the
+    // travel direction; and files per rank (0: the shape's default, at most 64, only with a facing).
+    // Zero for every other operation. The server validates both and plans every slot itself.
+    UPROPERTY() double FacingX = 0.0;
+    UPROPERTY() double FacingY = 0.0;
+    UPROPERTY() uint8 Frontage = 0;
     // Shares the connection's single-use command sequence.
     UPROPERTY() uint32 ClientSequence = 0;
     UPROPERTY() uint32 CorrelationId = 0;
@@ -352,6 +359,7 @@ private:
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
+    friend class FPolitikaMultiplayerGroupMoveFacingTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerFormationShapesTest;
@@ -961,6 +969,7 @@ private:
     // no connection for the client RPC).
     TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
+    friend class FPolitikaMultiplayerGroupMoveFacingTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerFormationShapesTest;
@@ -1203,6 +1212,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerGroupOrdersTest;
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerGroupMoveShapeTest;
+    friend class FPolitikaMultiplayerGroupMoveFacingTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
@@ -1272,8 +1282,27 @@ public:
     int32 GetActiveSubgroup() const { return ActiveSubgroup; }
     // HUD read-only view of the group-move shape (FORM-F2) and the latest planned slots.
     politika::formation::Shape GetGroupMoveShape() const { return GroupMoveShape; }
-    // World positions of the latest group move's destinations while they are still fresh.
-    bool GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha) const;
+    // World positions of the latest group move's destinations while they are still fresh, or of
+    // the advisory right-drag preview while one is held (OutPreview; full alpha, never fading).
+    bool GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha, bool* OutPreview = nullptr) const;
+    // HUD read-only view of a held right-drag (FORM-FD): the ground line, the planned facing and
+    // width, and whether the cursor is over usable ground. False unless a drag is in progress.
+    struct FOrderDragView
+    {
+        FVector Start = FVector::ZeroVector;
+        FVector End = FVector::ZeroVector;
+        FVector Anchor = FVector::ZeroVector;
+        FVector2D Facing = FVector2D::ZeroVector;
+        FVector2D EndScreen = FVector2D::ZeroVector;
+        politika::formation::Shape Shape = politika::formation::Shape::Line;
+        // Files per rank of the preview plan; 0 for a Wedge or Perimeter.
+        int32 Frontage = 0;
+        bool bDefaultFrontage = true;
+        bool bEndValid = false;
+        bool bPlanned = false;
+        uint32 FormationId = 0;
+    };
+    bool GetOrderDragView(FOrderDragView& OutView) const;
 private:
 #if !UE_BUILD_SHIPPING
     // Development-only hostile-input probe: sends forged intents through the real RPC.
@@ -1347,9 +1376,16 @@ private:
     TArray<FCommandBatch> CommandBatches;
     uint32 NextBatchId = 1;
     // Move and attack-move groups get one distinct destination per member (FORM-F2): pass the
-    // clicked ground point as GroundHit. Without it every member gets the same order.
+    // clicked ground point as GroundHit. Without it every member gets the same order. A valid
+    // right-drag (FORM-FD) fixes the facing and frontage of that plan, or of a whole formation's.
     void SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Issuers,
-        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order, const FVector* GroundHit = nullptr);
+        APolitikaPrototypeUnit* Target, const politika::rules::Order& Order, const FVector* GroundHit = nullptr,
+        const politika::formation::DragFacing* Drag = nullptr);
+    // The one client-side group-move planner, shared by the committed order and the drag preview
+    // so both lay out the same slots for the same inputs (advisory slot checks on this process).
+    politika::formation::Plan PlanLocalGroupMove(const APolitikaPrototypeMatch& ActiveMatch,
+        TConstArrayView<APolitikaPrototypeUnit*> Issuers, const politika::formation::Point& Anchor, float GroundZ,
+        politika::formation::Shape Shape, const politika::formation::DragFacing* Drag) const;
     // Group-move geometry (FORM-F2): local presentation choice of Line or Column, cycled by V.
     // It is not a formation: no membership, stance or bonus exists, and the server admits and
     // routes every member's destination as an ordinary Move.
@@ -1364,7 +1400,69 @@ private:
 #endif
     TArray<FVector> GroupMoveMarkers;
     double GroupMoveMarkersSeconds = -1.0;
+    // The markers are the held right-drag's advisory preview, not a sent order.
+    bool bGroupMovePreview = false;
     static constexpr double GroupMoveMarkerLifetimeSeconds = 2.5;
+    // Right-button order gesture (FORM-FD): Idle -> Pending -> Click | Dragging -> Commit, or
+    // Cancelled from either. One RMB press/release yields exactly one order, one drag commit or
+    // nothing. Only an eligible press defers: two or more commandable units, an Active match and
+    // open ground inside the playable area without Shift (Shift+RMB is reserved for queued
+    // orders). Every other press acts at once, as before, and its release does nothing.
+    enum class EOrderPress : uint8 { Idle, Pending, Dragging };
+    struct FOrderPress
+    {
+        EOrderPress State = EOrderPress::Idle;
+        FVector2D PressScreen = FVector2D::ZeroVector;
+        // Last cursor sample taken while the button was held, and its ground point.
+        FVector2D LastScreen = FVector2D::ZeroVector;
+        FVector PressGround = FVector::ZeroVector;
+        FVector LastGround = FVector::ZeroVector;
+        bool bLastValid = false;
+        uint32 Participant = 0;
+        uint64 Generation = 0;
+        TArray<uint64> Selection; // sorted stable IDs at press time
+        uint32 FormationId = 0;   // the whole formation the press addressed, or 0
+        politika::formation::Shape Shape = politika::formation::Shape::Line;
+        double PressSeconds = 0.0;
+        // Real time at which the button was first seen up without its release binding.
+        bool bReleaseSeen = false;
+        double ReleaseSeenSeconds = 0.0;
+        // Preview throttle: at most every 0.1 s and only after the cursor moved over 4 px.
+        bool bPreviewTimed = false;
+        double PreviewSeconds = 0.0;
+        FVector2D PreviewScreen = FVector2D::ZeroVector;
+        int32 Replans = 0;
+        politika::formation::DragFacing Drag;
+        int32 PlannedFrontage = 0;
+        bool bPlanned = false;
+    };
+    FOrderPress OrderPress;
+    static constexpr double OrderPreviewIntervalSeconds = 0.1;
+    static constexpr double OrderPreviewMinPixels = 4.0;
+    // Presses an order at a resolved cursor hit: immediate for a hostile, a single unit or an
+    // ineligible press, otherwise starts the pending gesture.
+    void PressOrderAt(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Selected,
+        const FHitResult& Hit, const FVector2D& Cursor);
+    void EndOrderPress();
+    void UpdateOrderPress();
+    void CancelOrderPress(const TCHAR* Reason);
+    // Null while the press still addresses the same participant, generation, selection and
+    // formation in an Active match; otherwise the cancel reason.
+    const TCHAR* OrderPressInvalidReason(APolitikaPrototypeMatch* ActiveMatch, TArray<APolitikaPrototypeUnit*>& OutSelected);
+    void UpdateOrderPreview(APolitikaPrototypeMatch& ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Selected);
+    void LogOrderPress(const TCHAR* State, const TCHAR* Reason, const politika::formation::Plan* Plan = nullptr) const;
+    bool IsOrderButtonDown() const;
+    bool GetOrderCursor(FVector2D& OutCursor) const;
+    // Ground under a screen point (units ignored) inside the playable area, or false.
+    bool TraceOrderGround(const APolitikaPrototypeMatch& ActiveMatch, const FVector2D& Screen, FVector& OutGround) const;
+    // World point of a map-space anchor at the drag's ground height.
+    FVector OrderAnchorWorld(const APolitikaPrototypeMatch& ActiveMatch, const politika::formation::Point& Anchor) const;
+#if WITH_DEV_AUTOMATION_TESTS
+    // Automation stand-ins for the viewport: cursor, held button and ground under a screen point.
+    TOptional<FVector2D> OrderCursorForTest;
+    TOptional<bool> OrderButtonDownForTest;
+    TFunction<bool(const FVector2D&, FVector&)> OrderGroundProbeForTest;
+#endif
     bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);
     // Formations (FORM-F3): T forms the selection with the current V shape (re-forming moves
     // members out of their old formation); Y releases the selected members. When the selection
@@ -1378,7 +1476,7 @@ private:
     void CycleAdherenceSelected();
     bool SubmitFormationRequest(APolitikaPrototypeMatch* ActiveMatch, politika::formation::FormationOp Op,
         uint32 FormationId, TConstArrayView<APolitikaPrototypeUnit*> Members, const politika::rules::Position& Destination,
-        const FVector* GroundHit = nullptr, uint8 Value = 0);
+        const FVector* GroundHit = nullptr, uint8 Value = 0, const politika::formation::DragFacing* Drag = nullptr);
     // Pending formation move/stop correlations and their order kind, for the outcome batch.
     TMap<uint32, uint8> PendingFormationOrderKinds;
     // Requested stance/adherence per pending correlation, for the outcome feedback.

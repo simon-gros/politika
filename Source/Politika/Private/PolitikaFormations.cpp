@@ -215,9 +215,10 @@ void APolitikaPrototypeMatch::RejectFormationIntent(APlayerController* Source, c
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_FORMATION_INTENT participant=%u op=%u correlation=%u client_sequence=%u formation=%u members=%d accepted=0 rejection=%u generation=%llu step=%llu"),
+        TEXT("RTS_FORMATION_INTENT participant=%u op=%u correlation=%u client_sequence=%u formation=%u members=%d accepted=0 rejection=%u generation=%llu step=%llu facing=%.6f,%.6f frontage=%u"),
         ParticipantId, Intent.Op, Intent.CorrelationId, Intent.ClientSequence, Intent.FormationId, Intent.Members.Num(),
-        static_cast<uint32>(Rejection), MatchGeneration, SimulationStepsExecuted);
+        static_cast<uint32>(Rejection), MatchGeneration, SimulationStepsExecuted, Intent.FacingX, Intent.FacingY,
+        static_cast<uint32>(Intent.Frontage));
 #endif
     SendFormationOutcome(Source, Intent, Rejection, Intent.FormationId, 0, 0);
 }
@@ -255,8 +256,10 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
     for (int32 Index = 0; Index < Intent.Members.Num() && Index <= static_cast<int32>(pf::kMaxReleaseIds); ++Index)
         Ids.push_back(static_cast<pf::EntityId>(Intent.Members[Index]));
     if (Intent.Members.Num() > static_cast<int32>(pf::kMaxReleaseIds)) Ids.push_back(0); // fails the shape check
+    // FORM-FD: the facing and frontage are checked here, before any authoritative state is read.
     if (const FormationRejection Shape = pf::CheckIntentShape({Intent.Op, Intent.FormationId, Intent.Shape, Ids,
-            Intent.DestinationX, Intent.DestinationY, Intent.Value}); Shape != FormationRejection::None)
+            Intent.DestinationX, Intent.DestinationY, Intent.Value, Intent.FacingX, Intent.FacingY, Intent.Frontage});
+        Shape != FormationRejection::None)
     {
         RejectFormationIntent(Source, Intent, ParticipantId, Shape);
         return true;
@@ -278,9 +281,9 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
     {
 #if !UE_BUILD_SHIPPING
         UE_LOG(LogPolitikaStartup, Display,
-            TEXT("RTS_FORMATION_INTENT participant=%u op=%u correlation=%u client_sequence=%u formation=%u members=%d accepted=1 rejection=0 orders=%d generation=%llu step=%llu remote=%d"),
+            TEXT("RTS_FORMATION_INTENT participant=%u op=%u correlation=%u client_sequence=%u formation=%u members=%d accepted=1 rejection=0 orders=%d generation=%llu step=%llu remote=%d facing=%.6f,%.6f frontage=%u"),
             ParticipantId, Intent.Op, Intent.CorrelationId, Intent.ClientSequence, FormationId, Members, Orders,
-            MatchGeneration, Step, Binding->bRemote ? 1 : 0);
+            MatchGeneration, Step, Binding->bRemote ? 1 : 0, Intent.FacingX, Intent.FacingY, static_cast<uint32>(Intent.Frontage));
 #endif
     };
 
@@ -423,7 +426,11 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
 #endif
         return IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, {Candidate.x, Candidate.y}, GroundZ);
     };
-    const pf::MovePlan Plan = Formations.PlanMove(ParticipantId, Addressed, Anchor, bAttackMove, PositionOf, IsLegal);
+    // FORM-FD: a right-drag's facing and frontage (validated above) shape the server's own plan;
+    // {0, 0} and 0 are a plain move that faces the travel direction at the default width.
+    const pf::Point DragFacing{Intent.FacingX, Intent.FacingY};
+    const pf::MovePlan Plan = Formations.PlanMove(ParticipantId, Addressed, Anchor, bAttackMove, PositionOf, IsLegal, {},
+        DragFacing, Intent.Frontage);
     if (Plan.rejection != FormationRejection::None)
     {
         RejectFormationIntent(Source, Intent, ParticipantId, Plan.rejection);
@@ -438,11 +445,14 @@ bool APolitikaPrototypeMatch::SubmitFormationIntent(APlayerController* Source, c
 #if !UE_BUILD_SHIPPING
     const double Separation = pf::MinimumSeparation(Plan.plan);
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_FORMATION_MOVE formation=%u participant=%u op=%s shape=%s members=%d anchor=%.1f,%.1f ground_z=%.1f facing=%.4f,%.4f checked=%d rejected=%d unplaced=%d min_separation=%.1f orders=%d step=%llu"),
+        TEXT("RTS_FORMATION_MOVE formation=%u participant=%u op=%s shape=%s members=%d anchor=%.3f,%.3f ground_z=%.1f facing=%.6f,%.6f checked=%d rejected=%d unplaced=%d min_separation=%.1f orders=%d step=%llu correlation=%u explicit_facing=%d requested_frontage=%u frontage=%u stored_anchor=%.3f,%.3f stored_facing=%.6f,%.6f stored_explicit=%d stored_frontage=%u"),
         Addressed.value, ParticipantId, UTF8_TO_TCHAR(pf::OpName(Op).data()), ShapeText(Formation->shape),
         static_cast<int32>(Formation->members.size()), Anchor.x, Anchor.y, GroundZ, Plan.plan.facing.x, Plan.plan.facing.y,
         static_cast<int32>(Plan.plan.candidatesChecked), static_cast<int32>(Plan.plan.candidatesRejected),
-        static_cast<int32>(Plan.plan.unplaced), FMath::IsFinite(Separation) ? Separation : -1.0, Orders, Step);
+        static_cast<int32>(Plan.plan.unplaced), FMath::IsFinite(Separation) ? Separation : -1.0, Orders, Step, Intent.CorrelationId,
+        Plan.plan.fixedFacing ? 1 : 0, static_cast<uint32>(Plan.plan.requestedFrontage), static_cast<uint32>(Plan.plan.frontage),
+        Formation->anchor.x, Formation->anchor.y, Formation->facing.x, Formation->facing.y, Formation->explicitFacing ? 1 : 0,
+        static_cast<uint32>(Formation->frontage));
     if (FormationCasualtyArmed < 0)
         FormationCasualtyArmed = FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPFormationCasualty")) ? 1 : 0;
     if (FormationCasualtyArmed == 1 && FormationCasualtyFormation == 0 && Formation->members.size() >= 3)
@@ -767,11 +777,12 @@ void APolitikaPrototypeMatch::ProcessFormationRegroups()
 #if !UE_BUILD_SHIPPING
             const double Separation = pf::MinimumSeparation(Plan.plan);
             UE_LOG(LogPolitikaStartup, Display,
-                TEXT("RTS_FORMATION_REGROUP formation=%u participant=%u step=%llu members=%d following=%d planned=%d orders=%d unplaced=%d min_separation=%.1f regroups=%u facing=%.4f,%.4f"),
+                TEXT("RTS_FORMATION_REGROUP formation=%u participant=%u step=%llu members=%d following=%d planned=%d orders=%d unplaced=%d min_separation=%.1f regroups=%u facing=%.4f,%.4f explicit_facing=%d frontage=%u"),
                 Id.value, Formation->owner, SimulationStepsExecuted, static_cast<int32>(Formation->members.size()),
                 static_cast<int32>(Formation->FollowingCount()), static_cast<int32>(Plan.plan.assignments.size()),
                 static_cast<int32>(Plan.orders.size()), static_cast<int32>(Plan.plan.unplaced),
-                FMath::IsFinite(Separation) ? Separation : -1.0, Formation->regroups, Formation->facing.x, Formation->facing.y);
+                FMath::IsFinite(Separation) ? Separation : -1.0, Formation->regroups, Formation->facing.x, Formation->facing.y,
+                Formation->explicitFacing ? 1 : 0, static_cast<uint32>(Plan.plan.frontage));
 #endif
             SubmitFormationOrders(*Formation, Plan, nullptr, nullptr, TEXT("regroup"));
             bFormationsDirty = true;
@@ -1060,7 +1071,7 @@ const FPolitikaNetFormationInfo* APolitikaPrototypePlayerController::SelectedWho
 
 bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototypeMatch* ActiveMatch, pf::FormationOp Op,
     uint32 FormationId, TConstArrayView<APolitikaPrototypeUnit*> Members, const politika::rules::Position& Destination,
-    const FVector* GroundHit, uint8 Value)
+    const FVector* GroundHit, uint8 Value, const pf::DragFacing* Drag)
 {
     if (!ActiveMatch) return false;
     FPolitikaNetFormationIntent Intent;
@@ -1075,6 +1086,14 @@ bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototy
     {
         Intent.DestinationX = Destination.x;
         Intent.DestinationY = Destination.y;
+        // FORM-FD: a right-drag sends its facing and (for shapes with files) its frontage; the
+        // server validates both and plans the slots itself. A plain move sends zeros.
+        if (Drag && Drag->valid && pf::IsUnitFacing(Drag->facing))
+        {
+            Intent.FacingX = Drag->facing.x;
+            Intent.FacingY = Drag->facing.y;
+            Intent.Frontage = static_cast<uint8>(FMath::Min<std::size_t>(Drag->frontage, pf::kMaxFormationMembers));
+        }
     }
     Intent.ClientSequence = NextClientSequence++;
     Intent.CorrelationId = NextCorrelationId++;
@@ -1088,15 +1107,17 @@ bool APolitikaPrototypePlayerController::SubmitFormationRequest(APolitikaPrototy
     }
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_FORMATION_SENT participant=%u op=%s correlation=%u client_sequence=%u formation=%u shape=%s members=%d ids=%s x=%.1f y=%.1f value=%u authority=%d"),
+        TEXT("RTS_FORMATION_SENT participant=%u op=%s correlation=%u client_sequence=%u formation=%u shape=%s members=%d ids=%s x=%.3f y=%.3f value=%u authority=%d protocol=%d facing=%.6f,%.6f frontage=%u"),
         GetCommandPlayerId(), UTF8_TO_TCHAR(pf::OpName(Op).data()), Intent.CorrelationId, Intent.ClientSequence, FormationId,
         ShapeText(static_cast<pf::Shape>(Intent.Shape)), Intent.Members.Num(), *JoinIds(Intent.Members), Intent.DestinationX,
-        Intent.DestinationY, Intent.Value, HasAuthority() ? 1 : 0);
+        Intent.DestinationY, Intent.Value, HasAuthority() ? 1 : 0, Intent.ProtocolVersion, Intent.FacingX, Intent.FacingY,
+        static_cast<uint32>(Intent.Frontage));
 #endif
     if (GroundHit)
     {
         // The server plans the slots; mark where the formation was sent.
         GroupMoveMarkers.Reset();
+        bGroupMovePreview = false;
         GroupMoveMarkers.Add(*GroundHit);
         GroupMoveMarkersSeconds = FPlatformTime::Seconds();
     }

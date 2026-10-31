@@ -97,13 +97,23 @@ struct Layout {
     return shape == Shape::Dispersed ? layout.dispersedSpacingCm : layout.spacingCm;
 }
 
+// Whether a shape's width is a number of files that a player can set (FORM-FD): the lattice
+// shapes and the Echelons, whose files are the Line's before the turn. A Wedge's width follows
+// its rank count and a Perimeter has no files, so a frontage override never changes them.
+[[nodiscard]] constexpr bool HasFrontage(Shape shape) noexcept {
+    return static_cast<std::size_t>(shape) < kShapeCount && shape != Shape::Perimeter && shape != Shape::Wedge;
+}
+
 // Files per rank of the lattice shapes (Line, Column, Dispersed; an Echelon is a Line turned). A
 // Perimeter has no ranks of files; its rings are described by PerimeterRadius and RingCapacity.
-// A Wedge's rank r holds r + 1 files.
-[[nodiscard]] constexpr std::size_t Frontage(Shape shape, std::size_t count, const Layout& layout) noexcept {
-    const std::size_t width = shape == Shape::Column ? layout.columnFiles
-        : shape == Shape::Dispersed                  ? layout.dispersedFrontage
-                                                     : layout.lineFrontage;
+// A Wedge's rank r holds r + 1 files. `frontageOverride` 0 keeps the shape's default width; any other
+// value replaces it (FORM-FD) and, like the default, is clamped to [1, count].
+[[nodiscard]] constexpr std::size_t Frontage(Shape shape, std::size_t count, const Layout& layout,
+    std::size_t frontageOverride = 0) noexcept {
+    const std::size_t width = frontageOverride != 0 ? frontageOverride
+        : shape == Shape::Column               ? layout.columnFiles
+        : shape == Shape::Dispersed            ? layout.dispersedFrontage
+                                               : layout.lineFrontage;
     return std::max<std::size_t>(1, std::min(count, width));
 }
 
@@ -243,19 +253,20 @@ struct Slot {
 // extend full-width ranks behind it and replace nominal slots that turn out to be illegal.
 // Dispersed ranks are staggered: odd ranks sit half a spacing to the right, and the block is
 // shifted back by a quarter spacing so it stays centred. An Echelon is the Line block turned by
-// EchelonTurn. Perimeter slots come from RingSlots, Wedge slots from WedgeSlots.
+// EchelonTurn, so its frontage override sets the Line's files before the turn. Perimeter slots
+// come from RingSlots, Wedge slots from WedgeSlots; neither takes a frontage.
 [[nodiscard]] inline std::vector<Slot> RelativeSlots(Shape shape, std::size_t count, std::size_t spare,
-    const Layout& layout) {
+    const Layout& layout, std::size_t frontageOverride = 0) {
     if (shape == Shape::Perimeter) return RingSlots(count, spare, layout);
     if (shape == Shape::Wedge) return WedgeSlots(count, spare, layout);
     if (const int side = EchelonSide(shape); side != 0) {
-        std::vector<Slot> slots = RelativeSlots(Shape::Line, count, spare, layout);
+        std::vector<Slot> slots = RelativeSlots(Shape::Line, count, spare, layout, frontageOverride);
         for (Slot& slot : slots) slot = EchelonTurn(slot, side);
         return slots;
     }
     std::vector<Slot> slots;
     if (count == 0) return slots;
-    const std::size_t frontage = Frontage(shape, count, layout);
+    const std::size_t frontage = Frontage(shape, count, layout, frontageOverride);
     const std::size_t ranks = (count + frontage - 1) / frontage;
     const double spacing = ShapeSpacing(shape, layout);
     const double centreRank = static_cast<double>(ranks - 1) * 0.5;
@@ -294,6 +305,69 @@ struct Slot {
     return {-facing.y, facing.x};
 }
 
+// A facing that may cross the network or be stored as an override: finite and of unit length
+// within kFacingUnitTolerance on its squared length.
+inline constexpr double kFacingUnitTolerance = 1e-3;
+
+[[nodiscard]] inline bool IsUnitFacing(Point facing) noexcept {
+    return std::isfinite(facing.x) && std::isfinite(facing.y)
+        && std::abs(facing.x * facing.x + facing.y * facing.y - 1.0) <= kFacingUnitTolerance;
+}
+
+// Right-drag facing and frontage (FORM-FD, RTS_UNIT_FORMATIONS_AND_DISCIPLINE.md §9). The player
+// drags a line on the ground from `start` to `end` (map cm): the formation stands on its midpoint,
+// faces the right-hand perpendicular F = (d.y, -d.x) of the unit drag direction d, so that
+// RightOf(F) = d and the drag runs from the formation's left flank to its right flank, and takes
+// one file per `spacing` of drag length plus one. A drag shorter than one spacing sets the facing
+// only (frontage 0: the shape's default width).
+struct DragFacing {
+    // False for non-finite input, a non-positive or non-finite spacing, or a drag shorter than
+    // kMinDragLengthCm: no direction exists and the gesture falls back to a plain click.
+    bool valid = false;
+    Point anchor;
+    // Unit length when valid; {0, 0} otherwise, never a normalised NaN.
+    Point facing{0.0, 0.0};
+    double lengthCm = 0.0;
+    // Files per rank: 0 keeps the shape's default, otherwise 1..memberCount.
+    std::size_t frontage = 0;
+};
+
+// Below this length a drag has no usable direction. The screen drag threshold that starts a
+// drag (selection::ExceedsDragThreshold) keeps real drags far above it.
+inline constexpr double kMinDragLengthCm = 1.0;
+
+// files = clamp(round(length / spacing) + 1, 1, memberCount), rounding halves up; 0 below one
+// spacing or without members. The ratio is clamped before the integer conversion, so a huge
+// length cannot overflow.
+[[nodiscard]] inline DragFacing DragToFacing(Point start, Point end, double spacingCm, std::size_t memberCount) noexcept {
+    DragFacing drag;
+    if (!IsFinite(start) || !IsFinite(end) || !(spacingCm > 0.0) || !std::isfinite(spacingCm)) return drag;
+    const double dx = end.x - start.x;
+    const double dy = end.y - start.y;
+    const double length = std::hypot(dx, dy);
+    if (!std::isfinite(length) || !(length >= kMinDragLengthCm)) return drag;
+    const Point facing{dy / length, -dx / length};
+    if (!IsUnitFacing(facing)) return drag;
+    drag.valid = true;
+    drag.anchor = {start.x + dx * 0.5, start.y + dy * 0.5};
+    drag.facing = facing;
+    drag.lengthCm = length;
+    if (memberCount == 0 || length < spacingCm) return drag;
+    const double ratio = std::min(length / spacingCm, static_cast<double>(memberCount));
+    const double files = std::floor(ratio + 0.5) + 1.0;
+    drag.frontage = std::clamp<std::size_t>(
+        files >= static_cast<double>(memberCount) ? memberCount : static_cast<std::size_t>(files), 1, memberCount);
+    return drag;
+}
+
+// DragToFacing at the shape's own spacing; a Wedge or Perimeter keeps only the facing.
+[[nodiscard]] inline DragFacing ShapeDrag(Point start, Point end, Shape shape, std::size_t memberCount,
+    const Layout& layout = {}) noexcept {
+    DragFacing drag = DragToFacing(start, end, ShapeSpacing(shape, layout), memberCount);
+    if (!HasFrontage(shape)) drag.frontage = 0;
+    return drag;
+}
+
 [[nodiscard]] constexpr Point ToMap(Point anchor, Point facing, double lateral, double forward) noexcept {
     const Point right = RightOf(facing);
     return {anchor.x + right.x * lateral + facing.x * forward, anchor.y + right.y * lateral + facing.y * forward};
@@ -317,6 +391,12 @@ struct Assignment {
 struct Plan {
     Shape shape = Shape::Line;
     Point facing{1.0, 0.0};
+    // The facing was fixed by the caller (a drag or a regroup) instead of the travel direction.
+    bool fixedFacing = false;
+    // Requested frontage override (0: the shape's default) and the files per rank actually laid
+    // out; 0 for a Wedge, a Perimeter or an unplanned group.
+    std::size_t requestedFrontage = 0;
+    std::size_t frontage = 0;
     // Sorted by member ID; exactly one per distinct member.
     std::vector<Assignment> assignments;
     std::size_t candidatesChecked = 0;
@@ -336,12 +416,17 @@ struct Plan {
 //    rotation); when legal slots run short, the members farthest from the anchor are unplaced;
 //  - a single member goes to the anchor exactly, as an ordinary single-unit order does.
 // `fixedFacing`, when finite and non-zero, replaces the travel direction (a regroup keeps the
-// facing of the move it repairs instead of turning towards wherever the survivors stand).
+// facing of the move it repairs instead of turning towards wherever the survivors stand; a
+// right-drag sets it, FORM-FD). `frontage`, when non-zero, replaces the default files per rank of
+// a shape with frontage (HasFrontage) before any slot is laid out, clamped to the member count; it
+// never changes a Wedge or a Perimeter.
 template <class IsLegal>
 [[nodiscard]] Plan PlanGroupMove(std::span<const Member> input, Point anchor, Shape shape, IsLegal&& isLegal,
-    const Layout& layout = {}, Point fallbackFacing = {1.0, 0.0}, Point fixedFacing = {0.0, 0.0}) {
+    const Layout& layout = {}, Point fallbackFacing = {1.0, 0.0}, Point fixedFacing = {0.0, 0.0},
+    std::size_t frontage = 0) {
     Plan plan;
     plan.shape = shape;
+    plan.requestedFrontage = frontage;
     std::vector<Member> members(input.begin(), input.end());
     std::sort(members.begin(), members.end(), [](const Member& a, const Member& b) { return a.id < b.id; });
     members.erase(std::unique(members.begin(), members.end(), [](const Member& a, const Member& b) { return a.id == b.id; }),
@@ -376,13 +461,16 @@ template <class IsLegal>
               fallbackFacing.y / std::hypot(fallbackFacing.x, fallbackFacing.y)}
         : Point{1.0, 0.0};
     const double fixedLength = std::hypot(fixedFacing.x, fixedFacing.y);
-    plan.facing = IsFinite(fixedFacing) && fixedLength > 0.0 && std::isfinite(fixedLength)
+    plan.fixedFacing = IsFinite(fixedFacing) && fixedLength > 0.0 && std::isfinite(fixedLength);
+    plan.facing = plan.fixedFacing
         ? Point{fixedFacing.x / fixedLength, fixedFacing.y / fixedLength}
         : TravelFacing(centroid, anchor, fallback, layout.minTravelCm);
 
     // Nominal slots first, then spares; keep the first legal ones up to one per member.
     const std::size_t count = members.size();
-    const std::vector<Slot> slots = RelativeSlots(shape, count, count, layout);
+    const std::size_t files = HasFrontage(shape) ? frontage : 0;
+    plan.frontage = HasFrontage(shape) ? Frontage(shape, count, layout, files) : 0;
+    const std::vector<Slot> slots = RelativeSlots(shape, count, count, layout, files);
     struct Chosen {
         std::size_t index;
         Point destination;

@@ -130,15 +130,34 @@ struct IntentPayload {
     double y = 0.0;
     // SetStance: stance::CombatStance; SetAdherence: stance::Adherence; zero otherwise.
     std::uint8_t value = 0;
+    // Move/AttackMove right-drag (FORM-FD, network_protocol 9): {0, 0} faces the travel direction;
+    // otherwise a finite unit facing (IsUnitFacing). Zero for every other operation.
+    double facing_x = 0.0;
+    double facing_y = 0.0;
+    // Move/AttackMove: files per rank, 0 for the shape's default; at most kMaxFormationMembers and
+    // only with an explicit facing. Zero for every other operation.
+    std::uint32_t frontage = 0;
 };
 
 // Shape check only: unused fields must be zero and member lists bounded, unique and non-zero.
 // Ownership, liveness and map bounds are checked against authoritative state afterwards.
 [[nodiscard]] inline FormationRejection CheckIntentShape(const IntentPayload& payload) noexcept {
-    if (payload.op >= kFormationOpCount || !std::isfinite(payload.x) || !std::isfinite(payload.y))
+    if (payload.op >= kFormationOpCount || !std::isfinite(payload.x) || !std::isfinite(payload.y)
+        || !std::isfinite(payload.facing_x) || !std::isfinite(payload.facing_y))
         return FormationRejection::MalformedCommand;
     const auto op = static_cast<FormationOp>(payload.op);
     const bool hasPosition = payload.x != 0.0 || payload.y != 0.0;
+    // FORM-FD: only a Move/AttackMove may carry a facing and a frontage. The facing is the exact
+    // zero sentinel or a unit vector; a frontage needs an explicit facing, so a width can never be
+    // injected without an orientation.
+    const bool hasFacing = payload.facing_x != 0.0 || payload.facing_y != 0.0;
+    if (op == FormationOp::Move || op == FormationOp::AttackMove) {
+        if (hasFacing && !IsUnitFacing({payload.facing_x, payload.facing_y})) return FormationRejection::MalformedCommand;
+        if (payload.frontage > kMaxFormationMembers || (payload.frontage != 0 && !hasFacing))
+            return FormationRejection::MalformedCommand;
+    } else if (hasFacing || payload.frontage != 0) {
+        return FormationRejection::MalformedCommand;
+    }
     if (op == FormationOp::SetStance || op == FormationOp::SetAdherence) {
         const bool valid = op == FormationOp::SetStance ? stance::IsValidStance(payload.value)
                                                         : stance::IsValidAdherence(payload.value);
@@ -195,11 +214,16 @@ struct Formation {
     std::vector<MemberSlot> members; // sorted by ID, unique
     FormationState state = FormationState::Organized;
     std::size_t formedMembers = 0;
-    // The latest formation Move/AttackMove; a regroup reuses its anchor and facing.
+    // The latest formation Move/AttackMove; a regroup reuses its anchor, facing and frontage.
     bool hasDestination = false;
     bool attackMove = false;
     Point anchor;
     Point facing{1.0, 0.0};
+    // FORM-FD: the facing came from a right-drag rather than the travel direction, and the
+    // drag's files per rank (0: the shape's default; always 0 for a Wedge or Perimeter), at most
+    // the member count when it was planned. A plain Move resets both.
+    bool explicitFacing = false;
+    std::size_t frontage = 0;
     std::uint64_t regroupDueStep = 0; // 0: none pending
     std::uint64_t lastRegroupStep = 0;
     std::uint32_t regroups = 0;
@@ -359,24 +383,38 @@ public:
         return change;
     }
 
-    // Plans a formation Move/AttackMove for every current member: a Line/Column block facing
-    // the travel direction, stored as the formation's destination. Every member is marked as
-    // following; the caller submits one ordinary command per returned order.
+    // Plans a formation Move/AttackMove for every current member in the formation's shape, stored
+    // as the formation's destination. Without `fixedFacing` ({0, 0}) the block faces the travel
+    // direction at the shape's default width; a right-drag (FORM-FD) passes a unit facing and an
+    // optional frontage (0: default), which a later regroup reuses. Every member is marked as
+    // following; the caller submits one ordinary command per returned order. A rejection changes
+    // nothing.
     template <class IsLegal, class PositionOf>
     [[nodiscard]] MovePlan PlanMove(std::uint32_t participant, FormationId id, Point anchor, bool attackMove,
-        PositionOf&& positionOf, IsLegal&& isLegal, const Layout& layout = {}) {
+        PositionOf&& positionOf, IsLegal&& isLegal, const Layout& layout = {}, Point fixedFacing = {0.0, 0.0},
+        std::size_t frontage = 0) {
         MovePlan result;
         Formation* formation = MutableOwned(id, participant);
         if (!formation) { result.rejection = FormationRejection::UnknownFormation; return result; }
         if (!IsFinite(anchor)) { result.rejection = FormationRejection::InvalidDestination; return result; }
+        const bool explicitFacing = fixedFacing.x != 0.0 || fixedFacing.y != 0.0;
+        if ((explicitFacing && !IsUnitFacing(fixedFacing)) || frontage > kMaxFormationMembers
+            || (frontage != 0 && !explicitFacing)) {
+            result.rejection = FormationRejection::MalformedCommand;
+            return result;
+        }
         std::vector<Member> members;
         members.reserve(formation->members.size());
         for (const MemberSlot& slot : formation->members) members.push_back({slot.id, positionOf(slot.id)});
-        result.plan = PlanGroupMove(members, anchor, formation->shape, isLegal, layout);
+        const std::size_t files = HasFrontage(formation->shape) ? std::min(frontage, formation->members.size()) : 0;
+        result.plan = PlanGroupMove(members, anchor, formation->shape, isLegal, layout, {1.0, 0.0},
+            explicitFacing ? fixedFacing : Point{0.0, 0.0}, files);
         formation->hasDestination = true;
         formation->attackMove = attackMove;
         formation->anchor = anchor;
         formation->facing = result.plan.facing;
+        formation->explicitFacing = explicitFacing;
+        formation->frontage = files;
         formation->regroupDueStep = 0;
         formation->state = FormationState::Organized;
         for (const Assignment& assignment : result.plan.assignments) {
@@ -444,7 +482,8 @@ public:
     }
 
     // Closes the ranks of a degraded formation: re-plans the members still following its move
-    // towards the same anchor with the same facing and shape, and returns orders only for
+    // towards the same anchor with the same facing, shape and frontage (a dragged width is
+    // clamped to the survivors), and returns orders only for
     // members whose slot changed. Independent members keep their own orders.
     template <class IsLegal, class PositionOf>
     [[nodiscard]] MovePlan PlanRegroup(FormationId id, std::uint64_t step, PositionOf&& positionOf, IsLegal&& isLegal,
@@ -461,7 +500,8 @@ public:
         for (const MemberSlot& slot : formation->members)
             if (slot.following) members.push_back({slot.id, positionOf(slot.id)});
         if (members.empty()) return result;
-        result.plan = PlanGroupMove(members, formation->anchor, formation->shape, isLegal, layout, {1.0, 0.0}, formation->facing);
+        result.plan = PlanGroupMove(members, formation->anchor, formation->shape, isLegal, layout, {1.0, 0.0}, formation->facing,
+            formation->frontage);
         for (const Assignment& assignment : result.plan.assignments) {
             MemberSlot* slot = formation->Find(assignment.id);
             if (!slot) continue;

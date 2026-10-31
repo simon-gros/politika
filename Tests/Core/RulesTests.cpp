@@ -843,6 +843,302 @@ int main() {
         assert(PlanGroupMove(Twenty, Target, Shape::EchelonLeft, Always, BadEchelon).unplaced == 20);
     }
 
+    // FORM-FD right-drag facing and frontage: the drag's midpoint is the anchor, the formation
+    // faces the right-hand perpendicular of the drag (so the drag runs from its left flank to its
+    // right flank) and the drag length sets the files per rank of the shapes that have files.
+    {
+        using namespace politika::formation;
+        const auto Always = [](Point) { return true; };
+        const auto Near = [](Point a, Point b, double tolerance = 1e-9) {
+            return std::abs(a.x - b.x) < tolerance && std::abs(a.y - b.y) < tolerance;
+        };
+        const auto Same = [](const DragFacing& a, const DragFacing& b) {
+            return a.valid == b.valid && a.anchor.x == b.anchor.x && a.anchor.y == b.anchor.y && a.facing.x == b.facing.x
+                && a.facing.y == b.facing.y && a.lengthCm == b.lengthCm && a.frontage == b.frontage;
+        };
+        const double Nan = std::numeric_limits<double>::quiet_NaN();
+        const double Inf = std::numeric_limits<double>::infinity();
+        static_assert(HasFrontage(Shape::Line) && HasFrontage(Shape::Column) && HasFrontage(Shape::Dispersed)
+            && HasFrontage(Shape::EchelonLeft) && HasFrontage(Shape::EchelonRight) && !HasFrontage(Shape::Wedge)
+            && !HasFrontage(Shape::Perimeter) && !HasFrontage(static_cast<Shape>(7)));
+        static_assert(Frontage(Shape::Line, 20, {}, 4) == 4 && Frontage(Shape::Column, 20, {}, 5) == 5
+            && Frontage(Shape::Line, 8, {}, 50) == 8 && Frontage(Shape::Line, 20, {}, 0) == 10 && Frontage(Shape::Dispersed, 20, {}, 1) == 1);
+
+        // Unit facings within 1e-3 on the squared length; the zero sentinel is not a facing.
+        assert(IsUnitFacing({1.0, 0.0}) && IsUnitFacing({0.6, -0.8}) && IsUnitFacing({1.0004, 0.0}));
+        assert(!IsUnitFacing({0.0, 0.0}) && !IsUnitFacing({1.001, 0.0}) && !IsUnitFacing({0.5, 0.0})
+            && !IsUnitFacing({Nan, 1.0}) && !IsUnitFacing({Inf, 0.0}));
+
+        // Left to right along +x: facing (0, -1), whose right is +x; reversed, the same midpoint
+        // and width with the opposite facing.
+        const DragFacing East = DragToFacing({1000.0, 1000.0}, {1600.0, 1000.0}, 150.0, 20);
+        assert(East.valid && Near(East.anchor, {1300.0, 1000.0}) && Near(East.facing, {0.0, -1.0}) && East.frontage == 5);
+        assert(Near(RightOf(East.facing), {1.0, 0.0}) && East.lengthCm == 600.0);
+        const DragFacing West = DragToFacing({1600.0, 1000.0}, {1000.0, 1000.0}, 150.0, 20);
+        assert(West.valid && Near(West.anchor, East.anchor) && West.frontage == East.frontage
+            && Near(West.facing, {-East.facing.x, -East.facing.y}));
+        const DragFacing Up = DragToFacing({0.0, 0.0}, {0.0, 300.0}, 150.0, 20);
+        assert(Up.valid && Near(Up.facing, {1.0, 0.0}) && Near(Up.anchor, {0.0, 150.0}) && Up.frontage == 3);
+        const DragFacing Diagonal = DragToFacing({0.0, 0.0}, {300.0, 300.0}, 150.0, 20);
+        assert(Diagonal.valid && Near(Diagonal.facing, {kHalfSqrt2, -kHalfSqrt2}, 1e-12) && Diagonal.frontage == 4);
+        assert(IsUnitFacing(Diagonal.facing) && Near(RightOf(Diagonal.facing), {kHalfSqrt2, kHalfSqrt2}, 1e-12));
+        // Shorter than one spacing: facing and midpoint, default width.
+        const DragFacing Short = DragToFacing({0.0, 0.0}, {100.0, 0.0}, 150.0, 20);
+        assert(Short.valid && Near(Short.facing, {0.0, -1.0}) && Near(Short.anchor, {50.0, 0.0}) && Short.frontage == 0);
+        // Exactly one spacing: two files, whose span equals the drag.
+        assert(DragToFacing({0.0, 0.0}, {150.0, 0.0}, 150.0, 20).frontage == 2);
+        assert(DragToFacing({0.0, 0.0}, {149.999, 0.0}, 150.0, 20).frontage == 0);
+        // Rounding: halves round up, deterministically.
+        assert(DragToFacing({0.0, 0.0}, {225.0, 0.0}, 150.0, 20).frontage == 3);
+        assert(DragToFacing({0.0, 0.0}, {224.999, 0.0}, 150.0, 20).frontage == 2);
+        assert(DragToFacing({0.0, 0.0}, {375.0, 0.0}, 150.0, 20).frontage == 4);
+        // Clamped to the members, without overflow on a huge drag.
+        assert(DragToFacing({0.0, 0.0}, {3000.0, 0.0}, 150.0, 8).frontage == 8);
+        assert(DragToFacing({0.0, 0.0}, {1e300, 0.0}, 150.0, kMaxFormationMembers).frontage == kMaxFormationMembers);
+        assert(DragToFacing({0.0, 0.0}, {600.0, 0.0}, 150.0, 1).frontage == 1);
+        const DragFacing Nobody = DragToFacing({0.0, 0.0}, {600.0, 0.0}, 150.0, 0);
+        assert(Nobody.valid && Nobody.frontage == 0);
+        // No direction: never a malformed facing.
+        for (const DragFacing& Bad : {DragToFacing({5.0, 5.0}, {5.0, 5.0}, 150.0, 20), DragToFacing({5.0, 5.0}, {5.5, 5.0}, 150.0, 20),
+                 DragToFacing({Nan, 0.0}, {300.0, 0.0}, 150.0, 20), DragToFacing({0.0, 0.0}, {Inf, 0.0}, 150.0, 20),
+                 DragToFacing({0.0, 0.0}, {300.0, Nan}, 150.0, 20), DragToFacing({0.0, 0.0}, {300.0, 0.0}, 0.0, 20),
+                 DragToFacing({0.0, 0.0}, {300.0, 0.0}, -150.0, 20), DragToFacing({0.0, 0.0}, {300.0, 0.0}, Inf, 20),
+                 DragToFacing({0.0, 0.0}, {300.0, 0.0}, Nan, 20), DragToFacing({-1e308, 0.0}, {1e308, 0.0}, 150.0, 20)})
+            assert(!Bad.valid && Bad.facing.x == 0.0 && Bad.facing.y == 0.0 && Bad.frontage == 0);
+        // Repeatable to the bit.
+        assert(Same(DragToFacing({12.3, 45.6}, {789.1, -234.5}, 150.0, 20), DragToFacing({12.3, 45.6}, {789.1, -234.5}, 150.0, 20)));
+        // Per shape: Dispersed counts its own 450 cm spacing; Wedge and Perimeter keep the facing only.
+        assert(ShapeDrag({0.0, 0.0}, {900.0, 0.0}, Shape::Dispersed, 20).frontage == 3);
+        assert(ShapeDrag({0.0, 0.0}, {900.0, 0.0}, Shape::Line, 20).frontage == 7);
+        assert(ShapeDrag({0.0, 0.0}, {900.0, 0.0}, Shape::EchelonRight, 20).frontage == 7);
+        for (const Shape Fixed : {Shape::Wedge, Shape::Perimeter}) {
+            const DragFacing Facing = ShapeDrag({0.0, 0.0}, {900.0, 0.0}, Fixed, 20);
+            assert(Facing.valid && Facing.frontage == 0 && Near(Facing.facing, {0.0, -1.0}));
+        }
+
+        // Zero override is the default for every shape.
+        for (std::size_t Index = 0; Index < kShapeCount; ++Index) {
+            const Shape Each = static_cast<Shape>(Index);
+            const std::vector<Slot> Default = RelativeSlots(Each, 20, 20, {});
+            const std::vector<Slot> Zero = RelativeSlots(Each, 20, 20, {}, 0);
+            assert(Default.size() == Zero.size());
+            for (std::size_t Slot = 0; Slot < Default.size(); ++Slot)
+                assert(Default[Slot].lateral == Zero[Slot].lateral && Default[Slot].forward == Zero[Slot].forward
+                    && Default[Slot].rank == Zero[Slot].rank);
+        }
+        const auto Extent = [](const std::vector<Slot>& Slots, std::size_t Count) {
+            double MinL = Slots[0].lateral, MaxL = MinL, MinF = Slots[0].forward, MaxF = MinF;
+            for (std::size_t Index = 0; Index < Count; ++Index) {
+                MinL = std::min(MinL, Slots[Index].lateral); MaxL = std::max(MaxL, Slots[Index].lateral);
+                MinF = std::min(MinF, Slots[Index].forward); MaxF = std::max(MaxF, Slots[Index].forward);
+            }
+            return Point{MaxL - MinL, MaxF - MinF};
+        };
+        // Line of twenty at four files: five full ranks, (4 - 1) x 150 across, 4 x 150 deep, centred.
+        const std::vector<Slot> Line4 = RelativeSlots(Shape::Line, 20, 20, {}, 4);
+        assert(Line4.size() == 40 && Near(Extent(Line4, 20), {450.0, 600.0}) && Line4[19].rank == 4 && Line4[20].rank == 5);
+        assert(Line4[0].lateral == -225.0 && Line4[3].lateral == 225.0 && Line4[0].forward == 300.0 && Line4[19].forward == -300.0);
+        // Spares continue four-file ranks behind.
+        assert(Line4[20].lateral == -225.0 && Line4[23].lateral == 225.0 && Line4[24].rank == 6);
+        // A partial last rank stays centred: ten at four files are ranks of 4, 4 and 2.
+        const std::vector<Slot> Line10 = RelativeSlots(Shape::Line, 10, 0, {}, 4);
+        assert(Line10[8].rank == 2 && Line10[8].lateral == -75.0 && Line10[9].lateral == 75.0 && Line10[0].lateral == -225.0);
+        const std::vector<Slot> Column5 = RelativeSlots(Shape::Column, 20, 0, {}, 5);
+        assert(Near(Extent(Column5, 20), {600.0, 450.0}) && Column5[19].rank == 3);
+        const std::vector<Slot> Spread3 = RelativeSlots(Shape::Dispersed, 8, 0, {}, 3);
+        assert(Spread3[7].rank == 2 && Spread3[6].rank == 2 && Spread3[5].rank == 1);
+        // Echelon: the four-file Line turned 45 degrees; the held-back flank is the right (Echelon
+        // Right) or left (Echelon Left) end of the front rank, 3 x 150 / sqrt(2) behind the other.
+        const std::vector<Slot> Line12 = RelativeSlots(Shape::Line, 12, 12, {}, 4);
+        const std::vector<Slot> Right12 = RelativeSlots(Shape::EchelonRight, 12, 12, {}, 4);
+        const std::vector<Slot> Left12 = RelativeSlots(Shape::EchelonLeft, 12, 12, {}, 4);
+        assert(Right12.size() == 24 && Left12.size() == 24);
+        for (std::size_t Index = 0; Index < 24; ++Index) {
+            const Slot TurnedRight = EchelonTurn(Line12[Index], 1);
+            const Slot TurnedLeft = EchelonTurn(Line12[Index], -1);
+            assert(Right12[Index].lateral == TurnedRight.lateral && Right12[Index].forward == TurnedRight.forward
+                && Left12[Index].lateral == TurnedLeft.lateral && Left12[Index].forward == TurnedLeft.forward
+                && Right12[Index].rank == Line12[Index].rank);
+        }
+        assert(std::abs(Right12[0].forward - Right12[3].forward - 450.0 * kHalfSqrt2) < 1e-9);
+        assert(std::abs(Left12[3].forward - Left12[0].forward - 450.0 * kHalfSqrt2) < 1e-9);
+        // Wedge and Perimeter ignore any frontage.
+        for (const Shape Fixed : {Shape::Wedge, Shape::Perimeter}) {
+            const std::vector<Slot> Plain = RelativeSlots(Fixed, 20, 20, {});
+            const std::vector<Slot> Wide = RelativeSlots(Fixed, 20, 20, {}, 4);
+            assert(Plain.size() == Wide.size());
+            for (std::size_t Index = 0; Index < Plain.size(); ++Index)
+                assert(Plain[Index].lateral == Wide[Index].lateral && Plain[Index].forward == Wide[Index].forward);
+        }
+
+        // Planned moves with an explicit facing and frontage.
+        std::vector<Member> Twenty;
+        for (EntityId Id = 1; Id <= 20; ++Id)
+            Twenty.push_back({Id, {500.0 + static_cast<double>(Id % 5) * 100.0, 500.0 + static_cast<double>(Id / 5) * 100.0}});
+        const std::vector<Member> Reversed(Twenty.rbegin(), Twenty.rend());
+        const Point Target{4000.0, 600.0};
+        // Facing north (-y here) although the group travels east: the drag decides.
+        const Point North{0.0, -1.0};
+        const Plan Wide = PlanGroupMove(Twenty, Target, Shape::Line, Always, {}, {1.0, 0.0}, North, 4);
+        assert(Wide.fixedFacing && Near(Wide.facing, North) && Wide.requestedFrontage == 4 && Wide.frontage == 4);
+        assert(Wide.unplaced == 0 && Wide.candidatesChecked == 20 && Wide.candidatesRejected == 0);
+        assert(std::abs(MinimumSeparation(Wide) - 150.0) < 1e-9);
+        double MinAcross = Inf, MaxAcross = -Inf, MinAlong = Inf, MaxAlong = -Inf;
+        Point Sum{0.0, 0.0};
+        for (const Assignment& A : Wide.assignments) {
+            const Point Offset{A.destination.x - Target.x, A.destination.y - Target.y};
+            const double Across = Offset.x * RightOf(North).x + Offset.y * RightOf(North).y;
+            const double Along = Offset.x * North.x + Offset.y * North.y;
+            MinAcross = std::min(MinAcross, Across); MaxAcross = std::max(MaxAcross, Across);
+            MinAlong = std::min(MinAlong, Along); MaxAlong = std::max(MaxAlong, Along);
+            Sum = {Sum.x + A.destination.x, Sum.y + A.destination.y};
+        }
+        assert(std::abs(MaxAcross - MinAcross - 450.0) < 1e-9 && std::abs(MaxAlong - MinAlong - 600.0) < 1e-9);
+        assert(Near({Sum.x / 20.0, Sum.y / 20.0}, Target, 1e-9));
+        // The same plan from any input order.
+        const Plan WideAgain = PlanGroupMove(Reversed, Target, Shape::Line, Always, {}, {1.0, 0.0}, North, 4);
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(WideAgain.assignments[Index].id == Wide.assignments[Index].id
+                && WideAgain.assignments[Index].destination.x == Wide.assignments[Index].destination.x
+                && WideAgain.assignments[Index].destination.y == Wide.assignments[Index].destination.y);
+        // Zero frontage is the default width; an over-wide frontage is clamped to the members.
+        const Plan Default = PlanGroupMove(Twenty, Target, Shape::Line, Always, {}, {1.0, 0.0}, North);
+        const Plan ZeroWidth = PlanGroupMove(Twenty, Target, Shape::Line, Always, {}, {1.0, 0.0}, North, 0);
+        assert(Default.frontage == 10 && ZeroWidth.frontage == 10 && !PlanGroupMove(Twenty, Target, Shape::Line, Always).fixedFacing);
+        for (std::size_t Index = 0; Index < 20; ++Index)
+            assert(Near(Default.assignments[Index].destination, ZeroWidth.assignments[Index].destination, 0.0 + 1e-12));
+        assert(PlanGroupMove(Twenty, Target, Shape::Line, Always, {}, {1.0, 0.0}, North, 500).frontage == 20);
+        // Reversing the drag mirrors the block through the anchor (full ranks).
+        const Plan Mirrored = PlanGroupMove(Twenty, Target, Shape::Line, Always, {}, {1.0, 0.0}, {0.0, 1.0}, 4);
+        for (const Assignment& A : Wide.assignments) {
+            const Point Reflected{2.0 * Target.x - A.destination.x, 2.0 * Target.y - A.destination.y};
+            assert(std::any_of(Mirrored.assignments.begin(), Mirrored.assignments.end(),
+                [&](const Assignment& B) { return Near(B.destination, Reflected, 1e-9); }));
+        }
+        // Every lattice shape and Echelon keeps its spacing and its legality budget.
+        for (const Shape Each : {Shape::Line, Shape::Column, Shape::Dispersed, Shape::EchelonLeft, Shape::EchelonRight}) {
+            std::size_t Probes = 0;
+            const auto South = [&Probes](Point P) { ++Probes; return P.y <= 900.0; };
+            const Plan Blocked = PlanGroupMove(Twenty, Target, Each, South, {}, {1.0, 0.0}, North, 3);
+            assert(Probes == Blocked.candidatesChecked && Probes <= 40 && Blocked.frontage == 3);
+            assert(MinimumSeparation(Blocked) >= ShapeSpacing(Each, {}) - 1e-9);
+            const Plan Open = PlanGroupMove(Twenty, Target, Each, Always, {}, {1.0, 0.0}, North, 3);
+            const Plan OpenAgain = PlanGroupMove(Reversed, Target, Each, Always, {}, {1.0, 0.0}, North, 3);
+            assert(Open.unplaced == 0 && std::abs(MinimumSeparation(Open) - ShapeSpacing(Each, {})) < 1e-9);
+            for (std::size_t Index = 0; Index < 20; ++Index)
+                assert(OpenAgain.assignments[Index].id == Open.assignments[Index].id
+                    && Near(OpenAgain.assignments[Index].destination, Open.assignments[Index].destination, 0.0 + 1e-12));
+        }
+        // Wedge and Perimeter: the dragged facing applies, the frontage never does.
+        for (const Shape Fixed : {Shape::Wedge, Shape::Perimeter}) {
+            const Plan Facing = PlanGroupMove(Twenty, Target, Fixed, Always, {}, {1.0, 0.0}, North, 0);
+            const Plan Framed = PlanGroupMove(Twenty, Target, Fixed, Always, {}, {1.0, 0.0}, North, 4);
+            assert(Near(Facing.facing, North) && Facing.frontage == 0 && Framed.frontage == 0 && Framed.requestedFrontage == 4);
+            for (std::size_t Index = 0; Index < 20; ++Index)
+                assert(Framed.assignments[Index].id == Facing.assignments[Index].id
+                    && Framed.assignments[Index].slot == Facing.assignments[Index].slot
+                    && Near(Framed.assignments[Index].destination, Facing.assignments[Index].destination, 0.0 + 1e-12));
+        }
+
+        // A formation stores a dragged facing and frontage, its regroup reuses them clamped to the
+        // survivors, and a plain move resets both.
+        const auto At = [](EntityId Id) { return Point{1000.0 + static_cast<double>(Id) * 10.0, 1000.0}; };
+        std::vector<Entity> Eight;
+        for (EntityId Id = 1; Id <= 8; ++Id) { Entity E{Id, 1}; Eight.push_back(E); }
+        Registry Formations;
+        const FormationId Id = Formations.Form(1, Eight, Shape::Line, 1).formed;
+        assert(Id && !Formations.Find(Id)->explicitFacing && Formations.Find(Id)->frontage == 0);
+        const Formation Before = *Formations.Find(Id);
+        const auto Unchanged = [&](const Formation& Now) {
+            return Now.hasDestination == Before.hasDestination && Now.explicitFacing == Before.explicitFacing
+                && Now.frontage == Before.frontage && Now.anchor.x == Before.anchor.x && Now.anchor.y == Before.anchor.y
+                && Now.facing.x == Before.facing.x && Now.facing.y == Before.facing.y
+                && Now.FollowingCount() == Before.FollowingCount();
+        };
+        // Malformed overrides and a foreign participant are rejected without any change.
+        assert(Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {0.5, 0.0}).rejection == FormationRejection::MalformedCommand);
+        assert(Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {Nan, 1.0}).rejection == FormationRejection::MalformedCommand);
+        assert(Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {0.0, 1.0}, kMaxFormationMembers + 1).rejection
+            == FormationRejection::MalformedCommand);
+        assert(Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {0.0, 0.0}, 3).rejection == FormationRejection::MalformedCommand);
+        assert(Formations.PlanMove(2, Id, {3000, 1000}, false, At, Always, {}, {0.0, 1.0}, 3).rejection == FormationRejection::UnknownFormation);
+        assert(Unchanged(*Formations.Find(Id)));
+        const MovePlan Dragged = Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {0.0, 1.0}, 4);
+        assert(Dragged.rejection == FormationRejection::None && Dragged.orders.size() == 8 && Dragged.plan.frontage == 4
+            && Dragged.plan.fixedFacing && Near(Dragged.plan.facing, {0.0, 1.0}));
+        const Formation* Stored = Formations.Find(Id);
+        assert(Stored->explicitFacing && Stored->frontage == 4 && Near(Stored->facing, {0.0, 1.0}) && Near(Stored->anchor, {3000, 1000}));
+        const Formation AfterDrag = *Stored;
+        // A rejected request after an accepted drag leaves the stored drag in place.
+        assert(Formations.PlanMove(1, Id, {3000, 1000}, false, At, Always, {}, {2.0, 0.0}, 4).rejection == FormationRejection::MalformedCommand);
+        assert(Stored->explicitFacing && Stored->frontage == AfterDrag.frontage && Near(Stored->facing, AfterDrag.facing));
+        // Three losses: one regroup, same facing, four files for five survivors.
+        (void)Formations.MemberLost(8, 100);
+        (void)Formations.MemberLost(7, 101);
+        (void)Formations.MemberLost(6, 102);
+        const MovePlan Closed = Formations.PlanRegroup(Id, 140, At, Always);
+        assert(Closed.rejection == FormationRejection::None && Closed.plan.assignments.size() == 5 && Stored->regroups == 1);
+        assert(Closed.plan.fixedFacing && Near(Closed.plan.facing, {0.0, 1.0}) && Closed.plan.frontage == 4 && Closed.plan.requestedFrontage == 4);
+        assert(Stored->explicitFacing && Stored->frontage == 4);
+        // Two more losses: three survivors, so the dragged width is clamped to three files.
+        (void)Formations.MemberLost(5, 200);
+        (void)Formations.MemberLost(4, 201);
+        const MovePlan Narrow = Formations.PlanRegroup(Id, 240, At, Always);
+        assert(Narrow.plan.assignments.size() == 3 && Narrow.plan.frontage == 3 && Near(Narrow.plan.facing, {0.0, 1.0}) && Stored->regroups == 2);
+        // A plain move faces the travel direction at the default width again.
+        const MovePlan Plain = Formations.PlanMove(1, Id, {5000, 1000}, false, At, Always);
+        assert(Plain.rejection == FormationRejection::None && !Plain.plan.fixedFacing && Near(Plain.plan.facing, {1.0, 0.0}));
+        assert(!Stored->explicitFacing && Stored->frontage == 0 && Plain.plan.frontage == 3);
+        // A wider-than-the-formation drag is stored at the member count.
+        (void)Formations.PlanMove(1, Id, {5000, 1000}, false, At, Always, {}, {0.0, 1.0}, 20);
+        assert(Stored->frontage == 3);
+        // A Wedge formation keeps the dragged facing but never a frontage.
+        std::vector<Entity> Others;
+        for (EntityId Other = 11; Other <= 16; ++Other) { Entity E{Other, 1}; Others.push_back(E); }
+        const FormationId Arrow = Formations.Form(1, Others, Shape::Wedge, 300).formed;
+        const MovePlan Pointed = Formations.PlanMove(1, Arrow, {3000, 3000}, false, At, Always, {}, {-1.0, 0.0}, 4);
+        assert(Pointed.rejection == FormationRejection::None && Near(Pointed.plan.facing, {-1.0, 0.0}) && Pointed.plan.frontage == 0);
+        assert(Formations.Find(Arrow)->explicitFacing && Formations.Find(Arrow)->frontage == 0);
+        // Re-forming starts clean: no inherited drag.
+        const FormationId Again = Formations.Form(1, std::span<const Entity>(Others.data(), 3), Shape::Line, 301).formed;
+        assert(Again && !Formations.Find(Again)->explicitFacing && Formations.Find(Again)->frontage == 0
+            && !Formations.Find(Again)->hasDestination);
+        (void)Formations.Clear();
+        assert(Formations.Empty());
+
+        // Wire shape (network_protocol 9): facing and frontage only on Move/AttackMove.
+        const EntityId Two[] = {4, 7};
+        const EntityId Dup[] = {4, 4};
+        const auto Move = [](double FacingX, double FacingY, std::uint32_t Files, std::uint8_t Op = 2) {
+            return CheckIntentShape({Op, 3, 0, {}, 10.0, 20.0, 0, FacingX, FacingY, Files});
+        };
+        assert(Move(0.0, 0.0, 0) == FormationRejection::None);
+        assert(Move(0.0, 1.0, 0) == FormationRejection::None && Move(1.0, 0.0, 0) == FormationRejection::None);
+        assert(Move(0.6, -0.8, 4) == FormationRejection::None && Move(kHalfSqrt2, kHalfSqrt2, 64) == FormationRejection::None);
+        assert(Move(1.0004, 0.0, 1) == FormationRejection::None && Move(0.0, -1.0, 7, 3) == FormationRejection::None);
+        assert(Move(kHalfSqrt2, kHalfSqrt2, 65) == FormationRejection::MalformedCommand);
+        assert(Move(0.0, 0.0, 3) == FormationRejection::MalformedCommand);
+        assert(Move(0.5, 0.0, 0) == FormationRejection::MalformedCommand && Move(0.0, 0.3, 0) == FormationRejection::MalformedCommand);
+        assert(Move(2.0, 0.0, 0) == FormationRejection::MalformedCommand && Move(1.001, 0.0, 0) == FormationRejection::MalformedCommand);
+        assert(Move(Nan, 0.0, 0) == FormationRejection::MalformedCommand && Move(0.0, Inf, 0) == FormationRejection::MalformedCommand);
+        assert(Move(Nan, Nan, 0) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 0, Two, 0.0, 0.0, 0, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({0, 0, 0, Two, 0.0, 0.0, 0, 0.0, 0.0, 2}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({1, 0, 0, Two, 0.0, 0.0, 0, 1.0, 0.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({4, 3, 0, {}, 0.0, 0.0, 0, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({4, 3, 0, {}, 0.0, 0.0, 0, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({5, 3, 0, {}, 0.0, 0.0, 1, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({6, 3, 0, {}, 0.0, 0.0, 1, 0.0, 0.0, 1}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({4, 3, 0, {}, 0.0, 0.0, 0, Nan, 0.0, 0}) == FormationRejection::MalformedCommand);
+        // The existing rules still hold with the new fields zero.
+        assert(CheckIntentShape({0, 0, 0, Two, 0.0, 0.0, 0, 0.0, 0.0, 0}) == FormationRejection::None);
+        assert(CheckIntentShape({0, 0, 0, Dup, 0.0, 0.0, 0, 0.0, 0.0, 0}) == FormationRejection::DuplicateMember);
+        assert(CheckIntentShape({2, 0, 0, {}, 10.0, 20.0, 0, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 1, {}, 10.0, 20.0, 0, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 0, Two, 10.0, 20.0, 0, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+        assert(CheckIntentShape({2, 3, 0, {}, 10.0, 20.0, 1, 0.0, 1.0, 0}) == FormationRejection::MalformedCommand);
+    }
+
     // FORM-F3 formation instances: explicit Form/Release, one formation per unit, member loss,
     // independent overrides and one bounded regroup per loss window.
     {

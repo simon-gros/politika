@@ -1569,6 +1569,527 @@ bool FPolitikaMultiplayerGroupMoveShapeTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerGroupMoveFacingTest,
+    "Politika.RTS.Multiplayer.GroupMoveFacing",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// FORM-FD: the right-button gesture through the production controller (press, held samples,
+// release, cancel), the ordinary group planner it feeds and the server's formation intake. The
+// viewport is replaced by a cursor, a held-button flag and a ground probe that maps a screen point
+// to the world point 2000 cm lower in X and Y (screen pixels stay positive), so a drag's screen
+// and ground directions and lengths coincide.
+bool FPolitikaMultiplayerGroupMoveFacingTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    namespace pf = politika::formation;
+    using pf::Shape;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    if (!TestTrue(TEXT("Host and enemy are bound"), HostId != 0 && EnemyId != 0)) return false;
+
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 8; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 4) * 40.0, -1200.0 + (Index / 4) * 40.0}));
+    APolitikaPrototypeUnit* EnemyUnit = F.AddUnit(EnemyId, {1500, 1500});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !EnemyUnit)) return false;
+    TArray<FVector> Home;
+    for (const APolitikaPrototypeUnit* Unit : Own) Home.Add(Unit->GetActorLocation());
+    const auto ResetPositions = [&] { for (int32 Index = 0; Index < Own.Num(); ++Index) Own[Index]->SetActorLocation(Home[Index]); };
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    if (!TestEqual(TEXT("Eight own units selected"), Host->GetCommandableSelectedUnits(F.Match).Num(), 8)) return false;
+
+    int32 SlotProbes = 0;
+    Host->GroupMoveSlotProbeForTest = [&SlotProbes](const FVector2D&) { ++SlotProbes; return true; };
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    // Ground everywhere inside the map, except a "cliff" corner used for the invalid-endpoint case.
+    constexpr double ScreenOffset = 2000.0;
+    Host->OrderGroundProbeForTest = [](const FVector2D& Screen, FVector& Out)
+    {
+        Out = FVector(Screen.X - ScreenOffset, Screen.Y - ScreenOffset, 42.0);
+        return !(Out.X > 1700.0 && Out.Y > 1700.0);
+    };
+    Host->OrderButtonDownForTest = true;
+
+    using APC = APolitikaPrototypePlayerController;
+    // Positions below are world X/Y; the cursor is the matching screen point.
+    const auto Hit = [](double X, double Y) { FHitResult Result; Result.ImpactPoint = FVector(X, Y, 42.0); Result.Location = Result.ImpactPoint; return Result; };
+    const auto Press = [&](double X, double Y)
+    {
+        Host->OrderButtonDownForTest = true;
+        Host->OrderCursorForTest = FVector2D(X + ScreenOffset, Y + ScreenOffset);
+        Host->PressOrderAt(F.Match, Host->GetCommandableSelectedUnits(F.Match), Hit(X, Y),
+            FVector2D(X + ScreenOffset, Y + ScreenOffset));
+    };
+    // A held sample; the preview throttle is reset so each sample replans (real time does not
+    // advance in this world).
+    const auto Drag = [&](double X, double Y, bool bForcePreview = true)
+    {
+        Host->OrderCursorForTest = FVector2D(X + ScreenOffset, Y + ScreenOffset);
+        if (bForcePreview) Host->OrderPress.bPreviewTimed = false;
+        Host->UpdateOrderPress();
+    };
+    const auto Release = [&] { Host->OrderButtonDownForTest = false; Host->EndOrderPress(); Host->OrderButtonDownForTest = true; };
+    auto Destinations = [&F]()
+    {
+        TMap<uint64, FVector> Out;
+        for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+            if (const APolitikaPrototypeUnit* Unit = Pending.Unit.Get()) Out.Add(Unit->GetStableId(), Pending.Destination);
+        return Out;
+    };
+    auto MinSeparation = [](const TMap<uint64, FVector>& Points)
+    {
+        double Best = TNumericLimits<double>::Max();
+        for (const auto& A : Points)
+            for (const auto& B : Points)
+                if (A.Key < B.Key) Best = FMath::Min(Best, FVector::Dist2D(A.Value, B.Value));
+        return Best;
+    };
+    auto Centroid = [](const TMap<uint64, FVector>& Points)
+    {
+        FVector2D Sum(0.0, 0.0);
+        for (const auto& Entry : Points) Sum += FVector2D(Entry.Value.X, Entry.Value.Y);
+        return Points.IsEmpty() ? Sum : Sum / static_cast<double>(Points.Num());
+    };
+    // Extent across RightOf(facing) and along the facing.
+    auto Frame = [](const TMap<uint64, FVector>& Points, const FVector2D& Facing)
+    {
+        const FVector2D Right(-Facing.Y, Facing.X);
+        double MinA = TNumericLimits<double>::Max(), MaxA = -MinA, MinF = MinA, MaxF = -MinA;
+        for (const auto& Entry : Points)
+        {
+            const FVector2D P(Entry.Value.X, Entry.Value.Y);
+            MinA = FMath::Min(MinA, FVector2D::DotProduct(P, Right)); MaxA = FMath::Max(MaxA, FVector2D::DotProduct(P, Right));
+            MinF = FMath::Min(MinF, FVector2D::DotProduct(P, Facing)); MaxF = FMath::Max(MaxF, FVector2D::DotProduct(P, Facing));
+        }
+        return FVector2D(MaxA - MinA, MaxF - MinF);
+    };
+    auto MaxSpan = [](const TMap<uint64, FVector>& Points)
+    {
+        double Best = 0.0;
+        for (const auto& A : Points)
+            for (const auto& B : Points) Best = FMath::Max(Best, FVector::Dist2D(A.Value, B.Value));
+        return Best;
+    };
+    const FVector2D South(0.0, -1.0); // a west-to-east drag faces -Y
+    const FVector2D North(0.0, 1.0);
+
+    // 8 (plain click): a press and release without movement is the ordinary FORM-F2 click: the
+    // pressed point, the travel facing and the default ten-file Line (one rank of eight).
+    TestTrue(TEXT("Line is the default group-move shape"), Host->GetGroupMoveShape() == Shape::Line);
+    const int32 BatchesBefore = Host->CommandBatches.Num();
+    Press(-300.0, -1180.0);
+    TestTrue(TEXT("FD-A23 an eligible multi-unit ground press waits for its release"),
+        Host->OrderPress.State == APC::EOrderPress::Pending && F.Match->PendingOrders.IsEmpty());
+    Drag(-298.0, -1179.0);
+    TestTrue(TEXT("FD-A25 a sub-threshold wobble stays a click"), Host->OrderPress.State == APC::EOrderPress::Pending);
+    Release();
+    TMap<uint64, FVector> Click = Destinations();
+    bool bOneRank = Click.Num() == 8;
+    for (const auto& Entry : Click) bOneRank &= FMath::IsNearlyEqual(Entry.Value.X, -300.0, 0.01);
+    TestTrue(TEXT("FD-A25 a plain click faces the travel direction with the default frontage"), bOneRank
+        && FVector2D::Distance(Centroid(Click), FVector2D(-300.0, -1180.0)) < 0.01 && FMath::Abs(MinSeparation(Click) - 150.0) < 0.01);
+    TestEqual(TEXT("FD-A23 the click is one batch"), Host->CommandBatches.Num(), BatchesBefore + 1);
+    TestTrue(TEXT("FD-A23 the gesture is over"), Host->OrderPress.State == APC::EOrderPress::Idle);
+    F.Step();
+    TestEqual(TEXT("FD-A25 every clicked member is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+    ResetPositions();
+
+    // 1, 2 (dragged Line of eight, four files): west to east over 450 cm, so the Line faces -Y,
+    // its 4 files span the drag exactly and its centre is the drag's midpoint.
+    SlotProbes = 0;
+    Press(-600.0, -1400.0);
+    Drag(-450.0, -1400.0);
+    TestTrue(TEXT("FD-A23 crossing the screen threshold starts a drag"), Host->OrderPress.State == APC::EOrderPress::Dragging);
+    Drag(-150.0, -1400.0);
+    TArray<FVector> Markers;
+    float Alpha = 0.0f;
+    bool bPreview = false;
+    TestTrue(TEXT("FD-A31 the preview shows one ring per member"), Host->GetGroupMoveMarkers(Markers, Alpha, &bPreview)
+        && bPreview && Markers.Num() == 8 && Alpha == 1.0f);
+    TestEqual(TEXT("FD-A31 the preview sends nothing"), F.Match->PendingOrders.Num(), 0);
+    TestEqual(TEXT("FD-A31 the preview adds no batch"), Host->CommandBatches.Num(), BatchesBefore + 1);
+    TestTrue(TEXT("FD-A30 a preview replan checks at most two slots per member"), SlotProbes > 0 && SlotProbes <= 2 * 8 * Host->OrderPress.Replans);
+    TestTrue(TEXT("FD-A09 the preview plans four files"), Host->OrderPress.PlannedFrontage == 4 && Host->OrderPress.Drag.frontage == 4);
+    APC::FOrderDragView View;
+    TestTrue(TEXT("FD-A33 the HUD view reports the drag"), Host->GetOrderDragView(View) && View.bEndValid && View.bPlanned
+        && View.Frontage == 4 && !View.bDefaultFrontage && View.Shape == Shape::Line);
+    // The throttle: a 2 px move after 0.1 s, or a 10 px move inside 0.1 s, does not replan.
+    const int32 Replans = Host->OrderPress.Replans;
+    Host->OrderPress.PreviewSeconds -= 1.0;
+    Drag(-148.0, -1400.0, false);
+    Host->OrderPress.PreviewSeconds += 1.0;
+    Drag(-140.0, -1400.0, false);
+    TestEqual(TEXT("FD-A29 the preview is not replanned for a 2 px move or within 0.1 s"), Host->OrderPress.Replans, Replans);
+    Drag(-150.0, -1400.0);
+    const TArray<FVector> PreviewMarkers = Markers;
+    Release();
+    TMap<uint64, FVector> Line = Destinations();
+    TestEqual(TEXT("FD-A43 one move per member"), Line.Num(), 8);
+    TestEqual(TEXT("FD-A23 the drag commits once"), Host->CommandBatches.Num(), BatchesBefore + 2);
+    TestTrue(TEXT("FD-A07 the line is centred on the drag midpoint"), FVector2D::Distance(Centroid(Line), FVector2D(-375.0, -1400.0)) < 0.01);
+    TestTrue(TEXT("FD-A06/A10 four files across the drag, two ranks along the facing"),
+        Frame(Line, South).Equals(FVector2D(450.0, 150.0), 0.01) && FMath::Abs(MinSeparation(Line) - 150.0) < 0.01);
+    bool bFrontRank = true;
+    for (const auto& Entry : Line)
+        bFrontRank &= FMath::IsNearlyEqual(Entry.Value.Y, -1475.0, 0.01) || FMath::IsNearlyEqual(Entry.Value.Y, -1325.0, 0.01);
+    TestTrue(TEXT("FD-A06 the ranks are perpendicular to the -Y facing"), bFrontRank);
+    bool bSameAsPreview = PreviewMarkers.Num() == 8;
+    for (const FVector& Marker : PreviewMarkers)
+    {
+        bool bFound = false;
+        for (const auto& Entry : Line) bFound |= FVector::Dist2D(Entry.Value, Marker) < 0.01;
+        bSameAsPreview &= bFound;
+    }
+    TestTrue(TEXT("FD-A32 the committed slots are the previewed slots"), bSameAsPreview);
+    TestTrue(TEXT("FD-A31 the commit replaces the preview with the sent rings"), Host->GetGroupMoveMarkers(Markers, Alpha, &bPreview) && !bPreview);
+    // 12: one commit only.
+    Host->EndOrderPress();
+    Host->UpdateOrderPress();
+    TestEqual(TEXT("FD-A23 a second release or tick sends nothing more"), Host->CommandBatches.Num(), BatchesBefore + 2);
+    F.Step();
+    TestEqual(TEXT("FD-A43/22 every dragged member is admitted on its own"), Host->CommandBatches.Last().Tally.accepted, 8u);
+    TMap<uint64, FVector> DraggedLine = Line;
+    ResetPositions();
+
+    // 11: the reverse drag has the same midpoint and width and the opposite facing: the block is
+    // the forward one mirrored through the midpoint.
+    Press(-150.0, -1400.0);
+    Drag(-450.0, -1400.0);
+    Drag(-600.0, -1400.0);
+    Release();
+    TMap<uint64, FVector> Reverse = Destinations();
+    bool bMirrored = Reverse.Num() == 8;
+    for (const auto& Entry : DraggedLine)
+    {
+        const FVector2D Reflected(2.0 * -375.0 - Entry.Value.X, 2.0 * -1400.0 - Entry.Value.Y);
+        bool bFound = false;
+        for (const auto& Other : Reverse) bFound |= FVector2D::Distance(FVector2D(Other.Value.X, Other.Value.Y), Reflected) < 0.01;
+        bMirrored &= bFound;
+    }
+    TestTrue(TEXT("FD-A06 reversing the drag reverses the facing and mirrors the block"), bMirrored
+        && Frame(Reverse, North).Equals(FVector2D(450.0, 150.0), 0.01));
+    F.Step();
+    ResetPositions();
+
+    // 9: a short directional drag (100 cm, under one 150 cm spacing): facing only.
+    Press(-400.0, -1500.0);
+    Drag(-300.0, -1500.0);
+    Release();
+    TMap<uint64, FVector> Short = Destinations();
+    TestTrue(TEXT("FD-A08 a short drag faces -Y at the default width (one rank of eight)"), Short.Num() == 8
+        && Frame(Short, South).Equals(FVector2D(1050.0, 0.0), 0.01) && FVector2D::Distance(Centroid(Short), FVector2D(-350.0, -1500.0)) < 0.01);
+    F.Step();
+    ResetPositions();
+
+    // 10: Escape while dragging cancels: no order, no batch, no preview, and no return to the menu.
+    const int32 BatchesBeforeCancel = Host->CommandBatches.Num();
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    Host->ReturnToMenu();
+    TestTrue(TEXT("FD-A27 Escape cancels the drag"), Host->OrderPress.State == APC::EOrderPress::Idle && F.Match->PendingOrders.IsEmpty());
+    TestFalse(TEXT("FD-A27 the cancelled preview is cleared at once"), Host->GetGroupMoveMarkers(Markers, Alpha, &bPreview) && bPreview);
+    TestTrue(TEXT("FD-A27 Escape during a drag does not leave the match"), F.Match->GetMatchPhase() == MatchPhase::Active);
+    Release();
+    TestTrue(TEXT("FD-A27 the later release sends nothing"), F.Match->PendingOrders.IsEmpty() && Host->CommandBatches.Num() == BatchesBeforeCancel);
+
+    // Lost release: the button is up but the release binding never runs; after the grace the
+    // gesture is cancelled, never committed.
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    Host->OrderButtonDownForTest = false;
+    Host->UpdateOrderPress();
+    TestTrue(TEXT("FD-A27 inside the grace the gesture is kept"), Host->OrderPress.State == APC::EOrderPress::Dragging);
+    Host->OrderPress.ReleaseSeenSeconds -= 1.0;
+    Host->UpdateOrderPress();
+    TestTrue(TEXT("FD-A27 a lost release cancels after the grace"), Host->OrderPress.State == APC::EOrderPress::Idle);
+    Host->OrderButtonDownForTest = true;
+    Host->EndOrderPress();
+    TestTrue(TEXT("FD-A27 a lost release sends nothing"), F.Match->PendingOrders.IsEmpty() && Host->CommandBatches.Num() == BatchesBeforeCancel);
+
+    // 26: the release uses the last sample taken while held; a cursor jump after the button went
+    // up (mouse capture restoring the press point) is never read.
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    Host->OrderButtonDownForTest = false;
+    Host->OrderCursorForTest = FVector2D(-600.0 + ScreenOffset, -1400.0 + ScreenOffset);
+    Host->UpdateOrderPress();
+    Host->EndOrderPress();
+    Host->OrderButtonDownForTest = true;
+    TestTrue(TEXT("FD-A26 the last held sample is the drag end"),
+        FVector2D::Distance(Centroid(Destinations()), FVector2D(-375.0, -1400.0)) < 0.01 && Destinations().Num() == 8);
+    F.Step();
+    ResetPositions();
+
+    // A drag ending off the ground sends nothing.
+    const int32 BatchesBeforeCliff = Host->CommandBatches.Num();
+    Press(1500.0, 1500.0);
+    Drag(1800.0, 1800.0);
+    TestTrue(TEXT("FD-A27 the HUD warns about the endpoint"), Host->GetOrderDragView(View) && !View.bEndValid);
+    Release();
+    TestTrue(TEXT("FD-A27 an invalid endpoint cancels the drag"), F.Match->PendingOrders.IsEmpty()
+        && Host->CommandBatches.Num() == BatchesBeforeCliff);
+
+    // 14: a stale gesture cannot commit: a new generation, or a changed selection, cancels it.
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    F.Match->MatchGeneration += 1;
+    Host->UpdateOrderPress();
+    TestTrue(TEXT("FD-A27 a generation change cancels the drag"), Host->OrderPress.State == APC::EOrderPress::Idle);
+    F.Match->MatchGeneration -= 1;
+    Release();
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    Host->ApplySelection({Own[0], Own[1], Own[2]}, SelectionOp::Replace, TEXT("automation"));
+    Release();
+    TestTrue(TEXT("FD-A27 a changed selection cancels the drag and sends nothing"), F.Match->PendingOrders.IsEmpty()
+        && Host->OrderPress.State == APC::EOrderPress::Idle && Host->CommandBatches.Num() == BatchesBeforeCliff);
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    Host->ClearSelectionState();
+    TestTrue(TEXT("FD-A27 clearing the selection cancels the drag"), Host->OrderPress.State == APC::EOrderPress::Idle && F.Match->PendingOrders.IsEmpty());
+    Host->GroupMoveSlotProbeForTest = [&SlotProbes](const FVector2D&) { ++SlotProbes; return true; };
+
+    // 13: one selected unit and a hostile target act on press; the release adds nothing.
+    Host->ApplySelection({Own[0]}, SelectionOp::Replace, TEXT("automation"));
+    Press(-300.0, -1180.0);
+    TestTrue(TEXT("FD-A24 a single unit moves on press"), F.Match->PendingOrders.Num() == 1
+        && Host->OrderPress.State == APC::EOrderPress::Idle);
+    Release();
+    TestEqual(TEXT("FD-A24 its release sends nothing more"), F.Match->PendingOrders.Num(), 1);
+    F.Step();
+    ResetPositions();
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    Host->PressOrderAt(F.Match, Host->GetCommandableSelectedUnits(F.Match),
+        FHitResult(EnemyUnit, nullptr, EnemyUnit->GetActorLocation(), FVector::UpVector), FVector2D(3500.0, 3500.0));
+    bool bAttacks = F.Match->PendingOrders.Num() == 8;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders) bAttacks &= Pending.Kind == EPolitikaPrototypeOrder::Attack;
+    TestTrue(TEXT("FD-A24 a hostile under the cursor is attacked on press"), bAttacks && Host->OrderPress.State == APC::EOrderPress::Idle);
+    Release();
+    TestEqual(TEXT("FD-A24 the attack's release sends nothing more"), F.Match->PendingOrders.Num(), 8);
+    F.Step();
+    Host->SubmitGroupIntent(F.Match, Host->GetCommandableSelectedUnits(F.Match), nullptr, StopOrder{});
+    F.Step();
+    ResetPositions();
+
+    // 3: Column at five files (600 cm drag): ranks of five and three instead of two-file depth.
+    Host->CycleGroupMoveShape();
+    Press(-900.0, -600.0);
+    Drag(-300.0, -600.0);
+    Release();
+    TMap<uint64, FVector> Column = Destinations();
+    TestTrue(TEXT("FD-A10 a dragged Column takes five files (ranks of 5 and 3, not two files deep)"), Column.Num() == 8
+        && Frame(Column, South).Equals(FVector2D(600.0, 150.0), 0.01) && FMath::Abs(MinSeparation(Column) - 150.0) < 0.01);
+    F.Step();
+    ResetPositions();
+
+    // 4: Dispersed at three files (900 cm at 450 cm spacing): ranks of 3, 3 and 2, staggered.
+    Host->CycleGroupMoveShape();
+    Press(-1000.0, -600.0);
+    Drag(-100.0, -600.0);
+    Release();
+    TMap<uint64, FVector> Dispersed = Destinations();
+    TestTrue(TEXT("FD-A10 a dragged Dispersed block takes three 450 cm files"), Dispersed.Num() == 8
+        && Frame(Dispersed, South).Equals(FVector2D(1125.0, 900.0), 0.01) && FMath::Abs(MinSeparation(Dispersed) - 450.0) < 0.01);
+    F.Step();
+    ResetPositions();
+
+    // 6: Perimeter: the drag sets the facing (slot 0 at the front), never a width.
+    Host->CycleGroupMoveShape();
+    Press(-900.0, -600.0);
+    Drag(-300.0, -600.0);
+    Release();
+    TMap<uint64, FVector> Ring = Destinations();
+    bool bOnRing = Ring.Num() == 8;
+    bool bFront = false;
+    for (const auto& Entry : Ring)
+    {
+        bOnRing &= FMath::IsNearlyEqual(FVector::Dist2D(Entry.Value, FVector(-600.0, -600.0, 0.0)), 300.0, 0.01);
+        bFront |= FVector2D::Distance(FVector2D(Entry.Value.X, Entry.Value.Y), FVector2D(-600.0, -900.0)) < 0.01;
+    }
+    TestTrue(TEXT("FD-A12 a dragged Perimeter keeps its 300 cm ring and faces the drag"), bOnRing && bFront);
+    TestEqual(TEXT("FD-A12 the Perimeter drag carries no frontage"), static_cast<int32>(Host->OrderPress.Drag.frontage), 0);
+    F.Step();
+    ResetPositions();
+
+    // 7: Wedge: the point leads along the dragged facing; the arrowhead's size never changes.
+    Host->CycleGroupMoveShape();
+    Press(-900.0, -600.0);
+    Drag(-300.0, -600.0);
+    Release();
+    TMap<uint64, FVector> Wedge = Destinations();
+    TestTrue(TEXT("FD-A12 a dragged Wedge keeps its arrowhead and faces the drag"), Wedge.Num() == 8
+        && Frame(Wedge, South).Equals(FVector2D(300.0, 450.0 * UE_DOUBLE_SQRT_3 / 2.0), 0.01)
+        && FMath::Abs(MinSeparation(Wedge) - 150.0) < 0.01);
+    F.Step();
+    ResetPositions();
+
+    // 5: Echelon Left and Right at four files: the four-file Line (2 ranks, 474.3 cm diagonal)
+    // turned 45 degrees, its held-back flank the rear-most member.
+    for (const Shape Echelon : {Shape::EchelonLeft, Shape::EchelonRight})
+    {
+        Host->CycleGroupMoveShape();
+        TestTrue(TEXT("V reaches the Echelon"), Host->GetGroupMoveShape() == Echelon);
+        Press(-825.0, -600.0);
+        Drag(-375.0, -600.0);
+        Release();
+        TMap<uint64, FVector> Stepped = Destinations();
+        // Facing -Y, right is +X: the rear-most member (greatest Y) stands on the held-back flank
+        // and the front-most (least Y) on the other one.
+        FVector2D Rear(0.0, -TNumericLimits<double>::Max()), Front(0.0, TNumericLimits<double>::Max());
+        for (const auto& Entry : Stepped)
+        {
+            const FVector2D P(Entry.Value.X, Entry.Value.Y);
+            if (P.Y > Rear.Y) Rear = P;
+            if (P.Y < Front.Y) Front = P;
+        }
+        const double Side = Echelon == Shape::EchelonRight ? 1.0 : -1.0;
+        TestTrue(TEXT("FD-A11 the echelon frontage is set before the turn (four-file block, rigidly turned)"), Stepped.Num() == 8
+            && FMath::IsNearlyEqual(MaxSpan(Stepped), FMath::Sqrt(450.0 * 450.0 + 150.0 * 150.0), 0.01)
+            && FMath::Abs(MinSeparation(Stepped) - 150.0) < 0.01 && FVector2D::Distance(Centroid(Stepped), FVector2D(-600.0, -600.0)) < 0.01);
+        TestTrue(TEXT("FD-A11 the held-back flank is the rear-most member"),
+            (Rear.X + 600.0) * Side > 1.0 && (Front.X + 600.0) * Side < -1.0);
+        F.Step();
+        ResetPositions();
+    }
+    Host->CycleGroupMoveShape();
+    TestTrue(TEXT("FD-A04 V returns to Line"), Host->GetGroupMoveShape() == Shape::Line);
+
+    // 15: a whole formation's drag reaches the server planner with its facing and frontage.
+    Host->FormSelected();
+    const pf::Registry& Formations = F.Match->GetFormations();
+    if (!TestEqual(TEXT("T forms one Line formation"), static_cast<int32>(Formations.All().size()), 1)) return false;
+    const pf::FormationId Id = Formations.All().front().id;
+    Press(-600.0, -1400.0);
+    TestEqual(TEXT("FD-A47 the press addresses the formation"), Host->OrderPress.FormationId, Id.value);
+    Drag(-150.0, -1400.0);
+    Release();
+    const pf::Formation* Formation = Formations.Find(Id);
+    bool bTagged = F.Match->PendingOrders.Num() == 8;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders) bTagged &= Pending.FormationId == Id.value;
+    TestTrue(TEXT("FD-A22 the server fans the formation drag out into eight member orders"), bTagged);
+    TestTrue(TEXT("FD-A15 the formation stores the dragged facing and frontage"), Formation && Formation->explicitFacing
+        && Formation->frontage == 4 && FMath::IsNearlyEqual(Formation->facing.x, 0.0, 1e-9) && FMath::IsNearlyEqual(Formation->facing.y, -1.0, 1e-9)
+        && FMath::IsNearlyEqual(Formation->anchor.x, -375.0 + 2000.0, 1e-6) && FMath::IsNearlyEqual(Formation->anchor.y, -1400.0 + 2000.0, 1e-6));
+    TMap<uint64, FVector> FormationLine = Destinations();
+    TestTrue(TEXT("FD-A47 the server planned the same four-file block"), Frame(FormationLine, South).Equals(FVector2D(450.0, 150.0), 0.01)
+        && FVector2D::Distance(Centroid(FormationLine), FVector2D(-375.0, -1400.0)) < 0.01);
+    F.Step();
+    const APC::FCommandBatch* Batch = Host->CommandBatches.IsEmpty() ? nullptr : &Host->CommandBatches.Last();
+    TestTrue(TEXT("FD-A22 the member outcomes tally under the request"), Batch && Batch->Tally.accepted == 8);
+
+    // 18-21: malformed facings and frontages fail closed and change nothing.
+    auto LastOutcome = [&F](const APlayerController* Source) -> const FPolitikaNetFormationOutcome*
+    {
+        for (int32 Index = F.Match->TestFormationOutcomes.Num() - 1; Index >= 0; --Index)
+            if (F.Match->TestFormationOutcomes[Index].Key.Get() == Source) return &F.Match->TestFormationOutcomes[Index].Value;
+        return nullptr;
+    };
+    auto Request = [&F, Host](APolitikaPrototypePlayerController* Source, pf::FormationOp Op, uint32 FormationId,
+        double FacingX, double FacingY, uint8 Frontage)
+    {
+        FPolitikaNetFormationIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.FormationId = FormationId;
+        if (Op == pf::FormationOp::Move || Op == pf::FormationOp::AttackMove)
+        {
+            Intent.DestinationX = 1000.0;
+            Intent.DestinationY = 1000.0;
+        }
+        Intent.FacingX = FacingX;
+        Intent.FacingY = FacingY;
+        Intent.Frontage = Frontage;
+        uint32& Sequence = Source == Host ? Host->NextClientSequence : F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    auto Rejection = [&](APolitikaPrototypePlayerController* Source, const FPolitikaNetFormationIntent& Intent) -> int32
+    {
+        F.Match->SubmitFormationIntent(Source, Intent);
+        const FPolitikaNetFormationOutcome* Outcome = LastOutcome(Source);
+        return Outcome && Outcome->CorrelationId == Intent.CorrelationId && !Outcome->bAccepted
+            ? static_cast<int32>(Outcome->Rejection) : 0;
+    };
+    const int32 Malformed = static_cast<int32>(pf::FormationRejection::MalformedCommand);
+    const pf::Formation Snapshot = *Formations.Find(Id);
+    auto Unchanged = [&]()
+    {
+        const pf::Formation* Now = Formations.Find(Id);
+        bool bSame = Now && Now->explicitFacing == Snapshot.explicitFacing && Now->frontage == Snapshot.frontage
+            && Now->facing.x == Snapshot.facing.x && Now->facing.y == Snapshot.facing.y && Now->anchor.x == Snapshot.anchor.x
+            && Now->anchor.y == Snapshot.anchor.y && Now->hasDestination == Snapshot.hasDestination
+            && Now->FollowingCount() == Snapshot.FollowingCount() && Now->stance == Snapshot.stance && Now->adherence == Snapshot.adherence
+            && Now->members.size() == Snapshot.members.size();
+        for (std::size_t Index = 0; bSame && Index < Now->members.size(); ++Index)
+            bSame &= Now->members[Index].destination.x == Snapshot.members[Index].destination.x
+                && Now->members[Index].destination.y == Snapshot.members[Index].destination.y;
+        return bSame && F.Match->PendingOrders.IsEmpty();
+    };
+    TestEqual(TEXT("FD-A19 a non-unit facing is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, 0.5, 0.0, 0)), Malformed);
+    TestEqual(TEXT("FD-A19 a NaN facing is malformed"),
+        Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, std::numeric_limits<double>::quiet_NaN(), 1.0, 0)), Malformed);
+    TestEqual(TEXT("FD-A19 an infinite facing is malformed"),
+        Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, std::numeric_limits<double>::infinity(), 0.0, 0)), Malformed);
+    TestEqual(TEXT("FD-A19 a frontage above 64 is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, 0.0, 1.0, 65)), Malformed);
+    TestEqual(TEXT("FD-A19 a frontage without a facing is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Move, Id.value, 0.0, 0.0, 4)), Malformed);
+    TestEqual(TEXT("FD-A20 a Stop with a facing is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Stop, Id.value, 0.0, 1.0, 0)), Malformed);
+    TestEqual(TEXT("FD-A20 a Stop with a frontage is malformed"), Rejection(Host, Request(Host, pf::FormationOp::Stop, Id.value, 0.0, 0.0, 2)), Malformed);
+    FPolitikaNetFormationIntent StanceWithWidth = Request(Host, pf::FormationOp::SetStance, Id.value, 0.0, 0.0, 3);
+    StanceWithWidth.Value = 1;
+    TestEqual(TEXT("FD-A20 a SetStance with a frontage is malformed"), Rejection(Host, StanceWithWidth), Malformed);
+    FPolitikaNetFormationIntent FormWithFacing = Request(Host, pf::FormationOp::Form, 0, 1.0, 0.0, 0);
+    FormWithFacing.Members = {Own[0]->GetStableId(), Own[1]->GetStableId()};
+    TestEqual(TEXT("FD-A20 a Form with a facing is malformed"), Rejection(Host, FormWithFacing), Malformed);
+    TestEqual(TEXT("FD-A22 the enemy cannot drag the host's formation"),
+        Rejection(Enemy, Request(Enemy, pf::FormationOp::Move, Id.value, 0.0, 1.0, 4)), static_cast<int32>(pf::FormationRejection::UnknownFormation));
+    TestTrue(TEXT("FD-A21 rejected requests leave the formation untouched and queue nothing"), Unchanged());
+    F.Step();
+
+    // 16: a loss regroups once with the dragged facing and frontage (seven survivors, four files).
+    Own[7]->PendingDamage = static_cast<float>(Own[7]->GetHealth() + 1);
+    F.Step();
+    Formation = Formations.Find(Id);
+    const uint64 DueStep = Formation ? Formation->regroupDueStep : 0;
+    TestTrue(TEXT("A regroup is scheduled after the loss"), DueStep != 0);
+    while (DueStep != 0 && F.Match->SimulationStepsExecuted < DueStep) F.Step();
+    Formation = Formations.Find(Id);
+    TestTrue(TEXT("FD-A16 one regroup ran, keeping the dragged facing and frontage"), Formation && Formation->regroups == 1
+        && Formation->explicitFacing && Formation->frontage == 4 && FMath::IsNearlyEqual(Formation->facing.y, -1.0, 1e-9));
+    TMap<uint64, FVector> Regrouped;
+    if (Formation)
+        for (const pf::MemberSlot& Member : Formation->members)
+            Regrouped.Add(Member.id, FVector(Member.destination.x - 2000.0, Member.destination.y - 2000.0, 0.0));
+    TestTrue(TEXT("FD-A16 the seven survivors close into four files (ranks of 4 and 3)"), Regrouped.Num() == 7
+        && Frame(Regrouped, South).Equals(FVector2D(450.0, 150.0), 0.01) && FMath::Abs(MinSeparation(Regrouped) - 150.0) < 0.01);
+    F.Step(5);
+
+    // 17: a plain click on the formation faces the travel direction at the default width again.
+    TArray<APolitikaPrototypeUnit*> Living = {Own[0], Own[1], Own[2], Own[3], Own[4], Own[5], Own[6]};
+    Host->ApplySelection(Living, SelectionOp::Replace, TEXT("automation"));
+    Press(1000.0, -1000.0);
+    Release();
+    Formation = Formations.Find(Id);
+    TestTrue(TEXT("FD-A17 a plain formation move resets the dragged facing and frontage"), Formation && !Formation->explicitFacing
+        && Formation->frontage == 0 && pf::IsUnitFacing(Formation->facing) && Formation->facing.x > 0.9);
+    TMap<uint64, FVector> Plain = Destinations();
+    TestTrue(TEXT("FD-A17 seven members in one rank of the default Line"), Plain.Num() == 7 && FMath::IsNearlyEqual(MaxSpan(Plain), 900.0, 0.01));
+    F.Step();
+
+    Host->ClearSelectionState();
+    Host->GroupMoveSlotProbeForTest = nullptr;
+    Host->OrderGroundProbeForTest = nullptr;
+    Host->OrderCursorForTest.Reset();
+    Host->OrderButtonDownForTest.Reset();
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFormationLifecycleTest,
     "Politika.RTS.Multiplayer.FormationLifecycle",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

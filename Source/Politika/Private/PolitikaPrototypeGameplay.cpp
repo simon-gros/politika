@@ -2879,6 +2879,7 @@ void APolitikaPrototypePlayerController::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     if (!bMapCameraApplied) ResolveMatch();
     UpdateSelectDrag();
+    UpdateOrderPress();
     // Keeps group counts current for the HUD: dead or lost members drop out, and a new
     // generation, participant or inactive match clears every slot.
     if (IsLocalController()) SyncControlGroups(Match.Get());
@@ -2942,6 +2943,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
+    InputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndOrderPress);
     // Order keys live in DefaultInput.ini and must not share a key with the W/A/S/D pan axes,
     // or every order press would also move the camera by a frame of pan speed.
     InputComponent->BindAction(TEXT("PrototypeStop"), IE_Pressed, this, &APolitikaPrototypePlayerController::StopSelected);
@@ -2981,6 +2983,8 @@ politika::selection::SelectionOp APolitikaPrototypePlayerController::ModifierSel
 
 void APolitikaPrototypePlayerController::BeginSelectPress()
 {
+    // A selection stroke and a right-drag never overlap: the stroke wins and the drag sends nothing.
+    CancelOrderPress(TEXT("SelectPress"));
     FVector2D Cursor;
     if (!ResolveMatch() || !GetMousePosition(Cursor.X, Cursor.Y)) return;
     // The group bar captures its clicks: no world selection stroke starts over it.
@@ -3488,10 +3492,20 @@ bool APolitikaPrototypePlayerController::IsGroupMoveSlotOpen(const APolitikaProt
         MapPosition, GroundZ);
 }
 
-bool APolitikaPrototypePlayerController::GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha) const
+bool APolitikaPrototypePlayerController::GetGroupMoveMarkers(TArray<FVector>& OutMarkers, float& OutAlpha, bool* OutPreview) const
 {
     OutMarkers.Reset();
+    if (OutPreview) *OutPreview = false;
     if (GroupMoveMarkers.IsEmpty() || GroupMoveMarkersSeconds < 0.0) return false;
+    // A held drag's preview stays at full strength until it is committed or cancelled.
+    if (bGroupMovePreview)
+    {
+        if (OrderPress.State != EOrderPress::Dragging) return false;
+        OutMarkers = GroupMoveMarkers;
+        OutAlpha = 1.0f;
+        if (OutPreview) *OutPreview = true;
+        return true;
+    }
     const double Age = FPlatformTime::Seconds() - GroupMoveMarkersSeconds;
     if (Age > GroupMoveMarkerLifetimeSeconds) return false;
     OutMarkers = GroupMoveMarkers;
@@ -3501,12 +3515,14 @@ bool APolitikaPrototypePlayerController::GetGroupMoveMarkers(TArray<FVector>& Ou
 
 void APolitikaPrototypePlayerController::ClearSelectionState()
 {
+    CancelOrderPress(TEXT("SelectionReset"));
     bSelectPressed = false;
     bBoxSelecting = false;
     CommandBatches.Reset();
     PendingFormationOrderKinds.Reset();
     GroupMoveMarkers.Reset();
     GroupMoveMarkersSeconds = -1.0;
+    bGroupMovePreview = false;
     // Selection and every control group end together (Return, rematch, revoked seat).
 #if !UE_BUILD_SHIPPING
     if (!ControlGroups.Empty())
@@ -3543,9 +3559,27 @@ APolitikaPrototypeUnit* APolitikaPrototypePlayerController::GetCommandableSelect
     return Selected.IsEmpty() ? nullptr : Selected[0];
 }
 
+politika::formation::Plan APolitikaPrototypePlayerController::PlanLocalGroupMove(const APolitikaPrototypeMatch& ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Issuers, const politika::formation::Point& Anchor, float GroundZ,
+    politika::formation::Shape Shape, const politika::formation::DragFacing* Drag) const
+{
+    using namespace politika::formation;
+    const FVector2D PlayableMin = ActiveMatch.GetPlayableMin();
+    std::vector<Member> Members;
+    Members.reserve(static_cast<std::size_t>(Issuers.Num()));
+    for (const APolitikaPrototypeUnit* Issuer : Issuers)
+        if (Issuer)
+            Members.push_back({Issuer->GetStableId(),
+                {Issuer->GetActorLocation().X - PlayableMin.X, Issuer->GetActorLocation().Y - PlayableMin.Y}});
+    const bool bDrag = Drag && Drag->valid && IsUnitFacing(Drag->facing);
+    return PlanGroupMove(Members, Anchor, Shape,
+        [this, &ActiveMatch, GroundZ](Point Candidate) { return IsGroupMoveSlotOpen(ActiveMatch, {Candidate.x, Candidate.y}, GroundZ); },
+        {}, {1.0, 0.0}, bDrag ? Drag->facing : Point{0.0, 0.0}, bDrag ? Drag->frontage : 0);
+}
+
 void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMatch* ActiveMatch,
     TConstArrayView<APolitikaPrototypeUnit*> Issuers, APolitikaPrototypeUnit* Target, const politika::rules::Order& Order,
-    const FVector* GroundHit)
+    const FVector* GroundHit, const politika::formation::DragFacing* Drag)
 {
     if (!ActiveMatch || Issuers.IsEmpty()) return;
     // FORM-F3: a selection that is exactly one whole formation moves or stops that formation;
@@ -3556,7 +3590,9 @@ void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMat
         using politika::formation::FormationOp;
         if (const auto* FormationMove = std::get_if<politika::rules::MoveOrder>(&Order); FormationMove && GroundHit)
         {
-            SubmitFormationRequest(ActiveMatch, FormationOp::Move, Whole->FormationId, {}, FormationMove->destination, GroundHit);
+            // FORM-FD: a right-drag sends its facing and frontage; the server plans the slots.
+            SubmitFormationRequest(ActiveMatch, FormationOp::Move, Whole->FormationId, {}, FormationMove->destination, GroundHit,
+                0, Drag);
             return;
         }
         if (const auto* FormationAttackMove = std::get_if<politika::rules::AttackMoveOrder>(&Order); FormationAttackMove && GroundHit)
@@ -3593,31 +3629,28 @@ void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMat
         for (APolitikaPrototypeUnit* Issuer : Issuers) SubmitIntent(ActiveMatch, Issuer, Target, Order);
         return;
     }
-    // FORM-F2: one distinct Line/Column destination per member, facing the travel direction.
-    // Each is still an ordinary single-issuer Move/AttackMove that the server admits on its own.
+    // FORM-F2: one distinct destination per member in the V shape, facing the travel direction or,
+    // after a right-drag (FORM-FD), the dragged facing at the dragged frontage. Each is still an
+    // ordinary single-issuer Move/AttackMove that the server admits on its own.
     using namespace politika::formation;
     const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();
     const politika::rules::Position AnchorPosition = Move ? Move->destination : AttackMove->destination;
     const Point Anchor{AnchorPosition.x, AnchorPosition.y};
-    std::vector<Member> Members;
-    Members.reserve(static_cast<std::size_t>(Issuers.Num()));
-    for (const APolitikaPrototypeUnit* Issuer : Issuers)
-        if (Issuer)
-            Members.push_back({Issuer->GetStableId(),
-                {Issuer->GetActorLocation().X - PlayableMin.X, Issuer->GetActorLocation().Y - PlayableMin.Y}});
     const float GroundZ = static_cast<float>(GroundHit->Z);
-    const Plan SlotPlan = PlanGroupMove(Members, Anchor, GroupMoveShape,
-        [this, ActiveMatch, GroundZ](Point Candidate) { return IsGroupMoveSlotOpen(*ActiveMatch, {Candidate.x, Candidate.y}, GroundZ); });
+    const Plan SlotPlan = PlanLocalGroupMove(*ActiveMatch, Issuers, Anchor, GroundZ, GroupMoveShape, Drag);
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_GROUP_MOVE_PLAN participant=%u batch=%u order=%u shape=%s members=%d anchor=%.1f,%.1f playable_min=%.1f,%.1f playable_size=%.1f,%.1f facing=%.4f,%.4f checked=%d rejected=%d unplaced=%d min_separation=%.1f"),
+        TEXT("RTS_GROUP_MOVE_PLAN participant=%u batch=%u order=%u shape=%s members=%d anchor=%.3f,%.3f playable_min=%.1f,%.1f playable_size=%.1f,%.1f facing=%.6f,%.6f checked=%d rejected=%d unplaced=%d min_separation=%.1f drag=%d explicit_facing=%d requested_frontage=%u frontage=%u slots=%d"),
         GetCommandPlayerId(), Batch.Id, Batch.OrderKind, UTF8_TO_TCHAR(ShapeName(SlotPlan.shape).data()), static_cast<int32>(SlotPlan.assignments.size()),
         Anchor.x, Anchor.y, PlayableMin.X, PlayableMin.Y, ActiveMatch->GetPlayableMax().X - PlayableMin.X,
         ActiveMatch->GetPlayableMax().Y - PlayableMin.Y, SlotPlan.facing.x, SlotPlan.facing.y, static_cast<int32>(SlotPlan.candidatesChecked),
         static_cast<int32>(SlotPlan.candidatesRejected), static_cast<int32>(SlotPlan.unplaced),
-        std::isfinite(MinimumSeparation(SlotPlan)) ? MinimumSeparation(SlotPlan) : -1.0);
+        std::isfinite(MinimumSeparation(SlotPlan)) ? MinimumSeparation(SlotPlan) : -1.0, Drag && Drag->valid ? 1 : 0,
+        SlotPlan.fixedFacing ? 1 : 0, static_cast<uint32>(SlotPlan.requestedFrontage), static_cast<uint32>(SlotPlan.frontage),
+        static_cast<int32>(SlotPlan.assignments.size() - SlotPlan.unplaced));
 #endif
     GroupMoveMarkers.Reset();
+    bGroupMovePreview = false;
     const auto SlotFor = [&SlotPlan](const APolitikaPrototypeUnit* Issuer) -> const Assignment*
     {
         if (!Issuer) return nullptr;
@@ -3633,7 +3666,7 @@ void APolitikaPrototypePlayerController::SubmitGroupIntent(APolitikaPrototypeMat
 #if !UE_BUILD_SHIPPING
         if (Issuer)
             UE_LOG(LogPolitikaStartup, Display,
-                TEXT("RTS_GROUP_MOVE_SLOT participant=%u batch=%u unit=%llu slot=%d x=%.1f y=%.1f world_x=%.1f world_y=%.1f"),
+                TEXT("RTS_GROUP_MOVE_SLOT participant=%u batch=%u unit=%llu slot=%d x=%.3f y=%.3f world_x=%.3f world_y=%.3f"),
                 GetCommandPlayerId(), Batch.Id, Issuer->GetStableId(),
                 Slot && Slot->slot != kNoSlot ? static_cast<int32>(Slot->slot) : -1, Destination.x, Destination.y,
                 PlayableMin.X + Destination.x, PlayableMin.Y + Destination.y);
@@ -3677,6 +3710,8 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
 {
     // A held selection stroke never turns into an order, and the group bar captures its clicks.
     if (bSelectPressed || GroupBarSlotUnderCursor() != INDEX_NONE) return;
+    // A press while a gesture is still held (a lost release) never starts a second one.
+    if (OrderPress.State != EOrderPress::Idle) return;
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
     if (Selected.IsEmpty()) return;
@@ -3686,17 +3721,334 @@ void APolitikaPrototypePlayerController::OrderUnderCursor()
         ShowLocalFeedback(TEXT("Order rejected: click valid map ground or a hostile unit."));
         return;
     }
+    FVector2D Cursor(-1.0, -1.0);
+    if (!GetOrderCursor(Cursor)) Cursor = FVector2D(-1.0, -1.0);
+    PressOrderAt(ActiveMatch, Selected, Hit, Cursor);
+}
+
+void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Selected, const FHitResult& Hit, const FVector2D& Cursor)
+{
+    if (!ActiveMatch || Selected.IsEmpty()) return;
     if (APolitikaPrototypeUnit* Target = Cast<APolitikaPrototypeUnit>(Hit.GetActor()))
     {
         SubmitGroupIntent(ActiveMatch, Selected, Target, politika::rules::AttackOrder{Target->GetStableId()});
+        return;
     }
-    else
+    const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();
+    const FVector2D PlayableMax = ActiveMatch->GetPlayableMax();
+    const FVector2D MapPosition(Hit.ImpactPoint.X - PlayableMin.X, Hit.ImpactPoint.Y - PlayableMin.Y);
+    // FORM-FD: an eligible multi-unit ground press waits for its release, which is either a
+    // plain click at this point or the end of a facing drag. Everything else acts on press.
+    const bool bShift = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+    const bool bInside = Hit.ImpactPoint.X >= PlayableMin.X && Hit.ImpactPoint.X <= PlayableMax.X
+        && Hit.ImpactPoint.Y >= PlayableMin.Y && Hit.ImpactPoint.Y <= PlayableMax.Y;
+    const bool bEligible = Selected.Num() >= 2 && !bShift && bInside && Cursor.X >= 0.0 && Cursor.Y >= 0.0
+        && ActiveMatch->GetMatchPhase() == politika::rules::MatchPhase::Active && !bSelectPressed
+        && ActiveMatch->IsLocalControllerBound(this);
+    if (!bEligible)
     {
-        const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
-            Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
         SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}},
             &Hit.ImpactPoint);
+        return;
     }
+    OrderPress = FOrderPress{};
+    OrderPress.State = EOrderPress::Pending;
+    OrderPress.PressScreen = Cursor;
+    OrderPress.LastScreen = Cursor;
+    OrderPress.PressGround = Hit.ImpactPoint;
+    OrderPress.LastGround = Hit.ImpactPoint;
+    OrderPress.bLastValid = true;
+    OrderPress.Participant = GetCommandPlayerId();
+    OrderPress.Generation = ActiveMatch->GetMatchGeneration();
+    for (const APolitikaPrototypeUnit* Unit : Selected)
+        if (Unit) OrderPress.Selection.Add(Unit->GetStableId());
+    OrderPress.Selection.Sort();
+    const FPolitikaNetFormationInfo* Whole = SelectedWholeFormation(Selected);
+    OrderPress.FormationId = Whole ? Whole->FormationId : 0;
+    OrderPress.Shape = Whole ? static_cast<politika::formation::Shape>(Whole->Shape) : GroupMoveShape;
+    OrderPress.PressSeconds = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+    LogOrderPress(TEXT("start"), TEXT("press"));
+}
+
+bool APolitikaPrototypePlayerController::IsOrderButtonDown() const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+    if (OrderButtonDownForTest.IsSet()) return OrderButtonDownForTest.GetValue();
+#endif
+    return IsInputKeyDown(EKeys::RightMouseButton);
+}
+
+bool APolitikaPrototypePlayerController::GetOrderCursor(FVector2D& OutCursor) const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+    if (OrderCursorForTest.IsSet())
+    {
+        OutCursor = OrderCursorForTest.GetValue();
+        return true;
+    }
+#endif
+    float X = 0.0f, Y = 0.0f;
+    if (!GetMousePosition(X, Y)) return false;
+    OutCursor = FVector2D(X, Y);
+    return true;
+}
+
+bool APolitikaPrototypePlayerController::TraceOrderGround(const APolitikaPrototypeMatch& ActiveMatch, const FVector2D& Screen,
+    FVector& OutGround) const
+{
+    bool bHit = false;
+#if WITH_DEV_AUTOMATION_TESTS
+    if (OrderGroundProbeForTest) bHit = OrderGroundProbeForTest(Screen, OutGround);
+    else
+#endif
+    {
+        FVector Origin, Direction;
+        const UWorld* World = GetWorld();
+        if (!World || !DeprojectScreenPositionToWorld(Screen.X, Screen.Y, Origin, Direction)) return false;
+        // The ground a drag ends on, even under a soldier: the same visibility channel as a
+        // click, with every unit ignored.
+        FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaOrderDrag), false);
+        for (const APolitikaPrototypeUnit* Unit : ActiveMatch.GetUnits())
+            if (IsValid(Unit)) Params.AddIgnoredActor(Unit);
+        FHitResult Hit;
+        bHit = World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params)
+            && !Cast<APolitikaPrototypeUnit>(Hit.GetActor());
+        if (bHit) OutGround = Hit.ImpactPoint;
+    }
+    if (!bHit || !FMath::IsFinite(OutGround.X) || !FMath::IsFinite(OutGround.Y) || !FMath::IsFinite(OutGround.Z)) return false;
+    const FVector2D Min = ActiveMatch.GetPlayableMin();
+    const FVector2D Max = ActiveMatch.GetPlayableMax();
+    return OutGround.X >= Min.X && OutGround.X <= Max.X && OutGround.Y >= Min.Y && OutGround.Y <= Max.Y;
+}
+
+FVector APolitikaPrototypePlayerController::OrderAnchorWorld(const APolitikaPrototypeMatch& ActiveMatch,
+    const politika::formation::Point& Anchor) const
+{
+    const FVector2D Min = ActiveMatch.GetPlayableMin();
+    return FVector(Min.X + Anchor.x, Min.Y + Anchor.y, (OrderPress.PressGround.Z + OrderPress.LastGround.Z) * 0.5);
+}
+
+const TCHAR* APolitikaPrototypePlayerController::OrderPressInvalidReason(APolitikaPrototypeMatch* ActiveMatch,
+    TArray<APolitikaPrototypeUnit*>& OutSelected)
+{
+    OutSelected.Reset();
+    if (!ActiveMatch) return TEXT("MatchLost");
+    if (ActiveMatch->GetMatchPhase() != politika::rules::MatchPhase::Active) return TEXT("MatchInactive");
+    if (ActiveMatch->GetMatchGeneration() != OrderPress.Generation) return TEXT("GenerationChanged");
+    if (!ActiveMatch->IsLocalControllerBound(this)) return TEXT("Unbound");
+    if (GetCommandPlayerId() != OrderPress.Participant) return TEXT("AuthorityChanged");
+    OutSelected = ActiveMatch->GetSelectedUnitsForPlayer(GetCommandPlayerId());
+    if (OutSelected.IsEmpty()) return TEXT("SelectionEmpty");
+    TArray<uint64> Ids;
+    for (const APolitikaPrototypeUnit* Unit : OutSelected)
+        if (Unit) Ids.Add(Unit->GetStableId());
+    Ids.Sort();
+    if (Ids != OrderPress.Selection) return TEXT("SelectionChanged");
+    const FPolitikaNetFormationInfo* Whole = SelectedWholeFormation(OutSelected);
+    if ((Whole ? Whole->FormationId : 0u) != OrderPress.FormationId) return TEXT("FormationChanged");
+    return nullptr;
+}
+
+void APolitikaPrototypePlayerController::UpdateOrderPress()
+{
+    if (OrderPress.State == EOrderPress::Idle) return;
+    // As for a selection stroke: the key state turns up before the IE_Released binding runs, so
+    // only a release that never reaches the binding cancels, after a short grace; it never
+    // becomes a click or a drag commit.
+    const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+    const bool bHeld = IsOrderButtonDown();
+    if (bHeld) OrderPress.bReleaseSeen = false;
+    else if (!OrderPress.bReleaseSeen)
+    {
+        OrderPress.bReleaseSeen = true;
+        OrderPress.ReleaseSeenSeconds = Now;
+    }
+    else if (Now - OrderPress.ReleaseSeenSeconds > 0.25)
+    {
+        CancelOrderPress(TEXT("ReleaseLost"));
+        return;
+    }
+    if (!IsViewportFocused())
+    {
+        CancelOrderPress(TEXT("FocusLost"));
+        return;
+    }
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    TArray<APolitikaPrototypeUnit*> Selected;
+    if (const TCHAR* Reason = OrderPressInvalidReason(ActiveMatch, Selected))
+    {
+        CancelOrderPress(Reason);
+        return;
+    }
+    // Samples only while the button is held: once it is up, releasing mouse capture can move the
+    // cursor back to the press point, so the end stays the last held sample.
+    FVector2D Cursor;
+    if (!bHeld || !GetOrderCursor(Cursor)) return;
+    if (OrderPress.State == EOrderPress::Pending)
+    {
+        const float DpiScale = GEngine && GEngine->GameViewport ? GEngine->GameViewport->GetDPIScale() : 1.0f;
+        if (!politika::selection::ExceedsDragThreshold({OrderPress.PressScreen.X, OrderPress.PressScreen.Y},
+                {Cursor.X, Cursor.Y}, DpiScale))
+            return;
+        OrderPress.State = EOrderPress::Dragging;
+    }
+    FVector Ground;
+    OrderPress.LastScreen = Cursor;
+    OrderPress.bLastValid = TraceOrderGround(*ActiveMatch, Cursor, Ground);
+    if (OrderPress.bLastValid) OrderPress.LastGround = Ground;
+    UpdateOrderPreview(*ActiveMatch, Selected);
+}
+
+void APolitikaPrototypePlayerController::UpdateOrderPreview(APolitikaPrototypeMatch& ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Selected)
+{
+    using namespace politika::formation;
+    if (OrderPress.State != EOrderPress::Dragging) return;
+    if (!OrderPress.bLastValid)
+    {
+        // Off the ground or outside the map: no stale preview, and a release here sends nothing.
+        if (bGroupMovePreview) GroupMoveMarkers.Reset();
+        OrderPress.bPlanned = false;
+        return;
+    }
+    const double Now = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+    if (OrderPress.bPreviewTimed && (Now - OrderPress.PreviewSeconds < OrderPreviewIntervalSeconds
+            || FVector2D::Distance(OrderPress.LastScreen, OrderPress.PreviewScreen) <= OrderPreviewMinPixels))
+        return;
+    OrderPress.bPreviewTimed = true;
+    OrderPress.PreviewSeconds = Now;
+    OrderPress.PreviewScreen = OrderPress.LastScreen;
+    const FVector2D Min = ActiveMatch.GetPlayableMin();
+    OrderPress.Drag = ShapeDrag({OrderPress.PressGround.X - Min.X, OrderPress.PressGround.Y - Min.Y},
+        {OrderPress.LastGround.X - Min.X, OrderPress.LastGround.Y - Min.Y}, OrderPress.Shape,
+        static_cast<std::size_t>(Selected.Num()));
+    if (!OrderPress.Drag.valid)
+    {
+        if (bGroupMovePreview) GroupMoveMarkers.Reset();
+        OrderPress.bPlanned = false;
+        return;
+    }
+    // The same planner and inputs as the commit: advisory only, and nothing is sent.
+    const FVector AnchorWorld = OrderAnchorWorld(ActiveMatch, OrderPress.Drag.anchor);
+    const Plan Preview = PlanLocalGroupMove(ActiveMatch, Selected, OrderPress.Drag.anchor, static_cast<float>(AnchorWorld.Z),
+        OrderPress.Shape, &OrderPress.Drag);
+    ++OrderPress.Replans;
+    OrderPress.bPlanned = true;
+    OrderPress.PlannedFrontage = static_cast<int32>(Preview.frontage);
+    GroupMoveMarkers.Reset();
+    for (const Assignment& Slot : Preview.assignments)
+        GroupMoveMarkers.Add(FVector(Min.X + Slot.destination.x, Min.Y + Slot.destination.y, AnchorWorld.Z));
+    GroupMoveMarkersSeconds = FPlatformTime::Seconds();
+    bGroupMovePreview = true;
+    LogOrderPress(TEXT("update"), TEXT("preview"), &Preview);
+}
+
+void APolitikaPrototypePlayerController::LogOrderPress(const TCHAR* State, const TCHAR* Reason,
+    const politika::formation::Plan* Plan) const
+{
+#if !UE_BUILD_SHIPPING
+    // World start/end are engine cm; anchor and facing are map-space, as the planner sees them.
+    const politika::formation::DragFacing& Drag = OrderPress.Drag;
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_GROUP_MOVE_DRAG participant=%u generation=%llu state=%s reason=%s shape=%s member_count=%d formation=%u screen_start=%.1f,%.1f screen_end=%.1f,%.1f world_start=%.3f,%.3f world_end=%.3f,%.3f end_valid=%d dragging=%d anchor=%.3f,%.3f facing=%.6f,%.6f frontage=%u explicit_facing=%d length=%.3f planned_frontage=%d checked=%d rejected=%d unplaced=%d replans=%d"),
+        OrderPress.Participant, OrderPress.Generation, State, Reason,
+        UTF8_TO_TCHAR(politika::formation::ShapeName(OrderPress.Shape).data()), OrderPress.Selection.Num(), OrderPress.FormationId,
+        OrderPress.PressScreen.X, OrderPress.PressScreen.Y, OrderPress.LastScreen.X, OrderPress.LastScreen.Y,
+        OrderPress.PressGround.X, OrderPress.PressGround.Y, OrderPress.LastGround.X, OrderPress.LastGround.Y,
+        OrderPress.bLastValid ? 1 : 0, OrderPress.State == EOrderPress::Dragging ? 1 : 0, Drag.anchor.x, Drag.anchor.y,
+        Drag.facing.x, Drag.facing.y, static_cast<uint32>(Drag.frontage), Drag.valid ? 1 : 0, Drag.lengthCm,
+        Plan ? static_cast<int32>(Plan->frontage) : OrderPress.PlannedFrontage, Plan ? static_cast<int32>(Plan->candidatesChecked) : -1,
+        Plan ? static_cast<int32>(Plan->candidatesRejected) : -1, Plan ? static_cast<int32>(Plan->unplaced) : -1, OrderPress.Replans);
+#else
+    (void)State;
+    (void)Reason;
+    (void)Plan;
+#endif
+}
+
+void APolitikaPrototypePlayerController::CancelOrderPress(const TCHAR* Reason)
+{
+    if (OrderPress.State == EOrderPress::Idle) return;
+    LogOrderPress(TEXT("cancel"), Reason);
+    // A cancelled preview disappears at once; it never lingers like a sent order's rings.
+    if (bGroupMovePreview)
+    {
+        GroupMoveMarkers.Reset();
+        GroupMoveMarkersSeconds = -1.0;
+        bGroupMovePreview = false;
+    }
+    OrderPress = FOrderPress{};
+}
+
+void APolitikaPrototypePlayerController::EndOrderPress()
+{
+    if (OrderPress.State == EOrderPress::Idle) return;
+    // Focus loss flushes held keys as simulated releases; those cancel instead of ordering.
+    if (!IsViewportFocused())
+    {
+        CancelOrderPress(TEXT("FocusLost"));
+        return;
+    }
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    TArray<APolitikaPrototypeUnit*> Selected;
+    if (const TCHAR* Reason = OrderPressInvalidReason(ActiveMatch, Selected))
+    {
+        CancelOrderPress(Reason);
+        return;
+    }
+    using namespace politika::formation;
+    const FVector2D Min = ActiveMatch->GetPlayableMin();
+    // The end is the last sample taken while the button was held, never a read in this handler.
+    const FOrderPress Press = OrderPress;
+    if (Press.State == EOrderPress::Dragging && !Press.bLastValid)
+    {
+        CancelOrderPress(TEXT("EndpointInvalid"));
+        return;
+    }
+    DragFacing Drag;
+    if (Press.State == EOrderPress::Dragging)
+        Drag = ShapeDrag({Press.PressGround.X - Min.X, Press.PressGround.Y - Min.Y},
+            {Press.LastGround.X - Min.X, Press.LastGround.Y - Min.Y}, Press.Shape, static_cast<std::size_t>(Selected.Num()));
+    OrderPress.Drag = Drag;
+    // A press that never crossed the drag threshold, or a drag with no usable direction, is the
+    // plain click it always was: the pressed point, the travel facing and the default width.
+    const bool bDrag = Drag.valid;
+    LogOrderPress(TEXT("commit"), bDrag ? TEXT("drag") : Press.State == EOrderPress::Dragging ? TEXT("no_direction") : TEXT("click"));
+    if (bGroupMovePreview)
+    {
+        GroupMoveMarkers.Reset();
+        bGroupMovePreview = false;
+    }
+    OrderPress = FOrderPress{};
+    if (bDrag)
+    {
+        const FVector AnchorWorld(Min.X + Drag.anchor.x, Min.Y + Drag.anchor.y, (Press.PressGround.Z + Press.LastGround.Z) * 0.5);
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{Drag.anchor.x, Drag.anchor.y}}, &AnchorWorld,
+            &Drag);
+        return;
+    }
+    const FVector Ground = Press.PressGround;
+    SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{Ground.X - Min.X, Ground.Y - Min.Y}}, &Ground);
+}
+
+bool APolitikaPrototypePlayerController::GetOrderDragView(FOrderDragView& OutView) const
+{
+    if (OrderPress.State != EOrderPress::Dragging) return false;
+    const APolitikaPrototypeMatch* ActiveMatch = Match.Get();
+    if (!ActiveMatch) return false;
+    OutView.Start = OrderPress.PressGround;
+    OutView.End = OrderPress.LastGround;
+    OutView.EndScreen = OrderPress.LastScreen;
+    OutView.bEndValid = OrderPress.bLastValid;
+    OutView.Shape = OrderPress.Shape;
+    OutView.FormationId = OrderPress.FormationId;
+    OutView.bPlanned = OrderPress.bPlanned && OrderPress.Drag.valid;
+    OutView.Frontage = OrderPress.PlannedFrontage;
+    OutView.bDefaultFrontage = OrderPress.Drag.frontage == 0;
+    OutView.Anchor = OrderAnchorWorld(*ActiveMatch, OrderPress.Drag.anchor);
+    OutView.Facing = FVector2D(OrderPress.Drag.facing.x, OrderPress.Drag.facing.y);
+    return true;
 }
 
 void APolitikaPrototypePlayerController::StopSelected()
@@ -3730,7 +4082,12 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
 
 void APolitikaPrototypePlayerController::ReturnToMenu()
 {
-    // Esc first cancels a held selection stroke; it leaves the match only when idle.
+    // Esc first cancels a held right-drag or selection stroke; it leaves the match only when idle.
+    if (OrderPress.State != EOrderPress::Idle)
+    {
+        CancelOrderPress(TEXT("Escape"));
+        return;
+    }
     if (bSelectPressed)
     {
         CancelSelectPress(TEXT("Escape"));
@@ -3925,13 +4282,15 @@ void APolitikaPrototypeHUD::DrawHUD()
         }
     }
     // Latest group move's destinations (FORM-F2): small fading rings where each member was sent.
+    // A held right-drag (FORM-FD) shows its advisory preview in amber instead, at full strength.
     if (const APolitikaPrototypePlayerController* Planner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
     {
         TArray<FVector> Markers;
         float Alpha = 0.0f;
-        if (Planner->GetGroupMoveMarkers(Markers, Alpha))
+        bool bPreview = false;
+        if (Planner->GetGroupMoveMarkers(Markers, Alpha, &bPreview))
         {
-            const FLinearColor Ring(0.35f, 0.9f, 0.65f, 0.9f * Alpha);
+            const FLinearColor Ring = bPreview ? FLinearColor(0.94f, 0.78f, 0.31f, 0.95f) : FLinearColor(0.35f, 0.9f, 0.65f, 0.9f * Alpha);
             const float Thickness = FMath::Max(1.0f, 1.5f * UiScale);
             for (const FVector& Marker : Markers)
             {
@@ -4205,9 +4564,71 @@ void APolitikaPrototypeHUD::DrawHUD()
                 bSelected ? Gold : bHasMembers ? Ink : Muted, X0 + 24.0f * UiScale, Y0 + 16.0f * UiScale, nullptr, 1.15f * UiScale);
         }
     }
-    // In-progress box selection, drawn last so it stays visible over every panel.
+    // In-progress box selection and right-drag, drawn last so they stay visible over every panel.
     if (const APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
     {
+        APolitikaPrototypePlayerController::FOrderDragView Drag;
+        if (Controller->GetOrderDragView(Drag))
+        {
+            // FORM-FD: the dragged ground line, an arrow along the facing from its midpoint, and a
+            // label naming the shape and width. All of it is a local preview, not a sent order.
+            const FLinearColor Amber(0.94f, 0.78f, 0.31f, 0.95f);
+            const FLinearColor Warn(1.0f, 0.45f, 0.35f, 0.95f);
+            const float Thickness = FMath::Max(1.5f, 2.0f * UiScale);
+            FVector2D A, B;
+            if (Drag.bEndValid && Controller->ProjectWorldLocationToScreen(Drag.Start + FVector(0, 0, 6), A, true)
+                && Controller->ProjectWorldLocationToScreen(Drag.End + FVector(0, 0, 6), B, true))
+                DrawLine(A.X, A.Y, B.X, B.Y, Amber, Thickness);
+            if (Drag.bPlanned)
+            {
+                const FVector Tip = Drag.Anchor + FVector(Drag.Facing.X, Drag.Facing.Y, 0.0) * 260.0 + FVector(0, 0, 6);
+                const FVector Side = FVector(-Drag.Facing.Y, Drag.Facing.X, 0.0) * 55.0;
+                const FVector Back = FVector(Drag.Facing.X, Drag.Facing.Y, 0.0) * -80.0;
+                FVector2D From, To, Left2, Right2;
+                if (Controller->ProjectWorldLocationToScreen(Drag.Anchor + FVector(0, 0, 6), From, true)
+                    && Controller->ProjectWorldLocationToScreen(Tip, To, true)
+                    && Controller->ProjectWorldLocationToScreen(Tip + Back + Side, Left2, true)
+                    && Controller->ProjectWorldLocationToScreen(Tip + Back - Side, Right2, true))
+                {
+                    DrawLine(From.X, From.Y, To.X, To.Y, Amber, Thickness);
+                    DrawLine(To.X, To.Y, Left2.X, Left2.Y, Amber, Thickness);
+                    DrawLine(To.X, To.Y, Right2.X, Right2.Y, Amber, Thickness);
+                }
+            }
+            const FString ShapeLabel = PolitikaShapeLabel(Drag.Shape);
+            const FString Width = !politika::formation::HasFrontage(Drag.Shape) ? FString(TEXT("facing only"))
+                : Drag.bDefaultFrontage ? FString::Printf(TEXT("%d files (default)"), Drag.Frontage)
+                : FString::Printf(TEXT("%d file%s"), Drag.Frontage, Drag.Frontage == 1 ? TEXT("") : TEXT("s"));
+            const FString Purpose = politika::formation::HasFrontage(Drag.Shape) ? TEXT("drag to set facing / width")
+                : TEXT("drag to set facing");
+            const FString Label = !Drag.bEndValid
+                ? FString::Printf(TEXT("%s%s  ·  release over open ground  ·  Esc cancels"),
+                    Drag.FormationId ? *FString::Printf(TEXT("Formation %u  ·  "), Drag.FormationId) : TEXT(""), *ShapeLabel)
+                : FString::Printf(TEXT("PREVIEW  ·  %s%s  ·  %s  ·  %s  ·  Esc cancels"),
+                    Drag.FormationId ? *FString::Printf(TEXT("Formation %u  ·  "), Drag.FormationId) : TEXT(""), *ShapeLabel,
+                    Drag.bPlanned ? *Width : TEXT("drag farther"), *Purpose);
+            // Beside the cursor, kept inside the viewport, above the control-group bar and off the
+            // COMMANDS panel (moved to its right, or above it when there is no room).
+            float TextW = 0.0f, TextH = 0.0f;
+            GetTextSize(Label, TextW, TextH, nullptr, 0.9f * UiScale);
+            const float Pad = 6.0f * UiScale;
+            const float BoxW = TextW + 2.0f * Pad;
+            const float BoxH = TextH + 2.0f * Pad;
+            const politika::selection::ScreenRect Bar = politika::selection::GroupBarSlotRect(1, Canvas->ClipX, Canvas->ClipY, UiScale);
+            const float MaxX = FMath::Max(4.0f, Canvas->ClipX - BoxW - 4.0f);
+            const float MaxY = static_cast<float>(Bar.min.y) - 28.0f * UiScale - BoxH;
+            float LabelX = FMath::Clamp(static_cast<float>(Drag.EndScreen.X) + 18.0f * UiScale, 4.0f, MaxX);
+            float LabelY = FMath::Clamp(static_cast<float>(Drag.EndScreen.Y) + 18.0f * UiScale, 4.0f, FMath::Max(4.0f, MaxY));
+            const float PanelRight = PanelLeft + PanelWidth;
+            const float PanelTitleY = PanelTop - 4.0f * UiScale;
+            if (LabelX < PanelRight && LabelY + BoxH > PanelTitleY)
+            {
+                if (PanelRight + 8.0f * UiScale <= MaxX) LabelX = PanelRight + 8.0f * UiScale;
+                else LabelY = FMath::Max(4.0f, PanelTitleY - BoxH - 4.0f * UiScale);
+            }
+            DrawRect(FLinearColor(0.02f, 0.025f, 0.025f, 0.88f), LabelX, LabelY, BoxW, BoxH);
+            DrawText(Label, Drag.bEndValid ? Amber : Warn, LabelX + Pad, LabelY + Pad, nullptr, 0.9f * UiScale);
+        }
         FVector2D BoxMin;
         FVector2D BoxMax;
         if (Controller->GetSelectionBox(BoxMin, BoxMax))
