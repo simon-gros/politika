@@ -7498,7 +7498,13 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
          -> Result<(), String> {
             let before_v = client.offset();
             let before_v_server = server.offset();
-            client.key(if backward { "shift+v" } else { "v" })?;
+            // Shift is held across the V press, as a player holds it: a one-shot `shift+v` can
+            // release Shift inside the same frame as V, and the game reads Shift as up.
+            if backward {
+                client.modified_key("shift", "v")?;
+            } else {
+                client.key("v")?;
+            }
             let shape =
                 client.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before_v)?;
             thread::sleep(Duration::from_millis(500));
