@@ -7069,20 +7069,7 @@ fn shape_move(
         &format!("{id}_ordered_png"),
         &client.screenshot(evidence, &format!("{id}-ordered"))?,
     );
-    let client_text = client.text()[before_client..].to_owned();
-    let mut slots: Vec<(u64, i64, (f64, f64), (f64, f64))> = client_text
-        .lines()
-        .filter(|l| l.contains("RTS_GROUP_MOVE_SLOT") && field(l, "batch") == Some(batch.as_str()))
-        .filter_map(|l| {
-            Some((
-                field(l, "unit")?.parse().ok()?,
-                field(l, "slot")?.parse().ok()?,
-                (number(l, "x")?, number(l, "y")?),
-                (number(l, "world_x")?, number(l, "world_y")?),
-            ))
-        })
-        .collect();
-    slots.sort_by_key(|s| s.0);
+    let slots = group_move_slots(&client.text()[before_client..], &batch);
     let slot_units: Vec<u64> = slots.iter().map(|s| s.0).collect();
     let size = pair(&plan, "playable_size").unwrap_or((0.0, 0.0));
     let map_points: Vec<(f64, f64)> = slots.iter().map(|s| s.2).collect();
@@ -7244,6 +7231,56 @@ fn shape_move(
         }
     }
 
+    group_move_routes(
+        client,
+        server,
+        evidence,
+        report,
+        own,
+        id,
+        &slots,
+        &outcome,
+        spacing,
+        before_server,
+    )
+}
+
+/// One client-planned group-move slot: unit, slot index (-1 when unplaced), map point and world
+/// point, from `RTS_GROUP_MOVE_SLOT`.
+type GroupSlot = (u64, i64, (f64, f64), (f64, f64));
+
+/// The client's slots of one group-move batch, sorted by unit.
+fn group_move_slots(text: &str, batch: &str) -> Vec<GroupSlot> {
+    let mut slots: Vec<GroupSlot> = text
+        .lines()
+        .filter(|l| l.contains("RTS_GROUP_MOVE_SLOT") && field(l, "batch") == Some(batch))
+        .filter_map(|l| {
+            Some((
+                field(l, "unit")?.parse().ok()?,
+                field(l, "slot")?.parse().ok()?,
+                (number(l, "x")?, number(l, "y")?),
+                (number(l, "world_x")?, number(l, "world_y")?),
+            ))
+        })
+        .collect();
+    slots.sort_by_key(|s| s.0);
+    slots
+}
+
+/// Server intake, projection and arrival of one client-planned group move (FORM-05).
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn group_move_routes(
+    client: &mut Game,
+    server: &mut Game,
+    evidence: &Path,
+    report: &mut Report,
+    own: &[u64],
+    id: &str,
+    slots: &[GroupSlot],
+    outcome: &str,
+    spacing: f64,
+    before_server: usize,
+) -> Result<(), String> {
     // The server received one ordinary Move per unit at exactly the client's slot, projected
     // it within its own 150 cm threshold and routed it; all were admitted on their own.
     let server_text = server.text()[before_server..].to_owned();
@@ -7257,7 +7294,7 @@ fn shape_move(
         .filter_map(|l| field(l, "issuer")?.parse().ok())
         .collect();
     received.sort_unstable();
-    let ready: Vec<(u64, (f64, f64), (f64, f64))> = server_text
+    let ready: Vec<UnitPoints> = server_text
         .lines()
         .filter(|l| l.contains("RTS_NAVIGATION_READY"))
         .filter_map(|l| {
@@ -7710,6 +7747,1276 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
     server.stop();
     drop(display_a);
     result
+}
+
+// ---------------------------------------------------------------------------------------
+// FORM-FD right-drag facing and frontage (RTS_FORMATION_FACING_DRAG_ACCEPTANCE.md):
+// `--group-move-facing SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// Same dedicated 1v1 fixture as `--group-move-shape` (20 idle units per seat). Seat 1's client
+// box-selects its 20 units with real X input, then: a plain right-click (travel facing, default
+// ten-file Line, nothing drag-specific sent); a right-drag across the screen from left to right
+// (a five-file Line facing away from the camera, centred on the drag midpoint); a held drag
+// cancelled by Escape and another cancelled by a left click (nothing sent, no menu); Shift+RMB
+// (no drag: a plain move on press); one selected unit (ordered on press, the release adds
+// nothing); dragged Column (four files), Perimeter (facing only) and Echelon Left (five files
+// before the turn); and a whole formation formed with T and dragged from right to left, so the
+// client sends a protocol-9 facing and frontage and the server plans, stores and routes it. Every
+// held drag must show its preview while nothing is sent; every committed plan is checked against
+// the drag endpoints the client logged (anchor within 0.5 cm, facing within 0.001) and against
+// the server's intake, routes and arrivals. `normalized.txt` records each move's geometry and
+// outcomes for `--compare-normalized` across independent runs.
+// ---------------------------------------------------------------------------------------
+
+/// Ground probe points (world cm). The camera looks along +Y with screen-right at world -X, so a
+/// drag from a larger to a smaller X runs left to right on screen. Each press point is at least
+/// 200 cm from where the previous move leaves the soldiers, every block stays inside the map and
+/// at least 550 cm from the control point at (0, 150) (checked with the portable planner before
+/// the run).
+const FACING_PROBES: [(f64, f64); 17] = [
+    (-450.0, -1000.0),  // 0 plain click
+    (-1150.0, -1000.0), // 1 Line drag start
+    (-1750.0, -1000.0), // 2 Line drag end: 600 cm, five files
+    (-500.0, -700.0),   // 3 cancelled drag start
+    (-1000.0, -700.0),  // 4 cancelled drag end
+    (-300.0, -600.0),   // 5 empty ground for the cancelling left click
+    (-600.0, -1000.0),  // 6 Shift+RMB press
+    (-900.0, -1000.0),  // 7 Shift+RMB drag end
+    (-1450.0, -1300.0), // 8 single-unit press
+    (-1225.0, -700.0),  // 9 Column drag start
+    (-1675.0, -700.0),  // 10 Column drag end: 450 cm, four files
+    (-350.0, -1100.0),  // 11 Perimeter drag start
+    (-750.0, -1100.0),  // 12 Perimeter drag end
+    (-1150.0, -800.0),  // 13 Echelon Left drag start
+    (-1750.0, -800.0),  // 14 Echelon Left drag end: 600 cm, five files
+    (-850.0, -1050.0),  // 15 formation drag start
+    (-400.0, -1050.0),  // 16 formation drag end: right to left, 450 cm, four files
+];
+/// Planner limits that the harness recomputes independently.
+const FACING_MIN_DRAG_CM: f64 = 1.0;
+const FACING_ANCHOR_TOLERANCE_CM: f64 = 0.5;
+const FACING_TOLERANCE: f64 = 0.001;
+/// Pixel quantization of the real pointer moves the ground hits off the nominal probe points.
+const FACING_NOMINAL_TOLERANCE: f64 = 0.02;
+
+impl Game {
+    /// Presses the right button at `from` and moves to `to` in held steps that the game samples
+    /// over several frames; returns with the button still held.
+    fn right_drag_hold(&self, from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+        self.pointer_to(from.0, from.1)?;
+        thread::sleep(Duration::from_millis(150));
+        self.xdo_here(&["mousedown", "3"])?;
+        thread::sleep(Duration::from_millis(200));
+        for step in 1..=10 {
+            let t = f64::from(step) / 10.0;
+            self.pointer_to(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t)?;
+            thread::sleep(Duration::from_millis(70));
+        }
+        thread::sleep(Duration::from_millis(350));
+        Ok(())
+    }
+
+    fn right_release(&self) -> Result<(), String> {
+        self.xdo_here(&["mouseup", "3"])?;
+        thread::sleep(Duration::from_millis(300));
+        Ok(())
+    }
+
+    /// After a failure: lets go of every button and modifier the facing harness may hold.
+    fn release_inputs(&self) {
+        let _ = self.xdo_here(&["mouseup", "3"]);
+        let _ = self.xdo_here(&["keyup", "shift"]);
+    }
+}
+
+/// What a right-drag between two logged ground points must produce, recomputed here from the
+/// formation contract: anchor = midpoint (map cm), facing = (dy, -dx) / length, frontage =
+/// clamp(round(length / spacing) + 1, 1, members) from one spacing on (halves up), else 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DragExpect {
+    anchor: (f64, f64),
+    facing: (f64, f64),
+    length: f64,
+    frontage: usize,
+}
+
+fn drag_expect(
+    start: (f64, f64),
+    end: (f64, f64),
+    playable_min: (f64, f64),
+    spacing: f64,
+    members: usize,
+    has_frontage: bool,
+) -> Option<DragExpect> {
+    let (dx, dy) = (end.0 - start.0, end.1 - start.1);
+    let length = dx.hypot(dy);
+    if !length.is_finite() || length < FACING_MIN_DRAG_CM || spacing <= 0.0 {
+        return None;
+    }
+    let frontage = if !has_frontage || members == 0 || length < spacing {
+        0
+    } else {
+        let ratio = (length / spacing).min(members as f64);
+        ((ratio + 0.5).floor() as usize + 1).clamp(1, members)
+    };
+    Some(DragExpect {
+        anchor: (
+            (start.0 + end.0) * 0.5 - playable_min.0,
+            (start.1 + end.1) * 0.5 - playable_min.1,
+        ),
+        facing: (dy / length, -dx / length),
+        length,
+        frontage,
+    })
+}
+
+fn shape_has_frontage(shape: &str) -> bool {
+    shape != "wedge" && shape != "perimeter"
+}
+
+/// Orders and formation requests seat 1 sent (client) or the server received from it.
+fn sent_orders(client: &str) -> usize {
+    count_lines(client, &["RTS_COMMAND_INTENT_SENT"]) + count_lines(client, &["RTS_FORMATION_SENT"])
+}
+
+fn received_orders(server: &str) -> usize {
+    count_lines(server, &["MP_COMMAND_RECEIVED", " participant=1 "])
+        + count_lines(server, &["RTS_FORMATION_INTENT", "participant=1 "])
+}
+
+/// Extent across `RightOf(facing)` and along `facing` of map points.
+fn frame_extent(points: &[(f64, f64)], facing: (f64, f64)) -> (f64, f64) {
+    let right = (-facing.1, facing.0);
+    let span = |v: Vec<f64>| {
+        v.iter().copied().fold(f64::MIN, f64::max) - v.iter().copied().fold(f64::MAX, f64::min)
+    };
+    (
+        span(
+            points
+                .iter()
+                .map(|p| p.0 * right.0 + p.1 * right.1)
+                .collect(),
+        ),
+        span(
+            points
+                .iter()
+                .map(|p| p.0 * facing.0 + p.1 * facing.1)
+                .collect(),
+        ),
+    )
+}
+
+struct FacingDrag<'a> {
+    id: &'a str,
+    shape: &'a str,
+    from: usize,
+    to: usize,
+    /// Files the drag must request (0: the shape's default or none).
+    frontage: usize,
+    /// Nominal facing from the probe points.
+    facing: (f64, f64),
+    /// Planned (across, along) extent, when it is fixed by the files.
+    extent: Option<(f64, f64)>,
+}
+
+/// One held right-drag and its release; returns the commit and plan lines.
+fn held_drag(
+    client: &mut Game,
+    server: &Game,
+    evidence: &Path,
+    report: &mut Report,
+    step: &FacingDrag,
+    planned: usize,
+) -> Result<(), String> {
+    let id = step.id;
+    let before_client = client.offset();
+    let before_server = server.offset();
+    let from = wait_screen(
+        client,
+        |t| probe_screen(t, step.from),
+        &format!("{id} start"),
+    )?;
+    let to = wait_screen(client, |t| probe_screen(t, step.to), &format!("{id} end"))?;
+    client.right_drag_hold(from, to)?;
+    let update = client.wait_line(
+        &["RTS_GROUP_MOVE_DRAG", "state=update"],
+        Duration::from_secs(5),
+        before_client,
+    );
+    thread::sleep(Duration::from_millis(250));
+    report.artifact(
+        &format!("{id}_held_png"),
+        &client.screenshot(evidence, &format!("{id}-held"))?,
+    );
+    let held_client = client.text()[before_client..].to_owned();
+    let held_server = server.text()[before_server..].to_owned();
+    let last_update = held_client
+        .lines()
+        .rev()
+        .find(|l| l.contains("RTS_GROUP_MOVE_DRAG") && l.contains("state=update"))
+        .unwrap_or("")
+        .to_owned();
+    let checked: usize = field(&last_update, "checked")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    report.verdict(
+        &format!("FD-{id}-PREVIEW-HELD"),
+        update.is_ok()
+            && field(&last_update, "planned_frontage") == Some(planned.to_string().as_str())
+            && field(&last_update, "shape") == Some(step.shape)
+            && checked <= 40
+            && sent_orders(&held_client) == 0
+            && received_orders(&held_server) == 0,
+        format!(
+            "{} preview replans while held, planned frontage {:?} (want {planned}), {checked} slot checks (at most 40), intents sent {}, server received {}",
+            count_lines(&held_client, &["RTS_GROUP_MOVE_DRAG", "state=update"]),
+            field(&last_update, "planned_frontage"),
+            sent_orders(&held_client),
+            received_orders(&held_server)
+        ),
+    );
+    client.right_release()
+}
+
+/// Checks a committed ordinary drag against its logged endpoints, then the server's routes.
+#[allow(clippy::too_many_lines)]
+fn facing_move(
+    client: &mut Game,
+    server: &mut Game,
+    evidence: &Path,
+    report: &mut Report,
+    own: &[u64],
+    step: &FacingDrag,
+    normalized: &mut Vec<String>,
+) -> Result<(), String> {
+    let id = step.id;
+    let before_client = client.offset();
+    let before_server = server.offset();
+    let spacing = shape_spacing(step.shape);
+    let planned = if step.frontage != 0 {
+        step.frontage
+    } else if shape_has_frontage(step.shape) {
+        10
+    } else {
+        0
+    };
+    held_drag(client, server, evidence, report, step, planned)?;
+    let commit = client.wait_line(
+        &["RTS_GROUP_MOVE_DRAG", "state=commit"],
+        Duration::from_secs(5),
+        before_client,
+    )?;
+    let plan = client.wait_line(
+        &["RTS_GROUP_MOVE_PLAN", "order=0", "drag=1"],
+        Duration::from_secs(5),
+        before_client,
+    )?;
+    let batch = field(&plan, "batch").unwrap_or("0").to_owned();
+    let outcome = client.wait_line(
+        &["RTS_GROUP_ORDER_OUTCOME", &format!("batch={batch} ")],
+        Duration::from_secs(15),
+        before_client,
+    )?;
+    thread::sleep(Duration::from_millis(300));
+    report.artifact(
+        &format!("{id}_ordered_png"),
+        &client.screenshot(evidence, &format!("{id}-ordered"))?,
+    );
+    let client_text = client.text()[before_client..].to_owned();
+    report.fact(&format!("{id}_commit"), commit.trim());
+    report.fact(&format!("{id}_plan"), plan.trim());
+
+    // The plan is exactly the drag: midpoint anchor, right-hand perpendicular facing, files from
+    // the length; recomputed here from the client's own logged endpoints.
+    let start = pair(&commit, "world_start").unwrap_or((f64::NAN, f64::NAN));
+    let end = pair(&commit, "world_end").unwrap_or((f64::NAN, f64::NAN));
+    let min = pair(&plan, "playable_min").unwrap_or((f64::NAN, f64::NAN));
+    let expect = drag_expect(
+        start,
+        end,
+        min,
+        spacing,
+        own.len(),
+        shape_has_frontage(step.shape),
+    );
+    let anchor = pair(&plan, "anchor").unwrap_or((f64::NAN, f64::NAN));
+    let facing = pair(&plan, "facing").unwrap_or((f64::NAN, f64::NAN));
+    let requested: usize = field(&plan, "requested_frontage")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    let effective: usize = field(&plan, "frontage")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+    let (anchor_error, facing_error) = expect.map_or((f64::INFINITY, f64::INFINITY), |e| {
+        (distance(anchor, e.anchor), distance(facing, e.facing))
+    });
+    let nominal_error = distance(facing, step.facing);
+    report.verdict(
+        &format!("FD-{id}-DRAG-GEOMETRY"),
+        field(&commit, "reason") == Some("drag")
+            && count_lines(&client_text, &["RTS_GROUP_MOVE_DRAG", "state=commit"]) == 1
+            && count_lines(&client_text, &["RTS_GROUP_ORDER_SENT"]) == 1
+            && count_lines(&client_text, &["RTS_FORMATION_SENT"]) == 0
+            && field(&plan, "explicit_facing") == Some("1")
+            && anchor_error <= FACING_ANCHOR_TOLERANCE_CM
+            && facing_error <= FACING_TOLERANCE
+            && nominal_error <= FACING_NOMINAL_TOLERANCE
+            && expect.is_some_and(|e| e.frontage == step.frontage && requested == e.frontage)
+            && effective == planned,
+        format!(
+            "drag {start:?} -> {end:?} ({:.1} cm): anchor error {anchor_error:.3} cm, facing {facing:?} error {facing_error:.6} (nominal {:?}, {nominal_error:.4}), requested frontage {requested} (want {}), effective {effective} (want {planned})",
+            expect.map_or(f64::NAN, |e| e.length),
+            step.facing,
+            step.frontage
+        ),
+    );
+
+    let slots = group_move_slots(&client_text, &batch);
+    let slot_units: Vec<u64> = slots.iter().map(|s| s.0).collect();
+    let size = pair(&plan, "playable_size").unwrap_or((0.0, 0.0));
+    let map_points: Vec<(f64, f64)> = slots.iter().map(|s| s.2).collect();
+    let in_bounds = map_points
+        .iter()
+        .all(|p| p.0 >= 50.0 && p.1 >= 50.0 && p.0 <= size.0 - 50.0 && p.1 <= size.1 - 50.0);
+    let placed = slots.iter().filter(|s| s.1 >= 0).count();
+    let separation = min_separation(&map_points);
+    let rejected = field(&plan, "rejected").unwrap_or("?").to_owned();
+    report.verdict(
+        &format!("FD-{id}-PLAN"),
+        field(&plan, "shape") == Some(step.shape)
+            && field(&plan, "members") == Some("20")
+            && field(&plan, "unplaced") == Some("0")
+            && slot_units == own
+            && placed == own.len()
+            && (separation - spacing).abs() < 0.5
+            && in_bounds
+            && rejected == "0",
+        format!(
+            "{} slots for {} own units, {placed} placed, min separation {separation:.1} cm (want {spacing}), in bounds {in_bounds}, rejected {rejected}",
+            slots.len(),
+            own.len()
+        ),
+    );
+    let (across, along) = frame_extent(&map_points, facing);
+    report.fact(
+        &format!("{id}_extent"),
+        format!("across {across:.1} cm, along {along:.1} cm"),
+    );
+    if let Some((want_across, want_along)) = step.extent {
+        report.verdict(
+            &format!("FD-{id}-SHAPE"),
+            (across - want_across).abs() < 0.5 && (along - want_along).abs() < 0.5,
+            format!(
+                "across {across:.1} (want {want_across:.1}), along {along:.1} (want {want_along:.1}) of the dragged facing"
+            ),
+        );
+    }
+    if step.shape == "perimeter" {
+        // Facing only: the same 479.4 cm ring, its first slot straight ahead of the anchor.
+        let radius = perimeter_radius(own.len());
+        let worst = map_points
+            .iter()
+            .map(|p| (distance(*p, anchor) - radius).abs())
+            .fold(0.0, f64::max);
+        let front = (anchor.0 + radius * facing.0, anchor.1 + radius * facing.1);
+        let ahead = map_points.iter().any(|p| distance(*p, front) < 0.5);
+        report.verdict(
+            &format!("FD-{id}-SHAPE"),
+            worst < 0.5 && ahead && requested == 0 && effective == 0,
+            format!(
+                "{} slots within {worst:.2} cm of the {radius:.1} cm ring, a slot ahead along the dragged facing {ahead}, frontage requested {requested} effective {effective}",
+                map_points.len()
+            ),
+        );
+    }
+    if step.shape.starts_with("echelon") {
+        // The Line block of `files` is turned 45 degrees: its front-rank end on the held-back
+        // side stands (files - ranks) x 150 / sqrt(2) behind the rear-rank end on the other side.
+        let right = (-facing.1, facing.0);
+        let across_of = |p: &(f64, f64)| p.0 * right.0 + p.1 * right.1;
+        let along_of = |p: &(f64, f64)| p.0 * facing.0 + p.1 * facing.1;
+        let by = |pick: fn(f64, f64) -> bool| {
+            map_points
+                .iter()
+                .copied()
+                .reduce(|best, p| {
+                    if pick(across_of(&p), across_of(&best)) {
+                        p
+                    } else {
+                        best
+                    }
+                })
+                .unwrap_or((f64::NAN, f64::NAN))
+        };
+        let (right_end, left_end) = (by(|a, b| a > b), by(|a, b| a < b));
+        let (back, front) = if step.shape == "echelon-right" {
+            (right_end, left_end)
+        } else {
+            (left_end, right_end)
+        };
+        let files = step.frontage.max(1);
+        let ranks = own.len().div_ceil(files);
+        let want =
+            (files as f64 - ranks as f64) * SHAPE_SPACING_CM * std::f64::consts::FRAC_1_SQRT_2;
+        let held = along_of(&front) - along_of(&back);
+        report.verdict(
+            &format!("FD-{id}-FLANK-HELD-BACK"),
+            (held - want).abs() < 0.5,
+            format!("held-back end {held:.1} cm behind the other end (want {want:.1} for {files} files in {ranks} ranks)"),
+        );
+    }
+    let mut assignment: Vec<String> = slots
+        .iter()
+        .map(|s| format!("{}:{}:{:.3}:{:.3}", s.0, s.1, s.2.0, s.2.1))
+        .collect();
+    assignment.sort();
+    group_move_routes(
+        client,
+        server,
+        evidence,
+        report,
+        own,
+        id,
+        &slots,
+        &outcome,
+        spacing,
+        before_server,
+    )?;
+    normalized.push(format!(
+        "{id} shape={} anchor={:.3},{:.3} facing={:.6},{:.6} frontage={requested} effective={effective} accepted={} rejected={} slots={}",
+        step.shape,
+        anchor.0,
+        anchor.1,
+        facing.0,
+        facing.1,
+        field(&outcome, "accepted").unwrap_or("?"),
+        field(&outcome, "rejected").unwrap_or("?"),
+        assignment.join(",")
+    ));
+    Ok(())
+}
+
+/// A held drag that is cancelled while the button is down: nothing may be sent or received.
+#[allow(clippy::too_many_arguments)]
+fn cancelled_drag(
+    client: &mut Game,
+    server: &Game,
+    evidence: &Path,
+    report: &mut Report,
+    id: &str,
+    reason: &str,
+    cancel: &dyn Fn(&mut Game) -> Result<(), String>,
+    normalized: &mut Vec<String>,
+) -> Result<(), String> {
+    let before_client = client.offset();
+    let before_server = server.offset();
+    let from = wait_screen(client, |t| probe_screen(t, 3), "cancel start")?;
+    let to = wait_screen(client, |t| probe_screen(t, 4), "cancel end")?;
+    client.right_drag_hold(from, to)?;
+    let update = client.wait_line(
+        &["RTS_GROUP_MOVE_DRAG", "state=update"],
+        Duration::from_secs(5),
+        before_client,
+    );
+    thread::sleep(Duration::from_millis(250));
+    report.artifact(
+        &format!("{id}_held_png"),
+        &client.screenshot(evidence, &format!("{id}-held"))?,
+    );
+    cancel(client)?;
+    let cancelled = client.wait_line(
+        &[
+            "RTS_GROUP_MOVE_DRAG",
+            "state=cancel",
+            &format!("reason={reason}"),
+        ],
+        Duration::from_secs(5),
+        before_client,
+    );
+    thread::sleep(Duration::from_millis(400));
+    report.artifact(
+        &format!("{id}_cancelled_png"),
+        &client.screenshot(evidence, &format!("{id}-cancelled"))?,
+    );
+    client.right_release()?;
+    thread::sleep(Duration::from_millis(1500));
+    let client_text = client.text()[before_client..].to_owned();
+    let server_text = server.text()[before_server..].to_owned();
+    let routed = count_lines(&server_text, &["RTS_NAVIGATION_READY"]);
+    let menu = client_text.contains("MainMenu") || client_text.contains("main_menu");
+    report.verdict(
+        &format!("FD-{id}"),
+        update.is_ok()
+            && cancelled.is_ok()
+            && count_lines(&client_text, &["RTS_GROUP_MOVE_DRAG", "state=commit"]) == 0
+            && sent_orders(&client_text) == 0
+            && count_lines(&client_text, &["RTS_GROUP_ORDER_SENT"]) == 0
+            && received_orders(&server_text) == 0
+            && routed == 0
+            && !menu,
+        format!(
+            "held preview {}, cancelled {}, commits {}, intents sent {}, server received {}, routes installed {routed}, menu travel {menu}",
+            update.is_ok(),
+            cancelled.as_deref().map_or("no", str::trim),
+            count_lines(&client_text, &["RTS_GROUP_MOVE_DRAG", "state=commit"]),
+            sent_orders(&client_text),
+            received_orders(&server_text)
+        ),
+    );
+    normalized.push(format!(
+        "{id} cancel={reason} sent={} received={} routed={routed}",
+        sent_orders(&client_text),
+        received_orders(&server_text)
+    ));
+    Ok(())
+}
+
+/// Box-selects every own unit on screen with real input and checks the selection.
+fn box_select_all(
+    client: &mut Game,
+    report: &mut Report,
+    own: &[u64],
+    verdict: &str,
+) -> Result<(), String> {
+    let before_box = client.offset();
+    client.drag_hold(
+        (24.0, 24.0),
+        (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+    )?;
+    client.release()?;
+    let boxed = client.wait_line(
+        &["RTS_SELECTION_SET", "source=box", "op=replace"],
+        Duration::from_secs(5),
+        before_box,
+    )?;
+    report.verdict(
+        verdict,
+        selection_ids(&boxed) == own,
+        boxed.trim().to_owned(),
+    );
+    Ok(())
+}
+
+/// V presses until the HUD's group-move shape is `want`.
+fn cycle_shape_to(
+    client: &mut Game,
+    report: &mut Report,
+    want: &str,
+    presses: usize,
+) -> Result<(), String> {
+    let mut last = String::new();
+    for _ in 0..presses {
+        let before = client.offset();
+        client.key("v")?;
+        last = client.wait_line(&["RTS_GROUP_MOVE_SHAPE"], Duration::from_secs(5), before)?;
+        thread::sleep(Duration::from_millis(300));
+    }
+    report.verdict(
+        &format!("FD-SHAPE-KEY-{}", want.to_uppercase()),
+        field(&last, "shape") == Some(want),
+        last.trim().to_owned(),
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn group_move_facing_session(
+    options: &DedicatedOptions,
+    report: &mut Report,
+) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    let ready = server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    report.fact("server_ready", ready.trim());
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let fixture = server.wait(&["MP_UNIT_SCALE_FIXTURE"], Duration::from_secs(5))?;
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}",
+        FACING_PROBES
+            .iter()
+            .map(|(x, y)| format!("{x}:{y}"))
+            .collect::<Vec<_>>()
+            .join("/")
+    ));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let mut normalized: Vec<String> = Vec::new();
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        report.verdict(
+            "FORM-FIXTURE-20-PER-SEAT",
+            own.len() == GROUP_UNITS_PER_SEAT && field(&fixture, "per_seat") == Some("20"),
+            format!("participant 1 units={}; {}", own.len(), fixture.trim()),
+        );
+        report.verdict(
+            "FD-PROTOCOL-9",
+            field(&ready, "protocol") == Some("9"),
+            ready.trim().to_owned(),
+        );
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(evidence, "01-start")?,
+        );
+        box_select_all(&mut client_a, report, &own, "FORM-01-BOX-SELECTS-OWN-UNITS")?;
+
+        // FD-P02: a plain right-click is the FORM-F2 click it always was.
+        let before_click = client_a.offset();
+        let before_click_server = server.offset();
+        let click = wait_screen(&mut client_a, |t| probe_screen(t, 0), "click probe")?;
+        shape_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &ShapeMove {
+                id: "CLICK",
+                shape: "line",
+                screen: click,
+                expect_rejected: Some(false),
+            },
+        )?;
+        let click_text = client_a.text()[before_click..].to_owned();
+        let click_plan = click_text
+            .lines()
+            .find(|l| l.contains("RTS_GROUP_MOVE_PLAN"))
+            .unwrap_or("")
+            .to_owned();
+        report.verdict(
+            "FD-CLICK-COMPATIBLE",
+            field(&click_plan, "drag") == Some("0")
+                && field(&click_plan, "explicit_facing") == Some("0")
+                && field(&click_plan, "requested_frontage") == Some("0")
+                && field(&click_plan, "frontage") == Some("10")
+                && count_lines(&click_text, &["RTS_GROUP_MOVE_DRAG", "state=commit", "reason=click"]) == 1
+                && count_lines(&click_text, &["RTS_GROUP_MOVE_DRAG", "state=update"]) == 0
+                && count_lines(&click_text, &["RTS_GROUP_ORDER_SENT"]) == 1
+                && count_lines(&click_text, &["RTS_COMMAND_INTENT_SENT"]) == own.len()
+                && count_lines(&click_text, &["RTS_FORMATION_SENT"]) == 0
+                && count_lines(&server.text()[before_click_server..], &["RTS_FORMATION_INTENT"]) == 0,
+            format!(
+                "travel facing, default frontage, one batch of {} ordinary intents and no formation request: {}",
+                count_lines(&click_text, &["RTS_COMMAND_INTENT_SENT"]),
+                click_plan.trim()
+            ),
+        );
+        normalized.push(format!(
+            "CLICK anchor={} facing={} frontage={}",
+            field(&click_plan, "anchor").unwrap_or("?"),
+            field(&click_plan, "facing").unwrap_or("?"),
+            field(&click_plan, "frontage").unwrap_or("?")
+        ));
+
+        // FD-P01: a left-to-right drag faces away from the camera (+Y) in five files.
+        facing_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &FacingDrag {
+                id: "LINE",
+                shape: "line",
+                from: 1,
+                to: 2,
+                frontage: 5,
+                facing: (0.0, 1.0),
+                extent: Some((4.0 * SHAPE_SPACING_CM, 3.0 * SHAPE_SPACING_CM)),
+            },
+            &mut normalized,
+        )?;
+
+        // FD-P03: Escape while the button is held cancels and stays in the match.
+        cancelled_drag(
+            &mut client_a,
+            &server,
+            evidence,
+            report,
+            "ESCAPE-CANCEL",
+            "Escape",
+            &|client: &mut Game| client.key("Escape"),
+            &mut normalized,
+        )?;
+        // FD-P07: a left click during the drag (a selection gesture) cancels it.
+        let empty = wait_screen(&mut client_a, |t| probe_screen(t, 5), "empty ground")?;
+        cancelled_drag(
+            &mut client_a,
+            &server,
+            evidence,
+            report,
+            "SELECT-CANCEL",
+            "SelectPress",
+            &|client: &mut Game| client.click(empty.0, empty.1, "1"),
+            &mut normalized,
+        )?;
+        box_select_all(&mut client_a, report, &own, "FD-RESELECT-AFTER-CANCEL")?;
+
+        // FD-A28: Shift+RMB never starts a drag; it is the plain move, sent on press.
+        let before_shift = client_a.offset();
+        let before_shift_server = server.offset();
+        let shift = wait_screen(&mut client_a, |t| probe_screen(t, 6), "shift probe")?;
+        let shift_end = wait_screen(&mut client_a, |t| probe_screen(t, 7), "shift end")?;
+        client_a.pointer_to(shift.0, shift.1)?;
+        thread::sleep(Duration::from_millis(150));
+        client_a.xdo_here(&["keydown", "shift"])?;
+        thread::sleep(Duration::from_millis(150));
+        client_a.xdo_here(&["mousedown", "3"])?;
+        let on_press = client_a.wait_line(
+            &["RTS_GROUP_MOVE_PLAN", "order=0"],
+            Duration::from_secs(3),
+            before_shift,
+        );
+        for step in 1..=6 {
+            let t = f64::from(step) / 6.0;
+            client_a.pointer_to(
+                shift.0 + (shift_end.0 - shift.0) * t,
+                shift.1 + (shift_end.1 - shift.1) * t,
+            )?;
+            thread::sleep(Duration::from_millis(70));
+        }
+        client_a.xdo_here(&["mouseup", "3"])?;
+        thread::sleep(Duration::from_millis(150));
+        client_a.xdo_here(&["keyup", "shift"])?;
+        let shift_plan = on_press?;
+        let batch = field(&shift_plan, "batch").unwrap_or("0").to_owned();
+        let shift_outcome = client_a.wait_line(
+            &["RTS_GROUP_ORDER_OUTCOME", &format!("batch={batch} ")],
+            Duration::from_secs(15),
+            before_shift,
+        )?;
+        let shift_text = client_a.text()[before_shift..].to_owned();
+        report.verdict(
+            "FD-SHIFT-RMB-RESERVED",
+            field(&shift_plan, "drag") == Some("0")
+                && field(&shift_plan, "explicit_facing") == Some("0")
+                && count_lines(&shift_text, &["RTS_GROUP_MOVE_DRAG"]) == 0
+                && count_lines(&shift_text, &["RTS_GROUP_ORDER_SENT"]) == 1
+                && field(&shift_outcome, "accepted") == Some("20"),
+            format!(
+                "planned on press, before the release; drag lines {}; {}",
+                count_lines(&shift_text, &["RTS_GROUP_MOVE_DRAG"]),
+                shift_plan.trim()
+            ),
+        );
+        let shift_slots = group_move_slots(&shift_text, &batch);
+        group_move_routes(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            "SHIFT",
+            &shift_slots,
+            &shift_outcome,
+            SHAPE_SPACING_CM,
+            before_shift_server,
+        )?;
+
+        // FD-P04: one selected unit is ordered on press; its release adds nothing.
+        let single = own[0];
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", single)?;
+        let before_single = client_a.offset();
+        let before_single_server = server.offset();
+        let point = wait_screen(&mut client_a, |t| probe_screen(t, 8), "single probe")?;
+        client_a.pointer_to(point.0, point.1)?;
+        thread::sleep(Duration::from_millis(150));
+        client_a.xdo_here(&["mousedown", "3"])?;
+        let pressed = client_a.wait_line(
+            &["RTS_COMMAND_INTENT_SENT", &format!("issuer={single} ")],
+            Duration::from_secs(3),
+            before_single,
+        );
+        thread::sleep(Duration::from_millis(400));
+        client_a.xdo_here(&["mouseup", "3"])?;
+        thread::sleep(Duration::from_millis(1500));
+        let single_text = client_a.text()[before_single..].to_owned();
+        let single_server = server.text()[before_single_server..].to_owned();
+        report.verdict(
+            "FD-SINGLE-UNIT-ON-PRESS",
+            pressed.is_ok()
+                && count_lines(&single_text, &["RTS_COMMAND_INTENT_SENT"]) == 1
+                && count_lines(&single_server, &["MP_COMMAND_RECEIVED", " participant=1 "]) == 1
+                && count_lines(&single_text, &["RTS_GROUP_MOVE_DRAG"]) == 0,
+            format!(
+                "intent sent while the button was held {}, intents in total {}, server received {}, drag lines {}",
+                pressed.is_ok(),
+                count_lines(&single_text, &["RTS_COMMAND_INTENT_SENT"]),
+                count_lines(&single_server, &["MP_COMMAND_RECEIVED", " participant=1 "]),
+                count_lines(&single_text, &["RTS_GROUP_MOVE_DRAG"])
+            ),
+        );
+        normalized.push(format!(
+            "SINGLE intents={} received={}",
+            count_lines(&single_text, &["RTS_COMMAND_INTENT_SENT"]),
+            count_lines(&single_server, &["MP_COMMAND_RECEIVED", " participant=1 "])
+        ));
+        thread::sleep(Duration::from_secs(4));
+        box_select_all(&mut client_a, report, &own, "FD-RESELECT-AFTER-SINGLE")?;
+
+        // FD-P06: Column (four files), Perimeter (facing only) and Echelon Left (five files
+        // before the 45 degree turn).
+        cycle_shape_to(&mut client_a, report, "column", 1)?;
+        facing_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &FacingDrag {
+                id: "COLUMN",
+                shape: "column",
+                from: 9,
+                to: 10,
+                frontage: 4,
+                facing: (0.0, 1.0),
+                extent: Some((3.0 * SHAPE_SPACING_CM, 4.0 * SHAPE_SPACING_CM)),
+            },
+            &mut normalized,
+        )?;
+        cycle_shape_to(&mut client_a, report, "perimeter", 2)?;
+        facing_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &FacingDrag {
+                id: "PERIMETER",
+                shape: "perimeter",
+                from: 11,
+                to: 12,
+                frontage: 0,
+                facing: (0.0, 1.0),
+                extent: None,
+            },
+            &mut normalized,
+        )?;
+        cycle_shape_to(&mut client_a, report, "echelon-left", 2)?;
+        facing_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &FacingDrag {
+                id: "ECHELON-LEFT",
+                shape: "echelon-left",
+                from: 13,
+                to: 14,
+                frontage: 5,
+                facing: (0.0, 1.0),
+                extent: Some((
+                    7.0 * SHAPE_SPACING_CM * std::f64::consts::FRAC_1_SQRT_2,
+                    7.0 * SHAPE_SPACING_CM * std::f64::consts::FRAC_1_SQRT_2,
+                )),
+            },
+            &mut normalized,
+        )?;
+        cycle_shape_to(&mut client_a, report, "line", 2)?;
+
+        // FD-P05: T forms the twenty; a right-to-left drag sends the formation's protocol-9
+        // facing and frontage, and the server plans, stores and routes the move.
+        formation_facing_move(
+            &mut client_a,
+            &mut server,
+            evidence,
+            report,
+            &own,
+            &mut normalized,
+        )?;
+
+        let ended = server.text().lines().any(|l| {
+            l.contains("MATCH_LIFECYCLE phase=5")
+                || l.contains("RTS_OBJECTIVE_STATE") && l.contains("complete=1")
+        });
+        report.verdict(
+            "FORM-MATCH-STAYS-ACTIVE",
+            !ended,
+            format!("terminal or captured during the session: {ended}"),
+        );
+        Ok(())
+    })();
+    if result.is_err() {
+        client_a.release_inputs();
+    }
+    let path = evidence.join("normalized.txt");
+    let _ = fs::write(&path, normalized.join("\n") + "\n");
+    report.artifact("normalized_txt", &path);
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
+/// A unit with two map or world points (a slot and its world point, or a requested and a
+/// resolved navigation point).
+type UnitPoints = (u64, (f64, f64), (f64, f64));
+
+/// FD-P05: forms the selection with T and drags the whole formation from right to left.
+#[allow(clippy::too_many_lines)]
+fn formation_facing_move(
+    client: &mut Game,
+    server: &mut Game,
+    evidence: &Path,
+    report: &mut Report,
+    own: &[u64],
+    normalized: &mut Vec<String>,
+) -> Result<(), String> {
+    let before_form = client.offset();
+    client.key("t")?;
+    let formed = client.wait_line(
+        &["RTS_FORMATION_OUTCOME", "op=0 ", "accepted=1"],
+        Duration::from_secs(5),
+        before_form,
+    )?;
+    let formation = field(&formed, "formation").unwrap_or("0").to_owned();
+    report.verdict(
+        "FD-FORMATION-FORMED",
+        formation != "0" && field(&formed, "members") == Some("20"),
+        formed.trim().to_owned(),
+    );
+    thread::sleep(Duration::from_millis(800));
+    let step = FacingDrag {
+        id: "FORMATION",
+        shape: "line",
+        from: 15,
+        to: 16,
+        frontage: 4,
+        facing: (0.0, -1.0),
+        extent: Some((3.0 * SHAPE_SPACING_CM, 4.0 * SHAPE_SPACING_CM)),
+    };
+    let before_client = client.offset();
+    let before_server = server.offset();
+    held_drag(client, server, evidence, report, &step, 4)?;
+    let commit = client.wait_line(
+        &["RTS_GROUP_MOVE_DRAG", "state=commit"],
+        Duration::from_secs(5),
+        before_client,
+    )?;
+    let sent = client.wait_line(
+        &["RTS_FORMATION_SENT", "op=move"],
+        Duration::from_secs(5),
+        before_client,
+    )?;
+    let outcome = client.wait_line(
+        &["RTS_FORMATION_OUTCOME", "op=2 "],
+        Duration::from_secs(10),
+        before_client,
+    )?;
+    let intake = server.wait_line(
+        &["RTS_FORMATION_INTENT", "participant=1 ", "op=2 "],
+        Duration::from_secs(10),
+        before_server,
+    )?;
+    let moved = server.wait_line(
+        &["RTS_FORMATION_MOVE", "op=move"],
+        Duration::from_secs(10),
+        before_server,
+    )?;
+    thread::sleep(Duration::from_millis(500));
+    report.artifact(
+        "FORMATION_ordered_png",
+        &client.screenshot(evidence, "FORMATION-ordered")?,
+    );
+    report.fact("FORMATION_sent", sent.trim());
+    report.fact("FORMATION_intake", intake.trim());
+    report.fact("FORMATION_move", moved.trim());
+
+    // The client sends the drag (never slots); the server validates it and plans on its own.
+    let start = pair(&commit, "world_start").unwrap_or((f64::NAN, f64::NAN));
+    let end = pair(&commit, "world_end").unwrap_or((f64::NAN, f64::NAN));
+    let client_text = client.text()[before_client..].to_owned();
+    let min = client_text
+        .lines()
+        .chain(client.text().lines())
+        .find(|l| l.contains("RTS_GROUP_MOVE_PLAN"))
+        .and_then(|l| pair(l, "playable_min"))
+        .unwrap_or((-2000.0, -2000.0));
+    let expect = drag_expect(start, end, min, SHAPE_SPACING_CM, own.len(), true);
+    let sent_anchor = (
+        number(&sent, "x").unwrap_or(f64::NAN),
+        number(&sent, "y").unwrap_or(f64::NAN),
+    );
+    let sent_facing = pair(&sent, "facing").unwrap_or((f64::NAN, f64::NAN));
+    let (anchor_error, facing_error) = expect.map_or((f64::INFINITY, f64::INFINITY), |e| {
+        (
+            distance(sent_anchor, e.anchor),
+            distance(sent_facing, e.facing),
+        )
+    });
+    report.verdict(
+        "FD-FORMATION-SENT-PROTOCOL-9",
+        field(&sent, "protocol") == Some("9")
+            && field(&sent, "formation") == Some(formation.as_str())
+            && field(&sent, "frontage") == Some("4")
+            && anchor_error <= FACING_ANCHOR_TOLERANCE_CM
+            && facing_error <= FACING_TOLERANCE
+            && distance(sent_facing, step.facing) <= FACING_NOMINAL_TOLERANCE
+            && expect.is_some_and(|e| e.frontage == 4)
+            && count_lines(&client_text, &["RTS_FORMATION_SENT"]) == 1
+            && count_lines(&client_text, &["RTS_COMMAND_INTENT_SENT"]) == 0
+            && count_lines(&client_text, &["RTS_GROUP_MOVE_SLOT"]) == 0,
+        format!(
+            "anchor error {anchor_error:.3} cm, facing {sent_facing:?} error {facing_error:.6}, no client slots or unit intents: {}",
+            sent.trim()
+        ),
+    );
+    let move_anchor = pair(&moved, "anchor").unwrap_or((f64::NAN, f64::NAN));
+    let move_facing = pair(&moved, "facing").unwrap_or((f64::NAN, f64::NAN));
+    let stored_facing = pair(&moved, "stored_facing").unwrap_or((f64::NAN, f64::NAN));
+    report.verdict(
+        "FD-FORMATION-SERVER-PLAN",
+        field(&intake, "accepted") == Some("1")
+            && field(&intake, "frontage") == Some("4")
+            && pair(&intake, "facing").is_some_and(|f| distance(f, sent_facing) < 1e-5)
+            && field(&moved, "formation") == Some(formation.as_str())
+            && field(&moved, "members") == Some("20")
+            && field(&moved, "unplaced") == Some("0")
+            && field(&moved, "rejected") == Some("0")
+            && field(&moved, "orders") == Some("20")
+            && field(&moved, "explicit_facing") == Some("1")
+            && field(&moved, "requested_frontage") == Some("4")
+            && field(&moved, "frontage") == Some("4")
+            && number(&moved, "checked").is_some_and(|c| c <= 40.0)
+            && distance(move_anchor, sent_anchor) < 0.01
+            && distance(move_facing, sent_facing) < 1e-5
+            && field(&moved, "stored_explicit") == Some("1")
+            && field(&moved, "stored_frontage") == Some("4")
+            && pair(&moved, "stored_anchor").is_some_and(|a| distance(a, sent_anchor) < 0.01)
+            && distance(stored_facing, sent_facing) < 1e-5
+            && field(&outcome, "accepted") == Some("1")
+            && field(&outcome, "orders") == Some("20"),
+        format!("{}; {}", intake.trim(), moved.trim()),
+    );
+
+    // Twenty independently admitted member Moves at the server's slots, routed and arrived.
+    let server_text = server.text()[before_server..].to_owned();
+    let mut slots: Vec<UnitPoints> = server_text
+        .lines()
+        .filter(|l| {
+            l.contains("RTS_FORMATION_SLOT")
+                && field(l, "formation") == Some(formation.as_str())
+                && field(l, "cause") == Some("move")
+        })
+        .filter_map(|l| {
+            Some((
+                field(l, "unit")?.parse().ok()?,
+                (number(l, "x")?, number(l, "y")?),
+                (number(l, "world_x")?, number(l, "world_y")?),
+            ))
+        })
+        .collect();
+    slots.sort_by_key(|s| s.0);
+    let slot_units: Vec<u64> = slots.iter().map(|s| s.0).collect();
+    let map_points: Vec<(f64, f64)> = slots.iter().map(|s| s.1).collect();
+    let (across, along) = frame_extent(&map_points, move_facing);
+    let separation = min_separation(&map_points);
+    let centre = (
+        map_points.iter().map(|p| p.0).sum::<f64>() / map_points.len().max(1) as f64,
+        map_points.iter().map(|p| p.1).sum::<f64>() / map_points.len().max(1) as f64,
+    );
+    report.verdict(
+        "FD-FORMATION-SHAPE",
+        slot_units == own
+            && (separation - SHAPE_SPACING_CM).abs() < 0.5
+            && (across - 3.0 * SHAPE_SPACING_CM).abs() < 0.5
+            && (along - 4.0 * SHAPE_SPACING_CM).abs() < 0.5
+            && distance(centre, move_anchor) < 0.5,
+        format!(
+            "{} server slots, across {across:.1} (want 450), along {along:.1} (want 600), min separation {separation:.1}, centre {:.2} cm from the anchor",
+            slots.len(),
+            distance(centre, move_anchor)
+        ),
+    );
+    let received = count_lines(&server_text, &["MP_COMMAND_RECEIVED", " participant=1 "]);
+    let ready: Vec<UnitPoints> = server_text
+        .lines()
+        .filter(|l| l.contains("RTS_NAVIGATION_READY"))
+        .filter_map(|l| {
+            Some((
+                field(l, "unit")?.parse().ok()?,
+                triple_xy(l, "requested")?,
+                triple_xy(l, "resolved")?,
+            ))
+        })
+        .filter(|r| own.contains(&r.0))
+        .collect();
+    let routed = slots
+        .iter()
+        .filter(|s| {
+            ready
+                .iter()
+                .any(|r| r.0 == s.0 && distance(r.1, s.2) < 1.0 && distance(r.1, r.2) <= 150.0)
+        })
+        .count();
+    let tally = client.wait_line(
+        &["RTS_GROUP_ORDER_OUTCOME", "expected=20"],
+        Duration::from_secs(15),
+        before_client,
+    )?;
+    report.verdict(
+        "FD-FORMATION-SERVER-ROUTES",
+        received == 0 && routed == own.len() && ready.len() == own.len()
+            && field(&tally, "accepted") == Some("20") && field(&tally, "rejected") == Some("0"),
+        format!(
+            "server-submitted member orders (no client unit intents received: {received}), {routed}/{} routed at the server's slots; {}",
+            own.len(),
+            tally.trim()
+        ),
+    );
+    let deadline = Instant::now() + Duration::from_secs(40);
+    let arrived = |text: &str| {
+        own.iter()
+            .filter(|unit| {
+                text.lines().any(|l| {
+                    l.contains("RTS_GAMEPLAY_EVENT kind=OrderChanged")
+                        && field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(**unit)
+                        && field(l, "previous") == Some("1")
+                        && field(l, "reason") == Some("5")
+                })
+            })
+            .count()
+    };
+    while Instant::now() < deadline && arrived(&server.text()[before_server..]) < own.len() {
+        thread::sleep(Duration::from_millis(500));
+    }
+    thread::sleep(Duration::from_millis(1500));
+    let server_text = server.text()[before_server..].to_owned();
+    let count = arrived(&server_text);
+    let finals: Vec<(f64, f64)> = own
+        .iter()
+        .filter_map(|unit| server_unit(&server_text, *unit).map(|s| s.0))
+        .collect();
+    let failed = count_lines(&server_text, &["RTS_NAVIGATION_FAILED"]);
+    report.artifact(
+        "FORMATION_arrived_png",
+        &client.screenshot(evidence, "FORMATION-arrived")?,
+    );
+    report.verdict(
+        "FD-FORMATION-ARRIVED-SPACED",
+        count == own.len() && failed == 0 && min_separation(&finals) >= SHAPE_SPACING_CM - 20.0,
+        format!(
+            "{count}/{} arrived, {failed} navigation failures, final min separation {:.1} cm",
+            own.len(),
+            min_separation(&finals)
+        ),
+    );
+    let mut assignment: Vec<String> = slots
+        .iter()
+        .map(|s| format!("{}:{:.3}:{:.3}", s.0, s.1.0, s.1.1))
+        .collect();
+    assignment.sort();
+    normalized.push(format!(
+        "FORMATION anchor={:.3},{:.3} facing={:.6},{:.6} frontage={} stored_frontage={} orders={} accepted={} arrived={count} slots={}",
+        move_anchor.0,
+        move_anchor.1,
+        move_facing.0,
+        move_facing.1,
+        field(&moved, "frontage").unwrap_or("?"),
+        field(&moved, "stored_frontage").unwrap_or("?"),
+        field(&moved, "orders").unwrap_or("?"),
+        field(&tally, "accepted").unwrap_or("?"),
+        assignment.join(",")
+    ));
+    Ok(())
+}
+
+/// `--compare-normalized A B`: two runs' `normalized.txt` must agree line by line; numbers within
+/// 0.001 for facings and 0.5 cm for every other value, everything else exactly.
+fn compare_normalized(a: &str, b: &str) -> Vec<String> {
+    let (left, right): (Vec<&str>, Vec<&str>) = (a.lines().collect(), b.lines().collect());
+    let mut problems = Vec::new();
+    if left.len() != right.len() {
+        problems.push(format!("{} lines vs {}", left.len(), right.len()));
+    }
+    for (l, r) in left.iter().zip(&right) {
+        let (lt, rt): (Vec<&str>, Vec<&str>) = (
+            l.split_whitespace().collect(),
+            r.split_whitespace().collect(),
+        );
+        if lt.len() != rt.len() {
+            problems.push(format!("{l} | {r}"));
+            continue;
+        }
+        for (x, y) in lt.iter().zip(&rt) {
+            let key = x.split('=').next().unwrap_or("");
+            let tolerance = if key == "facing" {
+                FACING_TOLERANCE
+            } else {
+                FACING_ANCHOR_TOLERANCE_CM
+            };
+            let split =
+                |s: &str| -> Vec<String> { s.split([',', ':', '=']).map(str::to_owned).collect() };
+            let (xs, ys) = (split(x), split(y));
+            let same = xs.len() == ys.len()
+                && xs
+                    .iter()
+                    .zip(&ys)
+                    .all(|(p, q)| match (p.parse::<f64>(), q.parse::<f64>()) {
+                        (Ok(p), Ok(q)) => (p - q).abs() <= tolerance,
+                        _ => p == q,
+                    });
+            if !same {
+                problems.push(format!("{x} | {y}"));
+            }
+        }
+    }
+    problems
 }
 
 // ---------------------------------------------------------------------------------------
@@ -11366,6 +12673,37 @@ fn main() {
             group_move_shape_session,
         );
     }
+    if env::args().nth(1).as_deref() == Some("--group-move-facing") {
+        run_dedicated_session(
+            "--group-move-facing",
+            "politika.form.group-move-facing-evidence.v1",
+            "group-move-facing",
+            group_move_facing_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--compare-normalized") {
+        let (Some(a), Some(b)) = (env::args().nth(2), env::args().nth(3)) else {
+            eprintln!(
+                "usage: rts_multiplayer --compare-normalized RUN1/normalized.txt RUN2/normalized.txt"
+            );
+            std::process::exit(2);
+        };
+        let (Ok(left), Ok(right)) = (fs::read_to_string(&a), fs::read_to_string(&b)) else {
+            eprintln!("FAIL: cannot read {a} or {b}");
+            std::process::exit(2);
+        };
+        let problems = compare_normalized(&left, &right);
+        for problem in &problems {
+            println!("DIFF {problem}");
+        }
+        println!(
+            "{} normalized comparison: {} lines, {} differences",
+            if problems.is_empty() { "PASS" } else { "FAIL" },
+            left.lines().count(),
+            problems.len()
+        );
+        std::process::exit(i32::from(!problems.is_empty()));
+    }
     if env::args().nth(1).as_deref() == Some("--formation-lifecycle") {
         run_dedicated_session(
             "--formation-lifecycle",
@@ -11511,10 +12849,92 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        ENGAGE_FACING_POST, ENGAGE_WITHHELD_POST, SIGHT_CM, contact_memory_audit, distance,
-        frame_windows, host_contact_audit, host_shot_cue_audit, log_time, phase_traffic,
-        probe_screen, timed_net_samples,
+        ENGAGE_FACING_POST, ENGAGE_WITHHELD_POST, FACING_PROBES, SIGHT_CM, compare_normalized,
+        contact_memory_audit, distance, drag_expect, frame_extent, frame_windows,
+        host_contact_audit, host_shot_cue_audit, log_time, phase_traffic, probe_screen,
+        timed_net_samples,
     };
+
+    #[test]
+    fn drag_expectation_follows_the_formation_contract() {
+        let min = (-2000.0, -2000.0);
+        // Left to right on screen is +X to -X in the world: facing +Y, five files for 600 cm.
+        let line = drag_expect(FACING_PROBES[1], FACING_PROBES[2], min, 150.0, 20, true).unwrap();
+        assert!(distance(line.facing, (0.0, 1.0)) < 1e-12);
+        assert!(distance(line.anchor, (-1450.0 + 2000.0, -1000.0 + 2000.0)) < 1e-9);
+        assert_eq!(line.frontage, 5);
+        // Reversed: same midpoint and width, opposite facing.
+        let back = drag_expect(FACING_PROBES[2], FACING_PROBES[1], min, 150.0, 20, true).unwrap();
+        assert_eq!((back.anchor, back.frontage), (line.anchor, line.frontage));
+        assert!(distance(back.facing, (0.0, -1.0)) < 1e-12);
+        // Halves round up; under one spacing keeps the default; clamped to the members.
+        let at = |cm: f64, members: usize| {
+            drag_expect((0.0, 0.0), (cm, 0.0), (0.0, 0.0), 150.0, members, true)
+                .unwrap()
+                .frontage
+        };
+        assert_eq!(
+            (at(225.0, 20), at(224.9, 20), at(149.9, 20), at(150.0, 20)),
+            (3, 2, 0, 2)
+        );
+        assert_eq!((at(3000.0, 8), at(1e300, 20)), (8, 20));
+        // Wedge/Perimeter keep the facing only; no direction without length.
+        assert_eq!(
+            drag_expect((0.0, 0.0), (900.0, 0.0), (0.0, 0.0), 150.0, 20, false)
+                .unwrap()
+                .frontage,
+            0
+        );
+        assert!(drag_expect((5.0, 5.0), (5.5, 5.0), (0.0, 0.0), 150.0, 20, true).is_none());
+        assert!(drag_expect((0.0, 0.0), (f64::NAN, 0.0), (0.0, 0.0), 150.0, 20, true).is_none());
+        // The probe drags request the files the session expects.
+        let files = |a: usize, b: usize, spacing: f64| {
+            drag_expect(FACING_PROBES[a], FACING_PROBES[b], min, spacing, 20, true)
+                .unwrap()
+                .frontage
+        };
+        assert_eq!(
+            (
+                files(9, 10, 150.0),
+                files(13, 14, 150.0),
+                files(15, 16, 150.0)
+            ),
+            (4, 5, 4)
+        );
+    }
+
+    #[test]
+    fn frame_extent_measures_across_and_along_the_facing() {
+        let block: Vec<(f64, f64)> = (0..20)
+            .map(|i| (f64::from(i % 5) * 150.0, f64::from(i / 5) * 150.0))
+            .collect();
+        let (across, along) = frame_extent(&block, (0.0, 1.0));
+        assert!((across - 600.0).abs() < 1e-9 && (along - 450.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn normalized_runs_compare_with_frozen_tolerances() {
+        let a = "LINE shape=line anchor=550.000,1000.000 facing=0.000000,1.000000 frontage=5 slots=13:0:325.0:1225.0\nESC cancel=Escape sent=0";
+        assert!(compare_normalized(a, a).is_empty());
+        let near = a
+            .replace("550.000", "550.400")
+            .replace("0.000000,1.000000", "0.000900,1.000000");
+        assert!(compare_normalized(a, &near).is_empty());
+        assert_eq!(
+            compare_normalized(a, &a.replace("550.000", "550.600")).len(),
+            1
+        );
+        assert_eq!(
+            compare_normalized(a, &a.replace("facing=0.000000", "facing=0.002000")).len(),
+            1
+        );
+        assert_eq!(compare_normalized(a, &a.replace("13:0:", "13:1:")).len(), 1);
+        assert_eq!(
+            compare_normalized(a, &a.replace("sent=0", "sent=1")).len(),
+            1
+        );
+        assert_eq!(compare_normalized(a, "LINE shape=line").len(), 2);
+    }
 
     const HOST_SEEN: &str = "LogPolitikaStartup: Display: MP_HOST_UNIT_FOG entity=11 owner=2 team=2 hidden=0 first=0 alive=1 x=10.0 y=20.0";
     const HOST_HIDDEN: &str = "LogPolitikaStartup: Display: MP_HOST_UNIT_FOG entity=11 owner=2 team=2 hidden=1 first=0 alive=1 x=15.0 y=25.0";
