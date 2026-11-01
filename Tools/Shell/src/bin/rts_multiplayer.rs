@@ -8400,8 +8400,8 @@ fn group_move_facing_session(
             format!("participant 1 units={}; {}", own.len(), fixture.trim()),
         );
         report.verdict(
-            "FD-PROTOCOL-9",
-            field(&ready, "protocol") == Some("9"),
+            "FD-PROTOCOL-CURRENT",
+            field(&ready, "protocol") == Some(network_protocol().as_str()),
             ready.trim().to_owned(),
         );
         report.artifact(
@@ -8800,8 +8800,8 @@ fn formation_facing_move(
         )
     });
     report.verdict(
-        "FD-FORMATION-SENT-PROTOCOL-9",
-        field(&sent, "protocol") == Some("9")
+        "FD-FORMATION-SENT-PROTOCOL-CURRENT",
+        field(&sent, "protocol") == Some(network_protocol().as_str())
             && field(&sent, "formation") == Some(formation.as_str())
             && field(&sent, "frontage") == Some("4")
             && anchor_error <= FACING_ANCHOR_TOLERANCE_CM
