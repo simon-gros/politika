@@ -7751,6 +7751,242 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
 
 // ---------------------------------------------------------------------------------------
 // FORM-FD right-drag facing and frontage (RTS_FORMATION_FACING_DRAG_ACCEPTANCE.md):
+// `--pointer-stall SERVER CLIENT [--evidence DIR] [--port N]`.
+//
+// Same dedicated 1v1 fixture as `--group-move-facing`, with seat 1's client capped at two frames a
+// second, so real X input routinely falls inside one frame. Box selects that span frames and box
+// selects whose press, drag and release all fall inside one frame must select the same 20 units
+// between the true corners; a right-click followed by a pointer move inside one frame must order at
+// the clicked point; and a right-drag inside one frame must commit as a drag between its true ends.
+const STALL_FPS: u32 = 2;
+/// Longer than a capped frame, so the next gesture starts on a settled cursor.
+const STALL_SETTLE: Duration = Duration::from_millis(1200);
+/// Pixels of slack on an event position against where the X pointer was sent.
+const STALL_SLACK_PX: f64 = 3.0;
+
+fn near(a: Option<(f64, f64)>, b: (f64, f64)) -> bool {
+    a.is_some_and(|a| (a.0 - b.0).abs() <= STALL_SLACK_PX && (a.1 - b.1).abs() <= STALL_SLACK_PX)
+}
+
+impl Game {
+    /// Press, move and release with nothing between them, all inside one capped frame.
+    fn fast_stroke(&self, button: &str, from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
+        self.pointer_to(from.0, from.1)?;
+        thread::sleep(STALL_SETTLE);
+        self.xdo_here(&["mousedown", button])?;
+        self.pointer_to(to.0, to.1)?;
+        self.xdo_here(&["mouseup", button])
+    }
+}
+
+/// X and Y from `xdotool getmouselocation --shell`.
+fn xdo_pointer(text: &str) -> Option<(f64, f64)> {
+    let value = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key)?.parse::<f64>().ok())
+    };
+    Some((value("X=")?, value("Y=")?))
+}
+
+fn stall_box_verdict(
+    client: &mut Game,
+    report: &mut Report,
+    id: &str,
+    own: &[u64],
+    before: usize,
+    corners: ((f64, f64), (f64, f64)),
+) -> Result<(), String> {
+    let boxed = client.wait_line(
+        &["RTS_SELECTION_SET", "op=replace"],
+        Duration::from_secs(8),
+        before,
+    )?;
+    report.verdict(
+        id,
+        boxed.contains("source=box") && selection_ids(&boxed) == own,
+        boxed.trim().to_owned(),
+    );
+    let text = client.text()[before..].to_owned();
+    let stroke = text
+        .lines()
+        .find(|l| l.contains("RTS_SELECTION_STROKE"))
+        .unwrap_or("")
+        .to_owned();
+    report.verdict(
+        &format!("{id}-CORNERS"),
+        near(pair(&stroke, "press"), corners.0) && near(pair(&stroke, "end"), corners.1),
+        stroke.trim().to_owned(),
+    );
+    Ok(())
+}
+
+fn pointer_stall_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let port = client_options.port;
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPUnitScale={GROUP_UNITS_PER_SEAT}"));
+    args.push("-PolitikaMPUnitScaleHold".into());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.push(format!(
+        "-PolitikaMPGroundProbe={}",
+        FACING_PROBES
+            .iter()
+            .map(|(x, y)| format!("{x}:{y}"))
+            .collect::<Vec<_>>()
+            .join("/")
+    ));
+    args_a.push(format!("-ExecCmds=t.MaxFPS {STALL_FPS}"));
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &args_a,
+        Some(&display_a.name()),
+    )?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let mut client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(90),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let frames = client_a
+            .text()
+            .lines()
+            .rev()
+            .find(|l| l.contains("MP_CLIENT_FRAME_WINDOW"))
+            .unwrap_or("")
+            .to_owned();
+        report.verdict(
+            "PS-CLIENT-CAPPED",
+            number(&frames, "mean_ms").is_some_and(|ms| ms >= 300.0),
+            frames.trim().to_owned(),
+        );
+        let owners = entity_owners(&server.text());
+        let own: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        let start = (24.0, 24.0);
+        let end = (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0);
+        for run in 1..=5 {
+            let before = client_a.offset();
+            client_a.drag_hold(start, end)?;
+            client_a.release()?;
+            let id = format!("PS-BOX-SPANNING-{run}");
+            stall_box_verdict(&mut client_a, report, &id, &own, before, (start, end))?;
+            thread::sleep(STALL_SETTLE);
+        }
+        for run in 1..=5 {
+            let before = client_a.offset();
+            client_a.fast_stroke("1", start, end)?;
+            let id = format!("PS-BOX-ONE-FRAME-{run}");
+            stall_box_verdict(&mut client_a, report, &id, &own, before, (start, end))?;
+            thread::sleep(STALL_SETTLE);
+        }
+
+        // The cursor stays where the button came up instead of returning to the press point.
+        let before = client_a.offset();
+        client_a.drag_hold(start, end)?;
+        thread::sleep(STALL_SETTLE);
+        client_a.release()?;
+        client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(8),
+            before,
+        )?;
+        thread::sleep(STALL_SETTLE);
+        let display = client_a.display.as_deref().ok_or("no display")?;
+        let location = xdo(display, &["getmouselocation", "--shell"])?;
+        report.verdict(
+            "PS-CURSOR-STAYS-AT-RELEASE",
+            near(xdo_pointer(&location), end),
+            location.split_whitespace().collect::<Vec<_>>().join(" "),
+        );
+
+        // A right-click, then the pointer moves away inside the same frame.
+        let click = wait_screen(&mut client_a, |t| probe_screen(t, 0), "click probe")?;
+        let away = wait_screen(&mut client_a, |t| probe_screen(t, 2), "away probe")?;
+        client_a.pointer_to(click.0, click.1)?;
+        thread::sleep(STALL_SETTLE);
+        let before = client_a.offset();
+        client_a.xdo_here(&["mousedown", "3"])?;
+        client_a.xdo_here(&["mouseup", "3"])?;
+        client_a.pointer_to(away.0, away.1)?;
+        let commit = client_a.wait_line(
+            &["RTS_GROUP_MOVE_DRAG", "state=commit"],
+            Duration::from_secs(8),
+            before,
+        )?;
+        report.verdict(
+            "PS-ORDER-CLICK-AT-PRESS",
+            field(&commit, "reason") == Some("click") && near(pair(&commit, "screen_start"), click),
+            commit.trim().to_owned(),
+        );
+        thread::sleep(STALL_SETTLE);
+
+        // A right-drag whose press, movement and release all fall inside one frame.
+        let from = wait_screen(&mut client_a, |t| probe_screen(t, 1), "drag start probe")?;
+        let to = wait_screen(&mut client_a, |t| probe_screen(t, 2), "drag end probe")?;
+        let before = client_a.offset();
+        client_a.fast_stroke("3", from, to)?;
+        let commit = client_a.wait_line(
+            &["RTS_GROUP_MOVE_DRAG", "state=commit"],
+            Duration::from_secs(8),
+            before,
+        )?;
+        report.verdict(
+            "PS-ORDER-DRAG-ONE-FRAME",
+            field(&commit, "reason") == Some("drag")
+                && near(pair(&commit, "screen_start"), from)
+                && near(pair(&commit, "screen_end"), to),
+            commit.trim().to_owned(),
+        );
+        Ok(())
+    })();
+    report.artifact("server_log", &server.log);
+    report.artifact("client_a_log", &client_a.log);
+    report.artifact("client_b_log", &client_b.log);
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    drop(display_a);
+    result
+}
+
 // `--group-move-facing SERVER CLIENT [--evidence DIR] [--port N]`.
 //
 // Same dedicated 1v1 fixture as `--group-move-shape` (20 idle units per seat). Seat 1's client
@@ -13323,6 +13559,14 @@ fn main() {
             "politika.form.group-move-facing-evidence.v1",
             "group-move-facing",
             group_move_facing_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--pointer-stall") {
+        run_dedicated_session(
+            "--pointer-stall",
+            "politika.rts.pointer-stall-evidence.v1",
+            "pointer-stall",
+            pointer_stall_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--compare-normalized") {
