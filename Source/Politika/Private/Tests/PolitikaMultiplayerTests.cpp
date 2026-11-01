@@ -11,6 +11,7 @@
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaBootstrap.h"
 #include "PolitikaInfantryBehavior.h"
+#include "UnitScale.h"
 
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
@@ -3414,6 +3415,213 @@ bool FPolitikaMultiplayerDisciplineRoutTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("The civilian never routed"), V->IsRouted());
 
     F.Match->RoutRouteForTest = nullptr;
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerEconomyTest,
+    "Politika.RTS.Multiplayer.Economy",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E1: treasury, income and training through the production intake and fixed step. The output
+// check uses the same slot probe seam as the formation tests: Automation worlds have no navmesh.
+bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    bool bOutputOpen = true;
+    F.Match->FormationSlotProbeForTest = [&bOutputOpen](const FVector2D&) { return bOutputOpen; };
+    // The fixture skips content instantiation; give the coordinator what match start would.
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+    F.Match->SyncEconomyReplication();
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::RecipeDefinition Recipe = *pe::FindRecipe(Rifleman);
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    const pe::Account* Other = F.Match->GetEconomy().Find(EnemyId);
+    if (!TestNotNull(TEXT("E-A01 the host has an account"), Account) || !TestNotNull(TEXT("E-A01 the enemy has an account"), Other)) return false;
+    TestEqual(TEXT("E-A01 a treasury starts at the fixture amount"), Account->available, pe::kStartingCents);
+    TestTrue(TEXT("E-A01 each seat has a producer"), Account->hasProducer && Other->hasProducer);
+    TestEqual(TEXT("E-A02 one structure per seat"), F.Match->Structures.Num(), 2);
+
+    // Structures reach their own team only.
+    const APolitikaPrototypeStructure* HostStructure = F.Match->FindStructureOf(HostId);
+    if (!TestNotNull(TEXT("E-A02 the host's structure exists"), HostStructure)) return false;
+    TestTrue(TEXT("E-A02 the owner receives its structure"), HostStructure->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("E-A02 the enemy does not receive it"), HostStructure->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+
+    const auto Request = [&F](APolitikaPrototypePlayerController* Source, pe::EconomyOp Op, uint8 RecipeByte)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.Recipe = RecipeByte;
+        uint32& Sequence = F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto OutcomeOf = [&F](uint32 Correlation) -> const FPolitikaNetEconomyOutcome*
+    {
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [Correlation](const auto& Entry) { return Entry.Value.CorrelationId == Correlation; });
+        return Found ? &Found->Value : nullptr;
+    };
+    const auto RejectionOf = [&](APolitikaPrototypePlayerController* Source, const FPolitikaNetEconomyIntent& Intent)
+    {
+        F.Match->SubmitEconomyIntent(Source, Intent);
+        F.Step();
+        const FPolitikaNetEconomyOutcome* Outcome = OutcomeOf(Intent.CorrelationId);
+        return Outcome ? static_cast<int32>(Outcome->Rejection) : -1;
+    };
+
+    // Malformed, stale and repeated requests change nothing.
+    const int64 Start = Account->available;
+    FPolitikaNetEconomyIntent Bad = Request(Host, pe::EconomyOp::Train, Rifleman);
+    Bad.ProtocolVersion -= 1;
+    TestEqual(TEXT("E-A03 a wrong protocol is malformed"), RejectionOf(Host, Bad), static_cast<int32>(pe::EconomyRejection::MalformedCommand));
+    Bad = Request(Host, pe::EconomyOp::Train, Rifleman);
+    Bad.Op = pe::kEconomyOpCount;
+    TestEqual(TEXT("E-A03 an unknown op is malformed"), RejectionOf(Host, Bad), static_cast<int32>(pe::EconomyRejection::MalformedCommand));
+    TestEqual(TEXT("E-A03 a Cancel with a recipe is malformed"), RejectionOf(Host, Request(Host, pe::EconomyOp::Cancel, 1)),
+        static_cast<int32>(pe::EconomyRejection::MalformedCommand));
+    Bad = Request(Host, pe::EconomyOp::Train, Rifleman);
+    Bad.MatchGeneration += 1;
+    TestEqual(TEXT("E-A04 another generation is stale"), RejectionOf(Host, Bad), static_cast<int32>(pe::EconomyRejection::StaleMatch));
+    TestEqual(TEXT("E-A05 an unknown recipe is refused"), RejectionOf(Host, Request(Host, pe::EconomyOp::Train, pe::kRecipeCount)),
+        static_cast<int32>(pe::EconomyRejection::UnknownRecipe));
+    TestEqual(TEXT("E-A05 nothing to cancel"), RejectionOf(Host, Request(Host, pe::EconomyOp::Cancel, 0)),
+        static_cast<int32>(pe::EconomyRejection::NothingToCancel));
+    TestEqual(TEXT("E-A06 rejected requests leave the money alone"), Account->available, Start);
+    TestTrue(TEXT("E-A06 rejected requests queue nothing"), Account->queue.empty() && Account->spent == 0);
+
+    // A valid request waits for the next step, debits once and creates one entry.
+    FPolitikaNetEconomyIntent Train = Request(Host, pe::EconomyOp::Train, Rifleman);
+    F.Match->SubmitEconomyIntent(Host, Train);
+    TestEqual(TEXT("E-A07 nothing moves before the step"), Account->available, Start);
+    TestEqual(TEXT("E-A07 the request waits"), F.Match->PendingEconomyRequests.Num(), 1);
+    F.Step();
+    const uint64 Admitted = F.Match->SimulationStepsExecuted;
+    const FPolitikaNetEconomyOutcome* Accepted = OutcomeOf(Train.CorrelationId);
+    if (!TestNotNull(TEXT("E-A08 the issuer gets an outcome"), Accepted)) return false;
+    TestTrue(TEXT("E-A08 it is accepted"), Accepted->bAccepted);
+    TestEqual(TEXT("E-A08 the amount is the server's price"), Accepted->AmountCents, Recipe.cost);
+    TestEqual(TEXT("E-A08 debited once"), Account->available, Start - Recipe.cost);
+    TestEqual(TEXT("E-A08 one queue entry"), static_cast<int32>(Account->queue.size()), 1);
+    TestEqual(TEXT("E-A09 the enemy's money is untouched"), Other->available, pe::kStartingCents);
+    TestEqual(TEXT("E-A09 the view is the owner's"), Host->GetOwnEconomy().AvailableCents, Start - Recipe.cost);
+    TestEqual(TEXT("E-A09 the enemy's view is its own"), Enemy->GetOwnEconomy().AvailableCents, pe::kStartingCents);
+
+    // A repeated client sequence is refused by the connection's freshness check.
+    FPolitikaNetEconomyIntent Repeat = Train;
+    Repeat.CorrelationId = F.NextCorrelation++;
+    TestEqual(TEXT("E-A10 a repeated sequence is a duplicate"), RejectionOf(Host, Repeat), static_cast<int32>(pe::EconomyRejection::DuplicateCommand));
+    TestEqual(TEXT("E-A10 and is not charged"), Account->available, Start - Recipe.cost);
+
+    // A second entry is affordable, a third is not, and Cancel refunds the newest.
+    FPolitikaNetEconomyIntent Second = Request(Host, pe::EconomyOp::Train, Rifleman);
+    TestEqual(TEXT("E-A11 a second entry is admitted"), RejectionOf(Host, Second), 0);
+    TestEqual(TEXT("E-A11 not enough for a third"), RejectionOf(Host, Request(Host, pe::EconomyOp::Train, Rifleman)),
+        static_cast<int32>(pe::EconomyRejection::InsufficientFunds));
+    TestEqual(TEXT("E-A12 Cancel succeeds"), RejectionOf(Host, Request(Host, pe::EconomyOp::Cancel, 0)), 0);
+    TestEqual(TEXT("E-A12 Cancel refunds exactly one price"), Account->available, Start - Recipe.cost);
+    TestEqual(TEXT("E-A12 the refund is recorded"), Account->refunded, Recipe.cost);
+    TestTrue(TEXT("E-A12 the ledger reconciles"), Account->Reconciles());
+
+    // Training takes its duration in steps; the unit is an ordinary unit of the buyer.
+    const int32 LivingBefore = F.Match->CountLivingUnits(HostId);
+    while (F.Match->SimulationStepsExecuted < Admitted + Recipe.durationSteps - 1) F.Step();
+    TestEqual(TEXT("E-A13 no unit a step early"), F.Match->CountLivingUnits(HostId), LivingBefore);
+    F.Step();
+    TestEqual(TEXT("E-A13 one unit on the due step"), F.Match->CountLivingUnits(HostId), LivingBefore + 1);
+    // Two admissions paid so far (one was cancelled and refunded); completion adds no third.
+    TestEqual(TEXT("E-A13 no charge at completion"), Account->spent, Recipe.cost * 2);
+    TestEqual(TEXT("E-A13 counted as produced"), static_cast<int32>(Account->produced), 1);
+    const APolitikaPrototypeUnit* Produced = F.Match->Units.Last();
+    if (!TestNotNull(TEXT("E-A14 the produced unit exists"), Produced)) return false;
+    TestEqual(TEXT("E-A14 owned by the buyer"), Produced->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("E-A14 on the buyer's team"), Produced->GetTeamId(), F.Match->GetTeamForParticipant(HostId));
+    TestTrue(TEXT("E-A14 spawned away from the structure"),
+        FVector::Dist2D(Produced->GetActorLocation(), HostStructure->GetActorLocation()) >= 249.0);
+    const CommandOutcomeEvent* Stopped = F.Submit(Host, F.Intent(Host, OrderKind::Stop, Produced->GetStableId()));
+    TestTrue(TEXT("E-A15 the owner commands it"), Stopped && Stopped->accepted);
+    const CommandOutcomeEvent* Stolen = F.Submit(Enemy, F.Intent(Enemy, OrderKind::Stop, Produced->GetStableId()));
+    TestTrue(TEXT("E-A15 the enemy cannot"), Stolen && !Stolen->accepted);
+
+    // Income pays on its exact steps, for both seats.
+    const uint64 NextIncome = Account->nextIncomeStep;
+    const int64 BeforeIncome = Account->available;
+    while (F.Match->SimulationStepsExecuted < NextIncome - 1) F.Step();
+    TestEqual(TEXT("E-A16 no income before the due step"), Account->available, BeforeIncome);
+    F.Step();
+    TestEqual(TEXT("E-A16 income on the due step"), Account->available, BeforeIncome + pe::kIncomeCents);
+    TestEqual(TEXT("E-A16 the next interval is scheduled"), Account->nextIncomeStep, NextIncome + pe::kIncomeIntervalSteps);
+    TestEqual(TEXT("E-A16 the enemy is paid on the same cadence"), Other->credited, Account->credited);
+    TestTrue(TEXT("E-A16 both ledgers reconcile"), Account->Reconciles() && Other->Reconciles());
+
+    // A blocked output keeps the item and its payment, then appears once a point is open.
+    bOutputOpen = false;
+    FPolitikaNetEconomyIntent ToBlock = Request(Enemy, pe::EconomyOp::Train, Rifleman);
+    TestEqual(TEXT("E-A17 the enemy trains"), RejectionOf(Enemy, ToBlock), 0);
+    const uint64 BlockAdmitted = F.Match->SimulationStepsExecuted;
+    const int32 EnemyLiving = F.Match->CountLivingUnits(EnemyId);
+    const int64 EnemyAfterPayment = Other->spent;
+    while (F.Match->SimulationStepsExecuted < BlockAdmitted + Recipe.durationSteps) F.Step();
+    TestEqual(TEXT("E-A17 no unit while blocked"), F.Match->CountLivingUnits(EnemyId), EnemyLiving);
+    TestTrue(TEXT("E-A17 the entry is held"), Other->queue.size() == 1 && Other->queue[0].blocked);
+    TestTrue(TEXT("E-A17 the view says blocked"), Enemy->GetOwnEconomy().bHeadBlocked);
+    F.Step(static_cast<int32>(pe::kBlockedRetrySteps) * 2);
+    TestEqual(TEXT("E-A17 retries do not charge again"), Other->spent, EnemyAfterPayment);
+    bOutputOpen = true;
+    F.Step(static_cast<int32>(pe::kBlockedRetrySteps));
+    TestEqual(TEXT("E-A18 the unit appears when a point opens"), F.Match->CountLivingUnits(EnemyId), EnemyLiving + 1);
+    TestEqual(TEXT("E-A18 exactly one"), static_cast<int32>(Other->produced), 1);
+    TestTrue(TEXT("E-A18 the queue is empty"), Other->queue.empty());
+
+    // The unit limit counts queued items as well as living units.
+    while (F.Match->CountLivingUnits(HostId) < static_cast<int32>(politika::unitscale::kMaxUnitsPerSeat) - 1)
+        F.AddUnit(HostId, FVector2D(-2000.0 + 110.0 * F.Match->CountLivingUnits(HostId), -2600.0));
+    F.Step(pe::kIncomeIntervalSteps * 20);
+    FPolitikaNetEconomyIntent LastPlace = Request(Host, pe::EconomyOp::Train, Rifleman);
+    TestEqual(TEXT("E-A19 the last place can be trained"), RejectionOf(Host, LastPlace), 0);
+    TestEqual(TEXT("E-A19 a queued item fills the limit"), RejectionOf(Host, Request(Host, pe::EconomyOp::Train, Rifleman)),
+        static_cast<int32>(pe::EconomyRejection::UnitCap));
+
+    // The request limit per step.
+    for (int32 Index = 0; Index < static_cast<int32>(pe::kMaxPendingRequests); ++Index)
+        F.Match->SubmitEconomyIntent(Enemy, Request(Enemy, pe::EconomyOp::Cancel, 0));
+    FPolitikaNetEconomyIntent TooMany = Request(Enemy, pe::EconomyOp::Cancel, 0);
+    F.Match->SubmitEconomyIntent(Enemy, TooMany);
+    const FPolitikaNetEconomyOutcome* Limited = OutcomeOf(TooMany.CorrelationId);
+    TestTrue(TEXT("E-A20 more requests than the step limit are refused at once"),
+        Limited && Limited->Rejection == static_cast<uint8>(pe::EconomyRejection::RateLimited));
+    F.Step();
+
+    // A request waiting when the match ends is refused; nothing moves afterwards.
+    FPolitikaNetEconomyIntent Waiting = Request(Host, pe::EconomyOp::Cancel, 0);
+    F.Match->SubmitEconomyIntent(Host, Waiting);
+    const int32 UnitsAtEnd = F.Match->Units.Num();
+    TestTrue(TEXT("E-A21 the match leaves Active"), F.Match->TransitionLifecycle(MatchPhase::Terminal));
+    const FPolitikaNetEconomyOutcome* Dropped = OutcomeOf(Waiting.CorrelationId);
+    TestTrue(TEXT("E-A21 a waiting request is refused"),
+        Dropped && Dropped->Rejection == static_cast<uint8>(pe::EconomyRejection::MatchInactive));
+    TestTrue(TEXT("E-A21 the ledger is cleared"), F.Match->GetEconomy().All().empty());
+    F.Step(static_cast<int32>(Recipe.durationSteps) + 1);
+    TestEqual(TEXT("E-A21 no unit appears after the end"), F.Match->Units.Num(), UnitsAtEnd);
+    FPolitikaNetEconomyIntent Late = Request(Host, pe::EconomyOp::Train, Rifleman);
+    TestEqual(TEXT("E-A22 a later request is refused"), RejectionOf(Host, Late), static_cast<int32>(pe::EconomyRejection::MatchInactive));
+
     F.Match->FormationSlotProbeForTest = nullptr;
     return true;
 }

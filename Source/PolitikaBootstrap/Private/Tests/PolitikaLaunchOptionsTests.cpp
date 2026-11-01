@@ -26,6 +26,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaMPGroundProbe=300:1300/-700:-950"),
         TEXT("-PolitikaMPUnitScale=50"),
         TEXT("-PolitikaMPUnitScaleHold"),
+        TEXT("-PolitikaMPEconomyStartCents=10000000"),
     };
     for (const TCHAR* Switch : DevelopmentSwitches)
     {
@@ -56,6 +57,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaMPGroundProbe="),
         TEXT("-PolitikaMPUnitScale="),
         TEXT("-PolitikaMPUnitScaleHold=1"),
+        TEXT("-PolitikaMPEconomyStartCents="),
         TEXT("-PolitikaTestFixture="),
         TEXT("-PolitikaOffline=invalid"),
         TEXT("-PolitikaSafeMode=1"),

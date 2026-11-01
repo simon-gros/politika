@@ -170,6 +170,8 @@ void APolitikaPrototypePlayerController::GetLifetimeReplicatedProps(TArray<FLife
     DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, AssignedMatchGeneration, COND_OwnerOnly);
     // A participant sees only its own formations (FORM-F3); other teams never learn them.
     DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, OwnFormations, COND_OwnerOnly);
+    // A participant sees only its own treasury and queue (ECON-E1).
+    DOREPLIFETIME_CONDITION(APolitikaPrototypePlayerController, OwnEconomy, COND_OwnerOnly);
 }
 
 void APolitikaPrototypeMatch::SyncReplicatedParticipants()
@@ -459,6 +461,7 @@ void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
     ReportNetworkMeasurements(TEXT("end_play"));
 #endif
     ClearFormations(TEXT("end_play"));
+    ClearEconomy(TEXT("end_play"));
     ParticipantBindings.Reset();
     OutcomeRoutes.Reset();
     Super::EndPlay(EndPlayReason);

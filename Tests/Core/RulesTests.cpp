@@ -7,10 +7,13 @@
 #include "Formation.h"
 #include "Stance.h"
 #include "Discipline.h"
+#include "Economy.h"
 
 #include <cassert>
+#include <cmath>
 #include <iterator>
 #include <limits>
+#include <vector>
 
 using namespace politika::rules;
 
@@ -1790,5 +1793,180 @@ int main() {
     static_assert(!CanPlantExplosives(Faction::RedDirectorate, SabotageOperator::Conventional, true));
     static_assert(!CanPlantExplosives(Faction::IronAscendancy, SabotageOperator::Conventional, true));
     static_assert(!CanPlantExplosives(Faction::Unaligned, SabotageOperator::Spy, true));
+
+    // ECON-E1: one treasury per participant, income on a fixed cadence, training paid once.
+    {
+        namespace pe = politika::economy;
+        using pe::EconomyRejection;
+        constexpr std::int64_t Cap = 20;
+        constexpr std::uint8_t Rifleman = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
+        const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+        const std::uint32_t Duration = pe::FindRecipe(Rifleman)->durationSteps;
+        static_assert(pe::kStartingCents > 0 && pe::kIncomeCents > 0);
+        assert(!pe::FindRecipe(pe::kRecipeCount));
+
+        // Checked arithmetic refuses instead of wrapping.
+        pe::Cents Out = 7;
+        assert(!pe::CheckedAdd(std::numeric_limits<pe::Cents>::max(), 1, Out) && Out == 7);
+        assert(!pe::CheckedSub(std::numeric_limits<pe::Cents>::min(), 1, Out) && Out == 7);
+        assert(pe::CheckedAdd(2, 3, Out) && Out == 5);
+        assert(pe::CheckedSub(2, 3, Out) && Out == -1);
+
+        assert(pe::FormatUsd(0) == "$0.00" && pe::FormatUsd(5) == "$0.05" && pe::FormatUsd(36'000) == "$360.00");
+        assert(pe::FormatUsd(123'456'789) == "$1,234,567.89" && pe::FormatUsd(100'000) == "$1,000.00" && pe::FormatUsd(-250) == "-$2.50");
+        assert(pe::FormatUsd(std::numeric_limits<pe::Cents>::min()) == "-$92,233,720,368,547,758.08");
+
+        // Wire shape.
+        assert(pe::CheckIntentShape(0, 0) == EconomyRejection::None);
+        assert(pe::CheckIntentShape(1, 0) == EconomyRejection::None);
+        assert(pe::CheckIntentShape(1, 1) == EconomyRejection::MalformedCommand);
+        assert(pe::CheckIntentShape(pe::kEconomyOpCount, 0) == EconomyRejection::MalformedCommand);
+
+        // Accounts: valid owner, no duplicates, no negative start, stable order.
+        pe::Ledger Ledger;
+        assert(!Ledger.AddParticipant(0, 100, true, 1));
+        assert(!Ledger.AddParticipant(9, -1, true, 1));
+        assert(Ledger.AddParticipant(2, pe::kStartingCents, true, pe::kIncomeIntervalSteps));
+        assert(Ledger.AddParticipant(1, pe::kStartingCents, true, pe::kIncomeIntervalSteps));
+        assert(!Ledger.AddParticipant(1, pe::kStartingCents, true, pe::kIncomeIntervalSteps));
+        assert(Ledger.All().size() == 2 && Ledger.All()[0].participant == 1 && Ledger.All()[1].participant == 2);
+
+        const auto Same = [](const pe::Account& A, const pe::Account& B) {
+            return A.available == B.available && A.spent == B.spent && A.credited == B.credited
+                && A.refunded == B.refunded && A.queue.size() == B.queue.size()
+                && A.lastTransaction == B.lastTransaction && A.produced == B.produced;
+        };
+
+        // USD-01 / PRD-05: a purchase debits once and creates one queue entry.
+        const pe::RequestResult First = Ledger.Train(1, 1, Rifleman, 2, Cap);
+        assert(First && First.amount == Price && First.available == pe::kStartingCents - Price && First.queued == 1);
+        assert(Ledger.Find(1)->Reconciles());
+        // The other participant's money is untouched.
+        assert(Ledger.Find(2)->available == pe::kStartingCents && Ledger.Find(2)->queue.empty());
+
+        // Rejections change nothing (USD-01, PRD-04, PRD-09).
+        pe::Account Snapshot = *Ledger.Find(1);
+        assert(Ledger.Train(1, 1, Rifleman, 2, Cap).rejection == EconomyRejection::DuplicateCommand);
+        assert(Ledger.Train(1, 0, Rifleman, 2, Cap).rejection == EconomyRejection::DuplicateCommand);
+        assert(Ledger.Train(1, 2, pe::kRecipeCount, 2, Cap).rejection == EconomyRejection::UnknownRecipe);
+        assert(Ledger.Train(7, 2, Rifleman, 2, Cap).rejection == EconomyRejection::Unauthorized);
+        assert(Ledger.Train(1, 2, Rifleman, Cap - 1, Cap).rejection == EconomyRejection::UnitCap);
+        assert(Ledger.CancelLast(1, 1).rejection == EconomyRejection::DuplicateCommand);
+        assert(Ledger.CancelLast(7, 2).rejection == EconomyRejection::Unauthorized);
+        assert(Same(*Ledger.Find(1), Snapshot));
+        // A rejected transaction ID stays usable: only an admitted one is spent.
+        assert(Ledger.Train(1, 2, Rifleman, 2, Cap));
+        Snapshot = *Ledger.Find(1);
+        assert(Snapshot.available == pe::kStartingCents - 2 * Price && Snapshot.available < Price);
+        assert(Ledger.Train(1, 3, Rifleman, 2, Cap).rejection == EconomyRejection::InsufficientFunds);
+        assert(Same(*Ledger.Find(1), Snapshot));
+
+        // Cancel refunds exactly what the newest entry paid, and only once.
+        const pe::RequestResult Cancelled = Ledger.CancelLast(1, 3);
+        assert(Cancelled && Cancelled.amount == Price && Cancelled.queued == 1);
+        assert(Ledger.Find(1)->refunded == Price && Ledger.Find(1)->Reconciles());
+        assert(Ledger.CancelLast(1, 3).rejection == EconomyRejection::DuplicateCommand);
+        assert(Ledger.Find(1)->refunded == Price);
+
+        // Income is due on its exact steps and is paid once per interval, in any call pattern.
+        pe::Ledger Paid;
+        assert(Paid.AddParticipant(1, 0, false, 200));
+        for (pe::Step Step = 1; Step < 200; ++Step) assert(Paid.Advance(1, Step).income == 0);
+        assert(Paid.Advance(1, 200).income == pe::kIncomeCents);
+        assert(Paid.Advance(1, 200).income == 0);
+        for (pe::Step Step = 201; Step < 400; ++Step) assert(Paid.Advance(1, Step).income == 0);
+        assert(Paid.Advance(1, 400).income == pe::kIncomeCents);
+        assert(Paid.Find(1)->credited == 2 * pe::kIncomeCents && Paid.Find(1)->available == 2 * pe::kIncomeCents);
+        assert(Paid.Find(1)->Reconciles());
+        // A producer-less participant has money but cannot train.
+        assert(Paid.Train(1, 1, Rifleman, 0, Cap).rejection == EconomyRejection::NoProducer);
+
+        // Income that would overflow is refused, not wrapped, and the next interval still comes.
+        pe::Ledger Full;
+        assert(Full.AddParticipant(1, std::numeric_limits<pe::Cents>::max(), false, 1));
+        const pe::StepResult Overflowing = Full.Advance(1, 1);
+        assert(Overflowing.incomeOverflow && Overflowing.income == 0);
+        assert(Full.Find(1)->available == std::numeric_limits<pe::Cents>::max() && Full.Find(1)->credited == 0);
+        assert(Full.Find(1)->nextIncomeStep == 1 + pe::kIncomeIntervalSteps);
+
+        // PRD-06: training counts authoritative steps from the step after admission; only the
+        // head advances, and a second item waits for the first.
+        pe::Ledger Queue;
+        assert(Queue.AddParticipant(1, 5 * Price, true, 1'000'000));
+        assert(Queue.Train(1, 1, Rifleman, 0, Cap));
+        assert(!Queue.Advance(1, 10, 1).spawnDue);
+        assert(Queue.Find(1)->queue[0].remainingSteps == Duration);
+        assert(Queue.Train(1, 2, Rifleman, 0, Cap));
+        for (std::uint32_t Elapsed = 1; Elapsed < Duration; ++Elapsed) assert(!Queue.Advance(1, 10 + Elapsed).spawnDue);
+        assert(Queue.Find(1)->queue[1].remainingSteps == Duration);
+        const pe::StepResult Due = Queue.Advance(1, 10 + Duration);
+        assert(Due.spawnDue && Due.transaction == 1 && Due.recipe == pe::Recipe::Rifleman);
+
+        // A blocked output keeps its place and its payment, retries on a cadence and holds the rest.
+        const pe::Cents BeforeBlock = Queue.Find(1)->available;
+        assert(!Queue.BlockHead(1, 2, 10 + Duration));
+        assert(Queue.BlockHead(1, 1, 10 + Duration));
+        for (std::uint32_t Wait = 1; Wait < pe::kBlockedRetrySteps; ++Wait) assert(!Queue.Advance(1, 10 + Duration + Wait).spawnDue);
+        assert(Queue.Find(1)->queue[1].remainingSteps == Duration);
+        assert(Queue.Advance(1, 10 + Duration + pe::kBlockedRetrySteps).spawnDue);
+        assert(Queue.Find(1)->available == BeforeBlock && Queue.Find(1)->queue.size() == 2);
+        assert(!Queue.CompleteHead(1, 2));
+        assert(Queue.CompleteHead(1, 1));
+        assert(Queue.Find(1)->produced == 1 && Queue.Find(1)->available == BeforeBlock && Queue.Find(1)->Reconciles());
+        assert(Queue.Find(1)->queue.size() == 1 && Queue.Find(1)->queue[0].transaction == 2);
+        // Cancelling a blocked or training head refunds it too.
+        assert(Queue.CancelLast(1, 3) && Queue.Find(1)->queue.empty() && Queue.Find(1)->Reconciles());
+        assert(Queue.CancelLast(1, 4).rejection == EconomyRejection::NothingToCancel);
+
+        // The queue is bounded, and queued items count towards the unit cap.
+        pe::Ledger Rich;
+        assert(Rich.AddParticipant(1, 100 * Price, true, 1'000'000));
+        pe::TransactionId Next = 1;
+        for (std::size_t Index = 0; Index < pe::kMaxQueue; ++Index) assert(Rich.Train(1, Next++, Rifleman, 0, Cap));
+        assert(Rich.Train(1, Next, Rifleman, 0, Cap).rejection == EconomyRejection::QueueFull);
+        assert(Rich.Find(1)->queue.size() == pe::kMaxQueue && Rich.Find(1)->spent == static_cast<pe::Cents>(pe::kMaxQueue) * Price);
+        pe::Ledger NearCap;
+        assert(NearCap.AddParticipant(1, 100 * Price, true, 1'000'000));
+        assert(NearCap.Train(1, 1, Rifleman, Cap - 2, Cap));
+        assert(NearCap.Train(1, 2, Rifleman, Cap - 2, Cap));
+        assert(NearCap.Train(1, 3, Rifleman, Cap - 2, Cap).rejection == EconomyRejection::UnitCap);
+
+        // PRD-06: equal request sequences give equal traces, whatever the call schedule around them.
+        const auto Trace = [&](int Variant) {
+            pe::Ledger Run;
+            assert(Run.AddParticipant(1, pe::kStartingCents, true, pe::kIncomeIntervalSteps));
+            std::vector<pe::Cents> Balances;
+            for (pe::Step Step = 1; Step <= 900; ++Step) {
+                pe::TransactionId Admitted = 0;
+                if (Step == 5 || Step == 6) {
+                    Admitted = static_cast<pe::TransactionId>(Step);
+                    assert(Run.Train(1, Admitted, Rifleman, 2, Cap));
+                }
+                if (Variant == 1) (void)Run.Find(1); // reads never change the account
+                const pe::StepResult Result = Run.Advance(1, Step, Admitted);
+                if (Result.spawnDue) assert(Run.CompleteHead(1, Result.transaction));
+                Balances.push_back(Run.Find(1)->available);
+            }
+            assert(Run.Find(1)->produced == 2 && Run.Find(1)->Reconciles());
+            return Balances;
+        };
+        assert(Trace(0) == Trace(1));
+
+        // PRD-10: clearing leaves nothing behind for the next match.
+        Ledger.Clear();
+        assert(Ledger.All().empty() && !Ledger.Find(1));
+        assert(Ledger.AddParticipant(1, pe::kStartingCents, true, pe::kIncomeIntervalSteps));
+        assert(Ledger.Find(1)->available == pe::kStartingCents && Ledger.Find(1)->queue.empty() && Ledger.Find(1)->lastTransaction == 0);
+
+        // Output candidates: a fixed order, two rings, the first along the requested direction.
+        const auto Offsets = pe::OutputOffsets({0.0, 1.0});
+        assert(Offsets[0].x == 0.0 && Offsets[0].y == 250.0);
+        assert(std::abs(Offsets[2].x + 250.0) < 1e-9 && std::abs(Offsets[2].y) < 1e-9);
+        assert(std::abs(std::hypot(Offsets[8].x, Offsets[8].y) - 400.0) < 1e-9);
+        for (std::size_t Left = 0; Left < Offsets.size(); ++Left)
+            for (std::size_t Right = Left + 1; Right < Offsets.size(); ++Right)
+                assert(std::hypot(Offsets[Left].x - Offsets[Right].x, Offsets[Left].y - Offsets[Right].y) > 100.0);
+    }
+
     return 0;
 }

@@ -1108,6 +1108,7 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
                 if (Unit && Unit->CanMove()) Unit->StopOrder();
             // Formations belong to the active match: retire them exactly once (FORM-15).
             ClearFormations(TEXT("match_ended"));
+            ClearEconomy(TEXT("match_ended"));
         }
     }
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_LIFECYCLE phase=%u"), static_cast<uint32>(NextPhase));
@@ -1212,29 +1213,9 @@ void APolitikaPrototypeMatch::BuildScenario()
 
     // Player-slot units take the slot's participant/faction/team; Unaligned units are
     // owned by the system authority (owner 0) on its own NPC side in every layout.
-    auto SpawnUnit = [this](const FPolitikaPrototypeUnitPlacement& Placement, bool bUnaligned)
+    const auto SpawnUnit = [this](const FPolitikaPrototypeUnitPlacement& Placement, bool bUnaligned)
     {
-        const UPolitikaUnitArchetypeDefinition* Definition = ContentCatalog->FindUnit(Placement.UnitArchetypeId);
-        const UPolitikaWeaponDefinition* Weapon = Definition ? ContentCatalog->FindWeapon(Definition->WeaponId) : nullptr;
-        const FPolitikaPrototypeRuntimeParticipant* Slot = bUnaligned ? nullptr : RuntimeParticipants.FindByPredicate(
-            [&](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.SlotId == Placement.SlotId; });
-        if (!Definition || !Weapon || (!Slot && !bUnaligned)) return false;
-        if (bUnaligned && Definition->FactionId != UnalignedSystemAuthority.FactionId) return false;
-        APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Placement.Location, Placement.Rotation);
-        if (!Unit) return false;
-        Unit->Configure(NextStableId++, Slot ? Slot->RuntimePlayerId : 0u, Definition->DisplayName, Definition->MaxHealth,
-            Definition->MovementSpeedCmPerSecond, Weapon->RangeCm, Weapon->Damage, Weapon->CooldownSeconds,
-            Definition->bAttackable, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint,
-            Slot ? Slot->FactionId : UnalignedSystemAuthority.FactionId, Definition->bUseAuthoredMeshMaterials);
-        Unit->ConfigureInfantryPresentation(Definition->InfantryPresentation);
-        Unit->ConfigureInfantryBehavior(Definition->InfantryBehavior);
-        Unit->SetArchetypeId(Definition->StableId);
-        Unit->SetUnitCategory(Definition->UnitCategory);
-        Unit->SetTeamId(Slot ? Slot->TeamId : politika::rules::kUnalignedTeam);
-        Unit->SetSightRadius(Definition->SightRadiusCm);
-        Unit->AuthorityMatch = this;
-        Units.Add(Unit);
-        return true;
+        return SpawnPlacedUnit(Placement, bUnaligned) != nullptr;
     };
 
     TArray<FPolitikaPrototypeUnitPlacement> UnitPlacements = MapDefinition->UnitPlacements;
@@ -1298,6 +1279,7 @@ void APolitikaPrototypeMatch::BuildScenario()
     }
     ReplicatedMapId = MapDefinition->StableId;
     SyncReplicatedParticipants();
+    InitializeEconomy();
     // Initial team vision before any connection is considered for replication.
     UpdateTeamVisibility();
     if (!TransitionLifecycle(politika::rules::MatchPhase::Starting))
@@ -1324,6 +1306,7 @@ void APolitikaPrototypeMatch::BuildScenario()
         return;
     }
     BindExistingControllers();
+    SyncEconomyReplication();
 #if !UE_BUILD_SHIPPING
     for (int32 SpawnIndex = 0; SpawnIndex < SpawnedPlacementIndices.Num(); ++SpawnIndex)
     {
@@ -2769,6 +2752,9 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
     ProcessDisciplineBreaks();
     // Resolve follows movement and casualties: support uses this step's positions and survivors.
     UpdateUnitResolve();
+    // Economy after casualties (the dead free their unit-cap places) and before the objective, so
+    // a match that ends in this step ends after this step's money and nothing moves afterwards.
+    RunEconomyPhase();
     if (Objective)
     {
         const bool bWasContested = Objective->IsContested();
@@ -2959,6 +2945,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
             IE_Pressed, this, &APolitikaPrototypePlayerController::ControlGroupKey, Slot);
     InputComponent->BindAction(TEXT("PrototypeSubgroupCycle"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleSubgroup);
     InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
+    InputComponent->BindAction(TEXT("PrototypeTrainUnit"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainOrCancelAtProducer);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
     InputComponent->BindAction(TEXT("PrototypeCycleStance"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleStanceSelected);
@@ -4235,6 +4222,9 @@ FString APolitikaPrototypeHUD::RejectionText(uint8 Rejection)
     return Rejection < UE_ARRAY_COUNT(RejectionNames) ? RejectionNames[Rejection] : TEXT("Order rejected.");
 }
 
+// The coordinator's fixed step, for the training countdown only.
+static constexpr float SimulationStepSecondsForHud = 0.05f;
+
 void APolitikaPrototypeHUD::DrawHUD()
 {
     Super::DrawHUD();
@@ -4348,6 +4338,25 @@ void APolitikaPrototypeHUD::DrawHUD()
     }
     DrawText(TEXT("LMB select / drag box  ·  Shift add  ·  Ctrl+drag remove  ·  Ctrl+click or double-click same type  ·  Tab subgroup"), Ink, Left, Y, nullptr, UiScale); Y += 26.0f * UiScale;
     const APolitikaPrototypePlayerController* PrototypeOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController());
+    // ECON-E1: this participant's own treasury and training queue, from its owner-only view.
+    if (PrototypeOwner && PrototypeOwner->GetOwnEconomy().bValid
+        && ActiveMatch->GetMatchPhase() == politika::rules::MatchPhase::Active)
+    {
+        namespace pe = politika::economy;
+        const FPolitikaNetEconomyView& Economy = PrototypeOwner->GetOwnEconomy();
+        FString Training = TEXT("idle");
+        if (Economy.Queued > 0)
+            Training = Economy.bHeadBlocked ? FString(TEXT("output blocked"))
+                : FString::Printf(TEXT("Rifleman %.1f s"), Economy.HeadRemainingSteps * SimulationStepSecondsForHud);
+        if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
+        const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
+        DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
+            UTF8_TO_TCHAR(pe::FormatUsd(Economy.AvailableCents).c_str()), UTF8_TO_TCHAR(pe::FormatUsd(pe::kIncomeCents).c_str()),
+            static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), *Training,
+            UTF8_TO_TCHAR(pe::FormatUsd(Rifleman.cost).c_str())),
+            FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+        Y += 26.0f * UiScale;
+    }
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
     DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         *PolitikaShapeLabel(HelpShape)), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;

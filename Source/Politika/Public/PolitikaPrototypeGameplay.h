@@ -14,6 +14,7 @@
 #include "Formation.h"
 #include "Stance.h"
 #include "Discipline.h"
+#include "Economy.h"
 #include "Modifiers.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
@@ -210,6 +211,66 @@ struct POLITIKA_API FPolitikaNetFormationInfo
     }
 };
 
+// Versioned production request (ECON-E1, network_protocol 10). It carries no participant, owner or
+// price: the server derives authority from the sending connection and reads the price itself.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetEconomyIntent
+{
+    GENERATED_BODY()
+    UPROPERTY() int32 ProtocolVersion = 0;
+    // politika::economy::EconomyOp: Train or Cancel.
+    UPROPERTY() uint8 Op = 0;
+    // politika::economy::Recipe for Train; zero for Cancel.
+    UPROPERTY() uint8 Recipe = 0;
+    // Shares the connection's single-use command sequence; also the ledger's transaction ID.
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint32 CorrelationId = 0;
+    UPROPERTY() uint64 MatchGeneration = 0;
+};
+
+// Result of one production request, for the issuing connection only.
+USTRUCT()
+struct POLITIKA_API FPolitikaNetEconomyOutcome
+{
+    GENERATED_BODY()
+    UPROPERTY() uint32 CorrelationId = 0;
+    UPROPERTY() uint32 ClientSequence = 0;
+    UPROPERTY() uint8 Op = 0;
+    UPROPERTY() uint8 Rejection = 0;
+    UPROPERTY() bool bAccepted = false;
+    // The price debited by a Train or the amount refunded by a Cancel.
+    UPROPERTY() int64 AmountCents = 0;
+    UPROPERTY() int64 AvailableCents = 0;
+    UPROPERTY() int32 Queued = 0;
+    UPROPERTY() uint64 MatchGeneration = 0;
+};
+
+// Owner-only view of this participant's own treasury and producer (server-written).
+USTRUCT()
+struct POLITIKA_API FPolitikaNetEconomyView
+{
+    GENERATED_BODY()
+    UPROPERTY() bool bValid = false;
+    UPROPERTY() bool bHasProducer = false;
+    UPROPERTY() int64 AvailableCents = 0;
+    UPROPERTY() int64 CreditedCents = 0;
+    UPROPERTY() int64 SpentCents = 0;
+    UPROPERTY() int64 RefundedCents = 0;
+    UPROPERTY() int32 Queued = 0;
+    // Steps until the training item is done, rounded up to a quarter second so the view does not
+    // replicate on every step.
+    UPROPERTY() int32 HeadRemainingSteps = 0;
+    UPROPERTY() bool bHeadBlocked = false;
+    UPROPERTY() int32 Produced = 0;
+    bool operator==(const FPolitikaNetEconomyView& Other) const
+    {
+        return bValid == Other.bValid && bHasProducer == Other.bHasProducer && AvailableCents == Other.AvailableCents
+            && CreditedCents == Other.CreditedCents && SpentCents == Other.SpentCents && RefundedCents == Other.RefundedCents
+            && Queued == Other.Queued && HeadRemainingSteps == Other.HeadRemainingSteps
+            && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced;
+    }
+};
+
 // Public roster entry (slot, participant, faction, controller kind) for observers.
 USTRUCT()
 struct POLITIKA_API FPolitikaNetParticipantInfo
@@ -366,6 +427,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
+    friend class FPolitikaMultiplayerEconomyTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -591,6 +653,31 @@ private:
     UPROPERTY(Replicated) uint8 CapturingTeamId = 0;
 };
 
+// A participant's fixed starting producer (ECON-E1). A placeholder block: not selectable or
+// attackable, no collision and no navigation footprint. Only its own team receives it while fog
+// of war applies, so it reveals no start position.
+UCLASS()
+class POLITIKA_API APolitikaPrototypeStructure final : public AActor
+{
+    GENERATED_BODY()
+public:
+    APolitikaPrototypeStructure();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
+    void Configure(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam, const FLinearColor& InTint, bool bHiddenLocally);
+    uint32 GetOwnerPlayer() const { return OwnerPlayer; }
+    uint8 GetTeamId() const { return TeamId; }
+protected:
+    virtual void BeginPlay() override;
+private:
+    UFUNCTION() void ApplyTint();
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
+    UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
+    UPROPERTY(Replicated) uint8 TeamId = 0;
+    UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
+    TWeakObjectPtr<APolitikaPrototypeMatch> AuthorityMatch;
+};
+
 UCLASS()
 class POLITIKA_API APolitikaPrototypeMatch final : public AActor
 {
@@ -626,6 +713,11 @@ public:
     // here (server navmesh) and submitted as one ordinary command per member. Returns false
     // only when the source has no participant binding.
     bool SubmitFormationIntent(APlayerController* Source, const FPolitikaNetFormationIntent& Intent);
+    // Production request (ECON-E1). Checks the request's shape and freshness at once and leaves
+    // the money to the next simulation step. Returns false only when the source has no binding.
+    bool SubmitEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent);
+    const politika::economy::Ledger& GetEconomy() const { return Economy; }
+    bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
     // Advisory slot check shared by the client planner and the server's formation planner:
     // inside the playable area, on static ground level with GroundZ and not too steep, and on
@@ -963,8 +1055,34 @@ private:
     TSet<uint64> StanceProbeUnits;
     void TriggerStanceProbe(uint32 ParticipantId, const politika::formation::Formation& Formation);
 #endif
+    // Treasury and production (ECON-E1): one ledger, advanced only by RunEconomyPhase.
+    struct FPendingEconomyRequest
+    {
+        TWeakObjectPtr<APlayerController> Source;
+        uint32 ParticipantId = 0;
+        FPolitikaNetEconomyIntent Intent;
+    };
+    politika::economy::Ledger Economy;
+    TArray<FPendingEconomyRequest> PendingEconomyRequests;
+    UPROPERTY() TArray<TObjectPtr<APolitikaPrototypeStructure>> Structures;
+    void InitializeEconomy();
+    void RunEconomyPhase();
+    void ClearEconomy(const TCHAR* Reason);
+    void SyncEconomyReplication();
+    void SendEconomyOutcome(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent,
+        politika::economy::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued);
+    void RejectEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent, uint32 ParticipantId,
+        politika::economy::EconomyRejection Rejection);
+    const APolitikaPrototypeStructure* FindStructureOf(uint32 ParticipantId) const;
+    int32 CountLivingUnits(uint32 ParticipantId) const;
+    bool FindProducerOutput(uint32 ParticipantId, FVector& OutLocation, FRotator& OutRotation) const;
+    APolitikaPrototypeUnit* SpawnProducedUnit(uint32 ParticipantId, const FVector& Location, const FRotator& Rotation);
+    // One spawned unit from an authored placement; shared by match start and production.
+    APolitikaPrototypeUnit* SpawnPlacedUnit(const FPolitikaPrototypeUnitPlacement& Placement, bool bUnaligned);
 #if WITH_DEV_AUTOMATION_TESTS
     TFunction<bool(const FVector2D&)> FormationSlotProbeForTest;
+    // Every economy outcome sent, with its destination controller.
+    TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetEconomyOutcome>> TestEconomyOutcomes;
     // Every formation outcome sent, with its destination controller (fixture controllers have
     // no connection for the client RPC).
     TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
@@ -976,6 +1094,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
+    friend class FPolitikaMultiplayerEconomyTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
@@ -1220,6 +1339,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerDisciplineStressTest;
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
+    friend class FPolitikaMultiplayerEconomyTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -1236,6 +1356,12 @@ public:
     // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitFormationIntent(const FPolitikaNetFormationIntent& Intent);
     UFUNCTION(Client, Reliable) void ClientReceiveFormationOutcome(const FPolitikaNetFormationOutcome& Outcome);
+    // Production ingress and result (ECON-E1); host-local calls execute directly on authority.
+    UFUNCTION(Server, Reliable) void ServerSubmitEconomyIntent(const FPolitikaNetEconomyIntent& Intent);
+    UFUNCTION(Client, Reliable) void ClientReceiveEconomyOutcome(const FPolitikaNetEconomyOutcome& Outcome);
+    // Owner-only view of this participant's own treasury (server-written).
+    const FPolitikaNetEconomyView& GetOwnEconomy() const { return OwnEconomy; }
+    void SetOwnEconomy(const FPolitikaNetEconomyView& View);
     // Owner-only view of this participant's own formations (server-written).
     const TArray<FPolitikaNetFormationInfo>& GetOwnFormations() const { return OwnFormations; }
     const FPolitikaNetFormationInfo* FindOwnFormationOf(uint64 UnitId) const;
@@ -1268,6 +1394,9 @@ private:
     UFUNCTION() void OnRep_Assignment();
     UPROPERTY(ReplicatedUsing=OnRep_OwnFormations) TArray<FPolitikaNetFormationInfo> OwnFormations;
     UFUNCTION() void OnRep_OwnFormations();
+    UPROPERTY(ReplicatedUsing=OnRep_OwnEconomy) FPolitikaNetEconomyView OwnEconomy;
+    UFUNCTION() void OnRep_OwnEconomy();
+    void LogOwnEconomy(const TCHAR* Source) const;
     void LogOwnFormations(const TCHAR* Source) const;
     uint32 NextClientSequence = 1;
     uint32 NextCorrelationId = 1;
@@ -1391,6 +1520,9 @@ private:
     // routes every member's destination as an ordinary Move.
     politika::formation::Shape GroupMoveShape = politika::formation::Shape::Line;
     void CycleGroupMoveShape();
+    // B trains a rifleman at the participant's producer; Shift+B cancels the newest entry (ECON-E1).
+    void TrainOrCancelAtProducer();
+    bool SubmitEconomyRequest(politika::economy::EconomyOp Op, uint8 Recipe);
     // Advisory check of one candidate slot on this process: inside the playable area, on
     // ground level with the clicked point and not too steep, and on the local navmesh when
     // this process has one. The server's own projection and route stay authoritative.
