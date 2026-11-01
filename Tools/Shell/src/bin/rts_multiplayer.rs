@@ -13000,7 +13000,11 @@ fn economy_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
             econ_int(&first, "amount") == ECONOMY_PRICE_CENTS
                 && econ_int(&first, "queued") == 1
                 && econ_int(&second, "queued") == 2
-                && econ_int(&first, "available") - econ_int(&second, "available")
+                && econ_int(&second, "spent") - econ_int(&first, "spent") == ECONOMY_PRICE_CENTS
+                // Scheduled income may land between the two purchases.
+                && econ_int(&first, "available") + econ_int(&second, "credited")
+                    - econ_int(&first, "credited")
+                    - econ_int(&second, "available")
                     == ECONOMY_PRICE_CENTS
                 && field(&first_client, "accepted") == Some("1")
                 && econ_int(&first_client, "amount") == ECONOMY_PRICE_CENTS,
