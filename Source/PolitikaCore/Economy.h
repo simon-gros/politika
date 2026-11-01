@@ -7,10 +7,13 @@
 // One ledger owned by the match coordinator, advanced only by its fixed simulation step. Money
 // is integer US cents with checked arithmetic. Training debits the whole price exactly once at
 // admission, and a rejected request changes nothing. Time is counted in authoritative steps.
-// Electricity and food are later sub-slices: nothing here pretends to model them.
+// ECON-E2 adds one electricity grid per account (Power.h): a producer below its minimum load takes
+// no new items and its queue pauses, without another charge. Food is a later sub-slice.
 //
 // The figures below are prototype fixture data, not balance decisions. The rifleman's price and
 // training time follow the line-infantry entry of Docs/Units/ATLANTIC_CONCORD_UNITS.md.
+
+#include "Power.h"
 
 #include <algorithm>
 #include <array>
@@ -37,6 +40,9 @@ inline constexpr std::size_t kMaxQueue = 5;
 inline constexpr std::size_t kMaxPendingRequests = 8;
 // How often a finished item whose output is blocked looks for an open point again (1 s).
 inline constexpr std::uint32_t kBlockedRetrySteps = 20;
+// The fixed starting base's two buildings in each account's grid.
+inline constexpr power::BuildingId kGeneratorBuilding = 1;
+inline constexpr power::BuildingId kProducerBuilding = 2;
 
 // Wire values are stable.
 enum class Recipe : std::uint8_t { Rifleman };
@@ -71,6 +77,7 @@ enum class EconomyRejection : std::uint8_t {
     NothingToCancel,
     RateLimited,
     Overflow,
+    ProducerUnpowered,
 };
 
 [[nodiscard]] constexpr std::string_view RejectionName(EconomyRejection rejection) noexcept {
@@ -89,6 +96,7 @@ enum class EconomyRejection : std::uint8_t {
         case EconomyRejection::NothingToCancel: return "nothing_to_cancel";
         case EconomyRejection::RateLimited: return "rate_limited";
         case EconomyRejection::Overflow: return "overflow";
+        case EconomyRejection::ProducerUnpowered: return "producer_unpowered";
     }
     return "unknown";
 }
@@ -146,6 +154,9 @@ struct Account {
     TransactionId lastTransaction = 0;
     std::uint32_t produced = 0;
     std::vector<QueueItem> queue;
+    power::Grid grid;
+    power::Allocation allocation;
+    bool producerPowered = false;
 
     // Every cent has one explanation: nothing is created or lost outside the ledger.
     [[nodiscard]] bool Reconciles() const noexcept {
@@ -172,6 +183,10 @@ struct StepResult {
     bool spawnDue = false;
     TransactionId transaction = 0;
     Recipe recipe = Recipe::Rifleman;
+    // This step's allocation differs from the last one. headRemainingSteps is the head item's
+    // remaining time before this step's production.
+    bool powerChanged = false;
+    std::uint32_t headRemainingSteps = 0;
 };
 
 class Ledger {
@@ -188,6 +203,13 @@ public:
         account.starting = starting;
         account.available = starting;
         account.nextIncomeStep = firstIncomeStep;
+        if (hasProducer) {
+            // A self-starting plant and one producer: the base is powered from its first step.
+            account.grid.Add({kGeneratorBuilding, power::BuildingKind::Generator, power::kGeneratorAuxiliaryKw, power::kGeneratorCapacityKw});
+            account.grid.Add({kProducerBuilding, power::BuildingKind::Producer, power::kProducerLoadKw, 0});
+            account.allocation = account.grid.Allocate();
+            account.producerPowered = account.grid.Find(kProducerBuilding)->powered;
+        }
         const auto position = std::lower_bound(accounts.begin(), accounts.end(), participant,
             [](const Account& candidate, ParticipantId id) { return candidate.participant < id; });
         accounts.insert(position, std::move(account));
@@ -198,6 +220,12 @@ public:
         const auto found = std::find_if(accounts.begin(), accounts.end(),
             [participant](const Account& candidate) { return candidate.participant == participant; });
         return found == accounts.end() ? nullptr : &*found;
+    }
+
+    // Takes effect at the participant's next Advance. Returns false without a generator.
+    bool SetGeneratorOnline(ParticipantId participant, bool online) noexcept {
+        Account* account = FindMutable(participant);
+        return account && account->grid.SetGenerating(kGeneratorBuilding, online);
     }
 
     // Stable ascending participant order, for deterministic per-step processing.
@@ -214,6 +242,7 @@ public:
         const std::optional<RecipeDefinition> definition = FindRecipe(recipe);
         if (!definition) return Reject(EconomyRejection::UnknownRecipe, account);
         if (!account->hasProducer) return Reject(EconomyRejection::NoProducer, account);
+        if (!account->producerPowered) return Reject(EconomyRejection::ProducerUnpowered, account);
         if (account->queue.size() >= kMaxQueue) return Reject(EconomyRejection::QueueFull, account);
         if (livingUnits + static_cast<std::int64_t>(account->queue.size()) >= unitCap)
             return Reject(EconomyRejection::UnitCap, account);
@@ -247,9 +276,11 @@ public:
         return {EconomyRejection::None, paid, account->available, account->queue.size()};
     }
 
-    // One authoritative step for one account: pays income that is due, then advances only the
-    // head of the queue. An item admitted earlier in the same step does not advance until the
-    // next one, so it appears exactly durationSteps after its admission step.
+    // One authoritative step for one account: pays income that is due, allocates power, then
+    // advances only the head of the queue. An item admitted earlier in the same step does not
+    // advance until the next one, so with steady power it appears exactly durationSteps after its
+    // admission step. An unpowered producer holds its whole queue: no time passes, a blocked item
+    // does not retry and nothing is charged again. Cancel still refunds.
     StepResult Advance(ParticipantId participant, Step step, TransactionId admittedThisStep = 0) {
         StepResult result;
         Account* account = FindMutable(participant);
@@ -266,8 +297,18 @@ public:
             }
             account->nextIncomeStep = step + kIncomeIntervalSteps;
         }
+        if (!account->grid.Empty()) {
+            const power::Allocation allocation = account->grid.Allocate();
+            const bool powered = account->grid.Find(kProducerBuilding)->powered;
+            result.powerChanged = powered != account->producerPowered || allocation.suppliedKw != account->allocation.suppliedKw
+                || allocation.requiredKw != account->allocation.requiredKw;
+            account->allocation = allocation;
+            account->producerPowered = powered;
+        }
         if (account->queue.empty()) return result;
         QueueItem& head = account->queue.front();
+        result.headRemainingSteps = head.remainingSteps;
+        if (!account->producerPowered) return result;
         if (head.blocked) {
             if (step < head.nextRetryStep) return result;
         } else {

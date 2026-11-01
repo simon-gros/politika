@@ -1794,6 +1794,110 @@ int main() {
     static_assert(!CanPlantExplosives(Faction::IronAscendancy, SabotageOperator::Conventional, true));
     static_assert(!CanPlantExplosives(Faction::Unaligned, SabotageOperator::Spy, true));
 
+    // ECON-E2: electricity is capacity and service, and an outage pauses a queue without charging.
+    {
+        namespace pw = politika::power;
+        namespace pe = politika::economy;
+        using pe::EconomyRejection;
+        static_assert(pw::kGeneratorAuxiliaryKw > 0 && pw::kProducerLoadKw > 0);
+        static_assert(pw::kGeneratorCapacityKw >= pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw);
+
+        // Every building has a positive load, and only a generator has capacity.
+        pw::Grid Bad;
+        assert(!Bad.Add({0, pw::BuildingKind::Producer, 5, 0}));
+        assert(!Bad.Add({1, pw::BuildingKind::Producer, 0, 0}));
+        assert(!Bad.Add({1, pw::BuildingKind::Generator, -1, 10}));
+        assert(!Bad.Add({1, pw::BuildingKind::Generator, 1, -1}));
+        assert(!Bad.Add({1, pw::BuildingKind::Producer, 5, 5}));
+        assert(Bad.Empty() && Bad.Add({1, pw::BuildingKind::Producer, 5, 0}) && !Bad.Add({1, pw::BuildingKind::Producer, 5, 0}));
+        assert(!Bad.SetGenerating(1, false) && !Bad.SetGenerating(9, false));
+        const pw::Allocation NoPlant = Bad.Allocate();
+        assert(NoPlant.suppliedKw == 0 && NoPlant.requiredKw == 5 && !Bad.Find(1)->powered);
+
+        // A plant starts from its own output, then lower IDs win and a smaller load still fits.
+        pw::Grid Base;
+        assert(Base.Add({7, pw::BuildingKind::Producer, 60, 0}) && Base.Add({8, pw::BuildingKind::Producer, 50, 0}));
+        assert(Base.Add({9, pw::BuildingKind::Producer, 20, 0}) && Base.Add({3, pw::BuildingKind::Generator, 10, 100}));
+        pw::Allocation Shared = Base.Allocate();
+        assert(Shared.suppliedKw == 100 && Shared.requiredKw == 140);
+        assert(Base.Find(3)->powered && Base.Find(7)->powered && !Base.Find(8)->powered && Base.Find(9)->powered);
+        // Offline, nothing is powered, the plant included, and the same inputs give the same result.
+        assert(Base.SetGenerating(3, false));
+        Shared = Base.Allocate();
+        assert(Shared.suppliedKw == 0 && Shared.requiredKw == 140 && !Base.Find(3)->powered && !Base.Find(7)->powered);
+        assert(Base.SetGenerating(3, true));
+        Shared = Base.Allocate();
+        assert(Shared.suppliedKw == 100 && Base.Find(3)->powered && Base.Find(7)->powered && !Base.Find(8)->powered && Base.Find(9)->powered);
+
+        // The starting base is legal: powered from the start, with no prior step.
+        constexpr std::uint8_t Rifleman = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
+        const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+        const std::uint32_t Duration = pe::FindRecipe(Rifleman)->durationSteps;
+        pe::Ledger Ledger;
+        assert(Ledger.AddParticipant(1, 3 * Price, true, 1'000'000) && Ledger.AddParticipant(2, 3 * Price, true, 1'000'000));
+        assert(Ledger.AddParticipant(3, 3 * Price, false, 1'000'000));
+        const pe::Account& A = *Ledger.Find(1);
+        const pe::Account& B = *Ledger.Find(2);
+        assert(A.producerPowered && A.allocation.suppliedKw == pw::kGeneratorCapacityKw);
+        assert(A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw);
+        // A seat with no base has no grid, and its refusal stays NoProducer.
+        assert(!Ledger.SetGeneratorOnline(3, false) && !Ledger.SetGeneratorOnline(9, false));
+        assert(Ledger.Train(3, 1, Rifleman, 0, 20).rejection == EconomyRejection::NoProducer);
+
+        assert(Ledger.Train(1, 1, Rifleman, 0, 20) && Ledger.Train(1, 2, Rifleman, 0, 20));
+        assert(Ledger.Train(2, 1, Rifleman, 0, 20));
+        pe::Step Step = 1;
+        assert(!Ledger.Advance(1, Step).powerChanged);
+        Ledger.Advance(2, Step);
+        assert(A.queue.front().remainingSteps == Duration - 1);
+
+        // An outage takes effect at the next Advance. Until then admission still sees the power.
+        assert(Ledger.SetGeneratorOnline(1, false));
+        assert(A.producerPowered);
+        ++Step;
+        const pe::StepResult Off = Ledger.Advance(1, Step);
+        Ledger.Advance(2, Step);
+        assert(Off.powerChanged && !A.producerPowered && A.allocation.suppliedKw == 0 && Off.headRemainingSteps == Duration - 1);
+        // No time passes, no money moves, and the other participant carries on.
+        const pe::Cents During = A.available;
+        for (int Paused = 0; Paused < 50; ++Paused) {
+            ++Step;
+            const pe::StepResult Held = Ledger.Advance(1, Step);
+            Ledger.Advance(2, Step);
+            assert(!Held.spawnDue && !Held.powerChanged);
+        }
+        assert(A.queue.front().remainingSteps == Duration - 1 && A.available == During && A.Reconciles());
+        assert(B.producerPowered && B.queue.front().remainingSteps == Duration - 52);
+        // New training is refused with no side effect, and the transaction ID stays usable.
+        const pe::RequestResult Refused = Ledger.Train(1, 3, Rifleman, 0, 20);
+        assert(Refused.rejection == EconomyRejection::ProducerUnpowered && A.available == During && A.queue.size() == 2 && A.lastTransaction == 2);
+        // Cancel still refunds in full, here the waiting item.
+        assert(Ledger.CancelLast(1, 3) && A.queue.size() == 1 && A.available == During + Price && A.Reconciles());
+
+        // Recovery resumes the same entry from where it stopped, with no second charge.
+        assert(Ledger.SetGeneratorOnline(1, true));
+        ++Step;
+        const pe::StepResult On = Ledger.Advance(1, Step);
+        Ledger.Advance(2, Step);
+        assert(On.powerChanged && A.producerPowered && On.headRemainingSteps == Duration - 1 && A.queue.front().remainingSteps == Duration - 2);
+        assert(!Ledger.Advance(1, Step).powerChanged);
+        pe::StepResult Due;
+        std::uint32_t Remaining = A.queue.front().remainingSteps;
+        while (Remaining > 0) {
+            ++Step;
+            Due = Ledger.Advance(1, Step);
+            --Remaining;
+        }
+        assert(Due.spawnDue && Due.transaction == 1 && A.spent == 2 * Price && A.refunded == Price);
+        // A finished item with a blocked output does not retry during an outage.
+        assert(Ledger.BlockHead(1, 1, Step));
+        assert(Ledger.SetGeneratorOnline(1, false));
+        for (std::uint32_t Wait = 0; Wait < 2 * pe::kBlockedRetrySteps; ++Wait) assert(!Ledger.Advance(1, ++Step).spawnDue);
+        assert(Ledger.SetGeneratorOnline(1, true));
+        const pe::StepResult Retry = Ledger.Advance(1, ++Step);
+        assert(Retry.powerChanged && Retry.spawnDue && Ledger.CompleteHead(1, 1) && A.produced == 1 && A.Reconciles());
+    }
+
     // ECON-E1: one treasury per participant, income on a fixed cadence, training paid once.
     {
         namespace pe = politika::economy;

@@ -3497,6 +3497,133 @@ bool FPolitikaMultiplayerDisciplineRoutTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerPowerTest,
+    "Politika.RTS.Multiplayer.Power",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E2: the base's electricity through the production intake and fixed step. Generators cannot be
+// damaged yet, so the outage comes straight from the ledger.
+bool FPolitikaMultiplayerPowerTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+    F.Match->SyncEconomyReplication();
+
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    const pe::Account* Other = F.Match->GetEconomy().Find(EnemyId);
+    if (!TestNotNull(TEXT("The host has an account"), Account) || !TestNotNull(TEXT("The enemy has an account"), Other)) return false;
+    TestTrue(TEXT("P-A01 the base starts powered"), Account->producerPowered && Other->producerPowered);
+    TestEqual(TEXT("P-A01 the generator supplies its capacity"), Account->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
+    TestEqual(TEXT("P-A01 both buildings have a load"), Account->allocation.requiredKw, static_cast<int64>(pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw));
+    TestEqual(TEXT("P-A01 the view reports supply"), Host->GetOwnEconomy().SuppliedKw, pw::kGeneratorCapacityKw);
+    TestTrue(TEXT("P-A01 the view reports power"), Host->GetOwnEconomy().bProducerPowered);
+
+    // One producer and one generator per seat, each reaching its own team only.
+    int32 Producers = 0;
+    for (const APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        Producers += Structure->IsProducer() ? 1 : 0;
+        APolitikaPrototypePlayerController* Owner = Structure->GetOwnerPlayer() == HostId ? Host : Enemy;
+        APolitikaPrototypePlayerController* Opponent = Structure->GetOwnerPlayer() == HostId ? Enemy : Host;
+        TestTrue(TEXT("P-A02 the owner receives its building"), Structure->IsNetRelevantFor(Owner, Owner, FVector::ZeroVector));
+        TestFalse(TEXT("P-A02 the enemy does not"), Structure->IsNetRelevantFor(Opponent, Opponent, FVector::ZeroVector));
+    }
+    TestEqual(TEXT("P-A02 two buildings per seat"), F.Match->Structures.Num(), 4);
+    TestEqual(TEXT("P-A02 half are producers"), Producers, 2);
+    const APolitikaPrototypeStructure* Producer = F.Match->FindStructureOf(HostId);
+    TestTrue(TEXT("P-A02 a seat's structure lookup finds its producer"), Producer && Producer->IsProducer());
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::RecipeDefinition Recipe = *pe::FindRecipe(Rifleman);
+    const auto Request = [&F](APolitikaPrototypePlayerController* Source, pe::EconomyOp Op, uint8 RecipeByte)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.Recipe = RecipeByte;
+        uint32& Sequence = F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto Send = [&](APolitikaPrototypePlayerController* Source, pe::EconomyOp Op, uint8 RecipeByte)
+    {
+        const FPolitikaNetEconomyIntent Intent = Request(Source, Op, RecipeByte);
+        F.Match->SubmitEconomyIntent(Source, Intent);
+        F.Step();
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [&Intent](const auto& Entry) { return Entry.Value.CorrelationId == Intent.CorrelationId; });
+        return Found ? static_cast<int32>(Found->Value.Rejection) : -1;
+    };
+
+    const int32 None = static_cast<int32>(pe::EconomyRejection::None);
+    TestEqual(TEXT("P-A03 powered training is admitted"), Send(Host, pe::EconomyOp::Train, Rifleman), None);
+    const uint64 Admitted = F.Match->SimulationStepsExecuted;
+    TestEqual(TEXT("P-A03 a second item is admitted"), Send(Host, pe::EconomyOp::Train, Rifleman), None);
+    TestEqual(TEXT("P-A03 the enemy trains too"), Send(Enemy, pe::EconomyOp::Train, Rifleman), None);
+
+    // The outage: the queue holds its time, and only this participant is affected.
+    TestTrue(TEXT("P-A04 the generator goes offline"), F.Match->Economy.SetGeneratorOnline(HostId, false));
+    F.Step();
+    TestFalse(TEXT("P-A04 the producer is unpowered"), Account->producerPowered);
+    TestEqual(TEXT("P-A04 nothing is supplied"), Account->allocation.suppliedKw, static_cast<int64>(0));
+    TestTrue(TEXT("P-A04 the enemy keeps its power"), Other->producerPowered);
+    TestFalse(TEXT("P-A04 the view reports the outage"), Host->GetOwnEconomy().bProducerPowered);
+    TestTrue(TEXT("P-A04 the enemy's view does not"), Enemy->GetOwnEconomy().bProducerPowered);
+    const uint32 Held = Account->queue[0].remainingSteps;
+    const uint32 EnemyBefore = Other->queue[0].remainingSteps;
+    const int64 Money = Account->available;
+    const int64 Spent = Account->spent;
+    constexpr int32 OutageSteps = 40;
+    F.Step(OutageSteps);
+    TestEqual(TEXT("P-A05 no training time passes"), Account->queue[0].remainingSteps, Held);
+    TestEqual(TEXT("P-A05 no money moves"), Account->available, Money);
+    TestEqual(TEXT("P-A05 the enemy's training continues"), Other->queue[0].remainingSteps, EnemyBefore - OutageSteps);
+    TestEqual(TEXT("P-A06 new training is refused"), Send(Host, pe::EconomyOp::Train, Rifleman), static_cast<int32>(pe::EconomyRejection::ProducerUnpowered));
+    TestEqual(TEXT("P-A06 the refusal charges nothing"), Account->spent, Spent);
+    TestEqual(TEXT("P-A07 Cancel still works"), Send(Host, pe::EconomyOp::Cancel, 0), None);
+    TestEqual(TEXT("P-A07 and refunds in full"), Account->available, Money + Recipe.cost);
+    TestEqual(TEXT("P-A07 the head stays"), static_cast<int32>(Account->queue.size()), 1);
+
+    // Recovery: the same entry resumes, and it appears late by exactly the outage.
+    const uint64 OffSteps = F.Match->SimulationStepsExecuted - (Admitted + (Recipe.durationSteps - Held));
+    TestTrue(TEXT("P-A08 the generator comes back"), F.Match->Economy.SetGeneratorOnline(HostId, true));
+    F.Step();
+    TestTrue(TEXT("P-A08 the producer is powered"), Account->producerPowered);
+    TestEqual(TEXT("P-A08 the same entry resumes"), Account->queue[0].remainingSteps, Held - 1);
+    const int32 Before = F.Match->CountLivingUnits(HostId);
+    F.Step(static_cast<int32>(Held) - 2);
+    TestEqual(TEXT("P-A09 not yet"), F.Match->CountLivingUnits(HostId), Before);
+    F.Step();
+    TestEqual(TEXT("P-A09 it appears"), F.Match->CountLivingUnits(HostId), Before + 1);
+    TestEqual(TEXT("P-A09 one price for one unit"), Account->spent - Account->refunded, Recipe.cost);
+    TestEqual(TEXT("P-A09 late by the outage"), F.Match->SimulationStepsExecuted, Admitted + Recipe.durationSteps + OffSteps);
+    TestTrue(TEXT("P-A09 the ledger reconciles"), Account->Reconciles() && Other->Reconciles());
+
+    TestEqual(TEXT("P-A10 training is admitted again"), Send(Host, pe::EconomyOp::Train, Rifleman), None);
+    F.Match->ClearEconomy(TEXT("automation"));
+    TestNull(TEXT("P-A11 a match end clears the grid with the ledger"), F.Match->GetEconomy().Find(HostId));
+    F.Match->InitializeEconomy();
+    const pe::Account* Fresh = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("P-A11 the next match starts powered"), Fresh && Fresh->producerPowered && Fresh->queue.empty());
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerEconomyTest,
     "Politika.RTS.Multiplayer.Economy",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -3530,7 +3657,7 @@ bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("E-A01 the host has an account"), Account) || !TestNotNull(TEXT("E-A01 the enemy has an account"), Other)) return false;
     TestEqual(TEXT("E-A01 a treasury starts at the fixture amount"), Account->available, pe::kStartingCents);
     TestTrue(TEXT("E-A01 each seat has a producer"), Account->hasProducer && Other->hasProducer);
-    TestEqual(TEXT("E-A02 one structure per seat"), F.Match->Structures.Num(), 2);
+    TestEqual(TEXT("E-A02 a producer and a generator per seat"), F.Match->Structures.Num(), 4);
 
     // Structures reach their own team only.
     const APolitikaPrototypeStructure* HostStructure = F.Match->FindStructureOf(HostId);

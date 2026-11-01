@@ -4410,13 +4410,15 @@ void APolitikaPrototypeHUD::DrawHUD()
         if (Economy.Queued > 0)
             Training = Economy.bHeadBlocked ? FString(TEXT("output blocked"))
                 : FString::Printf(TEXT("Rifleman %.1f s"), Economy.HeadRemainingSteps * SimulationStepSecondsForHud);
+        if (!Economy.bProducerPowered && Economy.bHasProducer) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: no power") : FString(TEXT("no power"));
         if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
         const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
-        DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
+        DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  POWER %d / %d kW  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
             UTF8_TO_TCHAR(pe::FormatUsd(Economy.AvailableCents).c_str()), UTF8_TO_TCHAR(pe::FormatUsd(pe::kIncomeCents).c_str()),
-            static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), *Training,
+            static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), Economy.SuppliedKw, Economy.RequiredKw, *Training,
             UTF8_TO_TCHAR(pe::FormatUsd(Rifleman.cost).c_str())),
-            FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+            Economy.bProducerPowered || !Economy.bHasProducer ? FLinearColor(0.95f, 0.86f, 0.45f) : FLinearColor(1.0f, 0.42f, 0.32f),
+            Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
     }
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;

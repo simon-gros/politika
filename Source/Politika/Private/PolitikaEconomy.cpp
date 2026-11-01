@@ -27,6 +27,7 @@ namespace pe = politika::economy;
 namespace
 {
 constexpr double kProducerOffsetFromStartCm = 500.0;
+constexpr double kGeneratorOffsetFromProducerCm = 350.0;
 constexpr double kOutputClearanceCm = 100.0;
 constexpr FVector::FReal kStructureHalfHeightCm = 150.0;
 // A placed unit's actor origin stands this far above the ground.
@@ -52,6 +53,7 @@ FString EconomyRejectionText(pe::EconomyRejection Rejection)
         case pe::EconomyRejection::UnitCap: return TEXT("your force is at its unit limit");
         case pe::EconomyRejection::NothingToCancel: return TEXT("nothing is in training");
         case pe::EconomyRejection::NoProducer: return TEXT("you have no training building");
+        case pe::EconomyRejection::ProducerUnpowered: return TEXT("the training building has no power");
         case pe::EconomyRejection::MatchInactive: return TEXT("the match is not active");
         case pe::EconomyRejection::StaleMatch: return TEXT("that request was for an earlier match");
         case pe::EconomyRejection::RateLimited: return TEXT("too many requests at once");
@@ -85,6 +87,7 @@ APolitikaPrototypeStructure::APolitikaPrototypeStructure()
 void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(APolitikaPrototypeStructure, Kind);
     DOREPLIFETIME(APolitikaPrototypeStructure, OwnerPlayer);
     DOREPLIFETIME(APolitikaPrototypeStructure, TeamId);
     DOREPLIFETIME(APolitikaPrototypeStructure, Tint);
@@ -97,10 +100,11 @@ bool APolitikaPrototypeStructure::IsNetRelevantFor(const AActor* RealViewer, con
     return Match->IsStructureRelevantToViewer(this, RealViewer);
 }
 
-void APolitikaPrototypeStructure::Configure(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam,
-    const FLinearColor& InTint, bool bHiddenLocally)
+void APolitikaPrototypeStructure::Configure(APolitikaPrototypeMatch* InMatch, politika::power::BuildingKind InKind, uint32 InOwner,
+    uint8 InTeam, const FLinearColor& InTint, bool bHiddenLocally)
 {
     AuthorityMatch = InMatch;
+    Kind = static_cast<uint8>(InKind);
     OwnerPlayer = InOwner;
     TeamId = InTeam;
     Tint = InTint;
@@ -115,14 +119,16 @@ void APolitikaPrototypeStructure::BeginPlay()
     if (HasAuthority()) return;
     ApplyTint();
 #if !UE_BUILD_SHIPPING
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STRUCTURE_RELEVANT owner=%u team=%u x=%.1f y=%.1f"), OwnerPlayer,
-        static_cast<uint32>(TeamId), GetActorLocation().X, GetActorLocation().Y);
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STRUCTURE_RELEVANT kind=%s owner=%u team=%u x=%.1f y=%.1f"),
+        IsProducer() ? TEXT("producer") : TEXT("generator"), OwnerPlayer, static_cast<uint32>(TeamId), GetActorLocation().X, GetActorLocation().Y);
 #endif
 }
 
 void APolitikaPrototypeStructure::ApplyTint()
 {
     if (GetNetMode() == NM_DedicatedServer) return;
+    // The generator is the narrower of the two placeholder blocks, at the same height.
+    if (!IsProducer()) Body->SetRelativeScale3D(FVector(2.0, 2.0, 3.0));
     if (UMaterialInstanceDynamic* Material = Body->CreateAndSetMaterialInstanceDynamic(0))
         Material->SetVectorParameterValue(TEXT("Color"), Tint);
 }
@@ -143,6 +149,23 @@ void APolitikaPrototypeMatch::InitializeEconomy()
     if (!HasAuthority()) return;
     Economy.Clear();
     PendingEconomyRequests.Reset();
+#if !UE_BUILD_SHIPPING
+    // Development fixture "offset:duration" in steps; see ApplyPowerOutageFixture.
+    OutageOffsetSteps = -1;
+    OutageDurationSteps = 0;
+    OutageParticipant = 0;
+    OutageBeginStep = 0;
+    FString OutageFixture;
+    FString OutageOffsetText;
+    FString OutageDurationText;
+    if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPPowerOutage="), OutageFixture)
+        && OutageFixture.Split(TEXT(":"), &OutageOffsetText, &OutageDurationText)
+        && OutageOffsetText.IsNumeric() && OutageDurationText.IsNumeric())
+    {
+        OutageOffsetSteps = FCString::Atoi(*OutageOffsetText);
+        OutageDurationSteps = FCString::Atoi(*OutageDurationText);
+    }
+#endif
     for (APolitikaPrototypeStructure* Structure : Structures)
         if (IsValid(Structure)) Structure->Destroy();
     Structures.Reset();
@@ -177,9 +200,29 @@ void APolitikaPrototypeMatch::InitializeEconomy()
             Structure = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(Location, FRotator::ZeroRotator);
             if (Structure)
             {
-                Structure->Configure(this, Participant.RuntimePlayerId, Participant.TeamId, Definition->FactionTint,
-                    bFogOfWar && LocalTeam != politika::rules::kNoTeam && LocalTeam != Participant.TeamId);
+                const bool bHiddenLocally = bFogOfWar && LocalTeam != politika::rules::kNoTeam && LocalTeam != Participant.TeamId;
+                Structure->Configure(this, politika::power::BuildingKind::Producer, Participant.RuntimePlayerId, Participant.TeamId,
+                    Definition->FactionTint, bHiddenLocally);
                 Structures.Add(Structure);
+                // Beside the producer: the seat's self-starting plant. Without one there is no
+                // base, and the seat has no producer either, so no impossible power cycle exists.
+                const FVector2D Side(-Away.Y, Away.X);
+                const FVector2D GeneratorPoint = FVector2D(Location.X, Location.Y) + Side * kGeneratorOffsetFromProducerCm;
+                const FVector GeneratorLocation(FMath::Clamp(GeneratorPoint.X, PlayableMin.X, PlayableMax.X),
+                    FMath::Clamp(GeneratorPoint.Y, PlayableMin.Y, PlayableMax.Y), Location.Z);
+                APolitikaPrototypeStructure* Generator = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(GeneratorLocation, FRotator::ZeroRotator);
+                if (Generator)
+                {
+                    Generator->Configure(this, politika::power::BuildingKind::Generator, Participant.RuntimePlayerId, Participant.TeamId,
+                        Definition->FactionTint * 0.45f, bHiddenLocally);
+                    Structures.Add(Generator);
+                }
+                else
+                {
+                    Structures.Remove(Structure);
+                    Structure->Destroy();
+                    Structure = nullptr;
+                }
             }
         }
         Economy.AddParticipant(Participant.RuntimePlayerId, StartingCents, Structure != nullptr, pe::kIncomeIntervalSteps);
@@ -187,6 +230,12 @@ void APolitikaPrototypeMatch::InitializeEconomy()
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ECONOMY_START participant=%u available=%lld producer=%d x=%.1f y=%.1f generation=%llu"),
             Participant.RuntimePlayerId, StartingCents, Structure ? 1 : 0, Structure ? Structure->GetActorLocation().X : 0.0,
             Structure ? Structure->GetActorLocation().Y : 0.0, MatchGeneration);
+        if (const pe::Account* Account = Economy.Find(Participant.RuntimePlayerId))
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_POWER_START participant=%u supplied_kw=%lld required_kw=%lld generator_load_kw=%d producer_load_kw=%d producer_powered=%d generation=%llu"),
+                Participant.RuntimePlayerId, Account->allocation.suppliedKw, Account->allocation.requiredKw,
+                Structure ? politika::power::kGeneratorAuxiliaryKw : 0, Structure ? politika::power::kProducerLoadKw : 0,
+                Account->producerPowered ? 1 : 0, MatchGeneration);
 #endif
     }
 }
@@ -321,7 +370,7 @@ int32 APolitikaPrototypeMatch::CountLivingUnits(uint32 ParticipantId) const
 const APolitikaPrototypeStructure* APolitikaPrototypeMatch::FindStructureOf(uint32 ParticipantId) const
 {
     for (const APolitikaPrototypeStructure* Structure : Structures)
-        if (IsValid(Structure) && Structure->GetOwnerPlayer() == ParticipantId) return Structure;
+        if (IsValid(Structure) && Structure->IsProducer() && Structure->GetOwnerPlayer() == ParticipantId) return Structure;
     return nullptr;
 }
 
@@ -400,6 +449,20 @@ APolitikaPrototypeUnit* APolitikaPrototypeMatch::SpawnPlacedUnit(const FPolitika
     return Unit;
 }
 
+#if !UE_BUILD_SHIPPING
+void APolitikaPrototypeMatch::ApplyPowerOutageFixture(uint64 Step, uint32 FirstBuyer)
+{
+    if (OutageOffsetSteps < 0) return;
+    if (OutageParticipant == 0)
+    {
+        if (FirstBuyer == 0) return;
+        OutageParticipant = FirstBuyer;
+        OutageBeginStep = Step + OutageOffsetSteps;
+    }
+    Economy.SetGeneratorOnline(OutageParticipant, Step < OutageBeginStep || Step >= OutageBeginStep + OutageDurationSteps);
+}
+#endif
+
 void APolitikaPrototypeMatch::RunEconomyPhase()
 {
     const uint64 Step = SimulationStepsExecuted;
@@ -440,7 +503,16 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
             static_cast<int32>(Result.queued));
     }
 
-    // 2. Income then production, per account in ascending participant order.
+#if !UE_BUILD_SHIPPING
+    {
+        TArray<uint32> Buyers;
+        FirstAdmitted.GetKeys(Buyers);
+        Buyers.Sort();
+        ApplyPowerOutageFixture(Step, Buyers.IsEmpty() ? 0u : Buyers[0]);
+    }
+#endif
+
+    // 2. Income, power, then production, per account in ascending participant order.
     bool bSpawned = false;
     TArray<uint32> Participants;
     for (const pe::Account& Account : Economy.All()) Participants.Add(Account.participant);
@@ -452,6 +524,12 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
 #if !UE_BUILD_SHIPPING
         if (Result.incomeOverflow)
             UE_LOG(LogPolitikaStartup, Warning, TEXT("RTS_ECONOMY_INCOME_OVERFLOW participant=%u step=%llu"), ParticipantId, Step);
+        if (Result.powerChanged)
+            if (const pe::Account* Account = Economy.Find(ParticipantId))
+                UE_LOG(LogPolitikaStartup, Display,
+                    TEXT("RTS_POWER_STATE participant=%u supplied_kw=%lld required_kw=%lld producer_powered=%d queued=%d head_remaining=%u available=%lld generation=%llu step=%llu"),
+                    ParticipantId, Account->allocation.suppliedKw, Account->allocation.requiredKw, Account->producerPowered ? 1 : 0,
+                    static_cast<int32>(Account->queue.size()), Result.headRemainingSteps, Account->available, MatchGeneration, Step);
 #endif
         if (!Result.spawnDue) continue;
         FVector Location = FVector::ZeroVector;
@@ -500,6 +578,9 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.RefundedCents = Account->refunded;
             View.Queued = static_cast<int32>(Account->queue.size());
             View.Produced = static_cast<int32>(Account->produced);
+            View.SuppliedKw = static_cast<int32>(Account->allocation.suppliedKw);
+            View.RequiredKw = static_cast<int32>(Account->allocation.requiredKw);
+            View.bProducerPowered = Account->producerPowered;
             if (!Account->queue.empty())
             {
                 const int32 Remaining = static_cast<int32>(Account->queue.front().remainingSteps);
@@ -531,10 +612,11 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
-        OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced);
+        OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
+        OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0);
 #else
     (void)Source;
 #endif

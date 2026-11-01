@@ -261,13 +261,18 @@ struct POLITIKA_API FPolitikaNetEconomyView
     // replicate on every step.
     UPROPERTY() int32 HeadRemainingSteps = 0;
     UPROPERTY() bool bHeadBlocked = false;
+    // ECON-E2: electricity supplied and required at this participant's base.
+    UPROPERTY() int32 SuppliedKw = 0;
+    UPROPERTY() int32 RequiredKw = 0;
+    UPROPERTY() bool bProducerPowered = false;
     UPROPERTY() int32 Produced = 0;
     bool operator==(const FPolitikaNetEconomyView& Other) const
     {
         return bValid == Other.bValid && bHasProducer == Other.bHasProducer && AvailableCents == Other.AvailableCents
             && CreditedCents == Other.CreditedCents && SpentCents == Other.SpentCents && RefundedCents == Other.RefundedCents
             && Queued == Other.Queued && HeadRemainingSteps == Other.HeadRemainingSteps
-            && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced;
+            && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced && SuppliedKw == Other.SuppliedKw
+            && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered;
     }
 };
 
@@ -429,6 +434,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
+    friend class FPolitikaMultiplayerPowerTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -654,8 +660,8 @@ private:
     UPROPERTY(Replicated) uint8 CapturingTeamId = 0;
 };
 
-// A participant's fixed starting producer (ECON-E1). A placeholder block: not selectable or
-// attackable, no collision and no navigation footprint. Only its own team receives it while fog
+// A participant's fixed starting producer (ECON-E1) or generator (ECON-E2). A placeholder block: not
+// selectable or attackable, no collision and no navigation footprint. Only its own team receives it while fog
 // of war applies, so it reveals no start position.
 UCLASS()
 class POLITIKA_API APolitikaPrototypeStructure final : public AActor
@@ -665,7 +671,9 @@ public:
     APolitikaPrototypeStructure();
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
-    void Configure(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam, const FLinearColor& InTint, bool bHiddenLocally);
+    void Configure(APolitikaPrototypeMatch* InMatch, politika::power::BuildingKind InKind, uint32 InOwner, uint8 InTeam,
+        const FLinearColor& InTint, bool bHiddenLocally);
+    bool IsProducer() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Producer); }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     uint8 GetTeamId() const { return TeamId; }
 protected:
@@ -673,6 +681,7 @@ protected:
 private:
     UFUNCTION() void ApplyTint();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
+    UPROPERTY(Replicated) uint8 Kind = 0;
     UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
     UPROPERTY(Replicated) uint8 TeamId = 0;
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
@@ -1065,6 +1074,15 @@ private:
     };
     politika::economy::Ledger Economy;
     TArray<FPendingEconomyRequest> PendingEconomyRequests;
+#if !UE_BUILD_SHIPPING
+    // Development fixture until buildings can be damaged: the generator of the first participant to
+    // buy goes offline OutageOffsetSteps after that purchase, for OutageDurationSteps.
+    int32 OutageOffsetSteps = -1;
+    int32 OutageDurationSteps = 0;
+    uint32 OutageParticipant = 0;
+    uint64 OutageBeginStep = 0;
+    void ApplyPowerOutageFixture(uint64 Step, uint32 FirstBuyer);
+#endif
     UPROPERTY() TArray<TObjectPtr<APolitikaPrototypeStructure>> Structures;
     void InitializeEconomy();
     void RunEconomyPhase();
@@ -1097,6 +1115,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
+    friend class FPolitikaMultiplayerPowerTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
@@ -1343,6 +1362,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerDisciplineEffectsTest;
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
+    friend class FPolitikaMultiplayerPowerTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

@@ -12968,7 +12968,7 @@ fn economy_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
         };
         report.verdict(
             "ECON-P02-STRUCTURE-OWN-TEAM-ONLY",
-            structures(&text_a) == ["1"] && structures(&text_b) == ["2"],
+            structures(&text_a) == ["1", "1"] && structures(&text_b) == ["2", "2"],
             format!(
                 "client A received {:?}, client B received {:?}",
                 structures(&text_a),
@@ -13330,6 +13330,367 @@ fn economy_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
     result
 }
 
+// `--power SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E2) plays one generator outage with
+// real input: two purchases, the outage the fixture starts after the first, a refused purchase, a
+// refund, the recovery, the delayed unit, a purchase after the recovery, a match end and the next
+// generation. Generators cannot be damaged yet, so only the development fixture causes an outage.
+const POWER_OUTAGE_OFFSET_STEPS: i64 = 60;
+const POWER_OUTAGE_STEPS: i64 = 120;
+const POWER_SUPPLIED_KW: i64 = 100;
+const POWER_REQUIRED_KW: i64 = 50;
+
+fn power_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let fixture =
+        format!("-PolitikaMPPowerOutage={POWER_OUTAGE_OFFSET_STEPS}:{POWER_OUTAGE_STEPS}");
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session(options, &[fixture])?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        // Every building has a positive load and the base starts powered.
+        let text = server.text();
+        let starts: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_POWER_START") && l.contains(&format!("generation={generation}"))
+            })
+            .collect();
+        report.verdict(
+            "PWR-P01-BASE-STARTS-POWERED",
+            starts.len() == 2
+                && starts.iter().all(|l| {
+                    econ_int(l, "supplied_kw") == POWER_SUPPLIED_KW
+                        && econ_int(l, "required_kw") == POWER_REQUIRED_KW
+                        && econ_int(l, "generator_load_kw") > 0
+                        && econ_int(l, "producer_load_kw") > 0
+                        && field(l, "producer_powered") == Some("1")
+                }),
+            starts.join(" | "),
+        );
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let buildings = |t: &str| -> Vec<String> {
+            let mut found: Vec<String> = t
+                .lines()
+                .filter(|l| l.contains("RTS_STRUCTURE_RELEVANT"))
+                .map(|l| {
+                    format!(
+                        "{}:{}",
+                        field(l, "kind").unwrap_or("?"),
+                        field(l, "owner").unwrap_or("?")
+                    )
+                })
+                .collect();
+            found.sort();
+            found
+        };
+        report.verdict(
+            "PWR-P02-BUILDINGS-OWN-TEAM-ONLY",
+            buildings(&text_a) == ["generator:1", "producer:1"]
+                && buildings(&text_b) == ["generator:2", "producer:2"],
+            format!(
+                "client A received {:?}, client B received {:?}",
+                buildings(&text_a),
+                buildings(&text_b)
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Two purchases while powered; the first also starts the fixture's clock.
+        let (first, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        let admitted = econ_int(&first, "step");
+        thread::sleep(Duration::from_millis(400));
+        let (second, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+
+        let off = server.wait(
+            &["RTS_POWER_STATE participant=1", "producer_powered=0"],
+            Duration::from_secs(20),
+        )?;
+        let off_step = econ_int(&off, "step");
+        let off_remaining = econ_int(&off, "head_remaining");
+        report.verdict(
+            "PWR-P03-OUTAGE-PAUSES-THE-QUEUE",
+            off_step == admitted + POWER_OUTAGE_OFFSET_STEPS
+                && econ_int(&off, "supplied_kw") == 0
+                && econ_int(&off, "required_kw") == POWER_REQUIRED_KW
+                && econ_int(&off, "queued") == 2,
+            format!("{} | {} | {}", first.trim(), second.trim(), off.trim()),
+        );
+        let offline_view = client_a.wait(
+            &["RTS_ECONOMY_VIEW participant=1", "powered=0"],
+            Duration::from_secs(5),
+        )?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_outage_png",
+            &client_a.screenshot(&evidence, "02-outage")?,
+        );
+
+        // Purchases are refused with a reason and no charge, and Cancel still refunds.
+        let (refused, refused_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_REJECT participant=1", "op=0"],
+        )?;
+        report.verdict(
+            "PWR-P04-UNPOWERED-REFUSES-TRAINING",
+            field(&refused, "rejection") == Some("producer_unpowered")
+                && field(&refused_client, "accepted") == Some("0")
+                && econ_int(&refused_client, "amount") == 0,
+            format!("{} | client {}", refused.trim(), refused_client.trim()),
+        );
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_refused_png",
+            &client_a.screenshot(&evidence, "03-refused")?,
+        );
+        let (refund, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            Some("shift"),
+            &["RTS_ECONOMY_TX participant=1 kind=refund"],
+        )?;
+        report.verdict(
+            "PWR-P05-CANCEL-REFUNDS-IN-AN-OUTAGE",
+            econ_int(&refund, "amount") == ECONOMY_PRICE_CENTS
+                && econ_int(&refund, "queued") == 1
+                && econ_int(&refund, "step") < off_step + POWER_OUTAGE_STEPS,
+            refund.trim(),
+        );
+
+        // Recovery resumes the same entry, and the unit is late by exactly the outage.
+        let on = server.wait(
+            &["RTS_POWER_STATE participant=1", "producer_powered=1"],
+            Duration::from_secs(20),
+        )?;
+        report.verdict(
+            "PWR-P06-RECOVERY-RESUMES-THE-ENTRY",
+            econ_int(&on, "step") == off_step + POWER_OUTAGE_STEPS
+                && econ_int(&on, "supplied_kw") == POWER_SUPPLIED_KW
+                && econ_int(&on, "queued") == 1
+                && econ_int(&on, "head_remaining") == off_remaining,
+            format!("off {} | on {}", off.trim(), on.trim()),
+        );
+        let spawn = server.wait(
+            &["RTS_PRODUCTION_SPAWN participant=1"],
+            Duration::from_secs(30),
+        )?;
+        let delay = econ_int(&spawn, "step") - admitted;
+        report.verdict(
+            "PWR-P07-UNIT-LATE-BY-THE-OUTAGE",
+            delay == ECONOMY_TRAIN_STEPS as i64 + POWER_OUTAGE_STEPS,
+            format!(
+                "admitted at step {admitted}, appeared {delay} steps later: {}",
+                spawn.trim()
+            ),
+        );
+        let entity: u64 = field(&spawn, "entity")
+            .and_then(|v| v.parse().ok())
+            .ok_or("spawn line has no entity")?;
+        client_a.wait(
+            &["MP_CLIENT_UNIT_RELEVANT", &format!("entity={entity} ")],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_recovered_png",
+            &client_a.screenshot(&evidence, "04-recovered")?,
+        );
+
+        let (again, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        report.verdict(
+            "PWR-P08-TRAINING-WORKS-AFTER-RECOVERY",
+            econ_int(&again, "amount") == ECONOMY_PRICE_CENTS
+                && econ_int(&again, "queued") == 1
+                && field(&again, "reconciles") == Some("1"),
+            again.trim(),
+        );
+
+        // The outage touched only this seat, moved no money and reached only its owner.
+        let text = server.text();
+        let enemy_changes = text
+            .lines()
+            .filter(|l| l.contains("RTS_POWER_STATE participant=2"))
+            .count();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let a_leaks = text_a
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=2"))
+            .count();
+        let b_leaks = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .count();
+        let b_offline = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW") && l.contains("powered=0"))
+            .count();
+        let a_back = text_a
+            .lines()
+            .rev()
+            .find(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .unwrap_or_default();
+        report.verdict(
+            "PWR-P09-OWNER-ONLY-OUTAGE",
+            enemy_changes == 0
+                && a_leaks == 0
+                && b_leaks == 0
+                && b_offline == 0
+                && econ_int(&offline_view, "supplied_kw") == 0
+                && econ_int(a_back, "supplied_kw") == POWER_SUPPLIED_KW
+                && field(a_back, "powered") == Some("1"),
+            format!(
+                "enemy power changes {enemy_changes}; A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}, B offline views {b_offline}; {} | {}",
+                offline_view.trim(),
+                a_back.trim()
+            ),
+        );
+        let lines_1 = economy_lines(&text, 1, &generation);
+        let replay = economy_replay(&lines_1, ECONOMY_START_CENTS);
+        let cadence = economy_income_cadence(&lines_1);
+        let trains = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") == Some("train"))
+            .count();
+        let refunds = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") == Some("refund"))
+            .count();
+        report.verdict(
+            "PWR-P10-NO-SECOND-CHARGE",
+            replay.is_ok() && cadence.is_ok() && trains == 3 && refunds == 1,
+            format!(
+                "{trains} purchases and {refunds} refund; replay {replay:?}; income through the outage {cadence:?}"
+            ),
+        );
+
+        // Repeatability: the normalized sequence, without timing or income interleaving.
+        let mut trace: String = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") != Some("income"))
+            .map(|l| {
+                format!(
+                    "{} {} queued={}\n",
+                    field(l, "kind").unwrap_or("?"),
+                    econ_int(l, "amount"),
+                    econ_int(l, "queued")
+                )
+            })
+            .collect();
+        trace.push_str(&format!(
+            "off_offset={} head_remaining={off_remaining} on_offset={} delay={delay}\n",
+            off_step - admitted,
+            econ_int(&on, "step") - admitted
+        ));
+        fs::write(evidence.join("power-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("power_trace", &evidence.join("power-trace.txt"));
+
+        // A match end, then a next generation that owes nothing to the outage.
+        let owned: Vec<u64> = entity_owners(&server.text())
+            .iter()
+            .filter(|(_, owner)| *owner == 1)
+            .map(|(id, _)| *id)
+            .collect();
+        let unit = *owned.first().ok_or("no authored unit for participant 1")?;
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        let at_move = server.offset();
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            at_move,
+        )?;
+        server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(180),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let starts2: Vec<&str> = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_POWER_START") && l.contains(&format!("generation={generation2}"))
+            })
+            .collect();
+        report.verdict(
+            "PWR-P11-NEXT-GENERATION-FRESH",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && starts2.len() == 2
+                && starts2.iter().all(|l| {
+                    econ_int(l, "supplied_kw") == POWER_SUPPLIED_KW
+                        && field(l, "producer_powered") == Some("1")
+                })
+                && !tail.lines().any(|l| l.contains("RTS_POWER_STATE")),
+            format!(
+                "generation {generation} then {generation2}: {} | {}",
+                cleared.trim(),
+                starts2.join(" | ")
+            ),
+        );
+        Ok(())
+    })();
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 fn economy_limits_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
     let evidence = options.client.evidence.clone();
     let extra = [
@@ -13571,6 +13932,14 @@ fn main() {
             "politika.rts.pointer-stall-evidence.v1",
             "pointer-stall",
             pointer_stall_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--power") {
+        run_dedicated_session(
+            "--power",
+            "politika.econ.power-evidence.v1",
+            "power",
+            power_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--compare-normalized") {

@@ -36,6 +36,7 @@ namespace
         TEXT("-PolitikaMPGroundProbe="),
         TEXT("-PolitikaMPUnitScale="),
         TEXT("-PolitikaMPEconomyStartCents="),
+        TEXT("-PolitikaMPPowerOutage="),
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),
