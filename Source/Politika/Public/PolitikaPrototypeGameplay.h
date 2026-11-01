@@ -1458,9 +1458,10 @@ private:
     // World point of a map-space anchor at the drag's ground height.
     FVector OrderAnchorWorld(const APolitikaPrototypeMatch& ActiveMatch, const politika::formation::Point& Anchor) const;
 #if WITH_DEV_AUTOMATION_TESTS
-    // Automation stand-ins for the viewport: cursor, held button and ground under a screen point.
+    // Automation stand-ins for the viewport: cursor, held button, focus and ground under a screen point.
     TOptional<FVector2D> OrderCursorForTest;
     TOptional<bool> OrderButtonDownForTest;
+    TOptional<bool> ViewportFocusedForTest;
     TFunction<bool(const FVector2D&, FVector&)> OrderGroundProbeForTest;
 #endif
     bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);

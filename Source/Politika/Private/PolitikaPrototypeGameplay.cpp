@@ -3061,6 +3061,9 @@ void APolitikaPrototypePlayerController::CancelSelectPress(const TCHAR* Reason)
 
 bool APolitikaPrototypePlayerController::IsViewportFocused() const
 {
+#if WITH_DEV_AUTOMATION_TESTS
+    if (ViewportFocusedForTest.IsSet()) return ViewportFocusedForTest.GetValue();
+#endif
     const ULocalPlayer* LocalPlayer = GetLocalPlayer();
     const FViewport* Viewport = LocalPlayer && LocalPlayer->ViewportClient ? LocalPlayer->ViewportClient->Viewport : nullptr;
     // Without a viewport (automation, a server-side controller) there is no focus to lose.

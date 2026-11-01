@@ -2081,6 +2081,32 @@ bool FPolitikaMultiplayerGroupMoveFacingTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("FD-A17 seven members in one rank of the default Line"), Plain.Num() == 7 && FMath::IsNearlyEqual(MaxSpan(Plain), 900.0, 0.01));
     F.Step();
 
+    // Losing the viewport focus, or the match leaving Active, cancels a held drag: no order, no
+    // formation request, no preview, and the later release sends nothing.
+    const int32 BatchesBeforeFocus = Host->CommandBatches.Num();
+    const int32 OutcomesBeforeFocus = F.Match->TestFormationOutcomes.Num();
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    TestTrue(TEXT("A formation drag is held before the focus loss"), Host->OrderPress.State == APC::EOrderPress::Dragging);
+    Host->ViewportFocusedForTest = false;
+    Drag(-100.0, -1400.0);
+    TestTrue(TEXT("FD-A27 focus loss cancels the drag"), Host->OrderPress.State == APC::EOrderPress::Idle);
+    TestFalse(TEXT("FD-A27 focus loss clears the preview"), Host->GetGroupMoveMarkers(Markers, Alpha, &bPreview) && bPreview);
+    Host->ViewportFocusedForTest.Reset();
+    Release();
+    TestTrue(TEXT("FD-A27 focus loss sends nothing"), F.Match->PendingOrders.IsEmpty()
+        && Host->CommandBatches.Num() == BatchesBeforeFocus && F.Match->TestFormationOutcomes.Num() == OutcomesBeforeFocus);
+    Press(-600.0, -1400.0);
+    Drag(-150.0, -1400.0);
+    TestTrue(TEXT("A formation drag is held before the match ends"), Host->OrderPress.State == APC::EOrderPress::Dragging);
+    TestTrue(TEXT("The match leaves Active"), F.Match->TransitionLifecycle(MatchPhase::Terminal));
+    Drag(-100.0, -1400.0);
+    TestTrue(TEXT("FD-A27 the match leaving Active cancels the drag"), Host->OrderPress.State == APC::EOrderPress::Idle);
+    TestFalse(TEXT("FD-A27 the phase change clears the preview"), Host->GetGroupMoveMarkers(Markers, Alpha, &bPreview) && bPreview);
+    Release();
+    TestTrue(TEXT("FD-A27 the phase change sends nothing"), F.Match->PendingOrders.IsEmpty()
+        && Host->CommandBatches.Num() == BatchesBeforeFocus && F.Match->TestFormationOutcomes.Num() == OutcomesBeforeFocus);
+
     Host->ClearSelectionState();
     Host->GroupMoveSlotProbeForTest = nullptr;
     Host->OrderGroundProbeForTest = nullptr;
