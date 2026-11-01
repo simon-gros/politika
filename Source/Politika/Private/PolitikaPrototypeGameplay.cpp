@@ -2852,7 +2852,11 @@ void APolitikaPrototypePlayerController::BeginPlay()
     Super::BeginPlay();
     ResolveMatch();
     bShowMouseCursor = true;
-    SetInputMode(FInputModeGameAndUI());
+    // By default a button press hides the cursor and switches to relative mouse movement, and its
+    // release puts the cursor back at the press point: drags need a visible, truthful cursor.
+    FInputModeGameAndUI InputMode;
+    InputMode.SetHideCursorDuringCapture(false);
+    SetInputMode(InputMode);
 #if !UE_BUILD_SHIPPING
     bHostileProbeEnabled = IsLocalController() && FParse::Param(FCommandLine::Get(), TEXT("PolitikaMPProbe"));
 #endif
@@ -2968,14 +2972,41 @@ politika::selection::SelectionOp APolitikaPrototypePlayerController::ModifierSel
     return SelectionOp::Replace;
 }
 
+bool APolitikaPrototypePlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+    // The viewport refreshes its cursor from each button event just before delivering it here, so
+    // this is the only place that sees where the button actually went down or came up: a long frame
+    // may run the bindings after the pointer has moved on. A second press of a double-click arrives
+    // as IE_DoubleClick and still reaches the IE_Pressed bindings.
+    const bool bLeft = Params.Key == EKeys::LeftMouseButton;
+    if (bLeft || Params.Key == EKeys::RightMouseButton)
+    {
+        FVector2D Cursor;
+#if WITH_DEV_AUTOMATION_TESTS
+        const bool bCursor = PointerEventCursorForTest.IsSet() ? (Cursor = PointerEventCursorForTest.GetValue(), true)
+            : GetMousePosition(Cursor.X, Cursor.Y);
+#else
+        const bool bCursor = GetMousePosition(Cursor.X, Cursor.Y);
+#endif
+        if (bCursor && (Params.Event == IE_Pressed || Params.Event == IE_DoubleClick))
+            (bLeft ? SelectPressCursor : OrderPressCursor) = Cursor;
+        else if (bCursor && Params.Event == IE_Released)
+            (bLeft ? SelectReleaseCursor : OrderReleaseCursor) = Cursor;
+    }
+    return Super::InputKey(Params);
+}
+
 void APolitikaPrototypePlayerController::BeginSelectPress()
 {
     // A selection stroke and a right-drag never overlap: the stroke wins and the drag sends nothing.
     CancelOrderPress(TEXT("SelectPress"));
     FVector2D Cursor;
-    if (!ResolveMatch() || !GetMousePosition(Cursor.X, Cursor.Y)) return;
+    const bool bEventCursor = SelectPressCursor.IsSet();
+    if (bEventCursor) Cursor = SelectPressCursor.GetValue();
+    SelectPressCursor.Reset();
+    if (!ResolveMatch() || (!bEventCursor && !GetMousePosition(Cursor.X, Cursor.Y))) return;
     // The group bar captures its clicks: no world selection stroke starts over it.
-    if (const int32 BarSlot = GroupBarSlotUnderCursor(); BarSlot != INDEX_NONE)
+    if (const int32 BarSlot = GroupBarSlotAt(Cursor); BarSlot != INDEX_NONE)
     {
         ControlGroupInput(BarSlot, TEXT("bar"));
         return;
@@ -3008,6 +3039,11 @@ void APolitikaPrototypePlayerController::UpdateSelectDrag()
     }
     FVector2D Cursor;
     if (!GetMousePosition(Cursor.X, Cursor.Y)) return;
+    SampleSelectDrag(Cursor);
+}
+
+void APolitikaPrototypePlayerController::SampleSelectDrag(const FVector2D& Cursor)
+{
     SelectDragPosition = Cursor;
     if (!bBoxSelecting)
     {
@@ -3026,11 +3062,17 @@ void APolitikaPrototypePlayerController::EndSelectPress()
         CancelSelectPress(TEXT("FocusLost"));
         return;
     }
-    // The box ends at the last position sampled while the button was held: releasing mouse
-    // capture moves the cursor back to where the press began, so it is not read here.
+    // The box ends where the release event was delivered, so a drag that fell inside one long
+    // frame is still a box and a stall cannot leave it on an old sample.
+    if (SelectReleaseCursor.IsSet()) SampleSelectDrag(SelectReleaseCursor.GetValue());
+    SelectReleaseCursor.Reset();
     const bool bBox = bBoxSelecting;
     bSelectPressed = false;
     bBoxSelecting = false;
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_STROKE participant=%u press=%.1f,%.1f end=%.1f,%.1f box=%d"),
+        GetCommandPlayerId(), SelectPressPosition.X, SelectPressPosition.Y, SelectDragPosition.X, SelectDragPosition.Y, bBox ? 1 : 0);
+#endif
     if (bBox) BoxSelect(SelectPressPosition, SelectDragPosition, ModifierSelectionOp(true));
     else SelectUnderCursor(ModifierSelectionOp(false));
 }
@@ -3070,7 +3112,8 @@ void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
     FHitResult Hit;
-    APolitikaPrototypeUnit* Unit = GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)
+    // The unit where the button went down, which a long frame may have left behind the cursor.
+    APolitikaPrototypeUnit* Unit = GetHitResultAtScreenPosition(SelectPressPosition, UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)
         ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
     const bool bOwnUnit = IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() == GetCommandPlayerId();
     const bool bCtrl = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
@@ -3100,6 +3143,9 @@ void APolitikaPrototypePlayerController::BoxSelect(const FVector2D& CornerA, con
     politika::selection::SelectionOp Op)
 {
     using namespace politika::selection;
+#if WITH_DEV_AUTOMATION_TESTS
+    LastSelectBoxForTest = TPair<FVector2D, FVector2D>(CornerA, CornerB);
+#endif
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
     const uint32 PlayerId = GetCommandPlayerId();
@@ -3233,9 +3279,13 @@ void APolitikaPrototypePlayerController::SelectUnitForInput(APolitikaPrototypeUn
 int32 APolitikaPrototypePlayerController::GroupBarSlotUnderCursor() const
 {
     FVector2D Cursor;
+    return GetMousePosition(Cursor.X, Cursor.Y) ? GroupBarSlotAt(Cursor) : INDEX_NONE;
+}
+
+int32 APolitikaPrototypePlayerController::GroupBarSlotAt(const FVector2D& Cursor) const
+{
     int32 ViewWidth = 0;
     int32 ViewHeight = 0;
-    if (!GetMousePosition(Cursor.X, Cursor.Y)) return INDEX_NONE;
     GetViewportSize(ViewWidth, ViewHeight);
     if (ViewWidth <= 0 || ViewHeight <= 0) return INDEX_NONE;
     const std::size_t Slot = politika::selection::GroupBarSlotAt({Cursor.X, Cursor.Y}, ViewWidth, ViewHeight,
@@ -3698,21 +3748,27 @@ bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCo
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()
 {
+    // The order goes where the button went down, which a long frame may have left behind the cursor.
+    const TOptional<FVector2D> EventCursor = OrderPressCursor;
+    OrderPressCursor.Reset();
     // A held selection stroke never turns into an order, and the group bar captures its clicks.
-    if (bSelectPressed || GroupBarSlotUnderCursor() != INDEX_NONE) return;
+    if (bSelectPressed || (EventCursor.IsSet() ? GroupBarSlotAt(EventCursor.GetValue()) : GroupBarSlotUnderCursor()) != INDEX_NONE) return;
     // A press while a gesture is still held (a lost release) never starts a second one.
     if (OrderPress.State != EOrderPress::Idle) return;
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
     if (Selected.IsEmpty()) return;
     FHitResult Hit;
-    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
+    const ETraceTypeQuery Trace = UEngineTypes::ConvertToTraceType(ECC_Visibility);
+    if (!(EventCursor.IsSet() ? GetHitResultAtScreenPosition(EventCursor.GetValue(), Trace, true, Hit)
+            : GetHitResultUnderCursorByChannel(Trace, true, Hit)))
     {
         ShowLocalFeedback(TEXT("Order rejected: click valid map ground or a hostile unit."));
         return;
     }
     FVector2D Cursor(-1.0, -1.0);
-    if (!GetOrderCursor(Cursor)) Cursor = FVector2D(-1.0, -1.0);
+    if (EventCursor.IsSet()) Cursor = EventCursor.GetValue();
+    else if (!GetOrderCursor(Cursor)) Cursor = FVector2D(-1.0, -1.0);
     PressOrderAt(ActiveMatch, Selected, Hit, Cursor);
 }
 
@@ -3871,10 +3927,15 @@ void APolitikaPrototypePlayerController::UpdateOrderPress()
         CancelOrderPress(Reason);
         return;
     }
-    // Samples only while the button is held: once it is up, releasing mouse capture can move the
-    // cursor back to the press point, so the end stays the last held sample.
+    // Samples only while the button is held; the release event supplies the end once it is up.
     FVector2D Cursor;
     if (!bHeld || !GetOrderCursor(Cursor)) return;
+    SampleOrderPress(*ActiveMatch, Cursor);
+    if (OrderPress.State == EOrderPress::Dragging) UpdateOrderPreview(*ActiveMatch, Selected);
+}
+
+void APolitikaPrototypePlayerController::SampleOrderPress(const APolitikaPrototypeMatch& ActiveMatch, const FVector2D& Cursor)
+{
     if (OrderPress.State == EOrderPress::Pending)
     {
         const float DpiScale = GEngine && GEngine->GameViewport ? GEngine->GameViewport->GetDPIScale() : 1.0f;
@@ -3885,9 +3946,8 @@ void APolitikaPrototypePlayerController::UpdateOrderPress()
     }
     FVector Ground;
     OrderPress.LastScreen = Cursor;
-    OrderPress.bLastValid = TraceOrderGround(*ActiveMatch, Cursor, Ground);
+    OrderPress.bLastValid = TraceOrderGround(ActiveMatch, Cursor, Ground);
     if (OrderPress.bLastValid) OrderPress.LastGround = Ground;
-    UpdateOrderPreview(*ActiveMatch, Selected);
 }
 
 void APolitikaPrototypePlayerController::UpdateOrderPreview(APolitikaPrototypeMatch& ActiveMatch,
@@ -3989,7 +4049,9 @@ void APolitikaPrototypePlayerController::EndOrderPress()
     }
     using namespace politika::formation;
     const FVector2D Min = ActiveMatch->GetPlayableMin();
-    // The end is the last sample taken while the button was held, never a read in this handler.
+    // The end is where the release event was delivered, or without one the last held sample.
+    if (OrderReleaseCursor.IsSet()) SampleOrderPress(*ActiveMatch, OrderReleaseCursor.GetValue());
+    OrderReleaseCursor.Reset();
     const FOrderPress Press = OrderPress;
     if (Press.State == EOrderPress::Dragging && !Press.bLastValid)
     {

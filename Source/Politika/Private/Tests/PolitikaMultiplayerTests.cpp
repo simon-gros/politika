@@ -19,6 +19,9 @@
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/AutomationTest.h"
+#include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
+#include "InputCoreTypes.h"
+#include "InputKeyEventArgs.h"
 
 #include <limits>
 
@@ -2107,6 +2110,81 @@ bool FPolitikaMultiplayerGroupMoveFacingTest::RunTest(const FString& Parameters)
     Release();
     TestTrue(TEXT("FD-A27 the phase change sends nothing"), F.Match->PendingOrders.IsEmpty()
         && Host->CommandBatches.Num() == BatchesBeforeFocus && F.Match->TestFormationOutcomes.Num() == OutcomesBeforeFocus);
+
+    Host->ClearSelectionState();
+    Host->GroupMoveSlotProbeForTest = nullptr;
+    Host->OrderGroundProbeForTest = nullptr;
+    Host->OrderCursorForTest.Reset();
+    Host->OrderButtonDownForTest.Reset();
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerPointerEventPositionTest,
+    "Politika.RTS.Multiplayer.PointerEventPosition",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// A long frame: each mouse-button event keeps the position it was delivered at, whatever the cursor
+// reads when the binding runs, and the whole gesture may fall between two samples.
+bool FPolitikaMultiplayerPointerEventPositionTest::RunTest(const FString& Parameters)
+{
+    using politika::selection::SelectionOp;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 8; ++Index)
+        Own.Add(F.AddUnit(HostId, {-1500.0 + (Index % 4) * 40.0, -1200.0 + (Index / 4) * 40.0}));
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr))) return false;
+
+    const auto PointerEvent = [&](const FKey& Key, EInputEvent Event, double X, double Y)
+    {
+        Host->PointerEventCursorForTest = FVector2D(X, Y);
+        Host->InputKey(FInputKeyEventArgs(nullptr, IPlatformInputDeviceMapper::Get().GetDefaultInputDevice(), Key, Event, 0u));
+        Host->PointerEventCursorForTest.Reset();
+    };
+    PointerEvent(EKeys::LeftMouseButton, IE_Pressed, 100.0, 120.0);
+    PointerEvent(EKeys::LeftMouseButton, IE_Released, 900.0, 640.0);
+    Host->BeginSelectPress();
+    TestEqual(TEXT("A selection stroke starts at its press event"), Host->SelectPressPosition, FVector2D(100.0, 120.0));
+    Host->EndSelectPress();
+    TestTrue(TEXT("A stroke inside one frame is a box between its press and release events"), Host->LastSelectBoxForTest.IsSet()
+        && Host->LastSelectBoxForTest->Key == FVector2D(100.0, 120.0) && Host->LastSelectBoxForTest->Value == FVector2D(900.0, 640.0));
+    Host->LastSelectBoxForTest.Reset();
+    PointerEvent(EKeys::LeftMouseButton, IE_DoubleClick, 300.0, 300.0);
+    PointerEvent(EKeys::LeftMouseButton, IE_Released, 301.0, 300.0);
+    Host->BeginSelectPress();
+    TestEqual(TEXT("The second press of a double-click starts at its own event"), Host->SelectPressPosition, FVector2D(300.0, 300.0));
+    Host->EndSelectPress();
+    TestFalse(TEXT("A press and release within the threshold stay a click"), Host->LastSelectBoxForTest.IsSet());
+
+    // The ground probe maps a screen point to the world point 2000 cm lower in X and Y.
+    constexpr double ScreenOffset = 2000.0;
+    Host->GroupMoveSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    Host->OrderGroundProbeForTest = [](const FVector2D& Screen, FVector& Out)
+    {
+        Out = FVector(Screen.X - ScreenOffset, Screen.Y - ScreenOffset, 42.0);
+        return true;
+    };
+    Host->ApplySelection(Own, SelectionOp::Replace, TEXT("automation"));
+    FHitResult Hit;
+    Hit.ImpactPoint = FVector(-600.0, -1400.0, 42.0);
+    Hit.Location = Hit.ImpactPoint;
+    Host->OrderButtonDownForTest = true;
+    Host->OrderCursorForTest = FVector2D(-600.0 + ScreenOffset, -1400.0 + ScreenOffset);
+    Host->PressOrderAt(F.Match, Host->GetCommandableSelectedUnits(F.Match), Hit, FVector2D(-600.0 + ScreenOffset, -1400.0 + ScreenOffset));
+    PointerEvent(EKeys::RightMouseButton, IE_Released, -150.0 + ScreenOffset, -1400.0 + ScreenOffset);
+    // The cursor has since moved far away; no held sample was ever taken.
+    Host->OrderCursorForTest = FVector2D(1.0 + ScreenOffset, 1.0 + ScreenOffset);
+    Host->OrderButtonDownForTest = false;
+    Host->EndOrderPress();
+    TestEqual(TEXT("A right-drag inside one frame commits from its release event"), F.Match->PendingOrders.Num(), Own.Num());
+    FVector2D Centre = FVector2D::ZeroVector;
+    for (const APolitikaPrototypeMatch::FPendingOrder& Pending : F.Match->PendingOrders)
+        Centre += FVector2D(Pending.Destination.X, Pending.Destination.Y) / FMath::Max(1, F.Match->PendingOrders.Num());
+    TestTrue(TEXT("The drag ends at the release event, not the later cursor"), FVector2D::Distance(Centre, FVector2D(-375.0, -1400.0)) < 300.0);
 
     Host->ClearSelectionState();
     Host->GroupMoveSlotProbeForTest = nullptr;

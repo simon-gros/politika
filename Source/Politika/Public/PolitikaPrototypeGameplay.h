@@ -421,6 +421,7 @@ private:
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerGroupMoveFacingTest;
+    friend class FPolitikaMultiplayerPointerEventPositionTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerFormationShapesTest;
@@ -1088,6 +1089,7 @@ private:
     TArray<TPair<TWeakObjectPtr<APlayerController>, FPolitikaNetFormationOutcome>> TestFormationOutcomes;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerGroupMoveFacingTest;
+    friend class FPolitikaMultiplayerPointerEventPositionTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
     friend class FPolitikaMultiplayerFormationShapesTest;
@@ -1332,6 +1334,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerControlGroupsTest;
     friend class FPolitikaMultiplayerGroupMoveShapeTest;
     friend class FPolitikaMultiplayerGroupMoveFacingTest;
+    friend class FPolitikaMultiplayerPointerEventPositionTest;
     friend class FPolitikaMultiplayerFormationLifecycleTest;
     friend class FPolitikaMultiplayerFormationStanceTest;
     friend class FPolitikaMultiplayerFormationDisciplineTest;
@@ -1385,6 +1388,8 @@ protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
     virtual void SetupInputComponent() override;
+    using APlayerController::InputKey;
+    virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     UPROPERTY(ReplicatedUsing=OnRep_Assignment) uint32 AssignedRuntimePlayerId = 0;
@@ -1453,6 +1458,12 @@ private:
     bool bBoxSelecting = false;
     FVector2D SelectPressPosition = FVector2D::ZeroVector;
     FVector2D SelectDragPosition = FVector2D::ZeroVector;
+    // The cursor at each pointer button's latest press and release, read as the viewport delivers
+    // the event. Bindings run in a later input pass, by when a long frame has let the cursor move on.
+    TOptional<FVector2D> SelectPressCursor;
+    TOptional<FVector2D> SelectReleaseCursor;
+    TOptional<FVector2D> OrderPressCursor;
+    TOptional<FVector2D> OrderReleaseCursor;
     // Real time at which the button was first seen up without its release binding; -1 when down.
     double SelectReleaseSeenSeconds = -1.0;
     bool IsViewportFocused() const;
@@ -1460,6 +1471,7 @@ private:
     void EndSelectPress();
     void CancelSelectPress(const TCHAR* Reason);
     void UpdateSelectDrag();
+    void SampleSelectDrag(const FVector2D& Cursor);
     politika::selection::SelectionOp ModifierSelectionOp(bool bBox) const;
     void SelectUnderCursor(politika::selection::SelectionOp Op);
     void BoxSelect(const FVector2D& CornerA, const FVector2D& CornerB, politika::selection::SelectionOp Op);
@@ -1485,6 +1497,7 @@ private:
     void FocusCameraOn(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Units, int32 Slot);
     // The control-group bar slot under the cursor, or INDEX_NONE; the bar captures clicks.
     int32 GroupBarSlotUnderCursor() const;
+    int32 GroupBarSlotAt(const FVector2D& Cursor) const;
     // Tab/Shift+Tab: the active archetype subgroup that receives grenade, reload and sprint.
     int32 ActiveSubgroup = 0;
     void CycleSubgroup();
@@ -1577,6 +1590,7 @@ private:
         const FHitResult& Hit, const FVector2D& Cursor);
     void EndOrderPress();
     void UpdateOrderPress();
+    void SampleOrderPress(const APolitikaPrototypeMatch& ActiveMatch, const FVector2D& Cursor);
     void CancelOrderPress(const TCHAR* Reason);
     // Null while the press still addresses the same participant, generation, selection and
     // formation in an Active match; otherwise the cancel reason.
@@ -1594,6 +1608,8 @@ private:
     TOptional<FVector2D> OrderCursorForTest;
     TOptional<bool> OrderButtonDownForTest;
     TOptional<bool> ViewportFocusedForTest;
+    TOptional<FVector2D> PointerEventCursorForTest;
+    TOptional<TPair<FVector2D, FVector2D>> LastSelectBoxForTest;
     TFunction<bool(const FVector2D&, FVector&)> OrderGroundProbeForTest;
 #endif
     bool RecordBatchOutcome(const FPolitikaNetCommandOutcome& Outcome);
