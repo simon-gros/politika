@@ -28,6 +28,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaMPUnitScaleHold"),
         TEXT("-PolitikaMPEconomyStartCents=10000000"),
         TEXT("-PolitikaMPPowerOutage=60:120"),
+        TEXT("-PolitikaMPEconomyStartFood=1:2"),
     };
     for (const TCHAR* Switch : DevelopmentSwitches)
     {
@@ -60,6 +61,7 @@ bool FPolitikaLaunchOptionsAutomationTest::RunTest(const FString& Parameters)
         TEXT("-PolitikaMPUnitScaleHold=1"),
         TEXT("-PolitikaMPEconomyStartCents="),
         TEXT("-PolitikaMPPowerOutage="),
+        TEXT("-PolitikaMPEconomyStartFood="),
         TEXT("-PolitikaTestFixture="),
         TEXT("-PolitikaOffline=invalid"),
         TEXT("-PolitikaSafeMode=1"),

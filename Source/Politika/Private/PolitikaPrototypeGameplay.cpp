@@ -2950,6 +2950,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeSubgroupCycle"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleSubgroup);
     InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
     InputComponent->BindAction(TEXT("PrototypeTrainUnit"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainOrCancelAtProducer);
+    InputComponent->BindAction(TEXT("PrototypeBuyFood"), IE_Pressed, this, &APolitikaPrototypePlayerController::BuyFood);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
     InputComponent->BindAction(TEXT("PrototypeCycleStance"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleStanceSelected);
@@ -4411,6 +4412,7 @@ void APolitikaPrototypeHUD::DrawHUD()
             Training = Economy.bHeadBlocked ? FString(TEXT("output blocked"))
                 : FString::Printf(TEXT("Rifleman %.1f s"), Economy.HeadRemainingSteps * SimulationStepSecondsForHud);
         if (!Economy.bProducerPowered && Economy.bHasProducer) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: no power") : FString(TEXT("no power"));
+        else if (Economy.bFoodShortage) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: food shortage") : FString(TEXT("food shortage"));
         if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
         const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
         DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  POWER %d / %d kW  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
@@ -4419,6 +4421,15 @@ void APolitikaPrototypeHUD::DrawHUD()
             UTF8_TO_TCHAR(pe::FormatUsd(Rifleman.cost).c_str())),
             Economy.bProducerPowered || !Economy.bHasProducer ? FLinearColor(0.95f, 0.86f, 0.45f) : FLinearColor(1.0f, 0.42f, 0.32f),
             Left, Y, nullptr, UiScale);
+        Y += 26.0f * UiScale;
+        // ECON-E3: the reserve, what the force eats and how long that lasts.
+        const FString PurchaseText = FString::Printf(TEXT("N buy %lld for %s"), pe::kFoodPurchaseRations, UTF8_TO_TCHAR(pe::FormatUsd(pe::kFoodPurchaseCents).c_str()));
+        const int32 UpkeepSeconds = static_cast<int32>(pe::kFoodUpkeepIntervalSteps * SimulationStepSecondsForHud);
+        const FString FoodText = Economy.bFoodShortage
+            ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s"), Economy.Rations, *PurchaseText)
+            : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,
+                Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *PurchaseText);
+        DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
     }
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;

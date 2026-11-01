@@ -1794,6 +1794,92 @@ int main() {
     static_assert(!CanPlantExplosives(Faction::IronAscendancy, SabotageOperator::Conventional, true));
     static_assert(!CanPlantExplosives(Faction::Unaligned, SabotageOperator::Spy, true));
 
+    // ECON-E3: one debit per due interval, an atomic purchase, and a shortage with a way out.
+    {
+        namespace pe = politika::economy;
+        using pe::EconomyRejection;
+        static_assert(pe::kStartingRations > 0 && pe::kRationsPerUnit > 0 && pe::kFoodPurchaseRations > 0 && pe::kFoodPurchaseCents > 0);
+        static_assert(pe::kStartingRations <= pe::kFoodCapacityRations);
+        // A shortage is recoverable at the unit limit: fixed income alone can feed a full force.
+        static_assert(pe::kFoodUpkeepIntervalSteps == pe::kIncomeIntervalSteps);
+        static_assert(20 * pe::kRationsPerUnit * pe::kFoodPurchaseCents <= pe::kIncomeCents * pe::kFoodPurchaseRations);
+        constexpr std::uint8_t Rifleman = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
+        const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+        const std::uint32_t Duration = pe::FindRecipe(Rifleman)->durationSteps;
+        constexpr pe::Step Interval = pe::kFoodUpkeepIntervalSteps;
+        assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::BuyFood), 0) == EconomyRejection::None);
+        assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::BuyFood), 1) == EconomyRejection::MalformedCommand);
+
+        pe::Ledger Ledger;
+        assert(Ledger.AddParticipant(1, 10 * Price, true, Interval) && Ledger.AddParticipant(2, 10 * Price, true, Interval));
+        const pe::Account& A = *Ledger.Find(1);
+        const pe::Account& B = *Ledger.Find(2);
+        assert(A.rations == pe::kStartingRations && !A.foodShortage && A.RationsReconcile());
+        assert(!Ledger.SetStartingRations(1, -1) && !Ledger.SetStartingRations(1, pe::kFoodCapacityRations + 1) && !Ledger.SetStartingRations(9, 1));
+        assert(Ledger.SetStartingRations(1, 5) && A.rations == 5 && A.startingRations == 5 && A.RationsReconcile());
+
+        // Nothing is due before the interval, and one due step charges once, however many calls.
+        pe::StepResult Early = Ledger.Advance(1, Interval - 1, 0, 3);
+        assert(!Early.upkeepDue && A.rations == 5);
+        pe::StepResult First = Ledger.Advance(1, Interval, 0, 3);
+        Ledger.Advance(2, Interval, 0, 2);
+        assert(First.upkeepDue && First.upkeepOwed == 3 && First.upkeepPaid == 3 && A.rations == 2 && !A.foodShortage && A.rationsIssued == 3);
+        assert(B.rations == pe::kStartingRations - 2);
+        assert(!Ledger.Advance(1, Interval, 0, 3).upkeepDue && A.rations == 2);
+        // The next due step counts the force as it is now.
+        assert(Ledger.SetStartingRations(1, 1) == false);
+
+        // Training is admitted while fed; the reserve then runs out and stops at zero.
+        assert(Ledger.Train(1, 1, Rifleman, 3, 20) && Ledger.Train(1, 2, Rifleman, 3, 20));
+        pe::Step Step = Interval + 1;
+        Ledger.Advance(1, Step, 0, 3);
+        assert(A.queue.front().remainingSteps == Duration - 1);
+        const pe::StepResult Short = Ledger.Advance(1, 2 * Interval, 0, 3);
+        assert(Short.upkeepDue && Short.upkeepOwed == 3 && Short.upkeepPaid == 2 && A.rations == 0 && A.foodShortage && A.RationsReconcile());
+        // A shortage holds the queue from that step, refuses new training and charges nothing.
+        assert(Short.headRemainingSteps == Duration - 1 && A.queue.front().remainingSteps == Duration - 1);
+        const pe::Cents Held = A.available;
+        for (Step = 2 * Interval + 1; Step < 2 * Interval + 20; ++Step) assert(!Ledger.Advance(1, Step, 0, 3).spawnDue);
+        assert(A.queue.front().remainingSteps == Duration - 1 && A.available == Held);
+        assert(Ledger.Train(1, 3, Rifleman, 3, 20).rejection == EconomyRejection::FoodShortage && A.available == Held && A.lastTransaction == 2);
+        // Cancel still refunds, and the other participant is untouched.
+        assert(Ledger.CancelLast(1, 3) && A.queue.size() == 1 && A.available == Held + Price);
+        assert(!B.foodShortage);
+        // A purchase is open during a shortage, atomic and once only, and does not end it yet.
+        const pe::Cents BeforeFood = A.available;
+        assert(Ledger.BuyFood(1, 3).rejection == EconomyRejection::DuplicateCommand && A.rations == 0 && A.available == BeforeFood);
+        const pe::RequestResult Bought = Ledger.BuyFood(1, 4);
+        assert(Bought && Bought.amount == pe::kFoodPurchaseCents && A.rations == pe::kFoodPurchaseRations);
+        assert(A.available == BeforeFood - pe::kFoodPurchaseCents && A.foodShortage && A.Reconciles() && A.RationsReconcile());
+        assert(Ledger.Train(1, 5, Rifleman, 3, 20).rejection == EconomyRejection::FoodShortage);
+        assert(!Ledger.Advance(1, Step, 0, 3).spawnDue && A.queue.front().remainingSteps == Duration - 1);
+        // The next due debit paid in full ends it, in the same step production resumes.
+        const pe::StepResult Recovered = Ledger.Advance(1, 3 * Interval, 0, 3);
+        assert(Recovered.upkeepDue && Recovered.upkeepPaid == 3 && !A.foodShortage && A.rations == pe::kFoodPurchaseRations - 3);
+        assert(Recovered.headRemainingSteps == Duration - 1 && A.queue.front().remainingSteps == Duration - 2);
+        assert(Ledger.Train(1, 6, Rifleman, 3, 20));
+        // A smaller force eats less, and an empty one owes nothing and is never short.
+        const pe::StepResult Fewer = Ledger.Advance(1, 4 * Interval, 0, 1);
+        assert(Fewer.upkeepOwed == 1 && Fewer.upkeepPaid == 1);
+        assert(Ledger.SetStartingRations(2, 1) == false);
+        const pe::StepResult Nobody = Ledger.Advance(1, 5 * Interval, 0, 0);
+        assert(Nobody.upkeepDue && Nobody.upkeepOwed == 0 && !A.foodShortage);
+
+        // Too little money or a full store leaves everything alone.
+        pe::Ledger Poor;
+        assert(Poor.AddParticipant(1, pe::kFoodPurchaseCents - 1, false, Interval));
+        const pe::Account& P = *Poor.Find(1);
+        assert(Poor.BuyFood(1, 1).rejection == EconomyRejection::InsufficientFunds && P.rations == pe::kStartingRations && P.spent == 0);
+        assert(Poor.BuyFood(9, 1).rejection == EconomyRejection::Unauthorized);
+        pe::Ledger Full;
+        assert(Full.AddParticipant(1, 10 * pe::kFoodPurchaseCents, false, Interval) && Full.SetStartingRations(1, pe::kFoodCapacityRations - pe::kFoodPurchaseRations + 1));
+        const pe::Account& F = *Full.Find(1);
+        const pe::Rations FullStore = F.rations;
+        assert(Full.BuyFood(1, 1).rejection == EconomyRejection::FoodStoreFull && F.rations == FullStore && F.spent == 0);
+        // Food needs no producer: a seat with no base still eats and can still buy.
+        assert(!F.hasProducer && Full.SetStartingRations(1, 0) && Full.BuyFood(1, 1) && F.rations == pe::kFoodPurchaseRations);
+    }
+
     // ECON-E2: electricity is capacity and service, and an outage pauses a queue without charging.
     {
         namespace pw = politika::power;

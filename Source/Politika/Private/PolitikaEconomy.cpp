@@ -54,6 +54,8 @@ FString EconomyRejectionText(pe::EconomyRejection Rejection)
         case pe::EconomyRejection::NothingToCancel: return TEXT("nothing is in training");
         case pe::EconomyRejection::NoProducer: return TEXT("you have no training building");
         case pe::EconomyRejection::ProducerUnpowered: return TEXT("the training building has no power");
+        case pe::EconomyRejection::FoodShortage: return TEXT("your force is short of food");
+        case pe::EconomyRejection::FoodStoreFull: return TEXT("the food store is full");
         case pe::EconomyRejection::MatchInactive: return TEXT("the match is not active");
         case pe::EconomyRejection::StaleMatch: return TEXT("that request was for an earlier match");
         case pe::EconomyRejection::RateLimited: return TEXT("too many requests at once");
@@ -178,6 +180,21 @@ void APolitikaPrototypeMatch::InitializeEconomy()
     if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPEconomyStartCents="), FixtureCents) && FixtureCents >= 0)
         StartingCents = FixtureCents;
 #endif
+#if !UE_BUILD_SHIPPING
+    // Development fixture "participant:rations" for packaged shortage checks; never in a Shipping build.
+    uint32 FixtureFoodParticipant = 0;
+    int64 FixtureFoodRations = -1;
+    FString FoodFixture;
+    FString FoodParticipantText;
+    FString FoodRationsText;
+    if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPEconomyStartFood="), FoodFixture)
+        && FoodFixture.Split(TEXT(":"), &FoodParticipantText, &FoodRationsText)
+        && FoodParticipantText.IsNumeric() && FoodRationsText.IsNumeric())
+    {
+        FixtureFoodParticipant = static_cast<uint32>(FCString::Atoi(*FoodParticipantText));
+        FixtureFoodRations = FCString::Atoi64(*FoodRationsText);
+    }
+#endif
     const FVector2D Centre = (PlayableMin + PlayableMax) * 0.5;
     const uint8 LocalTeam = LocalRuntimePlayerId != 0 ? GetTeamForParticipant(LocalRuntimePlayerId) : politika::rules::kNoTeam;
     for (const FPolitikaPrototypeRuntimeParticipant& Participant : RuntimeParticipants)
@@ -227,6 +244,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
         }
         Economy.AddParticipant(Participant.RuntimePlayerId, StartingCents, Structure != nullptr, pe::kIncomeIntervalSteps);
 #if !UE_BUILD_SHIPPING
+        if (Participant.RuntimePlayerId == FixtureFoodParticipant) Economy.SetStartingRations(Participant.RuntimePlayerId, FixtureFoodRations);
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ECONOMY_START participant=%u available=%lld producer=%d x=%.1f y=%.1f generation=%llu"),
             Participant.RuntimePlayerId, StartingCents, Structure ? 1 : 0, Structure ? Structure->GetActorLocation().X : 0.0,
             Structure ? Structure->GetActorLocation().Y : 0.0, MatchGeneration);
@@ -236,6 +254,9 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                 Participant.RuntimePlayerId, Account->allocation.suppliedKw, Account->allocation.requiredKw,
                 Structure ? politika::power::kGeneratorAuxiliaryKw : 0, Structure ? politika::power::kProducerLoadKw : 0,
                 Account->producerPowered ? 1 : 0, MatchGeneration);
+        if (const pe::Account* Account = Economy.Find(Participant.RuntimePlayerId))
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_FOOD_START participant=%u rations=%lld generation=%llu"),
+                Participant.RuntimePlayerId, Account->rations, MatchGeneration);
 #endif
     }
 }
@@ -466,6 +487,18 @@ void APolitikaPrototypeMatch::ApplyPowerOutageFixture(uint64 Step, uint32 FirstB
 void APolitikaPrototypeMatch::RunEconomyPhase()
 {
     const uint64 Step = SimulationStepsExecuted;
+    const auto LogFood = [&](const TCHAR* Kind, uint32 ParticipantId, int64 Owed, int64 Paid, uint32 HeadRemaining)
+    {
+#if !UE_BUILD_SHIPPING
+        if (const pe::Account* Account = Economy.Find(ParticipantId))
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_FOOD_TX participant=%u kind=%s owed=%lld paid=%lld rations=%lld bought=%lld issued=%lld shortage=%d queued=%d head_remaining=%u reconciles=%d generation=%llu step=%llu"),
+                ParticipantId, Kind, Owed, Paid, Account->rations, Account->rationsBought, Account->rationsIssued, Account->foodShortage ? 1 : 0,
+                static_cast<int32>(Account->queue.size()), HeadRemaining, Account->RationsReconcile() ? 1 : 0, MatchGeneration, Step);
+#else
+        (void)Kind; (void)ParticipantId; (void)Owed; (void)Paid; (void)HeadRemaining;
+#endif
+    };
     const auto LogMoney = [&](const TCHAR* Kind, uint32 ParticipantId, uint32 Transaction, int64 Amount)
     {
 #if !UE_BUILD_SHIPPING
@@ -491,6 +524,7 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
         const pe::RequestResult Result = Op == pe::EconomyOp::Train
             ? Economy.Train(Request.ParticipantId, Request.Intent.ClientSequence, Request.Intent.Recipe,
                 CountLivingUnits(Request.ParticipantId), politika::unitscale::kMaxUnitsPerSeat)
+            : Op == pe::EconomyOp::BuyFood ? Economy.BuyFood(Request.ParticipantId, Request.Intent.ClientSequence)
             : Economy.CancelLast(Request.ParticipantId, Request.Intent.ClientSequence);
         if (!Result)
         {
@@ -498,7 +532,9 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
             continue;
         }
         if (Op == pe::EconomyOp::Train) FirstAdmitted.FindOrAdd(Request.ParticipantId, Request.Intent.ClientSequence);
-        LogMoney(Op == pe::EconomyOp::Train ? TEXT("train") : TEXT("refund"), Request.ParticipantId, Request.Intent.ClientSequence, Result.amount);
+        LogMoney(Op == pe::EconomyOp::Train ? TEXT("train") : Op == pe::EconomyOp::BuyFood ? TEXT("food") : TEXT("refund"),
+            Request.ParticipantId, Request.Intent.ClientSequence, Result.amount);
+        if (Op == pe::EconomyOp::BuyFood) LogFood(TEXT("purchase"), Request.ParticipantId, 0, 0, 0u);
         SendEconomyOutcome(Source, Request.Intent, pe::EconomyRejection::None, Result.amount, Result.available,
             static_cast<int32>(Result.queued));
     }
@@ -512,14 +548,17 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
     }
 #endif
 
-    // 2. Income, power, then production, per account in ascending participant order.
+    // 2. Income, power, food upkeep, then production, per account in ascending participant order.
+    // The force is counted now: this step's casualties have left it, and a unit spawned below joins
+    // it for the next interval.
     bool bSpawned = false;
     TArray<uint32> Participants;
     for (const pe::Account& Account : Economy.All()) Participants.Add(Account.participant);
     for (const uint32 ParticipantId : Participants)
     {
         const uint32* Admitted = FirstAdmitted.Find(ParticipantId);
-        const pe::StepResult Result = Economy.Advance(ParticipantId, Step, Admitted ? *Admitted : 0u);
+        const pe::StepResult Result = Economy.Advance(ParticipantId, Step, Admitted ? *Admitted : 0u, CountLivingUnits(ParticipantId));
+        if (Result.upkeepDue) LogFood(TEXT("upkeep"), ParticipantId, Result.upkeepOwed, Result.upkeepPaid, Result.headRemainingSteps);
         if (Result.income != 0) LogMoney(TEXT("income"), ParticipantId, 0u, Result.income);
 #if !UE_BUILD_SHIPPING
         if (Result.incomeOverflow)
@@ -581,6 +620,9 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.SuppliedKw = static_cast<int32>(Account->allocation.suppliedKw);
             View.RequiredKw = static_cast<int32>(Account->allocation.requiredKw);
             View.bProducerPowered = Account->producerPowered;
+            View.Rations = static_cast<int32>(Account->rations);
+            View.UpkeepRations = static_cast<int32>(CountLivingUnits(Binding.RuntimePlayerId) * pe::kRationsPerUnit);
+            View.bFoodShortage = Account->foodShortage;
             if (!Account->queue.empty())
             {
                 const int32 Remaining = static_cast<int32>(Account->queue.front().remainingSteps);
@@ -612,11 +654,12 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
-        OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0);
+        OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0, OwnEconomy.Rations, OwnEconomy.UpkeepRations,
+        OwnEconomy.bFoodShortage ? 1 : 0);
 #else
     (void)Source;
 #endif
@@ -627,6 +670,11 @@ void APolitikaPrototypePlayerController::TrainOrCancelAtProducer()
     const bool bCancel = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
     SubmitEconomyRequest(bCancel ? pe::EconomyOp::Cancel : pe::EconomyOp::Train,
         bCancel ? 0 : static_cast<uint8>(pe::Recipe::Rifleman));
+}
+
+void APolitikaPrototypePlayerController::BuyFood()
+{
+    SubmitEconomyRequest(pe::EconomyOp::BuyFood, 0);
 }
 
 bool APolitikaPrototypePlayerController::SubmitEconomyRequest(pe::EconomyOp Op, uint8 Recipe)
@@ -664,10 +712,16 @@ void APolitikaPrototypePlayerController::ClientReceiveEconomyOutcome_Implementat
         GetCommandPlayerId(), static_cast<uint32>(Outcome.Op), Outcome.CorrelationId, Outcome.ClientSequence, Outcome.bAccepted ? 1 : 0,
         static_cast<uint32>(Outcome.Rejection), Outcome.AmountCents, Outcome.AvailableCents, Outcome.Queued, Outcome.MatchGeneration, HasAuthority() ? 1 : 0);
 #endif
+    const bool bFood = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::BuyFood;
     if (!Outcome.bAccepted)
     {
-        ShowLocalFeedback(FString::Printf(TEXT("Training refused: %s"),
+        ShowLocalFeedback(FString::Printf(TEXT("%s refused: %s"), bFood ? TEXT("Food purchase") : TEXT("Training"),
             *EconomyRejectionText(static_cast<pe::EconomyRejection>(Outcome.Rejection))));
+        return;
+    }
+    if (bFood)
+    {
+        ShowLocalFeedback(FString::Printf(TEXT("%lld rations bought for %s"), pe::kFoodPurchaseRations, *UsdText(Outcome.AmountCents)));
         return;
     }
     ShowLocalFeedback(static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::Train

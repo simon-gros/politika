@@ -265,6 +265,10 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() int32 SuppliedKw = 0;
     UPROPERTY() int32 RequiredKw = 0;
     UPROPERTY() bool bProducerPowered = false;
+    // ECON-E3: this participant's food reserve and what the living force eats per interval.
+    UPROPERTY() int32 Rations = 0;
+    UPROPERTY() int32 UpkeepRations = 0;
+    UPROPERTY() bool bFoodShortage = false;
     UPROPERTY() int32 Produced = 0;
     bool operator==(const FPolitikaNetEconomyView& Other) const
     {
@@ -272,7 +276,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && CreditedCents == Other.CreditedCents && SpentCents == Other.SpentCents && RefundedCents == Other.RefundedCents
             && Queued == Other.Queued && HeadRemainingSteps == Other.HeadRemainingSteps
             && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced && SuppliedKw == Other.SuppliedKw
-            && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered;
+            && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
+            && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage;
     }
 };
 
@@ -435,6 +440,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerFoodTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -1116,6 +1122,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerFoodTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
@@ -1363,6 +1370,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerFoodTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -1555,6 +1563,8 @@ private:
     void CycleGroupMoveShape();
     // B trains a rifleman at the participant's producer; Shift+B cancels the newest entry (ECON-E1).
     void TrainOrCancelAtProducer();
+    // N buys one pack of rations (ECON-E3).
+    void BuyFood();
     bool SubmitEconomyRequest(politika::economy::EconomyOp Op, uint8 Recipe);
     // Advisory check of one candidate slot on this process: inside the playable area, on
     // ground level with the clicked point and not too steep, and on the local navmesh when

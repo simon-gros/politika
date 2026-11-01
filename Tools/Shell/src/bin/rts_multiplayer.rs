@@ -12835,7 +12835,7 @@ fn economy_replay(lines: &[String], start: i64) -> Result<(), String> {
         let amount = econ_int(line, "amount");
         match field(line, "kind") {
             Some("income") | Some("refund") => available += amount,
-            Some("train") => available -= amount,
+            Some("train") | Some("food") => available -= amount,
             other => return Err(format!("unknown kind {other:?}: {}", line.trim())),
         }
         if econ_int(line, "available") != available || field(line, "reconciles") != Some("1") {
@@ -13691,6 +13691,441 @@ fn power_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
     result
 }
 
+// `--food SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E3) plays one food shortage with real
+// input. Seat 1 starts with two rations, so step 200 empties the reserve and step 400 cannot be
+// paid. Seat 2 keeps the normal reserve. Two purchases, the shortage, a refused purchase, N during
+// the shortage, recovery at the next full issue, the held unit, training afterwards, a match end
+// and the next generation.
+const FOOD_START_CENTS: i64 = 200_000;
+const FOOD_FIXTURE_RATIONS: i64 = 2;
+const FOOD_NORMAL_RATIONS: i64 = 240;
+const FOOD_INTERVAL_STEPS: i64 = 200;
+const FOOD_PACK_RATIONS: i64 = 50;
+const FOOD_PACK_CENTS: i64 = 5_000;
+
+/// A participant's upkeep lines in one generation, each exactly one interval after the last, with
+/// the reserve following from its start and the purchases.
+fn food_replay(
+    text: &str,
+    participant: u32,
+    generation: &str,
+    start: i64,
+) -> Result<usize, String> {
+    let tag = format!("RTS_FOOD_TX participant={participant} ");
+    let generation = format!("generation={generation} ");
+    let mut rations = start;
+    let mut issues = 0_i64;
+    for line in text
+        .lines()
+        .filter(|l| l.contains(&tag) && l.contains(&generation))
+    {
+        match field(line, "kind") {
+            Some("purchase") => rations += FOOD_PACK_RATIONS,
+            Some("upkeep") => {
+                issues += 1;
+                if econ_int(line, "step") != issues * FOOD_INTERVAL_STEPS {
+                    return Err(format!("upkeep {issues} off its cadence: {}", line.trim()));
+                }
+                let (owed, paid) = (econ_int(line, "owed"), econ_int(line, "paid"));
+                if paid != owed.min(rations) {
+                    return Err(format!(
+                        "expected to pay {} of {owed}: {}",
+                        owed.min(rations),
+                        line.trim()
+                    ));
+                }
+                rations -= paid;
+                if field(line, "shortage") != Some(if paid < owed { "1" } else { "0" }) {
+                    return Err(format!("wrong shortage flag: {}", line.trim()));
+                }
+            }
+            other => return Err(format!("unknown kind {other:?}: {}", line.trim())),
+        }
+        if econ_int(line, "rations") != rations || field(line, "reconciles") != Some("1") {
+            return Err(format!("expected {rations} rations: {}", line.trim()));
+        }
+    }
+    Ok(issues as usize)
+}
+
+fn food_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let (mut server, mut client_a, mut client_b, _display, generation) = economy_start_session(
+        options,
+        &[
+            format!("-PolitikaMPEconomyStartCents={FOOD_START_CENTS}"),
+            format!("-PolitikaMPEconomyStartFood=1:{FOOD_FIXTURE_RATIONS}"),
+        ],
+    )?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        let text = server.text();
+        let starts: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_FOOD_START") && l.contains(&format!("generation={generation}"))
+            })
+            .collect();
+        report.verdict(
+            "FOOD-P01-RESERVES-AT-THE-START",
+            starts.len() == 2
+                && econ_int(starts[0], "rations") == FOOD_FIXTURE_RATIONS
+                && field(starts[0], "participant") == Some("1")
+                && econ_int(starts[1], "rations") == FOOD_NORMAL_RATIONS
+                && field(starts[1], "participant") == Some("2"),
+            starts.join(" | "),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Two purchases while fed; the second waits behind the first.
+        let (first, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        let admitted = econ_int(&first, "step");
+        let (second, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+
+        // Step 200 pays in full and empties the reserve; step 400 cannot be paid.
+        let paid = server.wait(
+            &["RTS_FOOD_TX participant=1 kind=upkeep", "step=200"],
+            Duration::from_secs(30),
+        )?;
+        report.verdict(
+            "FOOD-P02-DUE-UPKEEP-CHARGED-ONCE",
+            econ_int(&paid, "owed") == FOOD_FIXTURE_RATIONS
+                && econ_int(&paid, "paid") == FOOD_FIXTURE_RATIONS
+                && econ_int(&paid, "rations") == 0
+                && field(&paid, "shortage") == Some("0"),
+            paid.trim(),
+        );
+        let short = server.wait(
+            &["RTS_FOOD_TX participant=1 kind=upkeep", "shortage=1"],
+            Duration::from_secs(30),
+        )?;
+        let short_step = econ_int(&short, "step");
+        let held = econ_int(&short, "head_remaining");
+        // Normally the first unit has appeared by then, so the force is three and it has joined the
+        // upkeep set. On a slow start it is still in training, held like the second.
+        let early = admitted + (ECONOMY_TRAIN_STEPS as i64) < short_step;
+        let force = if early { 3 } else { 2 };
+        report.verdict(
+            "FOOD-P03-SHORTAGE-STOPS-AT-ZERO",
+            short_step == 2 * FOOD_INTERVAL_STEPS
+                && econ_int(&short, "owed") == force
+                && econ_int(&short, "paid") == 0
+                && econ_int(&short, "rations") == 0
+                && econ_int(&short, "queued") == if early { 1 } else { 2 },
+            format!("{} | {} | {}", first.trim(), second.trim(), short.trim()),
+        );
+        client_a.wait(
+            &["RTS_ECONOMY_VIEW participant=1", "shortage=1"],
+            Duration::from_secs(5),
+        )?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_shortage_png",
+            &client_a.screenshot(&evidence, "02-shortage")?,
+        );
+
+        let (refused, refused_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_REJECT participant=1", "op=0"],
+        )?;
+        report.verdict(
+            "FOOD-P04-SHORTAGE-REFUSES-TRAINING",
+            field(&refused, "rejection") == Some("food_shortage")
+                && field(&refused_client, "accepted") == Some("0")
+                && econ_int(&refused_client, "amount") == 0,
+            format!("{} | client {}", refused.trim(), refused_client.trim()),
+        );
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_refused_png",
+            &client_a.screenshot(&evidence, "03-refused")?,
+        );
+
+        // N works during the shortage, and the purchase alone does not end it.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("n")?;
+        let bought_money = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1 kind=food"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let bought = server.wait_line(
+            &["RTS_FOOD_TX participant=1 kind=purchase"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let bought_client = client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "accepted=1"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        let bought_step = econ_int(&bought, "step");
+        report.verdict(
+            "FOOD-P05-PURCHASE-OPEN-IN-A-SHORTAGE",
+            econ_int(&bought_money, "amount") == FOOD_PACK_CENTS
+                && field(&bought_money, "reconciles") == Some("1")
+                && econ_int(&bought, "rations") == FOOD_PACK_RATIONS
+                && field(&bought, "shortage") == Some("1")
+                && bought_step < short_step + FOOD_INTERVAL_STEPS
+                && econ_int(&bought_client, "amount") == FOOD_PACK_CENTS,
+            format!(
+                "{} | {} | client {}",
+                bought_money.trim(),
+                bought.trim(),
+                bought_client.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_bought_png",
+            &client_a.screenshot(&evidence, "04-bought")?,
+        );
+
+        // The next due issue is paid in full, the shortage ends and the same entry resumes.
+        let recovered = server.wait(
+            &[
+                "RTS_FOOD_TX participant=1 kind=upkeep",
+                "shortage=0",
+                "step=600",
+            ],
+            Duration::from_secs(30),
+        )?;
+        report.verdict(
+            "FOOD-P06-NEXT-FULL-ISSUE-ENDS-IT",
+            econ_int(&recovered, "owed") == force
+                && econ_int(&recovered, "paid") == force
+                && econ_int(&recovered, "rations") == FOOD_PACK_RATIONS - force
+                && econ_int(&recovered, "head_remaining") == held,
+            format!("short {} | recovered {}", short.trim(), recovered.trim()),
+        );
+        let at_recovery = server.offset();
+        let spawn = server.wait_line(
+            &["RTS_PRODUCTION_SPAWN participant=1", "transaction=2"],
+            Duration::from_secs(30),
+            at_recovery,
+        )?;
+        let spawned = server.text();
+        let first_spawn = spawned
+            .lines()
+            .find(|l| l.contains("RTS_PRODUCTION_SPAWN participant=1"))
+            .unwrap_or_default()
+            .to_owned();
+        let delay = econ_int(&spawn, "step") - admitted;
+        let lost = econ_int(&recovered, "step") - short_step;
+        report.verdict(
+            "FOOD-P07-HELD-UNIT-LATE-BY-THE-SHORTAGE",
+            econ_int(&first_spawn, "step")
+                == admitted + ECONOMY_TRAIN_STEPS as i64 + if early { 0 } else { lost }
+                && delay == 2 * ECONOMY_TRAIN_STEPS as i64 + lost,
+            format!(
+                "first {}; second {delay} steps after the first purchase, {lost} of them held: {}",
+                first_spawn.trim(),
+                spawn.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_recovered_png",
+            &client_a.screenshot(&evidence, "05-recovered")?,
+        );
+        let (again, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        report.verdict(
+            "FOOD-P08-TRAINING-WORKS-AFTER-RECOVERY",
+            econ_int(&again, "amount") == ECONOMY_PRICE_CENTS
+                && econ_int(&again, "queued") == 1
+                && field(&again, "reconciles") == Some("1"),
+            again.trim(),
+        );
+
+        // Nobody starved, the other seat never noticed and neither client saw the other's food.
+        let text = server.text();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let enemy_short = text
+            .lines()
+            .filter(|l| l.contains("RTS_FOOD_TX participant=2") && l.contains("shortage=1"))
+            .count();
+        let deaths = text
+            .lines()
+            .filter(|l| l.contains("RTS_GAMEPLAY_EVENT") && l.contains("kind=UnitDestroyed"))
+            .count();
+        let a_leaks = text_a
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=2"))
+            .count();
+        let b_leaks = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .count();
+        let b_short = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW") && l.contains("shortage=1"))
+            .count();
+        report.verdict(
+            "FOOD-P09-NO-HARM-AND-OWNER-ONLY",
+            enemy_short == 0 && deaths == 0 && a_leaks == 0 && b_leaks == 0 && b_short == 0,
+            format!(
+                "enemy shortages {enemy_short}, units destroyed {deaths}; A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}, B short views {b_short}"
+            ),
+        );
+        let replay_1 = food_replay(&text, 1, &generation, FOOD_FIXTURE_RATIONS);
+        let replay_2 = food_replay(&text, 2, &generation, FOOD_NORMAL_RATIONS);
+        report.verdict(
+            "FOOD-P10-RESERVES-REPLAY",
+            replay_1.as_ref().is_ok_and(|n| *n >= 3) && replay_2 == replay_1,
+            format!("issues to participant 1 {replay_1:?}, participant 2 {replay_2:?}"),
+        );
+        let lines_1 = economy_lines(&text, 1, &generation);
+        let replay = economy_replay(&lines_1, FOOD_START_CENTS);
+        report.verdict(
+            "FOOD-P11-MONEY-REPLAYS",
+            replay.is_ok()
+                && lines_1
+                    .iter()
+                    .filter(|l| field(l, "kind") == Some("food"))
+                    .count()
+                    == 1,
+            format!("{} money lines; {replay:?}", lines_1.len()),
+        );
+
+        // Repeatability: the normalized sequence, without timing or income interleaving.
+        let mut trace: String = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") != Some("income"))
+            .map(|l| {
+                format!(
+                    "{} {} queued={}\n",
+                    field(l, "kind").unwrap_or("?"),
+                    econ_int(l, "amount"),
+                    econ_int(l, "queued")
+                )
+            })
+            .collect();
+        for line in text.lines().filter(|l| {
+            l.contains("RTS_FOOD_TX participant=1 kind=upkeep")
+                && econ_int(l, "step") <= 3 * FOOD_INTERVAL_STEPS
+        }) {
+            trace.push_str(&format!(
+                "upkeep step={} owed={} paid={} rations={} shortage={}\n",
+                econ_int(line, "step"),
+                econ_int(line, "owed"),
+                econ_int(line, "paid"),
+                econ_int(line, "rations"),
+                field(line, "shortage").unwrap_or("?")
+            ));
+        }
+        trace.push_str(&format!(
+            "held_steps={lost} late_by={}\n",
+            delay - 2 * ECONOMY_TRAIN_STEPS as i64
+        ));
+        fs::write(evidence.join("food-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("food_trace", &evidence.join("food-trace.txt"));
+
+        // A match end, then a next generation that owes nothing to the shortage.
+        let owned: Vec<u64> = entity_owners(&server.text())
+            .iter()
+            .filter(|(_, owner)| *owner == 1)
+            .map(|(id, _)| *id)
+            .collect();
+        let unit = *owned.first().ok_or("no authored unit for participant 1")?;
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        let at_move = server.offset();
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            at_move,
+        )?;
+        server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(180),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let starts2: Vec<&str> = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_FOOD_START") && l.contains(&format!("generation={generation2}"))
+            })
+            .collect();
+        report.verdict(
+            "FOOD-P12-NEXT-GENERATION-FRESH",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && starts2.len() == 2
+                && econ_int(starts2[0], "rations") == FOOD_FIXTURE_RATIONS
+                && econ_int(starts2[1], "rations") == FOOD_NORMAL_RATIONS
+                && !tail.lines().any(|l| l.contains("RTS_FOOD_TX")),
+            format!(
+                "generation {generation} then {generation2}: {} | {}",
+                cleared.trim(),
+                starts2.join(" | ")
+            ),
+        );
+        Ok(())
+    })();
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 fn economy_limits_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
     let evidence = options.client.evidence.clone();
     let extra = [
@@ -13940,6 +14375,14 @@ fn main() {
             "politika.econ.power-evidence.v1",
             "power",
             power_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--food") {
+        run_dedicated_session(
+            "--food",
+            "politika.econ.food-evidence.v1",
+            "food",
+            food_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--compare-normalized") {

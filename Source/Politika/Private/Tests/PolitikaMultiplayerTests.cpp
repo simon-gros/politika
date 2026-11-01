@@ -3497,6 +3497,139 @@ bool FPolitikaMultiplayerDisciplineRoutTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerFoodTest,
+    "Politika.RTS.Multiplayer.Food",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E3: the force's food through the production intake and fixed step.
+bool FPolitikaMultiplayerFoodTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+    TArray<APolitikaPrototypeUnit*> Own;
+    for (int32 Index = 0; Index < 3; ++Index) Own.Add(F.AddUnit(HostId, {-1500.0 + Index * 40.0, -1200.0}));
+    APolitikaPrototypeUnit* Foe = F.AddUnit(EnemyId, {1500, 1500});
+    if (!TestFalse(TEXT("Fixture units spawned"), Own.Contains(nullptr) || !Foe)) return false;
+    F.Match->SyncEconomyReplication();
+
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    const pe::Account* Other = F.Match->GetEconomy().Find(EnemyId);
+    if (!TestNotNull(TEXT("The host has an account"), Account) || !TestNotNull(TEXT("The enemy has an account"), Other)) return false;
+    TestEqual(TEXT("F-A01 the reserve starts at the fixture amount"), Account->rations, pe::kStartingRations);
+    TestEqual(TEXT("F-A01 the view reports the reserve"), Host->GetOwnEconomy().Rations, static_cast<int32>(pe::kStartingRations));
+    TestEqual(TEXT("F-A01 the view reports what the force eats"), Host->GetOwnEconomy().UpkeepRations, 3);
+    TestEqual(TEXT("F-A01 each view is the participant's own"), Enemy->GetOwnEconomy().UpkeepRations, 1);
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const auto Request = [&F](APolitikaPrototypePlayerController* Source, pe::EconomyOp Op, uint8 RecipeByte)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.Recipe = RecipeByte;
+        uint32& Sequence = F.NextSequence.FindOrAdd(Source, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto Send = [&](APolitikaPrototypePlayerController* Source, const FPolitikaNetEconomyIntent& Intent)
+    {
+        F.Match->SubmitEconomyIntent(Source, Intent);
+        F.Step();
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [&Intent](const auto& Entry) { return Entry.Value.CorrelationId == Intent.CorrelationId; });
+        return Found ? static_cast<int32>(Found->Value.Rejection) : -1;
+    };
+    const auto ToDueStep = [&F, Account]
+    {
+        // Runs up to and including the next due step.
+        const uint64 Due = Account->nextUpkeepStep;
+        while (F.Match->SimulationStepsExecuted < Due) F.Step();
+    };
+    const int32 None = static_cast<int32>(pe::EconomyRejection::None);
+    const int32 Malformed = static_cast<int32>(pe::EconomyRejection::MalformedCommand);
+
+    // One debit per due interval, for the force alive at that step.
+    ToDueStep();
+    TestEqual(TEXT("F-A02 three units eat three rations"), Account->rations, pe::kStartingRations - 3);
+    TestEqual(TEXT("F-A02 the enemy pays for its own force"), Other->rations, pe::kStartingRations - 1);
+    F.Step(5);
+    TestEqual(TEXT("F-A02 not again until the next interval"), Account->rations, pe::kStartingRations - 3);
+    Own[0]->Health = 0;
+    F.Step();
+    ToDueStep();
+    TestEqual(TEXT("F-A03 a casualty stops eating"), Account->rations, pe::kStartingRations - 5);
+
+    // A produced unit eats from the first interval after it appears.
+    TestEqual(TEXT("F-A04 fed training is admitted"), Send(Host, Request(Host, pe::EconomyOp::Train, Rifleman)), None);
+    TestEqual(TEXT("F-A04 a second item"), Send(Host, Request(Host, pe::EconomyOp::Train, Rifleman)), None);
+    while (F.Match->CountLivingUnits(HostId) == 2) F.Step();
+    const pe::Rations BeforeNew = Account->rations;
+    ToDueStep();
+    TestEqual(TEXT("F-A04 the new unit eats"), BeforeNew - Account->rations, static_cast<int64>(3));
+
+    // A malformed purchase changes nothing, and a real one debits and credits once.
+    FPolitikaNetEconomyIntent WithRecipe = Request(Host, pe::EconomyOp::BuyFood, 0);
+    WithRecipe.Recipe = 1;
+    const pe::Rations Stock = Account->rations;
+    const int64 Money = Account->available;
+    TestEqual(TEXT("F-A05 a purchase carries no recipe"), Send(Host, WithRecipe), Malformed);
+    TestEqual(TEXT("F-A05 nothing moved"), Account->rations, Stock);
+    TestEqual(TEXT("F-A06 a purchase is admitted"), Send(Host, Request(Host, pe::EconomyOp::BuyFood, 0)), None);
+    TestEqual(TEXT("F-A06 the pack arrives once"), Account->rations, Stock + pe::kFoodPurchaseRations);
+    TestEqual(TEXT("F-A06 the price is paid once"), Account->available, Money - pe::kFoodPurchaseCents);
+    TestTrue(TEXT("F-A06 both ledgers reconcile"), Account->Reconciles() && Account->RationsReconcile());
+
+    // The reserve runs out. Only the host is affected, and its units are not harmed.
+    F.Match->Economy.Clear();
+    F.Match->Economy.AddParticipant(HostId, pe::kStartingCents, true, F.Match->SimulationStepsExecuted + 1);
+    F.Match->Economy.AddParticipant(EnemyId, pe::kStartingCents, true, F.Match->SimulationStepsExecuted + 1);
+    F.Match->Economy.SetStartingRations(HostId, 1);
+    Account = F.Match->GetEconomy().Find(HostId);
+    Other = F.Match->GetEconomy().Find(EnemyId);
+    TestEqual(TEXT("F-A07 training before the shortage"), Send(Host, Request(Host, pe::EconomyOp::Train, Rifleman)), None);
+    const int32 Living = F.Match->CountLivingUnits(HostId);
+    TestEqual(TEXT("F-A07 the reserve stops at zero"), Account->rations, static_cast<int64>(0));
+    TestTrue(TEXT("F-A07 the shortage is set"), Account->foodShortage);
+    TestTrue(TEXT("F-A07 the view reports it"), Host->GetOwnEconomy().bFoodShortage);
+    TestFalse(TEXT("F-A07 the enemy is not short"), Other->foodShortage || Enemy->GetOwnEconomy().bFoodShortage);
+    const uint32 Remaining = Account->queue[0].remainingSteps;
+    F.Step(20);
+    TestEqual(TEXT("F-A08 the queue holds"), Account->queue[0].remainingSteps, Remaining);
+    TestEqual(TEXT("F-A08 nobody dies of it"), F.Match->CountLivingUnits(HostId), Living);
+    TestEqual(TEXT("F-A08 new training is refused"), Send(Host, Request(Host, pe::EconomyOp::Train, Rifleman)),
+        static_cast<int32>(pe::EconomyRejection::FoodShortage));
+    TestEqual(TEXT("F-A09 food can still be bought"), Send(Host, Request(Host, pe::EconomyOp::BuyFood, 0)), None);
+    TestTrue(TEXT("F-A09 the purchase alone does not end it"), Account->foodShortage && Account->rations == pe::kFoodPurchaseRations);
+    TestEqual(TEXT("F-A09 the queue still holds"), Account->queue[0].remainingSteps, Remaining);
+    ToDueStep();
+    TestFalse(TEXT("F-A10 the next full issue ends it"), Account->foodShortage);
+    TestEqual(TEXT("F-A10 the same entry resumes that step"), Account->queue[0].remainingSteps, Remaining - 1);
+    TestFalse(TEXT("F-A10 the view reports it"), Host->GetOwnEconomy().bFoodShortage);
+    TestEqual(TEXT("F-A10 training is admitted again"), Send(Host, Request(Host, pe::EconomyOp::Train, Rifleman)), None);
+
+    F.Match->ClearEconomy(TEXT("automation"));
+    TestNull(TEXT("F-A11 a match end clears the food with the ledger"), F.Match->GetEconomy().Find(HostId));
+    F.Match->InitializeEconomy();
+    const pe::Account* Fresh = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("F-A11 the next match starts fed"), Fresh && Fresh->rations == pe::kStartingRations && !Fresh->foodShortage);
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerPowerTest,
     "Politika.RTS.Multiplayer.Power",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -3795,9 +3928,9 @@ bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("E-A18 the queue is empty"), Other->queue.empty());
 
     // The unit limit counts queued items as well as living units.
+    F.Step(pe::kIncomeIntervalSteps * 20);
     while (F.Match->CountLivingUnits(HostId) < static_cast<int32>(politika::unitscale::kMaxUnitsPerSeat) - 1)
         F.AddUnit(HostId, FVector2D(-2000.0 + 110.0 * F.Match->CountLivingUnits(HostId), -2600.0));
-    F.Step(pe::kIncomeIntervalSteps * 20);
     FPolitikaNetEconomyIntent LastPlace = Request(Host, pe::EconomyOp::Train, Rifleman);
     TestEqual(TEXT("E-A19 the last place can be trained"), RejectionOf(Host, LastPlace), 0);
     TestEqual(TEXT("E-A19 a queued item fills the limit"), RejectionOf(Host, Request(Host, pe::EconomyOp::Train, Rifleman)),

@@ -8,7 +8,10 @@
 // is integer US cents with checked arithmetic. Training debits the whole price exactly once at
 // admission, and a rejected request changes nothing. Time is counted in authoritative steps.
 // ECON-E2 adds one electricity grid per account (Power.h): a producer below its minimum load takes
-// no new items and its queue pauses, without another charge. Food is a later sub-slice.
+// no new items and its queue pauses, without another charge. ECON-E3 adds military food: a reserve
+// of rations, one upkeep debit per due interval for the living force, and a purchase that debits
+// dollars and credits rations atomically. A shortage stops reinforcement until upkeep is paid in
+// full again, and never touches the units themselves.
 //
 // The figures below are prototype fixture data, not balance decisions. The rifleman's price and
 // training time follow the line-infantry entry of Docs/Units/ATLANTIC_CONCORD_UNITS.md.
@@ -44,6 +47,14 @@ inline constexpr std::uint32_t kBlockedRetrySteps = 20;
 inline constexpr power::BuildingId kGeneratorBuilding = 1;
 inline constexpr power::BuildingId kProducerBuilding = 2;
 
+using Rations = std::int64_t;
+inline constexpr Rations kStartingRations = 240;
+inline constexpr Rations kRationsPerUnit = 1;
+inline constexpr std::uint32_t kFoodUpkeepIntervalSteps = 200; // 10 s at 20 Hz
+inline constexpr Rations kFoodPurchaseRations = 50;
+inline constexpr Cents kFoodPurchaseCents = 5'000;             // $50.00
+inline constexpr Rations kFoodCapacityRations = 1'000;
+
 // Wire values are stable.
 enum class Recipe : std::uint8_t { Rifleman };
 inline constexpr std::uint8_t kRecipeCount = 1;
@@ -59,8 +70,8 @@ struct RecipeDefinition {
 }
 
 // Wire values are stable: Train is the default of a zeroed request.
-enum class EconomyOp : std::uint8_t { Train, Cancel };
-inline constexpr std::uint8_t kEconomyOpCount = 2;
+enum class EconomyOp : std::uint8_t { Train, Cancel, BuyFood };
+inline constexpr std::uint8_t kEconomyOpCount = 3;
 
 enum class EconomyRejection : std::uint8_t {
     None,
@@ -78,6 +89,8 @@ enum class EconomyRejection : std::uint8_t {
     RateLimited,
     Overflow,
     ProducerUnpowered,
+    FoodShortage,
+    FoodStoreFull,
 };
 
 [[nodiscard]] constexpr std::string_view RejectionName(EconomyRejection rejection) noexcept {
@@ -97,6 +110,8 @@ enum class EconomyRejection : std::uint8_t {
         case EconomyRejection::RateLimited: return "rate_limited";
         case EconomyRejection::Overflow: return "overflow";
         case EconomyRejection::ProducerUnpowered: return "producer_unpowered";
+        case EconomyRejection::FoodShortage: return "food_shortage";
+        case EconomyRejection::FoodStoreFull: return "food_store_full";
     }
     return "unknown";
 }
@@ -126,10 +141,10 @@ enum class EconomyRejection : std::uint8_t {
     return std::string(negative ? "-$" : "$") + whole + "." + (fraction < 10 ? "0" : "") + std::to_string(fraction);
 }
 
-// Shape check only, before any authoritative state is read: Cancel carries no recipe.
+// Shape check only, before any authoritative state is read: only Train carries a recipe.
 [[nodiscard]] constexpr EconomyRejection CheckIntentShape(std::uint8_t op, std::uint8_t recipe) noexcept {
     if (op >= kEconomyOpCount) return EconomyRejection::MalformedCommand;
-    if (static_cast<EconomyOp>(op) == EconomyOp::Cancel && recipe != 0) return EconomyRejection::MalformedCommand;
+    if (static_cast<EconomyOp>(op) != EconomyOp::Train && recipe != 0) return EconomyRejection::MalformedCommand;
     return EconomyRejection::None;
 }
 
@@ -157,6 +172,12 @@ struct Account {
     power::Grid grid;
     power::Allocation allocation;
     bool producerPowered = false;
+    Rations startingRations = 0;
+    Rations rations = 0;
+    Rations rationsBought = 0;
+    Rations rationsIssued = 0;
+    Step nextUpkeepStep = 0;
+    bool foodShortage = false;
 
     // Every cent has one explanation: nothing is created or lost outside the ledger.
     [[nodiscard]] bool Reconciles() const noexcept {
@@ -164,6 +185,11 @@ struct Account {
         Cents out = 0;
         return available >= 0 && CheckedAdd(starting, credited, in) && CheckedAdd(in, refunded, in)
             && CheckedAdd(available, spent, out) && in == out;
+    }
+
+    // Every ration has one explanation too, and the reserve is never negative.
+    [[nodiscard]] bool RationsReconcile() const noexcept {
+        return rations >= 0 && startingRations + rationsBought == rations + rationsIssued;
     }
 };
 
@@ -187,14 +213,18 @@ struct StepResult {
     // remaining time before this step's production.
     bool powerChanged = false;
     std::uint32_t headRemainingSteps = 0;
+    // Upkeep fell due this step: what was owed and what the reserve could pay.
+    bool upkeepDue = false;
+    Rations upkeepOwed = 0;
+    Rations upkeepPaid = 0;
 };
 
 class Ledger {
 public:
     void Clear() noexcept { accounts.clear(); }
 
-    // firstIncomeStep is the first step that may pay income. Refuses a zero or repeated
-    // participant and a negative start.
+    // firstIncomeStep is the first step that may pay income or charge upkeep. Refuses a zero or
+    // repeated participant and a negative start.
     bool AddParticipant(ParticipantId participant, Cents starting, bool hasProducer, Step firstIncomeStep) {
         if (participant == 0 || starting < 0 || Find(participant)) return false;
         Account account;
@@ -203,6 +233,9 @@ public:
         account.starting = starting;
         account.available = starting;
         account.nextIncomeStep = firstIncomeStep;
+        account.startingRations = kStartingRations;
+        account.rations = kStartingRations;
+        account.nextUpkeepStep = firstIncomeStep;
         if (hasProducer) {
             // A self-starting plant and one producer: the base is powered from its first step.
             account.grid.Add({kGeneratorBuilding, power::BuildingKind::Generator, power::kGeneratorAuxiliaryKw, power::kGeneratorCapacityKw});
@@ -220,6 +253,16 @@ public:
         const auto found = std::find_if(accounts.begin(), accounts.end(),
             [participant](const Account& candidate) { return candidate.participant == participant; });
         return found == accounts.end() ? nullptr : &*found;
+    }
+
+    // Sets a participant's opening reserve, before anything has moved. Refuses a negative reserve,
+    // one over the store's capacity and a participant that has already bought or issued food.
+    bool SetStartingRations(ParticipantId participant, Rations rations) noexcept {
+        Account* account = FindMutable(participant);
+        if (!account || rations < 0 || rations > kFoodCapacityRations || account->rationsBought != 0 || account->rationsIssued != 0) return false;
+        account->startingRations = rations;
+        account->rations = rations;
+        return true;
     }
 
     // Takes effect at the participant's next Advance. Returns false without a generator.
@@ -243,6 +286,7 @@ public:
         if (!definition) return Reject(EconomyRejection::UnknownRecipe, account);
         if (!account->hasProducer) return Reject(EconomyRejection::NoProducer, account);
         if (!account->producerPowered) return Reject(EconomyRejection::ProducerUnpowered, account);
+        if (account->foodShortage) return Reject(EconomyRejection::FoodShortage, account);
         if (account->queue.size() >= kMaxQueue) return Reject(EconomyRejection::QueueFull, account);
         if (livingUnits + static_cast<std::int64_t>(account->queue.size()) >= unitCap)
             return Reject(EconomyRejection::UnitCap, account);
@@ -276,12 +320,35 @@ public:
         return {EconomyRejection::None, paid, account->available, account->queue.size()};
     }
 
-    // One authoritative step for one account: pays income that is due, allocates power, then
-    // advances only the head of the queue. An item admitted earlier in the same step does not
+    // Buys one fixed pack of rations: debits its price and credits the reserve once, or changes
+    // nothing. Always open during a shortage, because it is the way out of one.
+    RequestResult BuyFood(ParticipantId participant, TransactionId transaction) {
+        Account* account = FindMutable(participant);
+        if (!account) return Reject(EconomyRejection::Unauthorized, nullptr);
+        if (transaction <= account->lastTransaction) return Reject(EconomyRejection::DuplicateCommand, account);
+        if (account->rations + kFoodPurchaseRations > kFoodCapacityRations) return Reject(EconomyRejection::FoodStoreFull, account);
+        if (account->available < kFoodPurchaseCents) return Reject(EconomyRejection::InsufficientFunds, account);
+        Cents available = 0;
+        Cents spent = 0;
+        if (!CheckedSub(account->available, kFoodPurchaseCents, available) || !CheckedAdd(account->spent, kFoodPurchaseCents, spent))
+            return Reject(EconomyRejection::Overflow, account);
+        account->available = available;
+        account->spent = spent;
+        account->rations += kFoodPurchaseRations;
+        account->rationsBought += kFoodPurchaseRations;
+        account->lastTransaction = transaction;
+        return {EconomyRejection::None, kFoodPurchaseCents, account->available, account->queue.size()};
+    }
+
+    // One authoritative step for one account: pays income that is due, allocates power, charges
+    // upkeep that is due for staffedUnits (the force alive now), then advances only the head of
+    // the queue. An item admitted earlier in the same step does not
     // advance until the next one, so with steady power it appears exactly durationSteps after its
     // admission step. An unpowered producer holds its whole queue: no time passes, a blocked item
-    // does not retry and nothing is charged again. Cancel still refunds.
-    StepResult Advance(ParticipantId participant, Step step, TransactionId admittedThisStep = 0) {
+    // does not retry and nothing is charged again, and a food shortage holds it the same way.
+    // Cancel still refunds. A due debit takes what the reserve has, never going below zero. Only a
+    // due debit paid in full ends a shortage, so a purchase takes effect at the next interval.
+    StepResult Advance(ParticipantId participant, Step step, TransactionId admittedThisStep = 0, std::int64_t staffedUnits = 0) {
         StepResult result;
         Account* account = FindMutable(participant);
         if (!account) return result;
@@ -305,10 +372,19 @@ public:
             account->allocation = allocation;
             account->producerPowered = powered;
         }
+        if (step >= account->nextUpkeepStep) {
+            result.upkeepDue = true;
+            result.upkeepOwed = std::max<std::int64_t>(staffedUnits, 0) * kRationsPerUnit;
+            result.upkeepPaid = std::min(account->rations, result.upkeepOwed);
+            account->rations -= result.upkeepPaid;
+            account->rationsIssued += result.upkeepPaid;
+            account->foodShortage = result.upkeepPaid < result.upkeepOwed;
+            account->nextUpkeepStep = step + kFoodUpkeepIntervalSteps;
+        }
         if (account->queue.empty()) return result;
         QueueItem& head = account->queue.front();
         result.headRemainingSteps = head.remainingSteps;
-        if (!account->producerPowered) return result;
+        if (!account->producerPowered || account->foodShortage) return result;
         if (head.blocked) {
             if (step < head.nextRetryStep) return result;
         } else {

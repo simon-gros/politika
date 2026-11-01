@@ -37,6 +37,7 @@ namespace
         TEXT("-PolitikaMPUnitScale="),
         TEXT("-PolitikaMPEconomyStartCents="),
         TEXT("-PolitikaMPPowerOutage="),
+        TEXT("-PolitikaMPEconomyStartFood="),
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),
