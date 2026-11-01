@@ -12566,6 +12566,650 @@ fn discipline_participant_samples_of(text: &str, participant: u32) -> Vec<String
         .collect()
 }
 
+// ECON-E1: treasury, income and training by real input on a packaged dedicated server.
+// `--economy SERVER CLIENT [--evidence DIR] [--port N]` plays the default fixture through money,
+// training, a refused purchase, a refund, a commanded new unit, a match end with an item in
+// training and the next generation. `--economy-limits` gives both seats 15 units and $100,000 to
+// reach the queue limit and the unit limit.
+const ECONOMY_START_CENTS: i64 = 100_000;
+const ECONOMY_PRICE_CENTS: i64 = 36_000;
+const ECONOMY_TRAIN_STEPS: u64 = 200;
+const ECONOMY_INCOME_CENTS: i64 = 2_000;
+const ECONOMY_INCOME_STEPS: u64 = 200;
+const ECONOMY_LIMITS_CENTS: i64 = 10_000_000;
+
+fn econ_int(line: &str, key: &str) -> i64 {
+    field(line, key).and_then(|v| v.parse().ok()).unwrap_or(-1)
+}
+
+/// The server's money lines for one participant in one generation, in log order.
+fn economy_lines(text: &str, participant: u32, generation: &str) -> Vec<String> {
+    let tag = format!("participant={participant} ");
+    let generation = format!("generation={generation} ");
+    text.lines()
+        .filter(|l| l.contains("RTS_ECONOMY_TX") && l.contains(&tag) && l.contains(&generation))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Replays the money lines from the start: every balance follows from the one before it.
+fn economy_replay(lines: &[String], start: i64) -> Result<(), String> {
+    let mut available = start;
+    for line in lines {
+        let amount = econ_int(line, "amount");
+        match field(line, "kind") {
+            Some("income") | Some("refund") => available += amount,
+            Some("train") => available -= amount,
+            other => return Err(format!("unknown kind {other:?}: {}", line.trim())),
+        }
+        if econ_int(line, "available") != available || field(line, "reconciles") != Some("1") {
+            return Err(format!("expected available {available}: {}", line.trim()));
+        }
+    }
+    Ok(())
+}
+
+/// Income steps are exact multiples of the interval with none missing, each paying the fixed sum.
+fn economy_income_cadence(lines: &[String]) -> Result<usize, String> {
+    let mut count = 0_u64;
+    for line in lines.iter().filter(|l| field(l, "kind") == Some("income")) {
+        count += 1;
+        let step = econ_int(line, "step");
+        if step != (count * ECONOMY_INCOME_STEPS) as i64
+            || econ_int(line, "amount") != ECONOMY_INCOME_CENTS
+        {
+            return Err(format!("income {count} off its cadence: {}", line.trim()));
+        }
+    }
+    Ok(count as usize)
+}
+
+fn economy_key_outcome(
+    client: &mut Game,
+    server: &mut Game,
+    modifier: Option<&str>,
+    server_fragments: &[&str],
+) -> Result<(String, String), String> {
+    let (client_mark, server_mark) = (client.offset(), server.offset());
+    match modifier {
+        Some(held) => client.modified_key(held, "b")?,
+        None => client.key("b")?,
+    }
+    let on_server = server.wait_line(server_fragments, Duration::from_secs(5), server_mark)?;
+    let on_client = client.wait_line(
+        &["RTS_ECONOMY_OUTCOME participant=1"],
+        Duration::from_secs(5),
+        client_mark,
+    )?;
+    Ok((on_server, on_client))
+}
+
+fn economy_start_session(
+    options: &DedicatedOptions,
+    extra: &[String],
+) -> Result<(Game, Game, Game, Display, String), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.extend_from_slice(extra);
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let display_a = Display::start(evidence, "client-a")?;
+    let mut client_a = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &client_args(client_options, true, false, false),
+        Some(&display_a.name()),
+    )?;
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let client_b = Game::launch(
+        &client_options.binary,
+        "client-b",
+        evidence,
+        &client_args(client_options, false, false, false),
+        None,
+    )?;
+    server.wait(
+        &["MP_PARTICIPANT_BOUND participant=2", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    client_a.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client_a.attach_window()?;
+    thread::sleep(Duration::from_secs(6));
+    Ok((server, client_a, client_b, display_a, generation))
+}
+
+fn economy_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session(options, &[])?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        // Accounts and structures.
+        let text = server.text();
+        let starts: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ECONOMY_START") && l.contains(&format!("generation={generation}"))
+            })
+            .collect();
+        report.verdict(
+            "ECON-P01-ACCOUNTS",
+            starts.len() == 2
+                && starts.iter().all(|l| {
+                    econ_int(l, "available") == ECONOMY_START_CENTS
+                        && field(l, "producer") == Some("1")
+                })
+                && field(starts[0], "participant") == Some("1")
+                && field(starts[1], "participant") == Some("2"),
+            starts.join(" | "),
+        );
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let structures = |t: &str| -> Vec<String> {
+            t.lines()
+                .filter(|l| l.contains("RTS_STRUCTURE_RELEVANT"))
+                .filter_map(|l| field(l, "owner").map(str::to_owned))
+                .collect()
+        };
+        report.verdict(
+            "ECON-P02-STRUCTURE-OWN-TEAM-ONLY",
+            structures(&text_a) == ["1"] && structures(&text_b) == ["2"],
+            format!(
+                "client A received {:?}, client B received {:?}",
+                structures(&text_a),
+                structures(&text_b)
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Two purchases are affordable; the third is not.
+        let (first, first_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        let (second, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        report.verdict(
+            "ECON-P03-TRAIN-DEBITS-ONCE",
+            econ_int(&first, "amount") == ECONOMY_PRICE_CENTS
+                && econ_int(&first, "queued") == 1
+                && econ_int(&second, "queued") == 2
+                && econ_int(&first, "available") - econ_int(&second, "available")
+                    == ECONOMY_PRICE_CENTS
+                && field(&first_client, "accepted") == Some("1")
+                && econ_int(&first_client, "amount") == ECONOMY_PRICE_CENTS,
+            format!(
+                "{} | {} | client {}",
+                first.trim(),
+                second.trim(),
+                first_client.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_training_png",
+            &client_a.screenshot(&evidence, "02-training")?,
+        );
+
+        let money_before = economy_lines(&server.text(), 1, &generation).len();
+        let (refused, refused_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &[
+                "RTS_ECONOMY_REJECT participant=1",
+                "rejection=insufficient_funds",
+            ],
+        )?;
+        let spends_after = economy_lines(&server.text(), 1, &generation)
+            .iter()
+            .skip(money_before)
+            .filter(|l| field(l, "kind") != Some("income"))
+            .count();
+        report.verdict(
+            "ECON-P04-INSUFFICIENT-FUNDS",
+            field(&refused_client, "accepted") == Some("0")
+                && field(&refused_client, "rejection") == Some("8")
+                && spends_after == 0,
+            format!(
+                "{} | client {}; {spends_after} money lines other than income",
+                refused.trim(),
+                refused_client.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(400));
+        report.artifact(
+            "client_a_refused_png",
+            &client_a.screenshot(&evidence, "03-refused")?,
+        );
+
+        // Shift+B refunds the newest entry, once.
+        let (refund, refund_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            Some("shift"),
+            &["RTS_ECONOMY_TX participant=1 kind=refund"],
+        )?;
+        report.verdict(
+            "ECON-P05-CANCEL-REFUNDS",
+            econ_int(&refund, "amount") == ECONOMY_PRICE_CENTS
+                && econ_int(&refund, "queued") == 1
+                && field(&refund, "transaction").is_some()
+                && field(&refund_client, "accepted") == Some("1"),
+            format!("{} | client {}", refund.trim(), refund_client.trim()),
+        );
+
+        // The first entry appears exactly its training time after admission, as an ordinary unit.
+        let first_transaction = field(&first, "transaction").unwrap_or("0").to_owned();
+        let spawn = server.wait(
+            &[
+                "RTS_PRODUCTION_SPAWN participant=1",
+                &format!("transaction={first_transaction} "),
+            ],
+            Duration::from_secs(20),
+        )?;
+        let entity = econ_int(&spawn, "entity") as u64;
+        let delta = econ_int(&spawn, "step") - econ_int(&first, "step");
+        report.verdict(
+            "ECON-P06-TRAINING-TIME",
+            delta == ECONOMY_TRAIN_STEPS as i64,
+            format!(
+                "admitted at step {}, appeared {delta} steps later: {}",
+                econ_int(&first, "step"),
+                spawn.trim()
+            ),
+        );
+        let owners_seen = client_a.wait(
+            &[
+                "MP_CLIENT_UNIT_RELEVANT",
+                &format!("entity={entity} "),
+                "owner=1",
+            ],
+            Duration::from_secs(5),
+        )?;
+        thread::sleep(Duration::from_secs(1));
+        let b_saw = client_b.text().lines().any(|l| {
+            l.contains("MP_CLIENT_UNIT_RELEVANT") && l.contains(&format!("entity={entity} "))
+        });
+        report.verdict(
+            "ECON-P07-NEW-UNIT-REPLICATES-BY-VISION",
+            !b_saw,
+            format!("{}; client B received it: {b_saw}", owners_seen.trim()),
+        );
+        report.artifact(
+            "client_a_spawned_png",
+            &client_a.screenshot(&evidence, "04-spawned")?,
+        );
+        let moved = order_move(&mut client_a, &mut server, entity, (640.0, 360.0))?;
+        report.verdict("ECON-P08-NEW-UNIT-TAKES-ORDERS", true, moved.trim());
+
+        // A match end with an item in training: the capture goes on while training runs.
+        let owned: Vec<u64> = entity_owners(&server.text())
+            .iter()
+            .filter(|(_, owner)| *owner == 1)
+            .map(|(id, _)| *id)
+            .collect();
+        let unit = *owned.first().ok_or("no authored unit for participant 1")?;
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        let at_move = server.offset();
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            at_move,
+        )?;
+        let progress_deadline = Instant::now() + Duration::from_secs(120);
+        loop {
+            let halfway = server
+                .text()
+                .lines()
+                .rev()
+                .find(|l| l.contains("MP_SERVER_OBJECTIVE"))
+                .is_some_and(|l| econ_int(l, "progress_milli") >= 500);
+            if halfway {
+                break;
+            }
+            if Instant::now() > progress_deadline {
+                return Err("the objective did not reach half progress".into());
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        let (in_flight, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        let results = server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(60),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_end = server.offset();
+        report.verdict(
+            "ECON-P09-MATCH-END-DROPS-QUEUE",
+            field(&cleared, "dropped_queue") == Some("1")
+                && field(&cleared, "reconciles") == Some("1"),
+            format!(
+                "{} | {} | {}",
+                in_flight.trim(),
+                results.trim(),
+                cleared.trim()
+            ),
+        );
+        let late_client = client_a.offset();
+        client_a.key("b")?;
+        let late_outcome = client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1"],
+            Duration::from_secs(5),
+            late_client,
+        )?;
+        thread::sleep(Duration::from_secs(ECONOMY_TRAIN_STEPS / 20 + 2));
+        let after = server.text();
+        let tail = &after[at_end.min(after.len())..];
+        let moved_after = tail
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_TX") || l.contains("RTS_PRODUCTION_SPAWN"))
+            .count();
+        report.verdict(
+            "ECON-P10-NOTHING-AFTER-THE-END",
+            moved_after == 0
+                && field(&late_outcome, "accepted") == Some("0")
+                && field(&late_outcome, "rejection") == Some("4"),
+            format!(
+                "{moved_after} money or spawn lines after the end; late request: {}",
+                late_outcome.trim()
+            ),
+        );
+
+        // The ledger explains itself from the server's lines alone.
+        let lines_1 = economy_lines(&after, 1, &generation);
+        let lines_2 = economy_lines(&after, 2, &generation);
+        let replay = economy_replay(&lines_1, ECONOMY_START_CENTS)
+            .and(economy_replay(&lines_2, ECONOMY_START_CENTS));
+        let cadence_1 = economy_income_cadence(&lines_1);
+        let cadence_2 = economy_income_cadence(&lines_2);
+        report.verdict(
+            "ECON-P11-LEDGER-REPLAYS",
+            replay.is_ok(),
+            format!(
+                "{} lines for participant 1, {} for participant 2: {replay:?}",
+                lines_1.len(),
+                lines_2.len()
+            ),
+        );
+        report.verdict(
+            "ECON-P12-INCOME-CADENCE",
+            cadence_1.as_ref().is_ok_and(|n| *n >= 1) && cadence_1 == cadence_2,
+            format!("{cadence_1:?} payments to participant 1, {cadence_2:?} to participant 2"),
+        );
+
+        // Each client's own view matches the server, and neither learns the other's.
+        let view_of = |t: &str, participant: &str| -> Vec<String> {
+            t.lines()
+                .filter(|l| {
+                    l.contains("RTS_ECONOMY_VIEW") && field(l, "participant") == Some(participant)
+                })
+                .map(str::to_owned)
+                .collect()
+        };
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let views_a = view_of(&text_a, "1");
+        let views_b = view_of(&text_b, "2");
+        let last_a = views_a.last().cloned().unwrap_or_default();
+        let last_b = views_b.last().cloned().unwrap_or_default();
+        let final_1 = lines_1.last().map_or(-1, |l| econ_int(l, "available"));
+        let final_2 = lines_2.last().map_or(-1, |l| econ_int(l, "available"));
+        report.verdict(
+            "ECON-P13-VIEW-MATCHES-SERVER",
+            econ_int(&last_a, "available") == final_1 && econ_int(&last_b, "available") == final_2,
+            format!(
+                "server {final_1} and {final_2}; A {} | B {}",
+                last_a.trim(),
+                last_b.trim()
+            ),
+        );
+        let a_leaks = view_of(&text_a, "2").len();
+        let b_leaks = view_of(&text_b, "1").len();
+        let b_spent = views_b.iter().filter(|l| econ_int(l, "spent") != 0).count();
+        report.verdict(
+            "ECON-P14-OWNER-ONLY-VIEW",
+            a_leaks == 0 && b_leaks == 0 && !views_b.is_empty() && b_spent == 0,
+            format!("A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}; {} B views, {b_spent} with spending", views_b.len()),
+        );
+
+        // Repeatability: the normalized sequence, without timing or income interleaving.
+        let trace: String = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") != Some("income"))
+            .map(|l| {
+                format!(
+                    "{} {} queued={}\n",
+                    field(l, "kind").unwrap_or("?"),
+                    econ_int(l, "amount"),
+                    econ_int(l, "queued")
+                )
+            })
+            .chain([format!("training_steps={delta}\n")])
+            .collect();
+        fs::write(evidence.join("economy-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("economy_trace", &evidence.join("economy-trace.txt"));
+        report.artifact(
+            "client_a_results_png",
+            &client_a.screenshot(&evidence, "05-results")?,
+        );
+
+        // The next generation starts clean.
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let starts2: Vec<&str> = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ECONOMY_START") && l.contains(&format!("generation={generation2}"))
+            })
+            .collect();
+        report.verdict(
+            "ECON-P15-NEXT-GENERATION-FRESH",
+            generation2 != generation
+                && starts2.len() == 2
+                && starts2
+                    .iter()
+                    .all(|l| econ_int(l, "available") == ECONOMY_START_CENTS)
+                && !tail.lines().any(|l| l.contains("RTS_ECONOMY_TX")),
+            format!(
+                "generation {generation} then {generation2}: {}",
+                starts2.join(" | ")
+            ),
+        );
+        Ok(())
+    })();
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
+fn economy_limits_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let extra = [
+        "-PolitikaMPUnitScale=15".to_owned(),
+        "-PolitikaMPUnitScaleHold".to_owned(),
+        format!("-PolitikaMPEconomyStartCents={ECONOMY_LIMITS_CENTS}"),
+    ];
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session(options, &extra)?;
+    report.fact("server_command", server.command.join(" "));
+    let result = (|| -> Result<(), String> {
+        launch_options_verdict(
+            report,
+            "ECON-L00-LAUNCH-OPTIONS",
+            &[&server, &client_a, &client_b],
+        );
+        zoom_out(&client_a, 5)?;
+        let mut last = String::new();
+        for index in 0..5 {
+            let (line, _) = economy_key_outcome(
+                &mut client_a,
+                &mut server,
+                None,
+                &[
+                    "RTS_ECONOMY_TX participant=1 kind=train",
+                    &format!("queued={} ", index + 1),
+                ],
+            )?;
+            last = line;
+        }
+        let (full, full_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_REJECT participant=1", "rejection=queue_full"],
+        )?;
+        report.verdict(
+            "ECON-L01-QUEUE-LIMIT",
+            field(&full_client, "rejection") == Some("9") && econ_int(&last, "queued") == 5,
+            format!(
+                "{} | {} | client {}",
+                last.trim(),
+                full.trim(),
+                full_client.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_queue_full_png",
+            &client_a.screenshot(&evidence, "01-queue-full")?,
+        );
+        let spawn = server.wait(
+            &["RTS_PRODUCTION_SPAWN participant=1"],
+            Duration::from_secs(20),
+        )?;
+        let (cap, cap_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_REJECT participant=1", "rejection=unit_cap"],
+        )?;
+        report.verdict(
+            "ECON-L02-UNIT-LIMIT-COUNTS-QUEUE",
+            econ_int(&spawn, "living") == 16 && field(&cap_client, "rejection") == Some("10"),
+            format!(
+                "{} | {} | client {}",
+                spawn.trim(),
+                cap.trim(),
+                cap_client.trim()
+            ),
+        );
+        for remaining in (0..4).rev() {
+            let (refund, _) = economy_key_outcome(
+                &mut client_a,
+                &mut server,
+                Some("shift"),
+                &[
+                    "RTS_ECONOMY_TX participant=1 kind=refund",
+                    &format!("queued={remaining} "),
+                ],
+            )?;
+            last = refund;
+        }
+        let (nothing, nothing_client) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            Some("shift"),
+            &[
+                "RTS_ECONOMY_REJECT participant=1",
+                "rejection=nothing_to_cancel",
+            ],
+        )?;
+        let lines = economy_lines(&server.text(), 1, &generation);
+        let replay = economy_replay(&lines, ECONOMY_LIMITS_CENTS);
+        report.verdict(
+            "ECON-L03-CANCEL-EMPTIES-THE-QUEUE",
+            field(&nothing_client, "rejection") == Some("11") && replay.is_ok(),
+            format!("{} | {} | replay {replay:?}", last.trim(), nothing.trim()),
+        );
+        let spent = econ_int(&last, "spent") - econ_int(&last, "refunded");
+        report.verdict(
+            "ECON-L04-ONE-PRICE-FOR-ONE-UNIT",
+            spent == ECONOMY_PRICE_CENTS,
+            format!(
+                "net spending {spent} after five purchases, four refunds and one unit: {}",
+                last.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_limits_png",
+            &client_a.screenshot(&evidence, "02-after")?,
+        );
+        Ok(())
+    })();
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -12750,6 +13394,22 @@ fn main() {
             "politika.disc.discipline-rout-evidence.v1",
             "discipline-rout",
             discipline_rout_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--economy") {
+        run_dedicated_session(
+            "--economy",
+            "politika.econ.economy-evidence.v1",
+            "economy",
+            economy_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--economy-limits") {
+        run_dedicated_session(
+            "--economy-limits",
+            "politika.econ.economy-limits-evidence.v1",
+            "economy-limits",
+            economy_limits_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--unit-scale") {
