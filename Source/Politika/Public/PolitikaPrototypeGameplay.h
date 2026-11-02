@@ -439,6 +439,8 @@ public:
     // HUD, and only the authority's economy phase changes it. Zero is none, then Resource + 1.
     bool IsCarryingGold() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Gold) + 1; }
     bool IsCarryingFood() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Food) + 1; }
+    // What the selected-unit line calls this order. A load that is not on its way reads as holding.
+    FString GetOrderLabel() const;
     uint8 GetCarriedResourceByte() const { return CarriedResource; }
     void SetCarriedResource(std::optional<politika::economy::Resource> Resource)
     {

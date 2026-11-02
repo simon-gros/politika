@@ -4892,6 +4892,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     APolitikaPrototypeUnit* Hauler = F.AddUnit(HostId, FVector2D(Gold->GetActorLocation().X, Gold->GetActorLocation().Y));
     if (!TestNotNull(TEXT("BD-15 a hauler spawns"), Hauler)
         || !TestTrue(TEXT("BD-15 the hauler joins the account"), F.Match->Economy.AddHarvester(HostId, Hauler->GetStableId()))) return false;
+    TestEqual(TEXT("BD-17 an empty hauler is not holding"), Hauler->GetOrderLabel(), FString(TEXT("Idle")));
     const auto Park = [](APolitikaPrototypeUnit* Unit, const APolitikaPrototypeStructure* Structure)
     {
         Unit->StopOrder();
@@ -4917,6 +4918,10 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
     TestTrue(TEXT("BD-16 the same producer is not asked again"),
         Haul && Haul->phase == pe::HarvesterPhase::Waiting && Haul->refusedDepot == OwnProducer->GetStableId() && Haul->load == pe::kLoadGold);
+    TestEqual(TEXT("BD-17 a held load reads as holding gold"), Hauler->GetOrderLabel(), FString(TEXT("Holding gold")));
+    Hauler->CurrentOrder = EPolitikaPrototypeOrder::Move;
+    TestEqual(TEXT("BD-17 on the way it still reads as moving"), Hauler->GetOrderLabel(), FString(TEXT("Moving")));
+    Hauler->CurrentOrder = EPolitikaPrototypeOrder::Stop;
     Park(Hauler, OwnProducer);
     F.Step();
     Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());

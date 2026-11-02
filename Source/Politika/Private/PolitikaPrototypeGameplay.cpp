@@ -347,6 +347,31 @@ void APolitikaPrototypeUnit::ClearCapture()
     CaptureSteps = 0;
 }
 
+FString APolitikaPrototypeUnit::GetOrderLabel() const
+{
+    if (IsRouted()) return TEXT("ROUTED");
+    if (GetCaptureTarget()) return TEXT("Capturing");
+    // A carried load that is not currently driving reads as held, not as a stop.
+    if (GetCurrentOrder() != EPolitikaPrototypeOrder::Move)
+    {
+        if (IsCarryingGold()) return TEXT("Holding gold");
+        if (IsCarryingFood()) return TEXT("Holding food");
+    }
+    switch (GetCurrentOrder())
+    {
+        case EPolitikaPrototypeOrder::Move: return TEXT("Moving");
+        case EPolitikaPrototypeOrder::Attack: return TEXT("Attacking");
+        case EPolitikaPrototypeOrder::AttackMove: return TEXT("Attack-move");
+        case EPolitikaPrototypeOrder::Stop: return TEXT("Stopped");
+        case EPolitikaPrototypeOrder::Guard: return TEXT("Guarding");
+        case EPolitikaPrototypeOrder::Grenade:
+        case EPolitikaPrototypeOrder::Reload:
+        case EPolitikaPrototypeOrder::Sprint:
+        case EPolitikaPrototypeOrder::Idle: break;
+    }
+    return TEXT("Idle");
+}
+
 void APolitikaPrototypeUnit::StopOrder()
 {
     GrenadeWindup = 0;
@@ -4836,30 +4861,14 @@ void APolitikaPrototypeHUD::DrawHUD()
         }
         else if (Selected)
         {
-            const TCHAR* Order = TEXT("Idle");
-            switch (Selected->GetCurrentOrder())
-            {
-                case EPolitikaPrototypeOrder::Move: Order = TEXT("Moving"); break;
-                case EPolitikaPrototypeOrder::Attack: Order = TEXT("Attacking"); break;
-                case EPolitikaPrototypeOrder::AttackMove: Order = TEXT("Attack-move"); break;
-                case EPolitikaPrototypeOrder::Stop: Order = TEXT("Stopped"); break;
-                case EPolitikaPrototypeOrder::Guard: Order = TEXT("Guarding"); break;
-                case EPolitikaPrototypeOrder::Grenade:
-                case EPolitikaPrototypeOrder::Reload:
-                case EPolitikaPrototypeOrder::Sprint:
-                case EPolitikaPrototypeOrder::Idle: break;
-            }
-            // DISC-D4: a routed unit's own movement is its flight, not an order.
-            // A capture is not an order; without this the selected unit reads as Stopped.
-            if (Selected->IsRouted()) Order = TEXT("ROUTED");
-            else if (Selected->GetCaptureTarget()) Order = TEXT("Capturing");
+            const FString Order = Selected->GetOrderLabel();
             const TCHAR* Autonomy = Selected->IsRouted() || Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Chasing ? TEXT(" (engaging)")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Returning ? TEXT(" (returning to post)") : TEXT("");
             // Resolve (DISC-D1): Discipline on military units, Morale on civilians, with its trend.
             const politika::discipline::Trend ResolveTrend = Selected->GetResolveTrend();
             DrawText(FString::Printf(TEXT("%s    HP %d / %d    %s%s    STANCE %s%s    %s %d%s"), *Selected->GetUnitName().ToString(),
-                Selected->GetHealth(), Selected->GetMaxHealth(), Order, Autonomy, *PolitikaStanceLabel(Selected->GetEffectiveStance()),
+                Selected->GetHealth(), Selected->GetMaxHealth(), *Order, Autonomy, *PolitikaStanceLabel(Selected->GetEffectiveStance()),
                 Selected->GetStanceOverride() ? TEXT(" (own)") : TEXT(""),
                 Selected->IsMilitary() ? TEXT("DISCIPLINE") : TEXT("MORALE"),
                 politika::discipline::DisplayPoints(Selected->GetResolveMilli()),
