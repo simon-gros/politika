@@ -227,8 +227,24 @@ void APolitikaPrototypeStructure::ApplyTint()
 bool APolitikaPrototypeMatch::IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const
 {
     if (!bFogOfWar) return true;
+    // Unbound connections receive no structure. Everyone else gets what that participant can see.
     const uint32 ParticipantId = GetBoundParticipantId(Cast<APlayerController>(RealViewer));
-    return ParticipantId != 0 && Structure && GetTeamForParticipant(ParticipantId) == Structure->GetTeamId();
+    return ParticipantId != 0 && IsStructureObservedByParticipant(Structure, ParticipantId);
+}
+
+void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
+{
+    if (bLocalFogApplied && bLocalFogHidden == bHidden) return;
+    const bool bChanged = bLocalFogApplied && bLocalFogHidden != bHidden;
+    bLocalFogApplied = true;
+    bLocalFogHidden = bHidden;
+    // Component state only. Actor bHidden would replicate and hide the mesh for every connection.
+    if (Body) Body->SetHiddenInGame(bHidden, true);
+#if !UE_BUILD_SHIPPING
+    if (bChanged)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("MP_HOST_STRUCTURE_FOG entity=%llu owner=%u team=%u hidden=%d x=%.1f y=%.1f"),
+            StableId, OwnerPlayer, static_cast<uint32>(TeamId), bHidden ? 1 : 0, GetActorLocation().X, GetActorLocation().Y);
+#endif
 }
 
 // ----------------------------------------------------------------------------

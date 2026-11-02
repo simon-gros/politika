@@ -703,9 +703,9 @@ private:
     UPROPERTY(Replicated) uint8 CapturingTeamId = 0;
 };
 
-// A participant's fixed starting producer (ECON-E1) or generator (ECON-E2). A placeholder block: not
-// selectable or attackable, no collision and no navigation footprint. Only its own team receives it while fog
-// of war applies, so it reveals no start position.
+// A participant's fixed starting producer (ECON-E1) or generator (ECON-E2), or a resource source.
+// A placeholder block: not selectable, no navigation footprint. Its own team always receives it. Under fog a
+// hostile building or source is sent only while that viewer's team can see it, so a start stays hidden.
 UCLASS()
 class POLITIKA_API APolitikaPrototypeStructure final : public AActor
 {
@@ -734,6 +734,8 @@ public:
     bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     uint8 GetTeamId() const { return TeamId; }
+    void SetLocalFogHidden(bool bHidden);
+    bool IsLocalFogHidden() const { return bLocalFogHidden; }
 protected:
     virtual void BeginPlay() override;
 private:
@@ -748,6 +750,8 @@ private:
     UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
     UPROPERTY(Replicated) uint8 TeamId = 0;
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
+    bool bLocalFogHidden = false;
+    bool bLocalFogApplied = false;
     TWeakObjectPtr<APolitikaPrototypeMatch> AuthorityMatch;
 };
 
@@ -829,8 +833,8 @@ public:
     // replication, target admission and acquisition. Offline play keeps full vision.
     bool IsFogOfWarEnabled() const { return bFogOfWar; }
     bool IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
-    // Own buildings are always seen. A hostile building is seen when one of this participant's
-    // living units is within sight of it. Replication of the mesh stays own-team only.
+    // Own buildings are always seen. A hostile building or source is seen when any living unit of
+    // this participant's team is within sight of it.
     bool IsStructureObservedByParticipant(const APolitikaPrototypeStructure* Structure, uint32 PlayerId) const;
     // Shot presentation for one viewer participant: the exact target point only when the
     // viewer observes the target, otherwise a point along the shooter's facing, or nothing
@@ -1209,6 +1213,7 @@ private:
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerBuildingAttackTest;
+    friend class FPolitikaMultiplayerBuildingSightTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;

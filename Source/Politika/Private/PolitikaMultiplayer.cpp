@@ -349,6 +349,11 @@ void APolitikaPrototypeMatch::ApplyLocalFogPresentation()
         if (Unit->IsLocalFogHidden()) NoteLocalContactWithdrawn(Unit, true, Unit->GetLastLocalFogVisibleLocation());
         else NoteLocalContactObserved(Unit);
     }
+    for (APolitikaPrototypeStructure* Structure : Structures)
+    {
+        if (!IsValid(Structure)) continue;
+        Structure->SetLocalFogHidden(!IsStructureObservedByParticipant(Structure, LocalRuntimePlayerId));
+    }
 }
 
 bool APolitikaPrototypeMatch::IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const
@@ -467,7 +472,7 @@ bool APolitikaPrototypeMatch::IsStructureObservedByParticipant(const APolitikaPr
     if (Team != politika::rules::kNoTeam && Team == Structure->GetTeamId()) return true;
     for (const APolitikaPrototypeUnit* Unit : Units)
     {
-        if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetOwnerPlayer() != PlayerId) continue;
+        if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetTeamId() != Team) continue;
         if (FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= Unit->GetSightRadius()) return true;
     }
     return false;

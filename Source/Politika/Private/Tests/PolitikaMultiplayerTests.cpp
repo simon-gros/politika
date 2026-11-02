@@ -4613,4 +4613,74 @@ bool FPolitikaMultiplayerBuildingAttackTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingSightTest,
+    "Politika.RTS.Multiplayer.BuildingSight",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// A hostile building or source stays off a connection until that viewer's team can see it, then it
+// is sent and the listen host draws it. Walking away hides it again. Its owner always has it.
+bool FPolitikaMultiplayerBuildingSightTest::RunTest(const FString& Parameters)
+{
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    APolitikaPrototypeStructure* EnemyGenerator = nullptr;
+    APolitikaPrototypeStructure* OwnGenerator = nullptr;
+    APolitikaPrototypeStructure* EnemySource = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure) continue;
+        if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsGenerator()) EnemyGenerator = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsGenerator()) OwnGenerator = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsSource()) EnemySource = Structure;
+    }
+    if (!TestNotNull(TEXT("The enemy has a generator"), EnemyGenerator)
+        || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+
+    TestTrue(TEXT("BS-01 the owner receives its generator"), OwnGenerator->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("BS-01 the enemy does not receive the host generator"), OwnGenerator->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+    TestTrue(TEXT("BS-01 the enemy receives its own generator"), EnemyGenerator->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+    TestFalse(TEXT("BS-01 the host does not receive a hidden enemy generator"), EnemyGenerator->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    F.Step();
+    TestTrue(TEXT("BS-02 the host draws its own generator"), !OwnGenerator->IsLocalFogHidden());
+    TestTrue(TEXT("BS-02 the host does not draw the enemy generator"), EnemyGenerator->IsLocalFogHidden());
+
+    const FVector2D At(EnemyGenerator->GetActorLocation().X, EnemyGenerator->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Scout = F.AddUnit(HostId, At + FVector2D(80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BS-03 the scout spawns"), Scout)) return false;
+    TestTrue(TEXT("BS-03 sight makes the enemy generator relevant"), EnemyGenerator->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("BS-03 the enemy still does not receive the host generator"), OwnGenerator->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+    F.Step();
+    TestFalse(TEXT("BS-03 the host draws the generator it can see"), EnemyGenerator->IsLocalFogHidden());
+
+    if (EnemySource)
+    {
+        const FVector2D SourceAt(EnemySource->GetActorLocation().X, EnemySource->GetActorLocation().Y);
+        if (FVector::Dist2D(Scout->GetActorLocation(), EnemySource->GetActorLocation()) > Scout->GetSightRadius())
+            TestFalse(TEXT("BS-04 an unseen enemy source stays hidden"), EnemySource->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+        Scout->SetActorLocation(FVector(SourceAt.X + 80.0, SourceAt.Y, Scout->GetActorLocation().Z));
+        TestTrue(TEXT("BS-04 a seen enemy source is sent"), EnemySource->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+        Scout->SetActorLocation(FVector(At.X + 80.0, At.Y, Scout->GetActorLocation().Z));
+    }
+
+    Scout->SetActorLocation(FVector(At.X + 2500.0, At.Y, Scout->GetActorLocation().Z));
+    TestFalse(TEXT("BS-05 walking out of sight drops relevancy"), EnemyGenerator->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    F.Step();
+    TestTrue(TEXT("BS-05 the host stops drawing it"), EnemyGenerator->IsLocalFogHidden());
+    APolitikaPrototypePlayerController* Unbound = F.AddRemote();
+    if (!TestNotNull(TEXT("BS-06 an extra controller spawns"), Unbound)) return false;
+    TestFalse(TEXT("BS-06 an unbound connection receives nothing"), EnemyGenerator->IsNetRelevantFor(Unbound, Unbound, FVector::ZeroVector));
+    return true;
+}
+
 #endif
