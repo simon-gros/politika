@@ -28,9 +28,9 @@ inline constexpr Kilowatts kProducerLoadKw = 40;
 // the grid but draws no load; one point of damage does not.
 inline constexpr std::int32_t kGeneratorHealth = 100;
 inline constexpr std::int32_t kProducerHealth = 200;
-// Fixture, not balance. A unit already in this radius finishes a capture in this many 20 Hz steps.
+// Fixture, not balance. Three seconds at 20 Hz, long enough to walk away or be hit.
 inline constexpr float kCaptureRangeCm = 200.0f;
-inline constexpr std::int32_t kCaptureSteps = 4;
+inline constexpr std::int32_t kCaptureSteps = 60;
 
 struct Building {
     BuildingId id = 0;

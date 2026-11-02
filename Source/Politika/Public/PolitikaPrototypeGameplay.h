@@ -455,6 +455,7 @@ private:
     friend class APolitikaPrototypeMatch;
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FPolitikaInfantryMechanicsTest;
+    friend class FPolitikaMultiplayerBuildingDemolishTest;
     friend class FPolitikaMultiplayerParticipantBindingTest;
     friend class FPolitikaMultiplayerCommandIntakeTest;
     friend class FPolitikaMultiplayerAuthorityOnlySimulationTest;

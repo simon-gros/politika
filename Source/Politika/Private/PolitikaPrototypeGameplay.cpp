@@ -1020,6 +1020,14 @@ int32 APolitikaPrototypeUnit::ApplyPendingDamage()
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_HEALTH_CHANGED unit=%llu before=%d after=%d"),
             StableId, HealthBefore, Health);
 #endif
+    if (AppliedDamage > 0 && CaptureTarget)
+    {
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_CAPTURE phase=hit unit=%llu health=%d"),
+            StableId, Health);
+#endif
+        ClearCapture();
+    }
     if (Health == 0) { bBlastDeath = bPendingBlastDamage; StopOrder(); }
     bPendingBlastDamage = false;
     return AppliedDamage;

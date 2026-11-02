@@ -4920,7 +4920,14 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     F.Step();
     TestEqual(TEXT("BD-09 the hold advances"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Enemy producer  %d / %d  \u00b7  capturing 1 / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth, pw::kCaptureSteps));
-    F.Step(pw::kCaptureSteps - 1);
+    const int32 HealthBeforeHit = Captor->GetHealth();
+    Captor->ReceiveWeaponHit(10.0f, nullptr, false);
+    F.Step();
+    TestTrue(TEXT("BD-12 a hit lands"), Captor->GetHealth() < HealthBeforeHit);
+    TestNull(TEXT("BD-12 a hit cancels the hold"), Captor->GetCaptureTarget());
+    TestEqual(TEXT("BD-12 the producer is still the enemy's"), EnemyProducer->GetOwnerPlayer(), EnemyId);
+    TestTrue(TEXT("BD-04 the hold starts again"), F.Match->BeginCapture(Captor, EnemyProducer));
+    F.Step(pw::kCaptureSteps);
     TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
     TestEqual(TEXT("BD-08 the captured producer reads as yours"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Your producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
