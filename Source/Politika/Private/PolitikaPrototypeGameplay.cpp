@@ -4706,6 +4706,24 @@ void APolitikaPrototypeHUD::DrawHUD()
                 Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *FoodCacheText, *PurchaseText);
         DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
+        if (APolitikaPrototypePlayerController* CursorOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
+        {
+            FHitResult BuildingHit;
+            if (CursorOwner->GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, BuildingHit))
+            {
+                if (const APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(BuildingHit.GetActor()))
+                {
+                    const uint32 ViewerId = ActiveMatch->HasAuthority()
+                        ? ActiveMatch->GetBoundParticipantId(CursorOwner) : CursorOwner->GetAssignedRuntimePlayerId();
+                    const FString BuildingLine = ActiveMatch->BuildingCursorText(Structure, ViewerId);
+                    if (!BuildingLine.IsEmpty())
+                    {
+                        DrawText(BuildingLine, FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+                        Y += 26.0f * UiScale;
+                    }
+                }
+            }
+        }
         // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.
         if (Economy.bHasGoldSource)
         {

@@ -4856,6 +4856,16 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     if (!TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)
         || !TestNotNull(TEXT("The host has a producer"), OwnProducer)
         || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+    TestEqual(TEXT("BD-08 your plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString(TEXT("Your generator  100 / 100  \u00b7  online")));
+    TestEqual(TEXT("BD-08 one hit takes the plant offline"), F.Match->DamageOwnedBuilding(OwnGenerator, 1), 1);
+    TestEqual(TEXT("BD-08 a damaged plant reads as offline"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString(TEXT("Your generator  99 / 100  \u00b7  offline")));
+    TestTrue(TEXT("BD-08 repair brings the plant back"), F.Match->RepairOwnedBuilding(OwnGenerator));
+    TestEqual(TEXT("BD-08 a repaired plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString(TEXT("Your generator  100 / 100  \u00b7  online")));
+    TestTrue(TEXT("BD-08 an unseen enemy building is not described"), F.Match->BuildingCursorText(EnemyProducer, HostId).IsEmpty());
+    if (Source) TestTrue(TEXT("BD-08 a resource is not described"), F.Match->BuildingCursorText(Source, HostId).IsEmpty());
 
     const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
     const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
@@ -4876,6 +4886,8 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     const pe::Account* Host = F.Match->GetEconomy().Find(HostId);
     TestTrue(TEXT("BD-01 the queue is refunded once"), Host && Host->queue.empty() && Host->refunded == Price && Host->available == Before + Price);
     TestFalse(TEXT("BD-01 a dead producer is drawn grey"), OwnProducer->GetPresentedTint().Equals(ProducerTint));
+    TestEqual(TEXT("BD-08 a dead producer reads as destroyed"), F.Match->BuildingCursorText(OwnProducer, HostId),
+        FString(TEXT("Your producer  destroyed")));
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("BD-07 a dead producer draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kGeneratorAuxiliaryKw));
@@ -4889,9 +4901,13 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     const FVector2D ProducerAt(EnemyProducer->GetActorLocation().X, EnemyProducer->GetActorLocation().Y);
     APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, ProducerAt + FVector2D(80.0, 0.0), 600.0f);
     if (!TestNotNull(TEXT("BD-04 the captor spawns"), Captor)) return false;
+    TestEqual(TEXT("BD-08 a seen enemy producer is described"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+        FString::Printf(TEXT("Enemy producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
     TestTrue(TEXT("BD-04 the freed slot can capture"), F.Match->BeginCapture(Captor, EnemyProducer));
     F.Step(pw::kCaptureSteps);
     TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("BD-08 the captured producer reads as yours"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+        FString::Printf(TEXT("Your producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
 
     const FLinearColor GeneratorTint = OwnGenerator->GetTint();
     TestTrue(TEXT("BD-05 the host demolishes its generator"), F.Match->DemolishOwnedBuilding(OwnGenerator, HostId));

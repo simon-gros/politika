@@ -353,6 +353,27 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
     }
 }
 
+FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
+{
+    if (!Structure || !Structure->IsBuilding() || ViewerId == 0) return FString();
+    if (IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, ViewerId)) return FString();
+    const bool bOurs = Structure->GetOwnerPlayer() == ViewerId;
+    const uint8 ViewerTeam = GetTeamForParticipant(ViewerId);
+    const bool bAllied = !bOurs && ViewerTeam != politika::rules::kNoTeam && ViewerTeam == Structure->GetTeamId();
+    const TCHAR* Who = bOurs ? TEXT("Your") : bAllied ? TEXT("Allied") : TEXT("Enemy");
+    const TCHAR* Kind = Structure->IsProducer() ? TEXT("producer") : TEXT("generator");
+    if (!Structure->IsAlive()) return FString::Printf(TEXT("%s %s  destroyed"), Who, Kind);
+    const int32 MaxHealth = Structure->IsProducer() ? politika::power::kProducerHealth : politika::power::kGeneratorHealth;
+    FString State;
+    if (Structure->IsGenerator())
+    {
+        const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer());
+        const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
+        State = Plant && Plant->generating ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
+    }
+    return FString::Printf(TEXT("%s %s  %d / %d%s"), Who, Kind, Structure->GetHealth(), MaxHealth, *State);
+}
+
 bool APolitikaPrototypeMatch::DemolishOwnedBuilding(APolitikaPrototypeStructure* Structure, uint32 ParticipantId)
 {
     if (!HasAuthority() || !Structure || !Structure->IsBuilding() || !Structure->IsAlive()) return false;
