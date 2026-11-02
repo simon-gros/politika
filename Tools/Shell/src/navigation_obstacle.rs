@@ -348,6 +348,14 @@ fn hash(path: &Path) -> Result<String, String> {
         .ok_or("no hash")?
         .into())
 }
+/// Development-only navigation switches must be recognized by the bootstrap launch-option parser.
+fn require_recognized_switches(log: &str, name: &str) -> Result<(), String> {
+    require(
+        !log.contains("\"code\":\"InvalidLaunchOptions\""),
+        &format!("{name} raised InvalidLaunchOptions"),
+    )
+}
+
 fn launch(binary: &Path, evidence: &Path, name: &str, scenario: bool) -> Result<String, String> {
     launch_with_schedule(binary, evidence, name, scenario, None)
 }
@@ -401,6 +409,7 @@ fn launch_scenario(
             Ok(Some(status)) => {
                 let text = read(&log)?;
                 require(status.success(), &format!("{name} crashed/exited {status}"))?;
+                require_recognized_switches(&text, name)?;
                 if !scenario {
                     require(
                         text.contains("LoadMap: /Game/Maps/MainMenu")
@@ -656,6 +665,7 @@ fn launch_disconnected(binary: &Path, evidence: &Path, name: &str) -> Result<Str
                     log.display()
                 ),
             )?;
+            require_recognized_switches(&text, name)?;
             fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
                 .map_err(|e| e.to_string())?;
             return Ok(text);
@@ -700,6 +710,7 @@ fn launch_unprojectable(binary: &Path, evidence: &Path, name: &str) -> Result<St
                     log.display()
                 ),
             )?;
+            require_recognized_switches(&text, name)?;
             fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
                 .map_err(|e| e.to_string())?;
             return Ok(text);
@@ -745,6 +756,7 @@ fn launch_projection_displacement(
                 status.success(),
                 &format!("{name} process outcome {status}; log={}", log.display()),
             )?;
+            require_recognized_switches(&text, name)?;
             fs::copy(&log, evidence.join(format!("{name}-runtime.log")))
                 .map_err(|e| e.to_string())?;
             return Ok(text);
@@ -1301,6 +1313,12 @@ mod tests {
         assert!(touches([-700., -892.5, 42.], [800., -892.5, 42.], min, max));
         assert!(!touches([-700., -950., 42.], [800., -950., 42.], min, max));
     }
+    #[test]
+    fn invalid_launch_options_fail_the_launch() {
+        assert!(require_recognized_switches("\"event\":\"bootstrap\"", "run").is_ok());
+        assert!(require_recognized_switches("\"code\":\"InvalidLaunchOptions\"", "run").is_err());
+    }
+
     #[test]
     fn missing_or_fabricated_terminal_pass_is_rejected() {
         assert!(verify("").is_err());

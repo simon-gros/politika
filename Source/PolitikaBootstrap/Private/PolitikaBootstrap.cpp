@@ -38,10 +38,19 @@ namespace
         TEXT("-PolitikaMPEconomyStartCents="),
         TEXT("-PolitikaMPPowerOutage="),
         TEXT("-PolitikaMPEconomyStartFood="),
+        TEXT("-PolitikaMPDisciplineRoutSeed="),
+        TEXT("-PolitikaMPDisciplineDoctrine="),
+        TEXT("-PolitikaNavigationFailure="),
+        TEXT("-PolitikaNavigationSchedule="),
+        TEXT("-PolitikaNavigationInterruption="),
     };
     const TCHAR* const DevelopmentFlagSwitches[] = {
         TEXT("-PolitikaMPProbe"),
         TEXT("-PolitikaMPUnitScaleHold"),
+        TEXT("-PolitikaMPFormationCasualty"),
+        TEXT("-PolitikaMPStanceProbe"),
+        TEXT("-PolitikaMPDisciplineCasualties"),
+        TEXT("-PolitikaMPDisciplineRoutWitness"),
     };
 
     bool IsDevelopmentSwitch(const FString& Token)

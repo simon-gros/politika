@@ -747,9 +747,10 @@ fn client_args(options: &Options, rendered: bool, probe: bool, rematch: bool) ->
 /// parser: none may surface as an InvalidLaunchOptions MainMenu recovery issue.
 fn launch_options_verdict(report: &mut Report, id: &str, games: &[&Game]) {
     let mut detail = Vec::new();
+    // Every session passes at least the test fixture switch; none means nothing was checked.
     let mut pass = games
         .iter()
-        .any(|g| g.command.iter().any(|a| a.starts_with("-PolitikaMP")));
+        .any(|g| g.command.iter().any(|a| a.starts_with("-Politika")));
     for game in games {
         let text = game.text();
         let booted = text.contains("\"event\":\"bootstrap\"");
@@ -4887,6 +4888,11 @@ fn fog_memory_session(options: &DedicatedOptions, report: &mut Report) -> Result
         Ok(path) => report.artifact("client_a_video", &path),
         Err(error) => report.fact("client_a_video_error", error),
     }
+    launch_options_verdict(
+        report,
+        "MP2-FOG-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     client_a.stop();
     client_b.stop();
     server.stop();
@@ -5396,6 +5402,11 @@ fn engagement_session(options: &DedicatedOptions, report: &mut Report) -> Result
             Err(error) => report.fact(&format!("{name}_error"), error),
         }
     }
+    launch_options_verdict(
+        report,
+        "MP2-ENGAGE-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     client_a.stop();
     client_b.stop();
     server.stop();
@@ -5706,6 +5717,9 @@ fn unit_scale_run(
     }
     let admission = server.wait(&["MP_UNIT_SCALE_ADMISSION"], Duration::from_secs(30));
     load("end", report);
+    let mut launched: Vec<&Game> = vec![&server];
+    launched.extend(clients.iter());
+    launch_options_verdict(report, &id("DEV-LAUNCH-OPTIONS"), &launched);
     let server_text = server.text();
     for client in &mut clients {
         client.stop();
@@ -5958,6 +5972,7 @@ fn unit_scale_refusal(options: &UnitScaleOptions, report: &mut Report) -> Result
             && no_session,
         format!("exit={status:?}; no session/units={no_session}"),
     );
+    launch_options_verdict(report, "UNITSCALE-INVALID-DEV-LAUNCH-OPTIONS", &[&server]);
     report.artifact("invalid_scale_server_log", &server.log);
     server.stop();
     Ok(())
@@ -6441,6 +6456,11 @@ fn group_orders_session(options: &DedicatedOptions, report: &mut Report) -> Resu
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "GRP-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -6940,6 +6960,11 @@ fn control_groups_session(options: &DedicatedOptions, report: &mut Report) -> Re
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "CG-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -7739,6 +7764,11 @@ fn group_move_shape_session(options: &DedicatedOptions, report: &mut Report) -> 
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "FORM-SHAPE-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -7977,6 +8007,11 @@ fn pointer_stall_session(options: &DedicatedOptions, report: &mut Report) -> Res
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "PS-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -8929,6 +8964,11 @@ fn group_move_facing_session(
     let path = evidence.join("normalized.txt");
     let _ = fs::write(&path, normalized.join("\n") + "\n");
     report.artifact("normalized_txt", &path);
+    launch_options_verdict(
+        report,
+        "FORM-FD-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -10036,6 +10076,11 @@ fn formation_lifecycle_session(
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "FORM-F3-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -10588,6 +10633,11 @@ fn formation_stance_session(options: &DedicatedOptions, report: &mut Report) -> 
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "FORM-F4-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -11104,6 +11154,11 @@ fn formation_discipline_session(
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "DISC-D1-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -11676,6 +11731,11 @@ fn discipline_stress_session(
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "DISC-D2-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -12260,6 +12320,11 @@ fn discipline_effects_session(
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "DISC-D3-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -12783,6 +12848,11 @@ fn discipline_rout_session(options: &DedicatedOptions, report: &mut Report) -> R
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "DISC-D4-DEV-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     report.artifact("server_log", &server.log);
     report.artifact("client_a_log", &client_a.log);
     report.artifact("client_b_log", &client_b.log);
@@ -13324,6 +13394,11 @@ fn economy_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "ECON-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     client_a.stop();
     client_b.stop();
     server.stop();
@@ -13685,6 +13760,11 @@ fn power_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "PWR-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     client_a.stop();
     client_b.stop();
     server.stop();
@@ -14120,6 +14200,11 @@ fn food_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         );
         Ok(())
     })();
+    launch_options_verdict(
+        report,
+        "FOOD-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
     client_a.stop();
     client_b.stop();
     server.stop();
