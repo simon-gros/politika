@@ -4910,6 +4910,13 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
         Haul && Haul->load == pe::kLoadGold && F.Match->GetEconomy().Find(HostId)->goldHeld == 0
             && (Haul->phase == pe::HarvesterPhase::ToBase || Haul->phase == pe::HarvesterPhase::Waiting))) return false;
     F.Step();
+    Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    TestTrue(TEXT("BD-16 a failed trip home remembers that producer"),
+        Haul && Haul->phase == pe::HarvesterPhase::Waiting && Haul->refusedDepot == OwnProducer->GetStableId() && Haul->load == pe::kLoadGold);
+    F.Step();
+    Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    TestTrue(TEXT("BD-16 the same producer is not asked again"),
+        Haul && Haul->phase == pe::HarvesterPhase::Waiting && Haul->refusedDepot == OwnProducer->GetStableId() && Haul->load == pe::kLoadGold);
     Park(Hauler, OwnProducer);
     F.Step();
     Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());

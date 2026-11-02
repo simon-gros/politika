@@ -1987,6 +1987,31 @@ int main() {
             assert(Step.delivered == pe::kLoadGold && D.goldHeld == pe::kLoadGold && D.goldSource.delivered == pe::kLoadGold && D.GoldReconciles());
         }
 
+        // A failed trip home remembers that producer. The same one is not asked again. A different
+        // living producer is. A player's order is not pulled along by either.
+        {
+            pe::Ledger Retry;
+            assert(Retry.AddParticipant(1, pe::kStartingCents, true, 200) && Retry.SetSource(1, pe::Resource::Gold, pe::kLoadGold));
+            const pe::Account& R = *Retry.Find(1);
+            assert(Hire(Retry, 1, 8));
+            Run(Retry, 1, 8, AtSource, pe::kHarvesterLoadSteps + 1);
+            const pe::Harvester* RH = Retry.FindHarvester(1, 8);
+            assert(RH->phase == HarvesterPhase::ToBase && RH->load == pe::kLoadGold);
+            pe::HarvesterSituation Home = Driving;
+            Home.moving = false;
+            Home.hasDepot = true;
+            Home.depotId = 11;
+            Step = Retry.StepHarvester(1, 8, Home);
+            assert(Step.startedWaiting && !Step.goToBase && RH->phase == HarvesterPhase::Waiting && RH->refusedDepot == 11 && RH->load == pe::kLoadGold && R.goldHeld == 0);
+            assert(!Retry.StepHarvester(1, 8, Home).goToBase && RH->phase == HarvesterPhase::Waiting);
+            Home.depotId = 22;
+            Step = Retry.StepHarvester(1, 8, Home);
+            assert(Step.goToBase && Step.stoppedWaiting && RH->phase == HarvesterPhase::ToBase && RH->load == pe::kLoadGold);
+            assert(Retry.DetachHarvester(1, 8) && RH->released && RH->phase == HarvesterPhase::Waiting);
+            Home.depotId = 33;
+            assert(!Retry.StepHarvester(1, 8, Home).goToBase && RH->phase == HarvesterPhase::Waiting && RH->load == pe::kLoadGold && R.goldHeld == 0);
+        }
+
         // One lot: gold out and net dollars in, once.
         pe::Ledger Seller;
         assert(Seller.AddParticipant(1, pe::kStartingCents, true, 200) && Seller.SetSource(1, pe::Resource::Gold, 30));

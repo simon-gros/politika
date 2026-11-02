@@ -1012,6 +1012,7 @@ void APolitikaPrototypeMatch::RunHarvesters(uint64 Step)
             else if (Near(Unit, FoodActor, kGoldPickupRadiusCm)) Situation.atSource = pe::Resource::Food;
             Situation.atBase = Near(Unit, Depot, kGoldDepotRadiusCm);
             Situation.hasDepot = Depot != nullptr;
+            Situation.depotId = Depot ? Depot->GetStableId() : 0;
             // Stop stays the current order after a player's X or a failed route; arriving ends in Idle.
             Situation.moving = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Move;
             Situation.halted = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop;

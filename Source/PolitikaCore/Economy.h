@@ -253,6 +253,10 @@ struct Harvester {
     Resource loadKind = Resource::Gold;
     Gold load = 0;
     std::uint32_t remainingSteps = 0;
+    // The living producer a trip home already failed to reach. A different one is worth another trip.
+    UnitId refusedDepot = 0;
+    // Set when a player's order took it off the routine, so a new producer does not pull it back.
+    bool released = false;
 };
 
 // Where a harvester stands this step, as the coordinator measured it.
@@ -265,6 +269,8 @@ struct HarvesterSituation {
     // False only when the coordinator has no living producer to unload at. Existing callers
     // that do not say still have one.
     bool hasDepot = true;
+    // Which living producer that is. Zero when the caller does not name one.
+    UnitId depotId = 0;
 };
 
 // What one harvester did in one step. goToSource and goToBase ask the coordinator for a move.
@@ -473,6 +479,7 @@ public:
         if (!harvester || harvester->phase == HarvesterPhase::Waiting) return false;
         harvester->phase = HarvesterPhase::Waiting;
         harvester->remainingSteps = 0;
+        harvester->released = true;
         return true;
     }
 
@@ -565,7 +572,13 @@ public:
             case HarvesterPhase::ToBase:
                 if (!situation.hasDepot) holdForDepot();
                 else if (situation.atBase) beginUnloading();
-                else if (!situation.moving) wait();
+                else if (!situation.moving) {
+                    // A failed route is already Stop by the time this runs. A player's stop left the
+                    // routine earlier, so this is the trip that could not reach the producer.
+                    harvester->released = false;
+                    harvester->refusedDepot = situation.depotId;
+                    wait();
+                }
                 break;
             case HarvesterPhase::Unloading: {
                 if (!situation.hasDepot) {
@@ -599,12 +612,19 @@ public:
                 if (harvester->load > 0 && situation.atBase) {
                     beginUnloading();
                     result.stoppedWaiting = true;
+                } else if (harvester->load > 0 && situation.hasDepot && !harvester->released
+                    && situation.depotId != 0 && situation.depotId != harvester->refusedDepot) {
+                    goHome();
+                    result.stoppedWaiting = true;
                 } else if (situation.atSource) {
                     const Resource here = *situation.atSource;
+                    const bool refusedThisDepot = situation.depotId != 0 && situation.depotId == harvester->refusedDepot;
                     if (harvester->load > 0 && (harvester->loadKind != here || harvester->load >= LoadSize(here))) {
-                        harvester->target = here;
-                        goHome();
-                        result.stoppedWaiting = true;
+                        if (!refusedThisDepot) {
+                            harvester->target = here;
+                            goHome();
+                            result.stoppedWaiting = true;
+                        }
                     } else if (account->Source(here).remaining > 0) {
                         harvester->target = here;
                         beginLoading();
