@@ -805,8 +805,12 @@ void APolitikaPrototypeMatch::SpawnStartingHarvester(uint32 ParticipantId)
 
 const APolitikaPrototypeStructure* APolitikaPrototypeMatch::FindStructureOf(uint32 ParticipantId) const
 {
+    // The withdrawn husk stays in the list so the ledger can remember it. Delivery and new
+    // units use the living producer, including one taken from the other side.
     for (const APolitikaPrototypeStructure* Structure : Structures)
-        if (IsValid(Structure) && Structure->IsProducer() && Structure->GetOwnerPlayer() == ParticipantId) return Structure;
+        if (IsValid(Structure) && Structure->IsProducer() && Structure->IsAlive() && !Structure->IsWithdrawn()
+            && Structure->GetOwnerPlayer() == ParticipantId)
+            return Structure;
     return nullptr;
 }
 

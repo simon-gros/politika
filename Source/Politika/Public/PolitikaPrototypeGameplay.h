@@ -1228,6 +1228,7 @@ private:
         politika::economy::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued, int32 GoldSold = 0);
     void RejectEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent, uint32 ParticipantId,
         politika::economy::EconomyRejection Rejection);
+    // The living producer for this participant. A withdrawn husk is not a depot.
     const APolitikaPrototypeStructure* FindStructureOf(uint32 ParticipantId) const;
     int32 CountLivingUnits(uint32 ParticipantId) const;
     bool FindProducerOutput(uint32 ParticipantId, FVector& OutLocation, FRotator& OutRotation) const;

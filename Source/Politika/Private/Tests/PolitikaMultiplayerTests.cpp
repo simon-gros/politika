@@ -4884,6 +4884,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     F.Step();
     const pe::Cents Before = F.Match->GetEconomy().Find(HostId)->available;
     const FLinearColor ProducerTint = OwnProducer->GetTint();
+    TestTrue(TEXT("BD-14 the harvester depot is the living producer"), F.Match->FindStructureOf(HostId) == OwnProducer);
     TestTrue(TEXT("BD-01 the host demolishes its producer"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
     TestEqual(TEXT("BD-01 the producer is dead"), OwnProducer->GetHealth(), 0);
     TestFalse(TEXT("BD-01 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);
@@ -4893,6 +4894,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestEqual(TEXT("BD-08 a dead producer reads as destroyed"), F.Match->BuildingCursorText(OwnProducer, HostId),
         FString(TEXT("Your producer  destroyed")));
     TestTrue(TEXT("BD-11 a dead producer leaves the map"), OwnProducer->IsWithdrawn() && OwnProducer->IsBodyHidden());
+    TestNull(TEXT("BD-14 a withdrawn producer is not a depot"), F.Match->FindStructureOf(HostId));
     TestFalse(TEXT("BD-11 the living plant stays"), OwnGenerator->IsWithdrawn() || OwnGenerator->IsBodyHidden());
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
@@ -4929,6 +4931,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestTrue(TEXT("BD-04 the hold starts again"), F.Match->BeginCapture(Captor, EnemyProducer));
     F.Step(pw::kCaptureSteps);
     TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
+    TestTrue(TEXT("BD-14 the captured producer is the depot"), F.Match->FindStructureOf(HostId) == EnemyProducer);
     TestEqual(TEXT("BD-08 the captured producer reads as yours"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Your producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
 
