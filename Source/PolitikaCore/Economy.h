@@ -640,6 +640,68 @@ public:
         return account && account->grid.Repair(id);
     }
 
+    struct CaptureResult {
+        bool captured = false;
+        bool refused = false;
+        bool producer = false;
+        Cents refunded = 0;
+        power::BuildingId newId = 0;
+    };
+
+    // Moves one living building from one account to another. A producer refunds its queue once and
+    // is refused when the capturer already has a living producer. A generator keeps its health and
+    // takes a free id. A dead building, a missing id or the same account changes nothing.
+    CaptureResult CaptureBuilding(ParticipantId from, ParticipantId to, power::BuildingId id) {
+        CaptureResult result;
+        if (from == 0 || to == 0 || from == to) return result;
+        Account* loser = FindMutable(from);
+        Account* winner = FindMutable(to);
+        if (!loser || !winner) return result;
+        const power::Building* existing = loser->grid.Find(id);
+        if (!existing || existing->health <= 0) return result;
+        const bool producer = existing->kind == power::BuildingKind::Producer;
+        result.producer = producer;
+        if (producer) {
+            const power::Building* held = winner->grid.Find(kProducerBuilding);
+            if (winner->hasProducer && held && held->health > 0) {
+                result.refused = true;
+                return result;
+            }
+        }
+        Cents sum = 0;
+        Cents available = 0;
+        Cents refundedTotal = 0;
+        if (producer) {
+            for (const QueueItem& item : loser->queue)
+                if (!CheckedAdd(sum, item.paid, sum)) return result;
+            if (!CheckedAdd(loser->available, sum, available) || !CheckedAdd(loser->refunded, sum, refundedTotal)) return result;
+        }
+        std::optional<power::Building> moved = loser->grid.Remove(id);
+        if (!moved) return result;
+        power::Building stored = *moved;
+        if (producer) {
+            if (const power::Building* dead = winner->grid.Find(kProducerBuilding); dead && dead->health <= 0)
+                winner->grid.Remove(kProducerBuilding);
+            stored.id = kProducerBuilding;
+        } else stored.id = winner->grid.NextId();
+        if (!winner->grid.Add(stored)) {
+            stored.id = id;
+            loser->grid.Add(stored);
+            return result;
+        }
+        if (producer) {
+            loser->available = available;
+            loser->refunded = refundedTotal;
+            loser->queue.clear();
+            loser->hasProducer = false;
+            winner->hasProducer = true;
+            result.refunded = sum;
+        }
+        result.captured = true;
+        result.newId = stored.id;
+        return result;
+    }
+
     // Stable ascending participant order, for deterministic per-step processing.
     [[nodiscard]] const std::vector<Account>& All() const noexcept { return accounts; }
 
@@ -758,7 +820,8 @@ public:
         }
         if (!account->grid.Empty()) {
             const power::Allocation allocation = account->grid.Allocate();
-            const bool powered = account->grid.Find(kProducerBuilding)->powered;
+            const power::Building* producer = account->grid.Find(kProducerBuilding);
+            const bool powered = producer && producer->powered;
             result.powerChanged = powered != account->producerPowered || allocation.suppliedKw != account->allocation.suppliedKw
                 || allocation.requiredKw != account->allocation.requiredKw;
             account->allocation = allocation;

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace politika::power {
@@ -27,6 +28,9 @@ inline constexpr Kilowatts kProducerLoadKw = 40;
 // until it reaches zero, which is the one moment its queue is failed.
 inline constexpr std::int32_t kGeneratorHealth = 100;
 inline constexpr std::int32_t kProducerHealth = 200;
+// Fixture, not balance. A unit already in this radius finishes a capture in this many 20 Hz steps.
+inline constexpr float kCaptureRangeCm = 200.0f;
+inline constexpr std::int32_t kCaptureSteps = 4;
 
 struct Building {
     BuildingId id = 0;
@@ -69,6 +73,23 @@ public:
     }
 
     [[nodiscard]] std::size_t Count() const noexcept { return buildings.size(); }
+
+    // The next free id on this grid. Existing 1 and 2 stay the seat's original buildings.
+    [[nodiscard]] BuildingId NextId() const noexcept {
+        BuildingId next = 1;
+        for (const Building& building : buildings) next = std::max(next, static_cast<BuildingId>(building.id + 1));
+        return next;
+    }
+
+    // Removes one building and returns it, health included. A miss removes nothing.
+    std::optional<Building> Remove(BuildingId id) {
+        const auto found = std::find_if(buildings.begin(), buildings.end(),
+            [id](const Building& candidate) { return candidate.id == id; });
+        if (found == buildings.end()) return std::nullopt;
+        const Building removed = *found;
+        buildings.erase(found);
+        return removed;
+    }
 
     [[nodiscard]] const Building* Find(BuildingId id) const noexcept {
         const auto found = std::find_if(buildings.begin(), buildings.end(),

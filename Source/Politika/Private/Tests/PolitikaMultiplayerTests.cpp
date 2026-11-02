@@ -4683,4 +4683,94 @@ bool FPolitikaMultiplayerBuildingSightTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingCaptureTest,
+    "Politika.RTS.Multiplayer.BuildingCapture",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E9: a unit already in range captures a hostile building after the fixture hold. A second
+// living producer is refused. The producer's queue is refunded once. A generator keeps its health.
+bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    APolitikaPrototypeStructure* EnemyProducer = nullptr;
+    APolitikaPrototypeStructure* EnemyGenerator = nullptr;
+    APolitikaPrototypeStructure* OwnProducer = nullptr;
+    APolitikaPrototypeStructure* Source = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure) continue;
+        if (Structure->IsSource()) Source = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsProducer()) EnemyProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsGenerator()) EnemyGenerator = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsProducer()) OwnProducer = Structure;
+    }
+    if (!TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)
+        || !TestNotNull(TEXT("The enemy has a generator"), EnemyGenerator)
+        || !TestNotNull(TEXT("The host has a producer"), OwnProducer)) return false;
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+    FPolitikaNetEconomyIntent Train;
+    Train.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+    Train.Op = static_cast<uint8>(pe::EconomyOp::Train);
+    Train.Recipe = Rifleman;
+    Train.ClientSequence = 1;
+    Train.CorrelationId = F.NextCorrelation++;
+    Train.MatchGeneration = F.Match->GetMatchGeneration();
+    TestTrue(TEXT("BC-01 the enemy queues a rifleman"), F.Match->SubmitEconomyIntent(F.Remotes[0], Train));
+    F.Step();
+    const FVector2D ProducerAt(EnemyProducer->GetActorLocation().X, EnemyProducer->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, ProducerAt + FVector2D(80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BC-01 the captor spawns"), Captor)) return false;
+    TestFalse(TEXT("BC-01 a second living producer is refused"), F.Match->BeginCapture(Captor, EnemyProducer));
+    TestTrue(TEXT("BC-02 the host producer is destroyed"), F.Match->DamageOwnedBuilding(OwnProducer, pw::kProducerHealth) > 0);
+    TestFalse(TEXT("BC-02 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);
+    if (Source) TestFalse(TEXT("BC-02 a resource cannot be captured"), F.Match->BeginCapture(Captor, Source));
+    Captor->SetActorLocation(FVector(ProducerAt.X + 900.0, ProducerAt.Y, Captor->GetActorLocation().Z));
+    TestFalse(TEXT("BC-02 out of range is refused"), F.Match->BeginCapture(Captor, EnemyProducer));
+    Captor->SetActorLocation(FVector(ProducerAt.X + 80.0, ProducerAt.Y, Captor->GetActorLocation().Z));
+    TestTrue(TEXT("BC-03 the hold starts"), F.Match->BeginCapture(Captor, EnemyProducer));
+    F.Step(pw::kCaptureSteps - 1);
+    TestEqual(TEXT("BC-03 the producer is still the enemy's"), EnemyProducer->GetOwnerPlayer(), EnemyId);
+    Captor->SetActorLocation(FVector(ProducerAt.X + 900.0, ProducerAt.Y, Captor->GetActorLocation().Z));
+    F.Step();
+    TestEqual(TEXT("BC-04 leaving range cancels the hold"), EnemyProducer->GetOwnerPlayer(), EnemyId);
+    TestNull(TEXT("BC-04 the unit is no longer capturing"), Captor->GetCaptureTarget());
+    Captor->SetActorLocation(FVector(ProducerAt.X + 80.0, ProducerAt.Y, Captor->GetActorLocation().Z));
+    const pe::Cents Before = F.Match->GetEconomy().Find(EnemyId)->available;
+    TestTrue(TEXT("BC-05 the hold starts again"), F.Match->BeginCapture(Captor, EnemyProducer));
+    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("BC-05 the producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("BC-05 its grid id is the producer's"), EnemyProducer->GetBuildingId(), pe::kProducerBuilding);
+    const pe::Account* Enemy = F.Match->GetEconomy().Find(EnemyId);
+    const pe::Account* Host = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("BC-05 the queue is refunded once"), Enemy && !Enemy->hasProducer && Enemy->queue.empty()
+        && Enemy->refunded == Price && Enemy->available == Before + Price);
+    TestTrue(TEXT("BC-05 the host can train again"), Host && Host->hasProducer);
+
+    const FVector2D GeneratorAt(EnemyGenerator->GetActorLocation().X, EnemyGenerator->GetActorLocation().Y);
+    Captor->SetActorLocation(FVector(GeneratorAt.X + 80.0, GeneratorAt.Y, Captor->GetActorLocation().Z));
+    const int32 Health = EnemyGenerator->GetHealth();
+    TestTrue(TEXT("BC-06 the generator hold starts"), F.Match->BeginCapture(Captor, EnemyGenerator));
+    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("BC-06 the generator changes owner"), EnemyGenerator->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("BC-06 its health is kept"), EnemyGenerator->GetHealth(), Health);
+    TestTrue(TEXT("BC-06 it takes a new grid id"), EnemyGenerator->GetBuildingId() != pe::kGeneratorBuilding);
+    TestNull(TEXT("BC-06 the enemy no longer has that plant"), F.Match->GetEconomy().Find(EnemyId)->grid.Find(pe::kGeneratorBuilding));
+    TestNotNull(TEXT("BC-06 the host grid has the plant"), F.Match->GetEconomy().Find(HostId)->grid.Find(EnemyGenerator->GetBuildingId()));
+    return true;
+}
+
 #endif

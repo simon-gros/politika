@@ -2365,6 +2365,33 @@ int main() {
         assert(Miss.applied == 0 && A.grid.Count() == Buildings && !Ledger.RepairBuilding(1, pe::kProducerBuilding));
     }
 
+    // ECON-E9: a captured producer refunds once; a second living producer is refused; a generator moves.
+    {
+        namespace pe = politika::economy;
+        constexpr std::uint8_t Rifleman = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
+        const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+        pe::Ledger Ledger;
+        assert(Ledger.AddParticipant(1, 4 * Price, true, 1'000'000));
+        assert(Ledger.AddParticipant(2, 4 * Price, true, 1'000'000));
+        assert(Ledger.Train(2, 1, Rifleman, 0, 20));
+        const pe::Account& Loser = *Ledger.Find(2);
+        const pe::Account& Winner = *Ledger.Find(1);
+        assert(Ledger.CaptureBuilding(2, 1, pe::kProducerBuilding).refused);
+        assert(Loser.hasProducer && Loser.queue.size() == 1);
+        assert(Ledger.DamageBuilding(1, pe::kProducerBuilding, politika::power::kProducerHealth).producerLost);
+        const pe::Cents Before = Loser.available;
+        const auto Taken = Ledger.CaptureBuilding(2, 1, pe::kProducerBuilding);
+        assert(Taken.captured && Taken.producer && Taken.refunded == Price && Taken.newId == pe::kProducerBuilding);
+        assert(!Loser.hasProducer && Loser.queue.empty() && Loser.available == Before + Price && !Loser.grid.Find(pe::kProducerBuilding));
+        assert(Winner.hasProducer && Winner.grid.Find(pe::kProducerBuilding)->health == politika::power::kProducerHealth);
+        const std::int32_t GeneratorHealth = Loser.grid.Find(pe::kGeneratorBuilding)->health;
+        const auto Plant = Ledger.CaptureBuilding(2, 1, pe::kGeneratorBuilding);
+        assert(Plant.captured && !Plant.producer && Plant.newId != pe::kGeneratorBuilding && Plant.refunded == 0);
+        assert(!Loser.grid.Find(pe::kGeneratorBuilding));
+        assert(Winner.grid.Find(Plant.newId)->health == GeneratorHealth && Winner.grid.Find(Plant.newId)->kind == politika::power::BuildingKind::Generator);
+        assert(!Ledger.CaptureBuilding(1, 2, 99).captured);
+    }
+
     // ECON-E1: one treasury per participant, income on a fixed cadence, training paid once.
     {
         namespace pe = politika::economy;

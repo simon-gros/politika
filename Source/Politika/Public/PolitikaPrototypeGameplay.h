@@ -349,6 +349,11 @@ public:
         const FVector& ResolvedDestination, TArray<FVector>&& Route);
     void SetAttackOrder(APolitikaPrototypeUnit* Target);
     void SetAttackStructure(APolitikaPrototypeStructure* Structure);
+    void HoldForCapture(APolitikaPrototypeStructure* Structure);
+    void ClearCapture();
+    APolitikaPrototypeStructure* GetCaptureTarget() const { return CaptureTarget.Get(); }
+    int32 GetCaptureSteps() const { return CaptureSteps; }
+    void SetCaptureSteps(int32 Steps) { CaptureSteps = Steps; }
     void SetGuardOrder();
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
@@ -574,6 +579,8 @@ private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> OrderTarget;
     // An attack on a building, parallel to OrderTarget. A resource is never stored here.
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeStructure> OrderStructure;
+    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeStructure> CaptureTarget;
+    int32 CaptureSteps = 0;
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;
 #endif
@@ -729,6 +736,7 @@ public:
     uint32 GetBuildingId() const { return BuildingId; }
     int32 GetHealth() const { return Health; }
     void SetHealth(int32 InHealth) { Health = FMath::Max(0, InHealth); }
+    void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth);
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
     bool IsFoodSource() const { return Kind == FoodSourceKind; }
     bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
@@ -797,6 +805,9 @@ public:
     // Applies weapon damage to one building on its owner's grid, or repairs the caller's own generator.
     int32 DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
     bool RepairOwnedBuilding(APolitikaPrototypeStructure* Structure);
+    // Holds one armed unit already in range. The building changes owner after the fixture steps.
+    bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    void AdvanceCaptures();
     bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
     // Advisory slot check shared by the client planner and the server's formation planner:
@@ -1214,6 +1225,7 @@ private:
     friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerBuildingAttackTest;
     friend class FPolitikaMultiplayerBuildingSightTest;
+    friend class FPolitikaMultiplayerBuildingCaptureTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;
@@ -1481,6 +1493,8 @@ public:
     void ClearServerAssignment();
     // The only network command ingress. Host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
+    UFUNCTION(Server, Reliable) void ServerBeginCapture(uint64 IssuerId, uint64 StructureId);
+    void CaptureUnderCursor();
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitFormationIntent(const FPolitikaNetFormationIntent& Intent);

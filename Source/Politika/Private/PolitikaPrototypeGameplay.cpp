@@ -264,6 +264,7 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
     OrderStructure.Reset();
+    ClearCapture();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -285,6 +286,7 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
     ResetAutonomy();
     OrderTarget = Target;
     OrderStructure.Reset();
+    ClearCapture();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -305,6 +307,7 @@ void APolitikaPrototypeUnit::SetAttackStructure(APolitikaPrototypeStructure* Str
     CurrentOrder = EPolitikaPrototypeOrder::Attack;
     ResetAutonomy();
     OrderTarget.Reset();
+    ClearCapture();
     OrderStructure = Structure && Structure->IsBuilding() ? Structure : nullptr;
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
@@ -326,9 +329,22 @@ void APolitikaPrototypeUnit::SetGuardOrder()
     ResetAutonomy();
     OrderTarget.Reset();
     OrderStructure.Reset();
+    ClearCapture();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
+}
+
+void APolitikaPrototypeUnit::HoldForCapture(APolitikaPrototypeStructure* Structure)
+{
+    CaptureTarget = Structure && Structure->IsBuilding() ? Structure : nullptr;
+    CaptureSteps = 0;
+}
+
+void APolitikaPrototypeUnit::ClearCapture()
+{
+    CaptureTarget.Reset();
+    CaptureSteps = 0;
 }
 
 void APolitikaPrototypeUnit::StopOrder()
@@ -346,6 +362,7 @@ void APolitikaPrototypeUnit::StopOrder()
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
     OrderStructure.Reset();
+    ClearCapture();
     OrderDestination = GetActorLocation();
 }
 
@@ -360,6 +377,7 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
 {
     // Replicated observers never advance navigation; only the match authority does.
     if (!HasAuthority()) return politika::rules::OrderEndReason::None;
+    if (CaptureTarget.IsValid()) return politika::rules::OrderEndReason::None;
     StepStartPosition = GetActorLocation();
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
     // An idle unit moves only on its own, under its combat stance (FORM-F4): it never ends an
@@ -2795,6 +2813,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
                 SimulationStepsExecuted - Unit->RoutStartStep, SimulationStepsExecuted);
 #endif
     }
+    AdvanceCaptures();
     // Team vision follows movement so acquisition, firing and target loss use current
     // positions; offline (no fog) this marks every unit observed and changes nothing.
     UpdateTeamVisibility();
@@ -3029,6 +3048,7 @@ void APolitikaPrototypePlayerController::ApplyMapCameraIfReady()
 void APolitikaPrototypePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
+    InputComponent->BindKey(EKeys::C, IE_Pressed, this, &APolitikaPrototypePlayerController::CaptureUnderCursor);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
@@ -3848,6 +3868,54 @@ bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCo
             Tally.rejected > 0 ? static_cast<uint32>(Tally.DominantRejection()) : 0u);
 #endif
     return true;
+}
+
+void APolitikaPrototypePlayerController::CaptureUnderCursor()
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
+    if (Selected.IsEmpty()) return;
+    FHitResult Hit;
+    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return;
+    APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+    if (!Structure || !Structure->IsBuilding())
+    {
+        ShowLocalFeedback(TEXT("Point at a hostile building to capture it."));
+        return;
+    }
+    APolitikaPrototypeUnit* Captor = nullptr;
+    for (APolitikaPrototypeUnit* Unit : Selected)
+    {
+        if (Unit && Unit->CanAttack() && FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm)
+        {
+            Captor = Unit;
+            break;
+        }
+    }
+    if (!Captor)
+    {
+        ShowLocalFeedback(TEXT("Move a unit next to that building to capture it."));
+        return;
+    }
+    if (HasAuthority())
+    {
+        if (!ActiveMatch->BeginCapture(Captor, Structure))
+            ShowLocalFeedback(TEXT("That building cannot be captured."));
+        else ShowLocalFeedback(TEXT("Capturing."));
+        return;
+    }
+    ServerBeginCapture(Captor->GetStableId(), Structure->GetStableId());
+}
+
+void APolitikaPrototypePlayerController::ServerBeginCapture_Implementation(uint64 IssuerId, uint64 StructureId)
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    APolitikaPrototypeUnit* Unit = ActiveMatch->FindUnitByStableId(IssuerId);
+    APolitikaPrototypeStructure* Structure = ActiveMatch->FindStructureByStableId(StructureId);
+    if (!Unit || Unit->GetOwnerPlayer() != ActiveMatch->GetBoundParticipantId(this)) return;
+    ActiveMatch->BeginCapture(Unit, Structure);
 }
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()

@@ -232,6 +232,14 @@ bool APolitikaPrototypeMatch::IsStructureRelevantToViewer(const APolitikaPrototy
     return ParticipantId != 0 && IsStructureObservedByParticipant(Structure, ParticipantId);
 }
 
+void APolitikaPrototypeStructure::Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth)
+{
+    OwnerPlayer = InOwner;
+    TeamId = InTeam;
+    BuildingId = InBuildingId;
+    Health = FMath::Max(0, InHealth);
+}
+
 void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
 {
     if (bLocalFogApplied && bLocalFogHidden == bHidden) return;
@@ -245,6 +253,58 @@ void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
         UE_LOG(LogPolitikaStartup, Display, TEXT("MP_HOST_STRUCTURE_FOG entity=%llu owner=%u team=%u hidden=%d x=%.1f y=%.1f"),
             StableId, OwnerPlayer, static_cast<uint32>(TeamId), bHidden ? 1 : 0, GetActorLocation().X, GetActorLocation().Y);
 #endif
+}
+
+bool APolitikaPrototypeMatch::BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure)
+{
+    if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || !Structure || !Structure->IsBuilding() || !Structure->IsAlive())
+        return false;
+    if (Structure->GetOwnerPlayer() == 0 || Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer()) return false;
+    if (FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) > politika::power::kCaptureRangeCm) return false;
+    if (IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer())) return false;
+    if (Structure->IsProducer())
+    {
+        const pe::Account* Winner = Economy.Find(Unit->GetOwnerPlayer());
+        const politika::power::Building* Held = Winner ? Winner->grid.Find(pe::kProducerBuilding) : nullptr;
+        if (Winner && Winner->hasProducer && Held && Held->health > 0) return false;
+    }
+    Unit->StopOrder();
+    Unit->HoldForCapture(Structure);
+    return true;
+}
+
+void APolitikaPrototypeMatch::AdvanceCaptures()
+{
+    if (!HasAuthority()) return;
+    for (APolitikaPrototypeUnit* Unit : Units)
+    {
+        if (!IsValid(Unit)) continue;
+        APolitikaPrototypeStructure* Structure = Unit->GetCaptureTarget();
+        if (!Structure) continue;
+        const bool bStillThere = Unit->IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
+            && Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer()
+            && FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm
+            && (!IsFogOfWarEnabled() || IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer()));
+        if (!bStillThere)
+        {
+            Unit->ClearCapture();
+            continue;
+        }
+        const int32 Steps = Unit->GetCaptureSteps() + 1;
+        Unit->SetCaptureSteps(Steps);
+        if (Steps < politika::power::kCaptureSteps) continue;
+        const uint32 PreviousOwner = Structure->GetOwnerPlayer();
+        const pe::Ledger::CaptureResult Result = Economy.CaptureBuilding(PreviousOwner, Unit->GetOwnerPlayer(), Structure->GetBuildingId());
+        if (Result.captured)
+            Structure->Adopt(Unit->GetOwnerPlayer(), GetTeamForParticipant(Unit->GetOwnerPlayer()), Result.newId, Structure->GetHealth());
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_BUILDING_CAPTURE unit=%llu from=%u to=%u kind=%s captured=%d refused=%d refunded=%lld new_id=%u"),
+            Unit->GetStableId(), PreviousOwner, Unit->GetOwnerPlayer(), Structure->IsProducer() ? TEXT("producer") : TEXT("generator"),
+            Result.captured ? 1 : 0, Result.refused ? 1 : 0, Result.refunded, Result.newId);
+#endif
+        Unit->ClearCapture();
+    }
 }
 
 // ----------------------------------------------------------------------------
