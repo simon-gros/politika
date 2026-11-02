@@ -1011,6 +1011,7 @@ void APolitikaPrototypeMatch::RunHarvesters(uint64 Step)
             if (Near(Unit, GoldActor, kGoldPickupRadiusCm)) Situation.atSource = pe::Resource::Gold;
             else if (Near(Unit, FoodActor, kGoldPickupRadiusCm)) Situation.atSource = pe::Resource::Food;
             Situation.atBase = Near(Unit, Depot, kGoldDepotRadiusCm);
+            Situation.hasDepot = Depot != nullptr;
             // Stop stays the current order after a player's X or a failed route; arriving ends in Idle.
             Situation.moving = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Move;
             Situation.halted = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop;
@@ -1020,6 +1021,7 @@ void APolitikaPrototypeMatch::RunHarvesters(uint64 Step)
             if (Result.loaded > 0) LogHarvest(TEXT("load"), ParticipantId, UnitId, Result.resource, Result.loaded, 0, 0, Step);
             if (Result.delivered > 0) LogHarvest(TEXT("deliver"), ParticipantId, UnitId, Result.resource, Result.delivered, 0, 0, Step);
             if (Result.retargeted) LogHarvest(TEXT("retarget"), ParticipantId, UnitId, State->target, 0, 0, 0, Step);
+            if (Result.heldForDepot) LogHarvest(TEXT("holding"), ParticipantId, UnitId, State->target, 0, 0, 0, Step);
             if (Result.startedWaiting) LogHarvest(TEXT("waiting"), ParticipantId, UnitId, State->target, 0, 0, 0, Step);
             if (Result.stoppedWaiting) LogHarvest(TEXT("resumed"), ParticipantId, UnitId, State->target, 0, 0, 0, Step);
 #if !UE_BUILD_SHIPPING

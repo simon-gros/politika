@@ -4839,6 +4839,8 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
     F.Match->ContentCatalog = Catalog;
     F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    // This world has no navmesh. The probe is what lets the seat's sources stand, as in the gold test.
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
     F.Match->InitializeEconomy();
 
     APolitikaPrototypeStructure* EnemyProducer = nullptr;
@@ -4885,6 +4887,34 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     const pe::Cents Before = F.Match->GetEconomy().Find(HostId)->available;
     const FLinearColor ProducerTint = OwnProducer->GetTint();
     TestTrue(TEXT("BD-14 the harvester depot is the living producer"), F.Match->FindStructureOf(HostId) == OwnProducer);
+    const APolitikaPrototypeStructure* Gold = F.Match->FindSourceOf(HostId, pe::Resource::Gold);
+    if (!TestNotNull(TEXT("BD-15 the host has a gold source"), Gold)) return false;
+    APolitikaPrototypeUnit* Hauler = F.AddUnit(HostId, FVector2D(Gold->GetActorLocation().X, Gold->GetActorLocation().Y));
+    if (!TestNotNull(TEXT("BD-15 a hauler spawns"), Hauler)
+        || !TestTrue(TEXT("BD-15 the hauler joins the account"), F.Match->Economy.AddHarvester(HostId, Hauler->GetStableId()))) return false;
+    const auto Park = [](APolitikaPrototypeUnit* Unit, const APolitikaPrototypeStructure* Structure)
+    {
+        Unit->StopOrder();
+        Unit->CurrentOrder = EPolitikaPrototypeOrder::Idle;
+        const FVector At = Structure->GetActorLocation();
+        Unit->SetActorLocation(FVector(At.X, At.Y, 42.0));
+    };
+    F.Step();
+    F.Step();
+    Park(Hauler, Gold);
+    F.Step();
+    F.Step(pe::kHarvesterLoadSteps);
+    const pe::Harvester* Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    // No navmesh, so the trip home fails and it waits. The load is aboard either way, and not credited.
+    if (!TestTrue(TEXT("BD-15 the load is aboard and not yet delivered"),
+        Haul && Haul->load == pe::kLoadGold && F.Match->GetEconomy().Find(HostId)->goldHeld == 0
+            && (Haul->phase == pe::HarvesterPhase::ToBase || Haul->phase == pe::HarvesterPhase::Waiting))) return false;
+    F.Step();
+    Park(Hauler, OwnProducer);
+    F.Step();
+    Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    TestTrue(TEXT("BD-15 at the producer it starts to unload"), Haul && Haul->phase == pe::HarvesterPhase::Unloading && Hauler->IsCarryingGold());
+    TestEqual(TEXT("BD-15 nothing is credited yet"), F.Match->GetEconomy().Find(HostId)->goldHeld, static_cast<int64>(0));
     TestTrue(TEXT("BD-01 the host demolishes its producer"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
     TestEqual(TEXT("BD-01 the producer is dead"), OwnProducer->GetHealth(), 0);
     TestFalse(TEXT("BD-01 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);
@@ -4898,6 +4928,10 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestFalse(TEXT("BD-11 the living plant stays"), OwnGenerator->IsWithdrawn() || OwnGenerator->IsBodyHidden());
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
+    Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    TestTrue(TEXT("BD-15 the unload stops and the load stays aboard"), Haul && Haul->phase == pe::HarvesterPhase::Holding && Haul->load == pe::kLoadGold && Hauler->IsCarryingGold());
+    TestEqual(TEXT("BD-15 a withdrawn producer takes no gold"), Host->goldHeld, static_cast<int64>(0));
+    TestEqual(TEXT("BD-15 and it was not delivered"), Host->goldSource.delivered, static_cast<int64>(0));
     TestEqual(TEXT("BD-07 a dead producer draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kGeneratorAuxiliaryKw));
     TestEqual(TEXT("BD-07 the living plant still supplies"), Host->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
     TestFalse(TEXT("BD-02 demolishing it again does nothing"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
@@ -4932,6 +4966,9 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     F.Step(pw::kCaptureSteps);
     TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
     TestTrue(TEXT("BD-14 the captured producer is the depot"), F.Match->FindStructureOf(HostId) == EnemyProducer);
+    Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
+    TestTrue(TEXT("BD-15 the living producer sends the load on"), Haul && Haul->phase == pe::HarvesterPhase::ToBase && Haul->load == pe::kLoadGold);
+    TestEqual(TEXT("BD-15 the stock is still empty"), F.Match->GetEconomy().Find(HostId)->goldHeld, static_cast<int64>(0));
     TestEqual(TEXT("BD-08 the captured producer reads as yours"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Your producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
 

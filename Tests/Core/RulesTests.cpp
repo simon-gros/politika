@@ -1959,6 +1959,34 @@ int main() {
         // A harvester trained after the source emptied starts by waiting.
         assert(Late.AddHarvester(1, 3) && Late.FindHarvester(1, 3)->phase == HarvesterPhase::Waiting);
 
+        // No living depot: a load on the way home, or already unloading, is not credited. When a
+        // depot exists again the harvester is sent there, and only then unloads. A player's order
+        // still takes it off that hold.
+        {
+            pe::Ledger Held;
+            assert(Held.AddParticipant(1, pe::kStartingCents, true, 200) && Held.SetSource(1, pe::Resource::Gold, pe::kLoadGold));
+            const pe::Account& D = *Held.Find(1);
+            assert(Hire(Held, 1, 4));
+            Run(Held, 1, 4, AtSource, pe::kHarvesterLoadSteps + 1);
+            const pe::Harvester* DH = Held.FindHarvester(1, 4);
+            assert(DH->phase == HarvesterPhase::ToBase && DH->load == pe::kLoadGold && D.goldHeld == 0);
+            pe::HarvesterSituation NoDepot = Driving;
+            NoDepot.hasDepot = false;
+            Step = Held.StepHarvester(1, 4, NoDepot);
+            assert(Step.heldForDepot && !Step.goToBase && DH->phase == HarvesterPhase::Holding && DH->load == pe::kLoadGold && D.goldHeld == 0);
+            Run(Held, 1, 4, NoDepot, 5);
+            assert(DH->phase == HarvesterPhase::Holding && D.goldHeld == 0 && D.goldSource.delivered == 0 && D.GoldReconciles());
+            assert(Held.DetachHarvester(1, 4) && DH->phase == HarvesterPhase::Waiting);
+            assert(!Held.StepHarvester(1, 4, NoDepot).goToBase && DH->phase == HarvesterPhase::Waiting && DH->load == pe::kLoadGold);
+            assert(Held.StepHarvester(1, 4, ArrivedAtBase).stoppedWaiting && DH->phase == HarvesterPhase::Unloading);
+            Step = Held.StepHarvester(1, 4, NoDepot);
+            assert(Step.heldForDepot && Step.delivered == 0 && DH->phase == HarvesterPhase::Holding && DH->load == pe::kLoadGold && D.goldHeld == 0);
+            Step = Held.StepHarvester(1, 4, Driving);
+            assert(Step.goToBase && Step.stoppedWaiting && DH->phase == HarvesterPhase::ToBase);
+            Step = Run(Held, 1, 4, AtBase, pe::kHarvesterUnloadSteps + 1);
+            assert(Step.delivered == pe::kLoadGold && D.goldHeld == pe::kLoadGold && D.goldSource.delivered == pe::kLoadGold && D.GoldReconciles());
+        }
+
         // One lot: gold out and net dollars in, once.
         pe::Ledger Seller;
         assert(Seller.AddParticipant(1, pe::kStartingCents, true, 200) && Seller.SetSource(1, pe::Resource::Gold, 30));

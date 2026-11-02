@@ -227,8 +227,9 @@ struct ResourceSource {
 
 // What a harvester is doing. Starting is the one step between appearing and its first order. Waiting
 // covers everything its routine did not send it on: a player's order, nothing left to collect or a
-// route that failed. It keeps any load while it waits.
-enum class HarvesterPhase : std::uint8_t { Starting, ToSource, Loading, ToBase, Unloading, Waiting };
+// route that failed. Holding is the load it will not deliver until a living producer exists again.
+// It keeps any load while it waits or holds.
+enum class HarvesterPhase : std::uint8_t { Starting, ToSource, Loading, ToBase, Unloading, Holding, Waiting };
 
 [[nodiscard]] constexpr std::string_view PhaseName(HarvesterPhase phase) noexcept {
     switch (phase) {
@@ -237,6 +238,7 @@ enum class HarvesterPhase : std::uint8_t { Starting, ToSource, Loading, ToBase, 
         case HarvesterPhase::Loading: return "loading";
         case HarvesterPhase::ToBase: return "to_base";
         case HarvesterPhase::Unloading: return "unloading";
+        case HarvesterPhase::Holding: return "holding";
         case HarvesterPhase::Waiting: return "waiting";
     }
     return "unknown";
@@ -260,6 +262,9 @@ struct HarvesterSituation {
     bool moving = false;
     // At rest because of a player's stop or a failed route, not because it arrived somewhere.
     bool halted = false;
+    // False only when the coordinator has no living producer to unload at. Existing callers
+    // that do not say still have one.
+    bool hasDepot = true;
 };
 
 // What one harvester did in one step. goToSource and goToBase ask the coordinator for a move.
@@ -273,6 +278,7 @@ struct HarvesterStep {
     bool retargeted = false;      // Its source ran out and it moved on to the other one.
     bool stoppedWaiting = false;  // A player's order led it back to work.
     bool startedWaiting = false;  // Its routine ended: nothing left to collect, or a route failed.
+    bool heldForDepot = false;   // The load stays aboard because there is no living producer.
 };
 
 struct Account {
@@ -488,8 +494,10 @@ public:
     // takes what is left. When its source runs out it moves on to the other one. A waiting harvester
     // that has arrived at a source takes that as its new target; with a load of the other resource it
     // goes home first. One that has arrived at the base with a load unloads it. That is how a player
-    // sends it to work. A player's stop holds it where it is. Food goes straight into the ration
-    // reserve; what a full store cannot take stays on the harvester, unloading, until there is room.
+    // sends it to work. A player's stop holds it where it is. With no living producer, a trip home or
+    // an unload already under way keeps the load and does not credit it; the next living producer
+    // sends it on again. Food goes straight into the ration reserve; what a full store cannot take
+    // stays on the harvester, unloading, until there is room.
     HarvesterStep StepHarvester(ParticipantId participant, UnitId unit, HarvesterSituation situation) {
         HarvesterStep result;
         Account* account = FindMutable(participant);
@@ -510,6 +518,11 @@ public:
         const auto goHome = [&] {
             harvester->phase = HarvesterPhase::ToBase;
             result.goToBase = true;
+        };
+        const auto holdForDepot = [&] {
+            harvester->phase = HarvesterPhase::Holding;
+            harvester->remainingSteps = 0;
+            result.heldForDepot = true;
         };
         const auto seekSource = [&] {
             const std::optional<Resource> next = account->NextSource(harvester->target);
@@ -550,10 +563,15 @@ public:
                 break;
             }
             case HarvesterPhase::ToBase:
-                if (situation.atBase) beginUnloading();
+                if (!situation.hasDepot) holdForDepot();
+                else if (situation.atBase) beginUnloading();
                 else if (!situation.moving) wait();
                 break;
             case HarvesterPhase::Unloading: {
+                if (!situation.hasDepot) {
+                    holdForDepot();
+                    break;
+                }
                 if (--harvester->remainingSteps > 0) break;
                 Gold credited = harvester->load;
                 if (harvester->loadKind == Resource::Gold) {
@@ -570,6 +588,12 @@ public:
                 else seekSource();
                 break;
             }
+            case HarvesterPhase::Holding:
+                if (!situation.hasDepot) break;
+                if (situation.atBase) beginUnloading();
+                else goHome();
+                result.stoppedWaiting = true;
+                break;
             case HarvesterPhase::Waiting:
                 if (situation.moving || situation.halted) break;
                 if (harvester->load > 0 && situation.atBase) {
