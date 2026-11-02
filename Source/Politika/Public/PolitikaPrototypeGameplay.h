@@ -579,7 +579,10 @@ private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> OrderTarget;
     // An attack on a building, parallel to OrderTarget. A resource is never stored here.
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeStructure> OrderStructure;
-    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeStructure> CaptureTarget;
+    // Public, not owner-only: anyone who can see the unit can read the hold on the building line.
+    UPROPERTY(Replicated)
+    TObjectPtr<APolitikaPrototypeStructure> CaptureTarget;
+    UPROPERTY(Replicated)
     int32 CaptureSteps = 0;
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;

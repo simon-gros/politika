@@ -116,6 +116,9 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME(APolitikaPrototypeUnit, WeaponCooldown);
     DOREPLIFETIME(APolitikaPrototypeUnit, bAttackable);
     DOREPLIFETIME(APolitikaPrototypeUnit, bBlastDeath);
+    // Capture is read by every viewer who can see the unit, so it is not owner-only.
+    DOREPLIFETIME(APolitikaPrototypeUnit, CaptureTarget);
+    DOREPLIFETIME(APolitikaPrototypeUnit, CaptureSteps);
     // Owner-only: the issued order and ability timers belong to the controlling participant.
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, CurrentOrder, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, Ammo, COND_OwnerOnly);

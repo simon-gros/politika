@@ -4865,6 +4865,10 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestEqual(TEXT("BD-08 a repaired plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
         FString(TEXT("Your generator  100 / 100  \u00b7  online")));
     TestTrue(TEXT("BD-08 an unseen enemy building is not described"), F.Match->BuildingCursorText(EnemyProducer, HostId).IsEmpty());
+    const FProperty* CaptureProp = APolitikaPrototypeUnit::StaticClass()->FindPropertyByName(TEXT("CaptureTarget"));
+    const FProperty* StepsProp = APolitikaPrototypeUnit::StaticClass()->FindPropertyByName(TEXT("CaptureSteps"));
+    TestTrue(TEXT("BD-10 the capture target replicates"), CaptureProp && CaptureProp->HasAnyPropertyFlags(CPF_Net));
+    TestTrue(TEXT("BD-10 the capture count replicates"), StepsProp && StepsProp->HasAnyPropertyFlags(CPF_Net));
     if (Source) TestTrue(TEXT("BD-08 a resource is not described"), F.Match->BuildingCursorText(Source, HostId).IsEmpty());
 
     const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);

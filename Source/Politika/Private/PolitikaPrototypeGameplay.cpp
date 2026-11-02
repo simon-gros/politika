@@ -343,7 +343,7 @@ void APolitikaPrototypeUnit::HoldForCapture(APolitikaPrototypeStructure* Structu
 
 void APolitikaPrototypeUnit::ClearCapture()
 {
-    CaptureTarget.Reset();
+    CaptureTarget = nullptr;
     CaptureSteps = 0;
 }
 
@@ -4842,7 +4842,9 @@ void APolitikaPrototypeHUD::DrawHUD()
                 case EPolitikaPrototypeOrder::Idle: break;
             }
             // DISC-D4: a routed unit's own movement is its flight, not an order.
+            // A capture is not an order; without this the selected unit reads as Stopped.
             if (Selected->IsRouted()) Order = TEXT("ROUTED");
+            else if (Selected->GetCaptureTarget()) Order = TEXT("Capturing");
             const TCHAR* Autonomy = Selected->IsRouted() || Selected->GetCurrentOrder() != EPolitikaPrototypeOrder::Idle ? TEXT("")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Chasing ? TEXT(" (engaging)")
                 : Selected->GetAutonomy() == EPolitikaUnitAutonomy::Returning ? TEXT(" (returning to post)") : TEXT("");
