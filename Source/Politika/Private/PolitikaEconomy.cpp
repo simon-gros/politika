@@ -260,7 +260,6 @@ bool APolitikaPrototypeMatch::BeginCapture(APolitikaPrototypeUnit* Unit, APoliti
     if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || !Structure || !Structure->IsBuilding() || !Structure->IsAlive())
         return false;
     if (Structure->GetOwnerPlayer() == 0 || Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer()) return false;
-    if (FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) > politika::power::kCaptureRangeCm) return false;
     if (IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer())) return false;
     if (Structure->IsProducer())
     {
@@ -270,7 +269,26 @@ bool APolitikaPrototypeMatch::BeginCapture(APolitikaPrototypeUnit* Unit, APoliti
     }
     Unit->StopOrder();
     Unit->HoldForCapture(Structure);
+#if !UE_BUILD_SHIPPING
+    const float Distance = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation());
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_BUILDING_CAPTURE phase=%s unit=%llu structure=%llu distance=%.1f"),
+        Distance <= politika::power::kCaptureRangeCm ? TEXT("hold") : TEXT("approach"),
+        Unit->GetStableId(), Structure->GetStableId(), Distance);
+#endif
     return true;
+}
+
+bool APolitikaPrototypeMatch::SupplyCaptureApproachRoute(const APolitikaPrototypeUnit& Unit, const FVector& Destination, TArray<FVector>& OutRoute) const
+{
+#if WITH_DEV_AUTOMATION_TESTS
+    return CaptureRouteForTest && CaptureRouteForTest(Unit, Destination, OutRoute);
+#else
+    (void)Unit;
+    (void)Destination;
+    (void)OutRoute;
+    return false;
+#endif
 }
 
 void APolitikaPrototypeMatch::AdvanceCaptures()
@@ -281,15 +299,17 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
         if (!IsValid(Unit)) continue;
         APolitikaPrototypeStructure* Structure = Unit->GetCaptureTarget();
         if (!Structure) continue;
-        const bool bStillThere = Unit->IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
+        const bool bCanHold = Unit->IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
             && Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer()
-            && FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm
             && (!IsFogOfWarEnabled() || IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer()));
-        if (!bStillThere)
+        const bool bInRange = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm;
+        // Out of range with no steps yet is the walk in. Leaving after the hold has started cancels it.
+        if (!bCanHold || (Unit->GetCaptureSteps() > 0 && !bInRange))
         {
             Unit->ClearCapture();
             continue;
         }
+        if (!bInRange) continue;
         const int32 Steps = Unit->GetCaptureSteps() + 1;
         Unit->SetCaptureSteps(Steps);
         if (Steps < politika::power::kCaptureSteps) continue;

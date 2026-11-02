@@ -805,8 +805,12 @@ public:
     // Applies weapon damage to one building on its owner's grid, or repairs the caller's own generator.
     int32 DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
     bool RepairOwnedBuilding(APolitikaPrototypeStructure* Structure);
-    // Holds one armed unit already in range. The building changes owner after the fixture steps.
+    // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
+    // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    // Automation worlds have no navigation mesh. A set hook supplies the approach route; shipping
+    // and an unset hook return false and the approach uses the navigation mesh or stops.
+    bool SupplyCaptureApproachRoute(const APolitikaPrototypeUnit& Unit, const FVector& Destination, TArray<FVector>& OutRoute) const;
     void AdvanceCaptures();
     bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
@@ -1231,6 +1235,8 @@ private:
     friend class FPolitikaMultiplayerHarvestTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
+    // The approach route of a capture (the Automation world has no navigation mesh).
+    TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> CaptureRouteForTest;
 #endif
     // Combat stance (FORM-F4). A unit's effective stance is its override, else its formation's
     // stance, else the default. Membership changes never change it: StanceSnapshot records it

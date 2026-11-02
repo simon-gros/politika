@@ -377,8 +377,50 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
 {
     // Replicated observers never advance navigation; only the match authority does.
     if (!HasAuthority()) return politika::rules::OrderEndReason::None;
-    if (CaptureTarget.IsValid()) return politika::rules::OrderEndReason::None;
     StepStartPosition = GetActorLocation();
+    if (APolitikaPrototypeStructure* Structure = CaptureTarget.Get())
+    {
+        const bool bHold = IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
+            && Structure->GetOwnerPlayer() != OwnerPlayer
+            && FlatDistance(GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm;
+        if (bHold) return politika::rules::OrderEndReason::None;
+        if (!IsAlive() || !CanMove() || !Structure->IsBuilding() || !Structure->IsAlive()
+            || Structure->GetOwnerPlayer() == OwnerPlayer)
+        {
+            ClearCapture();
+            return politika::rules::OrderEndReason::None;
+        }
+        FVector Destination = Structure->GetActorLocation();
+        const FVector ToTarget = Destination - GetActorLocation();
+        // Stop inside the ring. Navigation may shift a goal, so do not aim at the edge.
+        Destination -= ToTarget.GetSafeNormal2D() * FMath::Max(0.0f, politika::power::kCaptureRangeCm - 50.0f);
+        if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
+        {
+            TArray<FVector> Supplied;
+            if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+                Match && Match->SupplyCaptureApproachRoute(*this, Destination, Supplied) && !Supplied.IsEmpty())
+            {
+                NavigationWaypoints = MoveTemp(Supplied);
+                NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+                ResolvedNavigationDestination = Destination;
+            }
+        }
+        switch (EnsureRouteTo(Destination, DeltaSeconds))
+        {
+            case ERouteStatus::Waiting: return politika::rules::OrderEndReason::None;
+            case ERouteStatus::Failed:
+                StopOrder();
+                return politika::rules::OrderEndReason::NavigationFailed;
+            case ERouteStatus::Ready: break;
+        }
+        if (const politika::rules::OrderEndReason Stepped = AdvanceAlongRoute(DeltaSeconds);
+            Stepped != politika::rules::OrderEndReason::None)
+        {
+            StopOrder();
+            return Stepped;
+        }
+        return politika::rules::OrderEndReason::None;
+    }
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
     // An idle unit moves only on its own, under its combat stance (FORM-F4): it never ends an
     // order, so it reports nothing to the command layer.
@@ -3884,25 +3926,31 @@ void APolitikaPrototypePlayerController::CaptureUnderCursor()
         ShowLocalFeedback(TEXT("Point at a hostile building to capture it."));
         return;
     }
-    APolitikaPrototypeUnit* Captor = nullptr;
+    APolitikaPrototypeUnit* InRange = nullptr;
+    APolitikaPrototypeUnit* Closest = nullptr;
+    float ClosestDistance = TNumericLimits<float>::Max();
     for (APolitikaPrototypeUnit* Unit : Selected)
     {
-        if (Unit && Unit->CanAttack() && FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm)
+        if (!Unit || !Unit->IsAlive() || !Unit->CanAttack()) continue;
+        const float Distance = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation());
+        if (Distance <= politika::power::kCaptureRangeCm && !InRange) InRange = Unit;
+        if (Distance < ClosestDistance)
         {
-            Captor = Unit;
-            break;
+            ClosestDistance = Distance;
+            Closest = Unit;
         }
     }
+    APolitikaPrototypeUnit* Captor = InRange ? InRange : Closest;
     if (!Captor)
     {
-        ShowLocalFeedback(TEXT("Move a unit next to that building to capture it."));
+        ShowLocalFeedback(TEXT("Select an armed unit to capture that building."));
         return;
     }
     if (HasAuthority())
     {
         if (!ActiveMatch->BeginCapture(Captor, Structure))
             ShowLocalFeedback(TEXT("That building cannot be captured."));
-        else ShowLocalFeedback(TEXT("Capturing."));
+        else ShowLocalFeedback(InRange ? TEXT("Capturing.") : TEXT("Moving to capture."));
         return;
     }
     ServerBeginCapture(Captor->GetStableId(), Structure->GetStableId());

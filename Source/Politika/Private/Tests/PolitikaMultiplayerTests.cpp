@@ -4739,7 +4739,12 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("BC-02 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);
     if (Source) TestFalse(TEXT("BC-02 a resource cannot be captured"), F.Match->BeginCapture(Captor, Source));
     Captor->SetActorLocation(FVector(ProducerAt.X + 900.0, ProducerAt.Y, Captor->GetActorLocation().Z));
-    TestFalse(TEXT("BC-02 out of range is refused"), F.Match->BeginCapture(Captor, EnemyProducer));
+    TestTrue(TEXT("BC-02 an approach starts out of range"), F.Match->BeginCapture(Captor, EnemyProducer));
+    TestEqual(TEXT("BC-02 the producer is the capture target"), Captor->GetCaptureTarget(), EnemyProducer);
+    TestEqual(TEXT("BC-02 the hold has not started"), Captor->GetCaptureSteps(), 0);
+    F.Step();
+    TestNull(TEXT("BC-02 without a route the approach stops"), Captor->GetCaptureTarget());
+    TestEqual(TEXT("BC-02 the producer is still the enemy's"), EnemyProducer->GetOwnerPlayer(), EnemyId);
     Captor->SetActorLocation(FVector(ProducerAt.X + 80.0, ProducerAt.Y, Captor->GetActorLocation().Z));
     TestTrue(TEXT("BC-03 the hold starts"), F.Match->BeginCapture(Captor, EnemyProducer));
     F.Step(pw::kCaptureSteps - 1);
@@ -4761,6 +4766,30 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("BC-05 the host can train again"), Host && Host->hasProducer);
 
     const FVector2D GeneratorAt(EnemyGenerator->GetActorLocation().X, EnemyGenerator->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Walker = F.AddUnit(HostId, GeneratorAt + FVector2D(900.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BC-07 the walker spawns"), Walker)) return false;
+    const FVector ApproachGoal(GeneratorAt.X + politika::power::kCaptureRangeCm - 50.0, GeneratorAt.Y, Walker->GetActorLocation().Z);
+    F.Match->CaptureRouteForTest = [ApproachGoal](const APolitikaPrototypeUnit& Unit, const FVector&, TArray<FVector>& Route)
+    {
+        Route = {Unit.GetActorLocation(), ApproachGoal};
+        return true;
+    };
+    TestTrue(TEXT("BC-07 the approach is accepted"), F.Match->BeginCapture(Walker, EnemyGenerator));
+    int32 ApproachSteps = 0;
+    while (FVector::Dist2D(Walker->GetActorLocation(), EnemyGenerator->GetActorLocation()) > politika::power::kCaptureRangeCm
+        && ApproachSteps < 80)
+    {
+        F.Step();
+        ++ApproachSteps;
+    }
+    TestTrue(TEXT("BC-07 the walker reaches capture range"), ApproachSteps > 0 && ApproachSteps < 80
+        && FVector::Dist2D(Walker->GetActorLocation(), EnemyGenerator->GetActorLocation()) <= politika::power::kCaptureRangeCm);
+    TestTrue(TEXT("BC-07 the hold has started and not finished"), Walker->GetCaptureTarget() == EnemyGenerator
+        && Walker->GetCaptureSteps() > 0 && Walker->GetCaptureSteps() < politika::power::kCaptureSteps);
+    TestEqual(TEXT("BC-07 the generator is still the enemy's"), EnemyGenerator->GetOwnerPlayer(), EnemyId);
+    Walker->StopOrder();
+    F.Match->CaptureRouteForTest = nullptr;
+    Walker->SetActorLocation(FVector(GeneratorAt.X + 4000.0, GeneratorAt.Y, Walker->GetActorLocation().Z));
     Captor->SetActorLocation(FVector(GeneratorAt.X + 80.0, GeneratorAt.Y, Captor->GetActorLocation().Z));
     const int32 Health = EnemyGenerator->GetHealth();
     TestTrue(TEXT("BC-06 the generator hold starts"), F.Match->BeginCapture(Captor, EnemyGenerator));
