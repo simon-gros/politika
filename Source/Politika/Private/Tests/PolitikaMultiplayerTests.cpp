@@ -4934,6 +4934,12 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     Haul = F.Match->GetEconomy().FindHarvester(HostId, Hauler->GetStableId());
     TestTrue(TEXT("BD-15 at the producer it starts to unload"), Haul && Haul->phase == pe::HarvesterPhase::Unloading && Hauler->IsCarryingGold());
     TestEqual(TEXT("BD-15 nothing is credited yet"), F.Match->GetEconomy().Find(HostId)->goldHeld, static_cast<int64>(0));
+    TestEqual(TEXT("BD-19 unloading reads as unloading"), Hauler->GetOrderLabel(), FString(TEXT("Unloading gold")));
+    TestEqual(TEXT("BD-19 the line counts it as unloading"), F.Host->GetOwnEconomy().GoldUnloading, static_cast<int32>(pe::kLoadGold));
+    TestEqual(TEXT("BD-19 and not as holding"), F.Host->GetOwnEconomy().GoldHolding, 0);
+    TestEqual(TEXT("BD-19 the phrase"), APolitikaPrototypeMatch::CargoPhrase(
+        F.Host->GetOwnEconomy().GoldCarried, F.Host->GetOwnEconomy().GoldHolding, F.Host->GetOwnEconomy().GoldUnloading),
+        FString(TEXT("25 unloading")));
     TestTrue(TEXT("BD-01 the host demolishes its producer"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
     TestEqual(TEXT("BD-01 the producer is dead"), OwnProducer->GetHealth(), 0);
     TestFalse(TEXT("BD-01 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);

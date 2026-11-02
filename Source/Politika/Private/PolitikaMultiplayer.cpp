@@ -134,6 +134,7 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     // DISC-D4: an opponent sees a routed unit run, never the state itself.
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bRouted, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, CarriedResource, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, CargoPose, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveTrend, COND_OwnerOnly);
 }
 

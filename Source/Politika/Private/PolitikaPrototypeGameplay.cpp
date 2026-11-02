@@ -351,6 +351,11 @@ FString APolitikaPrototypeUnit::GetOrderLabel() const
 {
     if (IsRouted()) return TEXT("ROUTED");
     if (GetCaptureTarget()) return TEXT("Capturing");
+    if (CargoPose == CargoPoseUnloading)
+    {
+        if (IsCarryingGold()) return TEXT("Unloading gold");
+        if (IsCarryingFood()) return TEXT("Unloading food");
+    }
     // A carried load that is not currently driving reads as held, not as a stop.
     if (GetCurrentOrder() != EPolitikaPrototypeOrder::Move)
     {
@@ -4733,7 +4738,7 @@ void APolitikaPrototypeHUD::DrawHUD()
         // ECON-E5: what is left in the food cache and on the way from it.
         const FString FoodCacheText = Economy.bHasFoodSource
             ? FString::Printf(TEXT("%d in the cache, %s  ·  "), Economy.FoodAtSource,
-                *APolitikaPrototypeMatch::CargoPhrase(Economy.FoodCarried, Economy.FoodHolding)) : FString();
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.FoodCarried, Economy.FoodHolding, Economy.FoodUnloading)) : FString();
         const FString FoodText = Economy.bFoodShortage
             ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s%s"), Economy.Rations, *FoodCacheText, *PurchaseText)
             : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s%s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,
@@ -4769,7 +4774,7 @@ void APolitikaPrototypeHUD::DrawHUD()
             const FString HarvesterText = Economy.GoldAtSource > 0 || Economy.FoodAtSource > 0
                 ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("caches empty"));
             DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache, %s  ·  %s  ·  %d %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
-                *APolitikaPrototypeMatch::CargoPhrase(Economy.GoldCarried, Economy.GoldHolding), *SaleText,
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.GoldCarried, Economy.GoldHolding, Economy.GoldUnloading), *SaleText,
                 Economy.Harvesters, Economy.Harvesters == 1 ? TEXT("harvester") : TEXT("harvesters"), *HarvesterText),
                 FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
             Y += 26.0f * UiScale;

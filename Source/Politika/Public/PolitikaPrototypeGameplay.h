@@ -276,13 +276,15 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() bool bHasGoldSource = false;
     UPROPERTY() int32 GoldHeld = 0;
     UPROPERTY() int32 GoldCarried = 0;
-    // Of GoldCarried, the part that is aboard and not driving. The rest is on the way.
+    // Of GoldCarried: aboard and not driving, and the part being unloaded at the depot.
     UPROPERTY() int32 GoldHolding = 0;
+    UPROPERTY() int32 GoldUnloading = 0;
     UPROPERTY() int32 GoldAtSource = 0;
     // ECON-E5: the same for food; delivered food is in Rations.
     UPROPERTY() bool bHasFoodSource = false;
     UPROPERTY() int32 FoodCarried = 0;
     UPROPERTY() int32 FoodHolding = 0;
+    UPROPERTY() int32 FoodUnloading = 0;
     UPROPERTY() int32 FoodAtSource = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
@@ -297,8 +299,9 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
             && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage
             && bHasGoldSource == Other.bHasGoldSource && GoldHeld == Other.GoldHeld && GoldCarried == Other.GoldCarried
-            && GoldHolding == Other.GoldHolding && GoldAtSource == Other.GoldAtSource
-            && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried && FoodHolding == Other.FoodHolding
+            && GoldHolding == Other.GoldHolding && GoldUnloading == Other.GoldUnloading && GoldAtSource == Other.GoldAtSource
+            && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried
+            && FoodHolding == Other.FoodHolding && FoodUnloading == Other.FoodUnloading
             && FoodAtSource == Other.FoodAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
@@ -443,8 +446,13 @@ public:
     // HUD, and only the authority's economy phase changes it. Zero is none, then Resource + 1.
     bool IsCarryingGold() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Gold) + 1; }
     bool IsCarryingFood() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Food) + 1; }
-    // What the selected-unit line calls this order. A load that is not on its way reads as holding.
+    // What the selected-unit line calls this order. A load at the depot reads as unloading.
     FString GetOrderLabel() const;
+    static constexpr uint8 CargoPoseNone = 0;
+    static constexpr uint8 CargoPoseHolding = 1;
+    static constexpr uint8 CargoPoseUnloading = 2;
+    uint8 GetCargoPose() const { return CargoPose; }
+    void SetCargoPose(uint8 Pose) { if (CargoPose != Pose) CargoPose = Pose; }
     uint8 GetCarriedResourceByte() const { return CarriedResource; }
     void SetCarriedResource(std::optional<politika::economy::Resource> Resource)
     {
@@ -615,6 +623,8 @@ private:
     // authority-only. HomeLocation is where the unit entered the match.
     UPROPERTY(Replicated) bool bRouted = false;
     UPROPERTY(ReplicatedUsing=OnRep_CarriedResource) uint8 CarriedResource = 0;
+    // Owner-only: holding or unloading, so the selected line can say which. Zero is neither.
+    UPROPERTY(Replicated) uint8 CargoPose = 0;
     UFUNCTION() void OnRep_CarriedResource();
     FVector RoutRallyPoint = FVector::ZeroVector;
     uint64 RoutStartStep = 0;
@@ -835,8 +845,8 @@ public:
     // What the viewer may read about a building under the cursor. Empty when fog hides it, so health
     // is not an oracle. A source is not a building. A capture in progress names the approach or the hold.
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
-    // "25 on the way", "25 holding", or both. Holding is the part of Carried that is not driving.
-    static FString CargoPhrase(int32 Carried, int32 Holding);
+    // "25 on the way", "25 holding", "25 unloading", or a mix. Zeros are left out.
+    static FString CargoPhrase(int32 Carried, int32 Holding, int32 Unloading = 0);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
