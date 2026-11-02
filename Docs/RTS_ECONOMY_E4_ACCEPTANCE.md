@@ -70,6 +70,8 @@ Automation also covers what the packaged session does not: a rifleman at the sou
 
 ## D. Known defect: produced units have no network owner
 
+**Fixed by [ECON-E5](RTS_ECONOMY_E5_ACCEPTANCE.md).**
+
 Screenshot `client-a-02-carrying.png` shows the harvester with 25 gold on the way and no `GOLD` tag on its label, and `client-a-05-source-empty.png` shows it labelled `DISCIPLINE` and `Idle`, not `MORALE`. The cause predates this slice. Owner-only unit fields replicate only to an actor's network owner, and `RefreshUnitNetOwnership` sets that when a participant binds. A unit produced later never gets one.
 
 So since ECON-E1, the owning client has not received the order, ammunition, ability timers, stance, resolve, rout state or category of a **produced** unit, including riflemen. Server authority is unaffected: orders, combat and the ledger are correct. No check looked at these fields on a produced unit, so the matrix did not catch it. The HUD's gold totals come from the view and are correct. It is the first fix in the next slice, with a packaged check.

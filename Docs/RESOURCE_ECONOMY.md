@@ -15,6 +15,8 @@ The [Engine Outline](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repea
 
 The authoritative accounts are dollar cents, owned saleable commodity stock, food provisions, and generation/load state. Verify valid ownership, fixed-step timing, rejected purchase/exchange without side effects, exactly-once debit/credit, power shortage/restore, food consumption/shortage/replenishment, production completion and the correct reinforcement identity. The initial fixed-base profile remains the bounded prototype default; mobile/hybrid construction remains deferred. End-of-match and failed-admission cleanup must clear all economic state and isolate a rematch.
 
+**Owner decision, 2 November 2026 ([ECON-E5 record](RTS_ECONOMY_E5_ACCEPTANCE.md)):** a harvester can collect different resources, including food, and each side starts with one. Food collection is an added route, never a required chore: dollars still buy food.
+
 Stage 4B keeps its one source and collector/delivery demonstration, but ordinary dollar income can later be automated; the player is not required to operate recurring worker collection or food farms. Keep gold, multiple fossil commodities, regional grids, special nuclear chains, dynamic markets and faction economy asymmetries as separately testable expansions. Purchase cancellation and refunds must be explicitly defined or rejected, not inferred from a UI button.
 
 ## 1. Resource hierarchy
