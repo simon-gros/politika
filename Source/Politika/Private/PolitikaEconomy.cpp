@@ -50,6 +50,8 @@ constexpr float kHarvesterSpeedCmPerSecond = 280.0f;
 const FLinearColor kGoldSourceTint(0.95f, 0.72f, 0.12f);
 const FLinearColor kFoodSourceTint(0.3f, 0.72f, 0.2f);
 const FLinearColor kSourceEmptyTint(0.22f, 0.2f, 0.16f);
+// The plant is the same faction color as the producer, darkened so the two blocks stay distinct.
+constexpr float kGeneratorTintScale = 0.45f;
 
 APolitikaPrototypeMatch* FindEconomyMatch(UWorld* World)
 {
@@ -232,12 +234,29 @@ bool APolitikaPrototypeMatch::IsStructureRelevantToViewer(const APolitikaPrototy
     return ParticipantId != 0 && IsStructureObservedByParticipant(Structure, ParticipantId);
 }
 
-void APolitikaPrototypeStructure::Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth)
+void APolitikaPrototypeStructure::Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth, const FLinearColor& InTint)
 {
     OwnerPlayer = InOwner;
     TeamId = InTeam;
     BuildingId = InBuildingId;
     Health = FMath::Max(0, InHealth);
+    Tint = InTint;
+    ApplyTint();
+}
+
+FLinearColor APolitikaPrototypeMatch::BuildingTintFor(uint32 ParticipantId, bool bGenerator) const
+{
+    FLinearColor Tint = FLinearColor::White;
+    const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
+        [ParticipantId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == ParticipantId; });
+    if (Participant && MapDefinition && ContentCatalog)
+    {
+        const FPolitikaPrototypeUnitPlacement* Template = MapDefinition->UnitPlacements.FindByPredicate(
+            [Participant](const FPolitikaPrototypeUnitPlacement& Candidate) { return Candidate.SlotId == Participant->SlotId; });
+        if (const UPolitikaUnitArchetypeDefinition* Definition = Template ? ContentCatalog->FindUnit(Template->UnitArchetypeId) : nullptr)
+            Tint = Definition->FactionTint;
+    }
+    return bGenerator ? Tint * kGeneratorTintScale : Tint;
 }
 
 void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
@@ -316,7 +335,8 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
         const uint32 PreviousOwner = Structure->GetOwnerPlayer();
         const pe::Ledger::CaptureResult Result = Economy.CaptureBuilding(PreviousOwner, Unit->GetOwnerPlayer(), Structure->GetBuildingId());
         if (Result.captured)
-            Structure->Adopt(Unit->GetOwnerPlayer(), GetTeamForParticipant(Unit->GetOwnerPlayer()), Result.newId, Structure->GetHealth());
+            Structure->Adopt(Unit->GetOwnerPlayer(), GetTeamForParticipant(Unit->GetOwnerPlayer()), Result.newId, Structure->GetHealth(),
+                BuildingTintFor(Unit->GetOwnerPlayer(), Structure->IsGenerator()));
 #if !UE_BUILD_SHIPPING
         UE_LOG(LogPolitikaStartup, Display,
             TEXT("RTS_BUILDING_CAPTURE unit=%llu from=%u to=%u kind=%s captured=%d refused=%d refunded=%lld new_id=%u"),
@@ -452,7 +472,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                 if (Generator)
                 {
                     Generator->Configure(this, politika::power::BuildingKind::Generator, Participant.RuntimePlayerId, Participant.TeamId,
-                        Definition->FactionTint * 0.45f, bHiddenLocally);
+                        Definition->FactionTint * kGeneratorTintScale, bHiddenLocally);
                     Generator->SetBuildingIdentity(NextStableId++, politika::economy::kGeneratorBuilding, politika::power::kGeneratorHealth);
                     Structures.Add(Generator);
                 }

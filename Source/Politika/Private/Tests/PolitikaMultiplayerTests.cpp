@@ -4707,6 +4707,7 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     APolitikaPrototypeStructure* EnemyProducer = nullptr;
     APolitikaPrototypeStructure* EnemyGenerator = nullptr;
     APolitikaPrototypeStructure* OwnProducer = nullptr;
+    APolitikaPrototypeStructure* OwnGenerator = nullptr;
     APolitikaPrototypeStructure* Source = nullptr;
     for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
     {
@@ -4715,10 +4716,18 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
         else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsProducer()) EnemyProducer = Structure;
         else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsGenerator()) EnemyGenerator = Structure;
         else if (Structure->GetOwnerPlayer() == HostId && Structure->IsProducer()) OwnProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsGenerator()) OwnGenerator = Structure;
     }
     if (!TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)
         || !TestNotNull(TEXT("The enemy has a generator"), EnemyGenerator)
-        || !TestNotNull(TEXT("The host has a producer"), OwnProducer)) return false;
+        || !TestNotNull(TEXT("The host has a producer"), OwnProducer)
+        || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+    const FLinearColor HostProducerTint = OwnProducer->GetTint();
+    const FLinearColor HostGeneratorTint = OwnGenerator->GetTint();
+    const FLinearColor EnemyProducerTint = EnemyProducer->GetTint();
+    const FLinearColor EnemyGeneratorTint = EnemyGenerator->GetTint();
+    TestFalse(TEXT("BC-08 the two producers start different colors"), HostProducerTint.Equals(EnemyProducerTint));
+    TestFalse(TEXT("BC-08 the two generators start different colors"), HostGeneratorTint.Equals(EnemyGeneratorTint));
 
     const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
     const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
@@ -4764,6 +4773,7 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("BC-05 the queue is refunded once"), Enemy && !Enemy->hasProducer && Enemy->queue.empty()
         && Enemy->refunded == Price && Enemy->available == Before + Price);
     TestTrue(TEXT("BC-05 the host can train again"), Host && Host->hasProducer);
+    TestTrue(TEXT("BC-08 the producer takes the host color"), EnemyProducer->GetTint().Equals(HostProducerTint));
 
     const FVector2D GeneratorAt(EnemyGenerator->GetActorLocation().X, EnemyGenerator->GetActorLocation().Y);
     APolitikaPrototypeUnit* Walker = F.AddUnit(HostId, GeneratorAt + FVector2D(900.0, 0.0), 600.0f);
@@ -4799,6 +4809,13 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("BC-06 it takes a new grid id"), EnemyGenerator->GetBuildingId() != pe::kGeneratorBuilding);
     TestNull(TEXT("BC-06 the enemy no longer has that plant"), F.Match->GetEconomy().Find(EnemyId)->grid.Find(pe::kGeneratorBuilding));
     TestNotNull(TEXT("BC-06 the host grid has the plant"), F.Match->GetEconomy().Find(HostId)->grid.Find(EnemyGenerator->GetBuildingId()));
+    TestTrue(TEXT("BC-08 the generator takes the host plant color"), EnemyGenerator->GetTint().Equals(HostGeneratorTint));
+    TestFalse(TEXT("BC-08 the plant color is not the producer color"), EnemyGenerator->GetTint().Equals(HostProducerTint));
+    Captor->SetActorLocation(FVector(GeneratorAt.X + 4000.0, GeneratorAt.Y, Captor->GetActorLocation().Z));
+    F.Step();
+    TestTrue(TEXT("BC-09 the new owner still receives the plant"), EnemyGenerator->IsNetRelevantFor(F.Host, F.Host, FVector::ZeroVector));
+    TestFalse(TEXT("BC-09 the previous owner no longer receives it"), EnemyGenerator->IsNetRelevantFor(F.Remotes[0], F.Remotes[0], FVector::ZeroVector));
+    TestFalse(TEXT("BC-09 the host still draws its plant"), EnemyGenerator->IsLocalFogHidden());
     return true;
 }
 

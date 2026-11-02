@@ -736,7 +736,8 @@ public:
     uint32 GetBuildingId() const { return BuildingId; }
     int32 GetHealth() const { return Health; }
     void SetHealth(int32 InHealth) { Health = FMath::Max(0, InHealth); }
-    void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth);
+    void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth, const FLinearColor& InTint);
+    FLinearColor GetTint() const { return Tint; }
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
     bool IsFoodSource() const { return Kind == FoodSourceKind; }
     bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
@@ -808,6 +809,8 @@ public:
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    // The faction color of a participant's producer, or that color darkened for a generator.
+    FLinearColor BuildingTintFor(uint32 ParticipantId, bool bGenerator) const;
     // Automation worlds have no navigation mesh. A set hook supplies the approach route; shipping
     // and an unset hook return false and the approach uses the navigation mesh or stops.
     bool SupplyCaptureApproachRoute(const APolitikaPrototypeUnit& Unit, const FVector& Destination, TArray<FVector>& OutRoute) const;
