@@ -14,7 +14,9 @@
 // full again, and never touches the units themselves. ECON-E4 adds a finite gold source, harvesters
 // that haul it to the base on their own, and a sale that debits gold and credits net dollars
 // atomically. ECON-E5 makes a source typed: a harvester collects gold or food, whichever its player
-// last sent it to, and each seat starts with one.
+// last sent it to, and each seat starts with one. ECON-E6 gives the generator and the producer
+// health: damaging the generator takes it offline until it is repaired, and destroying the producer
+// refunds its queue once. A source is not a building and is not on the grid.
 //
 // The figures below are prototype fixture data, not balance decisions. The rifleman's price and
 // training time follow the line-infantry entry of Docs/Units/ATLANTIC_CONCORD_UNITS.md.
@@ -590,10 +592,52 @@ public:
         return result;
     }
 
-    // Takes effect at the participant's next Advance. Returns false without a generator.
+    // Takes effect at the participant's next Advance. Returns false without a generator, and false
+    // when damage is keeping that generator offline.
     bool SetGeneratorOnline(ParticipantId participant, bool online) noexcept {
         Account* account = FindMutable(participant);
         return account && account->grid.SetGenerating(kGeneratorBuilding, online);
+    }
+
+    struct BuildingDamage {
+        std::int32_t applied = 0;
+        bool generatorOffline = false;
+        bool producerLost = false;
+        Cents refunded = 0;
+    };
+
+    // Damages one building already on this participant's grid. Does not add a building. Destroying
+    // the producer refunds every queued item once and refuses further training as no producer.
+    BuildingDamage DamageBuilding(ParticipantId participant, power::BuildingId id, std::int32_t amount) {
+        BuildingDamage result;
+        Account* account = FindMutable(participant);
+        if (!account) return result;
+        const std::size_t before = account->grid.Count();
+        const power::Damage hit = account->grid.ApplyDamage(id, amount);
+        result.applied = hit.applied;
+        result.generatorOffline = hit.generatorOffline;
+        if (account->grid.Count() != before) return result;
+        if (!(hit.destroyed && id == kProducerBuilding && account->hasProducer)) return result;
+        Cents sum = 0;
+        for (const QueueItem& item : account->queue)
+            if (!CheckedAdd(sum, item.paid, sum)) return result;
+        Cents available = 0;
+        Cents refunded = 0;
+        if (!CheckedAdd(account->available, sum, available) || !CheckedAdd(account->refunded, sum, refunded)) return result;
+        account->available = available;
+        account->refunded = refunded;
+        account->queue.clear();
+        account->hasProducer = false;
+        result.producerLost = true;
+        result.refunded = sum;
+        return result;
+    }
+
+    // Repairs the generator to full health so the next Advance can power the same queue entry.
+    // A producer, a source and a missing building are not repaired.
+    bool RepairBuilding(ParticipantId participant, power::BuildingId id) noexcept {
+        Account* account = FindMutable(participant);
+        return account && account->grid.Repair(id);
     }
 
     // Stable ascending participant order, for deterministic per-step processing.

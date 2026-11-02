@@ -3790,6 +3790,39 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
         SubmitGroupIntent(ActiveMatch, Selected, Target, politika::rules::AttackOrder{Target->GetStableId()});
         return;
     }
+    if (APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor()))
+    {
+        if (!Structure->IsBuilding())
+        {
+            ShowLocalFeedback(TEXT("That is a resource, not a building."));
+            return;
+        }
+        const uint32 PlayerId = GetCommandPlayerId();
+        if (Structure->GetOwnerPlayer() == PlayerId)
+        {
+            if (ActiveMatch->RepairOwnedBuilding(Structure))
+                ShowLocalFeedback(TEXT("Generator repaired."));
+            else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
+            return;
+        }
+        APolitikaPrototypeUnit* Attacker = nullptr;
+        for (APolitikaPrototypeUnit* Unit : Selected)
+        {
+            if (Unit && Unit->CanAttack() && FlatDistance(Unit->GetActorLocation(), Structure->GetActorLocation()) <= Unit->GetWeaponRange())
+            {
+                Attacker = Unit;
+                break;
+            }
+        }
+        if (!Attacker)
+        {
+            ShowLocalFeedback(TEXT("Move a unit into range to damage that building."));
+            return;
+        }
+        const int32 Applied = ActiveMatch->DamageOwnedBuilding(Structure, FMath::Max(1, FMath::RoundToInt(Attacker->GetWeaponDamage())));
+        ShowLocalFeedback(Applied > 0 ? TEXT("Building hit.") : TEXT("That building took no damage."));
+        return;
+    }
     const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();
     const FVector2D PlayableMax = ActiveMatch->GetPlayableMax();
     const FVector2D MapPosition(Hit.ImpactPoint.X - PlayableMin.X, Hit.ImpactPoint.Y - PlayableMin.Y);

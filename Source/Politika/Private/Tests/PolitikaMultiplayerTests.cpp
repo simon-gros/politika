@@ -4416,4 +4416,99 @@ bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingDamageTest,
+    "Politika.RTS.Multiplayer.BuildingDamage",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E6: damaging the generator cuts power without the outage switch, repair resumes the same
+// queue entry, and destroying the producer refunds that queue once. A source is not a building.
+bool FPolitikaMultiplayerBuildingDamageTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+    F.Match->SyncEconomyReplication();
+
+    APolitikaPrototypeStructure* Generator = nullptr;
+    APolitikaPrototypeStructure* Producer = nullptr;
+    int32 Buildings = 0;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure || Structure->GetOwnerPlayer() != HostId) continue;
+        if (Structure->IsGenerator()) Generator = Structure;
+        else if (Structure->IsProducer()) Producer = Structure;
+        if (Structure->IsBuilding()) ++Buildings;
+    }
+    if (!TestNotNull(TEXT("The host has a generator"), Generator) || !TestNotNull(TEXT("The host has a producer"), Producer)) return false;
+    TestEqual(TEXT("BD-01 two buildings"), Buildings, 2);
+    TestEqual(TEXT("BD-01 the generator starts at full health"), Generator->GetHealth(), pw::kGeneratorHealth);
+    const std::size_t Grid = F.Match->GetEconomy().Find(HostId)->grid.Count();
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::RecipeDefinition Recipe = *pe::FindRecipe(Rifleman);
+    FPolitikaNetEconomyIntent Intent;
+    Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+    Intent.Op = static_cast<uint8>(pe::EconomyOp::Train);
+    Intent.Recipe = Rifleman;
+    Intent.ClientSequence = 1;
+    Intent.CorrelationId = F.NextCorrelation++;
+    Intent.MatchGeneration = F.Match->GetMatchGeneration();
+    TestTrue(TEXT("BD-02 the training request is taken"), F.Match->SubmitEconomyIntent(Host, Intent));
+    F.Step();
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    if (!TestTrue(TEXT("BD-02 one item is queued"), Account && Account->queue.size() == 1)) return false;
+    const uint32 Held = Account->queue[0].remainingSteps;
+    const int64 Spent = Account->spent;
+    const uint64 Transaction = Account->queue[0].transaction;
+
+    TestEqual(TEXT("BD-03 one hit takes the generator offline"), F.Match->DamageOwnedBuilding(Generator, 1), 1);
+    TestEqual(TEXT("BD-03 the actor shows the hit"), Generator->GetHealth(), pw::kGeneratorHealth - 1);
+    TestFalse(TEXT("BD-03 the switch cannot override the damage"), F.Match->Economy.SetGeneratorOnline(HostId, true));
+    F.Step();
+    Account = F.Match->GetEconomy().Find(HostId);
+    TestFalse(TEXT("BD-04 the producer is unpowered"), Account->producerPowered);
+    TestEqual(TEXT("BD-04 the queue holds"), Account->queue[0].remainingSteps, Held);
+    FPolitikaNetEconomyIntent Refused = Intent;
+    Refused.ClientSequence = 2;
+    Refused.CorrelationId = F.NextCorrelation++;
+    F.Match->SubmitEconomyIntent(Host, Refused);
+    F.Step();
+    const auto* Outcome = F.Match->TestEconomyOutcomes.FindByPredicate(
+        [&Refused](const auto& Entry) { return Entry.Value.CorrelationId == Refused.CorrelationId; });
+    TestTrue(TEXT("BD-05 new training is producer_unpowered"),
+        Outcome && Outcome->Value.Rejection == static_cast<uint8>(pe::EconomyRejection::ProducerUnpowered));
+    Account = F.Match->GetEconomy().Find(HostId);
+    TestEqual(TEXT("BD-05 the refusal charges nothing"), Account->spent, Spent);
+
+    TestTrue(TEXT("BD-06 repair restores the generator"), F.Match->RepairOwnedBuilding(Generator));
+    TestEqual(TEXT("BD-06 health is full"), Generator->GetHealth(), pw::kGeneratorHealth);
+    F.Step();
+    Account = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("BD-07 the same entry resumes"), Account->producerPowered && Account->queue.size() == 1
+        && Account->queue[0].transaction == Transaction && Account->queue[0].remainingSteps == Held - 1);
+
+    const auto Miss = F.Match->Economy.DamageBuilding(HostId, 99, 50);
+    TestEqual(TEXT("BD-08 an id that is not a building applies nothing"), Miss.applied, 0);
+    TestEqual(TEXT("BD-08 the grid does not grow"), static_cast<int32>(F.Match->GetEconomy().Find(HostId)->grid.Count()), static_cast<int32>(Grid));
+    const int64 Before = Account->available;
+    TestTrue(TEXT("BD-09 destroying the producer applies its remaining health"),
+        F.Match->DamageOwnedBuilding(Producer, pw::kProducerHealth) > 0);
+    Account = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("BD-09 the queue is refunded once"), Account && !Account->hasProducer && Account->queue.empty()
+        && Account->available == Before + Recipe.cost && Account->refunded == Recipe.cost && Account->Reconciles());
+    TestEqual(TEXT("BD-09 a second hit refunds nothing"), F.Match->DamageOwnedBuilding(Producer, pw::kProducerHealth), 0);
+    TestEqual(TEXT("BD-09 still one refund"), F.Match->GetEconomy().Find(HostId)->refunded, Recipe.cost);
+    TestEqual(TEXT("BD-09 the grid is unchanged"), static_cast<int32>(F.Match->GetEconomy().Find(HostId)->grid.Count()), static_cast<int32>(Grid));
+    return true;
+}
+
 #endif

@@ -108,6 +108,9 @@ void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimePro
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(APolitikaPrototypeStructure, Kind);
+    DOREPLIFETIME(APolitikaPrototypeStructure, StableId);
+    DOREPLIFETIME(APolitikaPrototypeStructure, BuildingId);
+    DOREPLIFETIME(APolitikaPrototypeStructure, Health);
     DOREPLIFETIME(APolitikaPrototypeStructure, OwnerPlayer);
     DOREPLIFETIME(APolitikaPrototypeStructure, TeamId);
     DOREPLIFETIME(APolitikaPrototypeStructure, Tint);
@@ -129,8 +132,49 @@ void APolitikaPrototypeStructure::Configure(APolitikaPrototypeMatch* InMatch, po
     TeamId = InTeam;
     Tint = InTint;
     ApplyTint();
+    // Query only, so a click can choose the building without blocking movement or navigation.
+    Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+    Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
     // Non-replicated component state: a listen host does not see an enemy producer either.
     if (bHiddenLocally) Body->SetHiddenInGame(true, true);
+}
+
+void APolitikaPrototypeStructure::SetBuildingIdentity(uint64 InStableId, uint32 InBuildingId, int32 InHealth)
+{
+    StableId = InStableId;
+    BuildingId = InBuildingId;
+    Health = FMath::Max(0, InHealth);
+}
+
+int32 APolitikaPrototypeMatch::DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount)
+{
+    if (!HasAuthority() || !Structure || !Structure->IsBuilding() || Amount <= 0) return 0;
+    const pe::Ledger::BuildingDamage Hit = Economy.DamageBuilding(Structure->GetOwnerPlayer(), Structure->GetBuildingId(), Amount);
+    if (const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer()))
+        if (const politika::power::Building* Building = Account->grid.Find(Structure->GetBuildingId()))
+            Structure->SetHealth(Building->health);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_BUILDING_DAMAGE participant=%u kind=%s applied=%d health=%d offline=%d producer_lost=%d refunded=%lld"),
+        Structure->GetOwnerPlayer(), Structure->IsGenerator() ? TEXT("generator") : TEXT("producer"),
+        Hit.applied, Structure->GetHealth(), Hit.generatorOffline ? 1 : 0, Hit.producerLost ? 1 : 0, Hit.refunded);
+#endif
+    return Hit.applied;
+}
+
+bool APolitikaPrototypeMatch::RepairOwnedBuilding(APolitikaPrototypeStructure* Structure)
+{
+    if (!HasAuthority() || !Structure || !Structure->IsGenerator()) return false;
+    if (!Economy.RepairBuilding(Structure->GetOwnerPlayer(), Structure->GetBuildingId())) return false;
+    if (const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer()))
+        if (const politika::power::Building* Building = Account->grid.Find(Structure->GetBuildingId()))
+            Structure->SetHealth(Building->health);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR participant=%u kind=generator health=%d"),
+        Structure->GetOwnerPlayer(), Structure->GetHealth());
+#endif
+    return true;
 }
 
 void APolitikaPrototypeStructure::ConfigureSource(APolitikaPrototypeMatch* InMatch, pe::Resource InResource, uint32 InOwner, uint8 InTeam, bool bHiddenLocally)
@@ -300,6 +344,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                 const bool bHiddenLocally = bFogOfWar && LocalTeam != politika::rules::kNoTeam && LocalTeam != Participant.TeamId;
                 Structure->Configure(this, politika::power::BuildingKind::Producer, Participant.RuntimePlayerId, Participant.TeamId,
                     Definition->FactionTint, bHiddenLocally);
+                Structure->SetBuildingIdentity(NextStableId++, politika::economy::kProducerBuilding, politika::power::kProducerHealth);
                 Structures.Add(Structure);
                 // Beside the producer: the seat's self-starting plant. Without one there is no
                 // base, and the seat has no producer either, so no impossible power cycle exists.
@@ -312,6 +357,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                 {
                     Generator->Configure(this, politika::power::BuildingKind::Generator, Participant.RuntimePlayerId, Participant.TeamId,
                         Definition->FactionTint * 0.45f, bHiddenLocally);
+                    Generator->SetBuildingIdentity(NextStableId++, politika::economy::kGeneratorBuilding, politika::power::kGeneratorHealth);
                     Structures.Add(Generator);
                 }
                 else

@@ -2316,6 +2316,55 @@ int main() {
         assert(Retry.powerChanged && Retry.spawnDue && Ledger.CompleteHead(1, 1) && A.produced == 1 && A.Reconciles());
     }
 
+    // ECON-E6: damage takes the generator offline and a dead producer fails its queue once.
+    {
+        namespace pe = politika::economy;
+        namespace pw = politika::power;
+        using pe::EconomyRejection;
+        constexpr std::uint8_t Rifleman = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
+        const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+        const std::uint32_t Duration = pe::FindRecipe(Rifleman)->durationSteps;
+        pe::Ledger Ledger;
+        assert(Ledger.AddParticipant(1, 4 * Price, true, 1'000'000));
+        const pe::Account& A = *Ledger.Find(1);
+        const std::size_t Buildings = A.grid.Count();
+        assert(Buildings == 2 && A.grid.Find(pe::kGeneratorBuilding)->health == pw::kGeneratorHealth);
+        assert(Ledger.Train(1, 1, Rifleman, 0, 20));
+        pe::Step Step = 1;
+        assert(Ledger.Advance(1, Step).headRemainingSteps == 0 || A.queue.front().remainingSteps == Duration - 1);
+        const std::uint32_t Held = A.queue.front().remainingSteps;
+        const pe::Cents Spent = A.spent;
+        const auto Scratch = Ledger.DamageBuilding(1, pe::kGeneratorBuilding, 1);
+        assert(Scratch.applied == 1 && Scratch.generatorOffline && !Scratch.producerLost);
+        assert(A.grid.Count() == Buildings && !A.grid.Find(pe::kGeneratorBuilding)->generating);
+        assert(!Ledger.SetGeneratorOnline(1, true));
+        const pe::StepResult Off = Ledger.Advance(1, ++Step);
+        assert(Off.powerChanged && !A.producerPowered && A.queue.front().remainingSteps == Held);
+        const pe::RequestResult Refused = Ledger.Train(1, 2, Rifleman, 0, 20);
+        assert(Refused.rejection == EconomyRejection::ProducerUnpowered && A.spent == Spent && A.queue.size() == 1);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding));
+        assert(A.grid.Find(pe::kGeneratorBuilding)->health == pw::kGeneratorHealth);
+        const pe::StepResult On = Ledger.Advance(1, ++Step);
+        assert(On.powerChanged && A.producerPowered && A.queue.front().transaction == 1
+            && A.queue.front().remainingSteps == Held - 1 && A.spent == Spent);
+
+        // The producer is on the grid. Damaging it does not add a building or cut the generator.
+        const auto Nick = Ledger.DamageBuilding(1, pe::kProducerBuilding, 1);
+        assert(Nick.applied == 1 && !Nick.producerLost && A.grid.Count() == Buildings
+            && A.grid.Find(pe::kGeneratorBuilding)->generating && A.hasProducer);
+        const pe::Cents BeforeLoss = A.available;
+        const auto Lost = Ledger.DamageBuilding(1, pe::kProducerBuilding, pw::kProducerHealth);
+        assert(Lost.producerLost && Lost.refunded == Price && A.queue.empty() && !A.hasProducer
+            && A.available == BeforeLoss + Price && A.refunded == Price && A.Reconciles());
+        const auto Again = Ledger.DamageBuilding(1, pe::kProducerBuilding, pw::kProducerHealth);
+        assert(Again.applied == 0 && !Again.producerLost && Again.refunded == 0 && A.refunded == Price);
+        assert(Ledger.Train(1, 3, Rifleman, 0, 20).rejection == EconomyRejection::NoProducer);
+
+        // A source, or any id that is not a building, does not join the grid.
+        const auto Miss = Ledger.DamageBuilding(1, 99, 50);
+        assert(Miss.applied == 0 && A.grid.Count() == Buildings && !Ledger.RepairBuilding(1, pe::kProducerBuilding));
+    }
+
     // ECON-E1: one treasury per participant, income on a fixed cadence, training paid once.
     {
         namespace pe = politika::economy;

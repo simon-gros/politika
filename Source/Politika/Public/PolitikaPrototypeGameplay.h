@@ -386,6 +386,8 @@ public:
     bool IsAttackable() const { return bAttackable; }
     bool CanMove() const { return MoveSpeed > 0.0f; }
     bool CanAttack() const { return WeaponDamage > 0.0f && WeaponCooldown > 0.0f && WeaponRange > 0.0f; }
+    float GetWeaponRange() const { return WeaponRange; }
+    float GetWeaponDamage() const { return WeaponDamage; }
     EPolitikaPrototypeOrder GetCurrentOrder() const { return CurrentOrder; }
     FText GetUnitName() const { return UnitName; }
     APolitikaPrototypeUnit* GetOrderTarget() const { return OrderTarget.Get(); }
@@ -467,6 +469,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;
@@ -710,11 +713,19 @@ public:
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
     void Configure(APolitikaPrototypeMatch* InMatch, politika::power::BuildingKind InKind, uint32 InOwner, uint8 InTeam,
         const FLinearColor& InTint, bool bHiddenLocally);
+    void SetBuildingIdentity(uint64 InStableId, uint32 InBuildingId, int32 InHealth);
     // A participant's source of one resource (ECON-E4, ECON-E5). Not a building: it has no electrical
     // load and no grid entry, so it takes the kind values after the two power::BuildingKind values.
     void ConfigureSource(APolitikaPrototypeMatch* InMatch, politika::economy::Resource InResource, uint32 InOwner, uint8 InTeam, bool bHiddenLocally);
     void MarkSourceEmpty();
     bool IsProducer() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Producer); }
+    bool IsGenerator() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Generator); }
+    bool IsBuilding() const { return IsProducer() || IsGenerator(); }
+    bool IsAlive() const { return !IsBuilding() || Health > 0; }
+    uint64 GetStableId() const { return StableId; }
+    uint32 GetBuildingId() const { return BuildingId; }
+    int32 GetHealth() const { return Health; }
+    void SetHealth(int32 InHealth) { Health = FMath::Max(0, InHealth); }
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
     bool IsFoodSource() const { return Kind == FoodSourceKind; }
     bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
@@ -728,6 +739,9 @@ private:
     UFUNCTION() void ApplyTint();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(Replicated) uint8 Kind = 0;
+    UPROPERTY(Replicated) uint64 StableId = 0;
+    UPROPERTY(Replicated) uint32 BuildingId = 0;
+    UPROPERTY(Replicated) int32 Health = 0;
     UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
     UPROPERTY(Replicated) uint8 TeamId = 0;
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
@@ -773,6 +787,9 @@ public:
     // the money to the next simulation step. Returns false only when the source has no binding.
     bool SubmitEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent);
     const politika::economy::Ledger& GetEconomy() const { return Economy; }
+    // Applies weapon damage to one building on its owner's grid, or repairs the caller's own generator.
+    int32 DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
+    bool RepairOwnedBuilding(APolitikaPrototypeStructure* Structure);
     bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
     // Advisory slot check shared by the client planner and the server's formation planner:
@@ -1182,6 +1199,7 @@ private:
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;
@@ -1432,6 +1450,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerDisciplineRoutTest;
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
+    friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;

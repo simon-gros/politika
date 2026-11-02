@@ -8,6 +8,7 @@
 // The figures below are prototype fixture data, not balance decisions.
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -22,6 +23,10 @@ enum class BuildingKind : std::uint8_t { Producer, Generator };
 inline constexpr Kilowatts kGeneratorCapacityKw = 100;
 inline constexpr Kilowatts kGeneratorAuxiliaryKw = 10;
 inline constexpr Kilowatts kProducerLoadKw = 40;
+// Fixture health. A generator supplies power only at full health. A producer stays on the grid
+// until it reaches zero, which is the one moment its queue is failed.
+inline constexpr std::int32_t kGeneratorHealth = 100;
+inline constexpr std::int32_t kProducerHealth = 200;
 
 struct Building {
     BuildingId id = 0;
@@ -30,6 +35,14 @@ struct Building {
     Kilowatts capacityKw = 0;
     bool generating = true;
     bool powered = false;
+    std::int32_t health = 0;
+    std::int32_t maxHealth = 0;
+};
+
+struct Damage {
+    std::int32_t applied = 0;
+    bool generatorOffline = false;
+    bool destroyed = false;
 };
 
 struct Allocation {
@@ -44,11 +57,18 @@ public:
     bool Add(const Building& building) {
         if (building.id == 0 || building.loadKw <= 0 || building.capacityKw < 0 || Find(building.id)) return false;
         if (building.kind != BuildingKind::Generator && building.capacityKw != 0) return false;
-        const auto position = std::lower_bound(buildings.begin(), buildings.end(), building.id,
+        Building stored = building;
+        if (stored.maxHealth <= 0) {
+            stored.maxHealth = stored.kind == BuildingKind::Generator ? kGeneratorHealth : kProducerHealth;
+            stored.health = stored.maxHealth;
+        }
+        const auto position = std::lower_bound(buildings.begin(), buildings.end(), stored.id,
             [](const Building& candidate, BuildingId id) { return candidate.id < id; });
-        buildings.insert(position, building);
+        buildings.insert(position, stored);
         return true;
     }
+
+    [[nodiscard]] std::size_t Count() const noexcept { return buildings.size(); }
 
     [[nodiscard]] const Building* Find(BuildingId id) const noexcept {
         const auto found = std::find_if(buildings.begin(), buildings.end(),
@@ -63,7 +83,36 @@ public:
         const auto found = std::find_if(buildings.begin(), buildings.end(),
             [id](const Building& candidate) { return candidate.id == id && candidate.kind == BuildingKind::Generator; });
         if (found == buildings.end()) return false;
+        // Damage keeps a generator offline until it is repaired back to full health.
+        if (generating && found->health < found->maxHealth) return false;
         found->generating = generating;
+        return true;
+    }
+
+    // Reduces one building's health. A generator stops supplying as soon as it is below full.
+    // A miss, a non-positive amount or a building already at zero changes nothing and adds no building.
+    Damage ApplyDamage(BuildingId id, std::int32_t amount) noexcept {
+        Damage result;
+        const auto found = std::find_if(buildings.begin(), buildings.end(),
+            [id](const Building& candidate) { return candidate.id == id; });
+        if (found == buildings.end() || amount <= 0 || found->health <= 0 || found->maxHealth <= 0) return result;
+        result.applied = std::min(found->health, amount);
+        found->health -= result.applied;
+        if (found->kind == BuildingKind::Generator && found->health < found->maxHealth && found->generating) {
+            found->generating = false;
+            result.generatorOffline = true;
+        }
+        result.destroyed = found->health == 0;
+        return result;
+    }
+
+    // Restores a generator to full health and lets it supply again. A producer is not repaired here.
+    bool Repair(BuildingId id) noexcept {
+        const auto found = std::find_if(buildings.begin(), buildings.end(),
+            [id](Building& candidate) { return candidate.id == id && candidate.kind == BuildingKind::Generator; });
+        if (found == buildings.end() || (found->health == found->maxHealth && found->generating)) return false;
+        found->health = found->maxHealth;
+        found->generating = true;
         return true;
     }
 
