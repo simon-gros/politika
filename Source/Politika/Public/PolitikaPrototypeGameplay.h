@@ -815,7 +815,7 @@ public:
     // Destroys one living building that belongs to this participant, through the same damage rules.
     bool DemolishOwnedBuilding(APolitikaPrototypeStructure* Structure, uint32 ParticipantId);
     // What the viewer may read about a building under the cursor. Empty when fog hides it, so health
-    // is not an oracle. A source is not a building.
+    // is not an oracle. A source is not a building. A capture in progress names the approach or the hold.
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.

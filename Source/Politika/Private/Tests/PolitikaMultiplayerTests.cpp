@@ -4899,12 +4899,22 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     if (Source) TestFalse(TEXT("BD-03 a resource cannot be demolished"), F.Match->DemolishOwnedBuilding(Source, HostId));
 
     const FVector2D ProducerAt(EnemyProducer->GetActorLocation().X, EnemyProducer->GetActorLocation().Y);
-    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, ProducerAt + FVector2D(80.0, 0.0), 600.0f);
+    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, ProducerAt + FVector2D(900.0, 0.0), 600.0f);
     if (!TestNotNull(TEXT("BD-04 the captor spawns"), Captor)) return false;
-    TestEqual(TEXT("BD-08 a seen enemy producer is described"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+    TestTrue(TEXT("BD-09 the approach starts"), F.Match->BeginCapture(Captor, EnemyProducer));
+    TestEqual(TEXT("BD-09 the cursor says the unit is moving to capture"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+        FString::Printf(TEXT("Enemy producer  %d / %d  \u00b7  moving to capture"), EnemyProducer->GetHealth(), pw::kProducerHealth));
+    F.Step();
+    TestEqual(TEXT("BD-09 a failed approach clears the line"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Enemy producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));
+    Captor->SetActorLocation(FVector(ProducerAt.X + 80.0, ProducerAt.Y, Captor->GetActorLocation().Z));
     TestTrue(TEXT("BD-04 the freed slot can capture"), F.Match->BeginCapture(Captor, EnemyProducer));
-    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("BD-09 the hold reads from zero"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+        FString::Printf(TEXT("Enemy producer  %d / %d  \u00b7  capturing 0 / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth, pw::kCaptureSteps));
+    F.Step();
+    TestEqual(TEXT("BD-09 the hold advances"), F.Match->BuildingCursorText(EnemyProducer, HostId),
+        FString::Printf(TEXT("Enemy producer  %d / %d  \u00b7  capturing 1 / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth, pw::kCaptureSteps));
+    F.Step(pw::kCaptureSteps - 1);
     TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
     TestEqual(TEXT("BD-08 the captured producer reads as yours"), F.Match->BuildingCursorText(EnemyProducer, HostId),
         FString::Printf(TEXT("Your producer  %d / %d"), EnemyProducer->GetHealth(), pw::kProducerHealth));

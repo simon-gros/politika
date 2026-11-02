@@ -371,6 +371,21 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
         const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
         State = Plant && Plant->generating ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
     }
+    const APolitikaPrototypeUnit* Captor = nullptr;
+    for (const APolitikaPrototypeUnit* Unit : Units)
+    {
+        if (!IsValid(Unit) || Unit->GetCaptureTarget() != Structure) continue;
+        Captor = Unit;
+        if (Unit->GetOwnerPlayer() == ViewerId) break;
+    }
+    if (Captor)
+    {
+        const bool bInRange = FVector::Dist2D(Captor->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm;
+        if (!bInRange && Captor->GetCaptureSteps() == 0)
+            State += TEXT("  \u00b7  moving to capture");
+        else
+            State += FString::Printf(TEXT("  \u00b7  capturing %d / %d"), Captor->GetCaptureSteps(), politika::power::kCaptureSteps);
+    }
     return FString::Printf(TEXT("%s %s  %d / %d%s"), Who, Kind, Structure->GetHealth(), MaxHealth, *State);
 }
 
