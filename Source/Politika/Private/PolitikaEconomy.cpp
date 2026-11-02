@@ -362,6 +362,15 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
     }
 }
 
+FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding)
+{
+    const int32 Held = FMath::Clamp(Holding, 0, FMath::Max(0, Carried));
+    const int32 OnTheWay = FMath::Max(0, Carried) - Held;
+    if (Held > 0 && OnTheWay > 0) return FString::Printf(TEXT("%d on the way, %d holding"), OnTheWay, Held);
+    if (Held > 0) return FString::Printf(TEXT("%d holding"), Held);
+    return FString::Printf(TEXT("%d on the way"), OnTheWay);
+}
+
 FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
 {
     if (!Structure || !Structure->IsBuilding() || ViewerId == 0) return FString();
@@ -1206,6 +1215,23 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.bHasFoodSource = Account->foodSource.present;
             View.FoodCarried = static_cast<int32>(Account->FoodCarried());
             View.FoodAtSource = static_cast<int32>(Account->foodSource.remaining);
+            int32 GoldHolding = 0;
+            int32 FoodHolding = 0;
+            for (const pe::Harvester& Harvester : Account->harvesters)
+            {
+                if (Harvester.load <= 0) continue;
+                const TObjectPtr<APolitikaPrototypeUnit>* Found = Units.FindByPredicate(
+                    [&Harvester, &Binding](const APolitikaPrototypeUnit* Unit)
+                    {
+                        return IsValid(Unit) && Unit->GetStableId() == Harvester.unit && Unit->GetOwnerPlayer() == Binding.RuntimePlayerId;
+                    });
+                const bool bDriving = Found && (*Found)->IsAlive() && (*Found)->GetCurrentOrder() == EPolitikaPrototypeOrder::Move;
+                if (bDriving) continue;
+                if (Harvester.loadKind == pe::Resource::Gold) GoldHolding += static_cast<int32>(Harvester.load);
+                else FoodHolding += static_cast<int32>(Harvester.load);
+            }
+            View.GoldHolding = GoldHolding;
+            View.FoodHolding = FoodHolding;
             View.Harvesters = static_cast<int32>(Account->harvesters.size());
             if (!Account->queue.empty())
             {
@@ -1239,12 +1265,13 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_source=%d harvesters=%d food_carried=%d food_source=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_source=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
         OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0, OwnEconomy.Rations, OwnEconomy.UpkeepRations,
-        OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldAtSource, OwnEconomy.Harvesters, OwnEconomy.FoodCarried, OwnEconomy.FoodAtSource);
+        OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldHolding, OwnEconomy.GoldAtSource,
+        OwnEconomy.Harvesters, OwnEconomy.FoodCarried, OwnEconomy.FoodHolding, OwnEconomy.FoodAtSource);
 #else
     (void)Source;
 #endif

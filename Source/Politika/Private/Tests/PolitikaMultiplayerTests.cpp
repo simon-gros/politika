@@ -4919,8 +4919,15 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestTrue(TEXT("BD-16 the same producer is not asked again"),
         Haul && Haul->phase == pe::HarvesterPhase::Waiting && Haul->refusedDepot == OwnProducer->GetStableId() && Haul->load == pe::kLoadGold);
     TestEqual(TEXT("BD-17 a held load reads as holding gold"), Hauler->GetOrderLabel(), FString(TEXT("Holding gold")));
+    TestEqual(TEXT("BD-18 the gold line counts it as holding"), F.Host->GetOwnEconomy().GoldHolding, static_cast<int32>(pe::kLoadGold));
+    TestEqual(TEXT("BD-18 and not as on the way"), APolitikaPrototypeMatch::CargoPhrase(F.Host->GetOwnEconomy().GoldCarried, F.Host->GetOwnEconomy().GoldHolding),
+        FString(TEXT("25 holding")));
     Hauler->CurrentOrder = EPolitikaPrototypeOrder::Move;
     TestEqual(TEXT("BD-17 on the way it still reads as moving"), Hauler->GetOrderLabel(), FString(TEXT("Moving")));
+    F.Match->SyncEconomyReplication();
+    TestEqual(TEXT("BD-18 driving counts as on the way"), F.Host->GetOwnEconomy().GoldHolding, 0);
+    TestEqual(TEXT("BD-18 the line says on the way"), APolitikaPrototypeMatch::CargoPhrase(F.Host->GetOwnEconomy().GoldCarried, F.Host->GetOwnEconomy().GoldHolding),
+        FString(TEXT("25 on the way")));
     Hauler->CurrentOrder = EPolitikaPrototypeOrder::Stop;
     Park(Hauler, OwnProducer);
     F.Step();

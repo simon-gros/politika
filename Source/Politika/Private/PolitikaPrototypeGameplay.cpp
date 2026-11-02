@@ -4732,7 +4732,8 @@ void APolitikaPrototypeHUD::DrawHUD()
         const int32 UpkeepSeconds = static_cast<int32>(pe::kFoodUpkeepIntervalSteps * SimulationStepSecondsForHud);
         // ECON-E5: what is left in the food cache and on the way from it.
         const FString FoodCacheText = Economy.bHasFoodSource
-            ? FString::Printf(TEXT("%d in the cache, %d on the way  ·  "), Economy.FoodAtSource, Economy.FoodCarried) : FString();
+            ? FString::Printf(TEXT("%d in the cache, %s  ·  "), Economy.FoodAtSource,
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.FoodCarried, Economy.FoodHolding)) : FString();
         const FString FoodText = Economy.bFoodShortage
             ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s%s"), Economy.Rations, *FoodCacheText, *PurchaseText)
             : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s%s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,
@@ -4767,8 +4768,9 @@ void APolitikaPrototypeHUD::DrawHUD()
                 : FString(TEXT("nothing to sell yet"));
             const FString HarvesterText = Economy.GoldAtSource > 0 || Economy.FoodAtSource > 0
                 ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("caches empty"));
-            DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache, %d on the way  ·  %s  ·  %d %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
-                Economy.GoldCarried, *SaleText, Economy.Harvesters, Economy.Harvesters == 1 ? TEXT("harvester") : TEXT("harvesters"), *HarvesterText),
+            DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache, %s  ·  %s  ·  %d %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.GoldCarried, Economy.GoldHolding), *SaleText,
+                Economy.Harvesters, Economy.Harvesters == 1 ? TEXT("harvester") : TEXT("harvesters"), *HarvesterText),
                 FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
             Y += 26.0f * UiScale;
         }

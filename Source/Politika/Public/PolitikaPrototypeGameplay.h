@@ -276,10 +276,13 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() bool bHasGoldSource = false;
     UPROPERTY() int32 GoldHeld = 0;
     UPROPERTY() int32 GoldCarried = 0;
+    // Of GoldCarried, the part that is aboard and not driving. The rest is on the way.
+    UPROPERTY() int32 GoldHolding = 0;
     UPROPERTY() int32 GoldAtSource = 0;
     // ECON-E5: the same for food; delivered food is in Rations.
     UPROPERTY() bool bHasFoodSource = false;
     UPROPERTY() int32 FoodCarried = 0;
+    UPROPERTY() int32 FoodHolding = 0;
     UPROPERTY() int32 FoodAtSource = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
@@ -294,7 +297,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
             && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage
             && bHasGoldSource == Other.bHasGoldSource && GoldHeld == Other.GoldHeld && GoldCarried == Other.GoldCarried
-            && GoldAtSource == Other.GoldAtSource && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried
+            && GoldHolding == Other.GoldHolding && GoldAtSource == Other.GoldAtSource
+            && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried && FoodHolding == Other.FoodHolding
             && FoodAtSource == Other.FoodAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
@@ -831,6 +835,8 @@ public:
     // What the viewer may read about a building under the cursor. Empty when fog hides it, so health
     // is not an oracle. A source is not a building. A capture in progress names the approach or the hold.
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
+    // "25 on the way", "25 holding", or both. Holding is the part of Carried that is not driving.
+    static FString CargoPhrase(int32 Carried, int32 Holding);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
