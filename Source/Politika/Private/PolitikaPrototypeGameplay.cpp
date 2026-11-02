@@ -3091,6 +3091,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
     InputComponent->BindKey(EKeys::C, IE_Pressed, this, &APolitikaPrototypePlayerController::CaptureUnderCursor);
+    InputComponent->BindKey(EKeys::Z, IE_Pressed, this, &APolitikaPrototypePlayerController::DemolishUnderCursor);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
@@ -3964,6 +3965,35 @@ void APolitikaPrototypePlayerController::ServerBeginCapture_Implementation(uint6
     APolitikaPrototypeStructure* Structure = ActiveMatch->FindStructureByStableId(StructureId);
     if (!Unit || Unit->GetOwnerPlayer() != ActiveMatch->GetBoundParticipantId(this)) return;
     ActiveMatch->BeginCapture(Unit, Structure);
+}
+
+void APolitikaPrototypePlayerController::DemolishUnderCursor()
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    FHitResult Hit;
+    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return;
+    APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+    if (!Structure || !Structure->IsBuilding())
+    {
+        ShowLocalFeedback(TEXT("Point at your own building to demolish it."));
+        return;
+    }
+    if (HasAuthority())
+    {
+        if (!ActiveMatch->DemolishOwnedBuilding(Structure, GetCommandPlayerId()))
+            ShowLocalFeedback(TEXT("That building cannot be demolished."));
+        else ShowLocalFeedback(Structure->IsProducer() ? TEXT("Producer demolished.") : TEXT("Generator demolished."));
+        return;
+    }
+    ServerDemolishBuilding(Structure->GetStableId());
+}
+
+void APolitikaPrototypePlayerController::ServerDemolishBuilding_Implementation(uint64 StructureId)
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    ActiveMatch->DemolishOwnedBuilding(ActiveMatch->FindStructureByStableId(StructureId), ActiveMatch->GetBoundParticipantId(this));
 }
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()

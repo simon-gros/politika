@@ -4819,4 +4819,88 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingDemolishTest,
+    "Politika.RTS.Multiplayer.BuildingDemolish",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E12: Z demolishes your own living building through the damage rules. The producer refunds
+// its queue once, so the enemy producer can then be captured. A dead building is drawn grey, and
+// repairing the generator restores its color. An enemy building and a resource are refused.
+bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    APolitikaPrototypeStructure* EnemyProducer = nullptr;
+    APolitikaPrototypeStructure* OwnProducer = nullptr;
+    APolitikaPrototypeStructure* OwnGenerator = nullptr;
+    APolitikaPrototypeStructure* Source = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure) continue;
+        if (Structure->IsSource()) Source = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsProducer()) EnemyProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsProducer()) OwnProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsGenerator()) OwnGenerator = Structure;
+    }
+    if (!TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)
+        || !TestNotNull(TEXT("The host has a producer"), OwnProducer)
+        || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+    FPolitikaNetEconomyIntent Train;
+    Train.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+    Train.Op = static_cast<uint8>(pe::EconomyOp::Train);
+    Train.Recipe = Rifleman;
+    Train.ClientSequence = 1;
+    Train.CorrelationId = F.NextCorrelation++;
+    Train.MatchGeneration = F.Match->GetMatchGeneration();
+    TestTrue(TEXT("BD-01 the host queues a rifleman"), F.Match->SubmitEconomyIntent(F.Host, Train));
+    F.Step();
+    const pe::Cents Before = F.Match->GetEconomy().Find(HostId)->available;
+    const FLinearColor ProducerTint = OwnProducer->GetTint();
+    TestTrue(TEXT("BD-01 the host demolishes its producer"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
+    TestEqual(TEXT("BD-01 the producer is dead"), OwnProducer->GetHealth(), 0);
+    TestFalse(TEXT("BD-01 the host no longer has a producer"), F.Match->GetEconomy().Find(HostId)->hasProducer);
+    const pe::Account* Host = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("BD-01 the queue is refunded once"), Host && Host->queue.empty() && Host->refunded == Price && Host->available == Before + Price);
+    TestFalse(TEXT("BD-01 a dead producer is drawn grey"), OwnProducer->GetPresentedTint().Equals(ProducerTint));
+    TestFalse(TEXT("BD-02 demolishing it again does nothing"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
+    const int32 EnemyHealth = EnemyProducer->GetHealth();
+    TestFalse(TEXT("BD-03 an enemy building is refused"), F.Match->DemolishOwnedBuilding(EnemyProducer, HostId));
+    TestEqual(TEXT("BD-03 the enemy producer is untouched"), EnemyProducer->GetHealth(), EnemyHealth);
+    if (Source) TestFalse(TEXT("BD-03 a resource cannot be demolished"), F.Match->DemolishOwnedBuilding(Source, HostId));
+
+    const FVector2D ProducerAt(EnemyProducer->GetActorLocation().X, EnemyProducer->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, ProducerAt + FVector2D(80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BD-04 the captor spawns"), Captor)) return false;
+    TestTrue(TEXT("BD-04 the freed slot can capture"), F.Match->BeginCapture(Captor, EnemyProducer));
+    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("BD-04 the enemy producer changes owner"), EnemyProducer->GetOwnerPlayer(), HostId);
+
+    const FLinearColor GeneratorTint = OwnGenerator->GetTint();
+    TestTrue(TEXT("BD-05 the host demolishes its generator"), F.Match->DemolishOwnedBuilding(OwnGenerator, HostId));
+    const politika::power::Building* Plant = F.Match->GetEconomy().Find(HostId)->grid.Find(pe::kGeneratorBuilding);
+    TestTrue(TEXT("BD-05 the plant is dead and offline"), Plant && Plant->health == 0 && !Plant->generating);
+    TestTrue(TEXT("BD-05 both husks share the dead color"), OwnGenerator->GetPresentedTint().Equals(OwnProducer->GetPresentedTint()));
+    TestFalse(TEXT("BD-05 the dead color is not the plant color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
+    TestTrue(TEXT("BD-06 the generator can be repaired"), F.Match->RepairOwnedBuilding(OwnGenerator));
+    TestEqual(TEXT("BD-06 repair restores its health"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
+    TestTrue(TEXT("BD-06 repair restores its color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
+    Plant = F.Match->GetEconomy().Find(HostId)->grid.Find(pe::kGeneratorBuilding);
+    TestTrue(TEXT("BD-06 the plant supplies again"), Plant && Plant->generating && Plant->health == pw::kGeneratorHealth);
+    return true;
+}
+
 #endif

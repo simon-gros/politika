@@ -735,9 +735,15 @@ public:
     uint64 GetStableId() const { return StableId; }
     uint32 GetBuildingId() const { return BuildingId; }
     int32 GetHealth() const { return Health; }
-    void SetHealth(int32 InHealth) { Health = FMath::Max(0, InHealth); }
+    void SetHealth(int32 InHealth)
+    {
+        Health = FMath::Max(0, InHealth);
+        ApplyTint();
+    }
     void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth, const FLinearColor& InTint);
     FLinearColor GetTint() const { return Tint; }
+    // Faction color while the building stands; one shared grey once it is dead.
+    FLinearColor GetPresentedTint() const;
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
     bool IsFoodSource() const { return Kind == FoodSourceKind; }
     bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
@@ -755,7 +761,7 @@ private:
     UPROPERTY(Replicated) uint8 Kind = 0;
     UPROPERTY(Replicated) uint64 StableId = 0;
     UPROPERTY(Replicated) uint32 BuildingId = 0;
-    UPROPERTY(Replicated) int32 Health = 0;
+    UPROPERTY(ReplicatedUsing=ApplyTint) int32 Health = 0;
     UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
     UPROPERTY(Replicated) uint8 TeamId = 0;
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
@@ -806,6 +812,8 @@ public:
     // Applies weapon damage to one building on its owner's grid, or repairs the caller's own generator.
     int32 DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
     bool RepairOwnedBuilding(APolitikaPrototypeStructure* Structure);
+    // Destroys one living building that belongs to this participant, through the same damage rules.
+    bool DemolishOwnedBuilding(APolitikaPrototypeStructure* Structure, uint32 ParticipantId);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
@@ -1233,6 +1241,7 @@ private:
     friend class FPolitikaMultiplayerBuildingAttackTest;
     friend class FPolitikaMultiplayerBuildingSightTest;
     friend class FPolitikaMultiplayerBuildingCaptureTest;
+    friend class FPolitikaMultiplayerBuildingDemolishTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;
@@ -1504,6 +1513,8 @@ public:
     UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
     UFUNCTION(Server, Reliable) void ServerBeginCapture(uint64 IssuerId, uint64 StructureId);
     void CaptureUnderCursor();
+    UFUNCTION(Server, Reliable) void ServerDemolishBuilding(uint64 StructureId);
+    void DemolishUnderCursor();
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitFormationIntent(const FPolitikaNetFormationIntent& Intent);

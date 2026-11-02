@@ -50,6 +50,7 @@ constexpr float kHarvesterSpeedCmPerSecond = 280.0f;
 const FLinearColor kGoldSourceTint(0.95f, 0.72f, 0.12f);
 const FLinearColor kFoodSourceTint(0.3f, 0.72f, 0.2f);
 const FLinearColor kSourceEmptyTint(0.22f, 0.2f, 0.16f);
+const FLinearColor kDeadBuildingTint(0.22f, 0.22f, 0.22f);
 // The plant is the same faction color as the producer, darkened so the two blocks stay distinct.
 constexpr float kGeneratorTintScale = 0.45f;
 
@@ -223,7 +224,12 @@ void APolitikaPrototypeStructure::ApplyTint()
     if (IsSource()) Body->SetRelativeScale3D(FVector(1.5, 1.5, kSourceHalfHeightCm / 50.0));
     else if (!IsProducer()) Body->SetRelativeScale3D(FVector(2.0, 2.0, 3.0));
     if (UMaterialInstanceDynamic* Material = Body->CreateAndSetMaterialInstanceDynamic(0))
-        Material->SetVectorParameterValue(TEXT("Color"), Tint);
+        Material->SetVectorParameterValue(TEXT("Color"), GetPresentedTint());
+}
+
+FLinearColor APolitikaPrototypeStructure::GetPresentedTint() const
+{
+    return IsBuilding() && Health <= 0 ? kDeadBuildingTint : Tint;
 }
 
 bool APolitikaPrototypeMatch::IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const
@@ -345,6 +351,23 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
 #endif
         Unit->ClearCapture();
     }
+}
+
+bool APolitikaPrototypeMatch::DemolishOwnedBuilding(APolitikaPrototypeStructure* Structure, uint32 ParticipantId)
+{
+    if (!HasAuthority() || !Structure || !Structure->IsBuilding() || !Structure->IsAlive()) return false;
+    if (ParticipantId == 0 || Structure->GetOwnerPlayer() != ParticipantId) return false;
+    const pe::Account* Before = Economy.Find(ParticipantId);
+    const pe::Cents RefundedBefore = Before ? Before->refunded : 0;
+    if (DamageOwnedBuilding(Structure, Structure->GetHealth()) <= 0) return false;
+#if !UE_BUILD_SHIPPING
+    const pe::Account* After = Economy.Find(ParticipantId);
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_BUILDING_DEMOLISH participant=%u kind=%s health=%d refunded=%lld"),
+        ParticipantId, Structure->IsProducer() ? TEXT("producer") : TEXT("generator"), Structure->GetHealth(),
+        (After ? After->refunded : RefundedBefore) - RefundedBefore);
+#endif
+    return true;
 }
 
 // ----------------------------------------------------------------------------
