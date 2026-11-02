@@ -130,6 +130,7 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveMilli, COND_OwnerOnly);
     // DISC-D4: an opponent sees a routed unit run, never the state itself.
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bRouted, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bCarryingGold, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveTrend, COND_OwnerOnly);
 }
 
@@ -1051,6 +1052,11 @@ void APolitikaPrototypeUnit::TryApplyObservedPresentation()
 {
     if (HasAuthority() || bObservedPresentationApplied || ArchetypeId.IsNone()) return;
     APolitikaPrototypeMatch* Match = FindMatch(GetWorld());
+    if (Match && ArchetypeId == APolitikaPrototypeMatch::HarvesterArchetypeId())
+    {
+        ApplyObservedArchetypePresentation(Match->GetHarvesterDefinition());
+        return;
+    }
     const UPolitikaPrototypeContentCatalog* Catalog = Match ? Match->GetContentCatalog() : nullptr;
     if (!Catalog) return;
     ApplyObservedArchetypePresentation(Catalog->FindUnit(ArchetypeId));

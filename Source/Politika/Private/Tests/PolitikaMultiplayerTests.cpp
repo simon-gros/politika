@@ -3630,6 +3630,282 @@ bool FPolitikaMultiplayerFoodTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerGoldTest,
+    "Politika.RTS.Multiplayer.Gold",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E4: a harvester trained at the base hauls gold from its seat's source, and the gold sells into
+// the treasury, through the production intake and fixed step. The test places the harvester where its
+// routine has sent it and stops it there, so each phase is exact; the packaged session proves the drive.
+bool FPolitikaMultiplayerGoldTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    using pe::HarvesterPhase;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    const pe::Account* Other = F.Match->GetEconomy().Find(EnemyId);
+    const APolitikaPrototypeStructure* Source = F.Match->FindGoldSourceOf(HostId);
+    const APolitikaPrototypeStructure* EnemySource = F.Match->FindGoldSourceOf(EnemyId);
+    const APolitikaPrototypeStructure* Depot = F.Match->FindStructureOf(HostId);
+    if (!TestNotNull(TEXT("The host has an account"), Account) || !TestNotNull(TEXT("The enemy has an account"), Other)
+        || !TestNotNull(TEXT("G-A01 the host has a source"), Source) || !TestNotNull(TEXT("G-A01 the enemy has a source"), EnemySource)
+        || !TestNotNull(TEXT("The host has a base"), Depot)) return false;
+    TestTrue(TEXT("G-A01 each seat's source holds the fixture amount"), Account->sourceRemaining == pe::kSourceGold && Other->sourceRemaining == pe::kSourceGold);
+    TestFalse(TEXT("G-A01 a source is not a producer"), Source->IsProducer());
+    TestTrue(TEXT("G-A01 no seat starts with a harvester"), Account->harvesters.empty() && Other->harvesters.empty());
+    TestTrue(TEXT("G-A01 the source is clear of the base"), FVector::Dist2D(Source->GetActorLocation(), Depot->GetActorLocation()) > 700.0);
+    TestTrue(TEXT("G-A01 the owner receives its source"), Source->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("G-A01 the enemy does not"), Source->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+
+    const FVector2D SourceAt(Source->GetActorLocation().X, Source->GetActorLocation().Y);
+    const FVector2D DepotAt(Depot->GetActorLocation().X, Depot->GetActorLocation().Y);
+    const FVector2D Clear = (SourceAt + DepotAt) * 0.5;
+    const auto Place = [](APolitikaPrototypeUnit* Unit, const FVector2D& At)
+    {
+        // As if it had just arrived there: arriving ends an order in Idle.
+        Unit->StopOrder();
+        Unit->CurrentOrder = EPolitikaPrototypeOrder::Idle;
+        Unit->SetActorLocation(FVector(At.X, At.Y, 42.0));
+    };
+
+    const auto Request = [&F](APolitikaPrototypePlayerController* Controller, pe::EconomyOp Op, uint8 RecipeByte)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.Recipe = RecipeByte;
+        uint32& Sequence = F.NextSequence.FindOrAdd(Controller, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        return Intent;
+    };
+    const auto OutcomeOf = [&F](const FPolitikaNetEconomyIntent& Intent)
+    {
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [&Intent](const auto& Entry) { return Entry.Value.CorrelationId == Intent.CorrelationId; });
+        return Found ? &Found->Value : nullptr;
+    };
+    const auto Send = [&](APolitikaPrototypePlayerController* Controller, const FPolitikaNetEconomyIntent& Intent)
+    {
+        F.Match->SubmitEconomyIntent(Controller, Intent);
+        F.Step();
+        const FPolitikaNetEconomyOutcome* Outcome = OutcomeOf(Intent);
+        return Outcome ? static_cast<int32>(Outcome->Rejection) : -1;
+    };
+    const int32 None = static_cast<int32>(pe::EconomyRejection::None);
+    const int32 NothingToSell = static_cast<int32>(pe::EconomyRejection::NothingToSell);
+    const uint8 HarvesterRecipe = static_cast<uint8>(pe::Recipe::Harvester);
+    const pe::RecipeDefinition Recipe = *pe::FindRecipe(HarvesterRecipe);
+
+    // An ordinary unit standing on the source or at the base moves no gold.
+    APolitikaPrototypeUnit* Rifleman = F.AddUnit(HostId, SourceAt);
+    if (!TestNotNull(TEXT("A rifleman spawns"), Rifleman)) return false;
+    F.Step(5);
+    TestEqual(TEXT("G-A02 a rifleman at the source takes nothing"), Account->sourceRemaining, pe::kSourceGold);
+    TestFalse(TEXT("G-A02 and shows no load"), Rifleman->IsCarryingGold());
+    Place(Rifleman, Clear);
+
+    // Selling before anything has been delivered.
+    const int64 Money = Account->available;
+    TestEqual(TEXT("G-A03 nothing to sell"), Send(Host, Request(Host, pe::EconomyOp::SellGold, 0)), NothingToSell);
+    TestEqual(TEXT("G-A03 no money moved"), Account->available, Money);
+
+    // Training a harvester: the price once, the recipe's full time, then a harvester.
+    const int32 LivingBefore = F.Match->CountLivingUnits(HostId);
+    TestEqual(TEXT("G-A04 a harvester is admitted"), Send(Host, Request(Host, pe::EconomyOp::Train, HarvesterRecipe)), None);
+    TestEqual(TEXT("G-A04 its price is paid once"), Account->available, Money - Recipe.cost);
+    TestEqual(TEXT("G-A04 the view names the recipe in training"), Host->GetOwnEconomy().HeadRecipe, HarvesterRecipe);
+    int32 Waited = 0;
+    while (F.Match->CountLivingUnits(HostId) == LivingBefore && Waited++ < 2 * static_cast<int32>(Recipe.durationSteps)) F.Step();
+    TestEqual(TEXT("G-A04 it takes the recipe's time"), Waited, static_cast<int32>(Recipe.durationSteps));
+    if (!TestEqual(TEXT("G-A04 one harvester joins the account"), static_cast<int32>(Account->harvesters.size()), 1)) return false;
+    const pe::UnitId HarvesterId = Account->harvesters[0].unit;
+    const pe::Harvester* State = &Account->harvesters[0];
+    APolitikaPrototypeUnit* Harvester = nullptr;
+    for (APolitikaPrototypeUnit* Unit : F.Match->Units)
+        if (IsValid(Unit) && Unit->GetStableId() == HarvesterId) Harvester = Unit;
+    if (!TestNotNull(TEXT("G-A04 the harvester exists"), Harvester)) return false;
+    TestEqual(TEXT("G-A05 it is the harvester archetype"), Harvester->GetArchetypeId(), APolitikaPrototypeMatch::HarvesterArchetypeId());
+    TestFalse(TEXT("G-A05 it is not a soldier"), Harvester->IsMilitary());
+    TestFalse(TEXT("G-A05 it has no weapon"), Harvester->CanAttack());
+    TestTrue(TEXT("G-A05 it can be shot and can drive"), Harvester->IsAttackable() && Harvester->CanMove());
+    TestEqual(TEXT("G-A05 it sets off on its own"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::ToSource));
+    TestEqual(TEXT("G-A05 the view counts it"), Host->GetOwnEconomy().Harvesters, 1);
+    TestEqual(TEXT("G-A05 the enemy's view does not"), Enemy->GetOwnEconomy().Harvesters, 0);
+    TestEqual(TEXT("G-A05 it eats like any crewed unit"), Host->GetOwnEconomy().UpkeepRations, F.Match->CountLivingUnits(HostId));
+
+    // Its own routine: load for the full time, then the base, then unload for the full time.
+    Place(Harvester, SourceAt);
+    F.Step();
+    TestEqual(TEXT("G-A06 at the source it loads"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Loading));
+    F.Step(pe::kHarvesterLoadSteps - 1);
+    TestEqual(TEXT("G-A06 no gold moves until loading ends"), Account->sourceRemaining, pe::kSourceGold);
+    F.Step();
+    TestEqual(TEXT("G-A06 one load leaves the source"), Account->sourceRemaining, pe::kSourceGold - pe::kLoadGold);
+    TestTrue(TEXT("G-A06 the harvester shows it"), Harvester->IsCarryingGold());
+    TestEqual(TEXT("G-A06 the view shows it"), Host->GetOwnEconomy().GoldCarried, static_cast<int32>(pe::kLoadGold));
+    TestEqual(TEXT("G-A06 the enemy's view does not"), Enemy->GetOwnEconomy().GoldCarried, 0);
+    TestEqual(TEXT("G-A06 carrying is not holding"), Account->goldHeld, static_cast<int64>(0));
+    TestEqual(TEXT("G-A06 it heads for the base"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::ToBase));
+    Place(Harvester, DepotAt);
+    F.Step();
+    TestEqual(TEXT("G-A07 at the base it unloads"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Unloading));
+    F.Step(pe::kHarvesterUnloadSteps - 1);
+    // Requests come first, so a sale in the delivery's own step finds nothing.
+    TestEqual(TEXT("G-A08 a sale in the delivery's own step finds nothing"), Send(Host, Request(Host, pe::EconomyOp::SellGold, 0)), NothingToSell);
+    TestEqual(TEXT("G-A07 the load joins the stock"), Account->goldHeld, pe::kLoadGold);
+    TestFalse(TEXT("G-A07 the harvester is empty"), Harvester->IsCarryingGold());
+    TestEqual(TEXT("G-A07 it heads back on its own"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::ToSource));
+    TestEqual(TEXT("G-A07 the view reports the stock"), Host->GetOwnEconomy().GoldHeld, static_cast<int32>(pe::kLoadGold));
+    TestTrue(TEXT("G-A07 the gold reconciles"), Account->GoldReconciles());
+
+    // Its order to the source is admitted in the next step. Stopped short of the source after that,
+    // it waits rather than spinning, which is also what a route that fails does.
+    F.Step();
+    Place(Harvester, Clear);
+
+    // A malformed sale changes nothing, and a real one moves the gold and the dollars once.
+    FPolitikaNetEconomyIntent WithRecipe = Request(Host, pe::EconomyOp::SellGold, 0);
+    WithRecipe.Recipe = 1;
+    TestEqual(TEXT("G-A09 a sale carries no recipe"), Send(Host, WithRecipe), static_cast<int32>(pe::EconomyRejection::MalformedCommand));
+    TestEqual(TEXT("G-A09 nothing moved"), Account->goldHeld, pe::kLoadGold);
+    const pe::Cents Before = Account->available;
+    const FPolitikaNetEconomyIntent Sale = Request(Host, pe::EconomyOp::SellGold, 0);
+    TestEqual(TEXT("G-A10 a sale is admitted"), Send(Host, Sale), None);
+    const pe::GoldQuote Lot = *pe::QuoteGoldLot(pe::kLoadGold);
+    TestEqual(TEXT("G-A10 the net amount arrives once"), Account->available, Before + Lot.net);
+    TestEqual(TEXT("G-A10 the lot leaves the stock"), Account->goldHeld, static_cast<int64>(0));
+    TestEqual(TEXT("G-A10 the outcome reports the amount"), OutcomeOf(Sale)->AmountCents, Lot.net);
+    TestEqual(TEXT("G-A10 the outcome reports the gold"), OutcomeOf(Sale)->GoldSold, static_cast<int32>(pe::kSaleLotGold));
+    TestEqual(TEXT("G-A10 the view reports the money"), Host->GetOwnEconomy().AvailableCents, Account->available);
+    TestTrue(TEXT("G-A10 both ledgers reconcile"), Account->Reconciles() && Account->GoldReconciles());
+    TestEqual(TEXT("G-A10 the other seat's treasury is untouched"), Other->saleCredited, static_cast<int64>(0));
+
+    TestEqual(TEXT("G-A11 stopped on the way it waits"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Waiting));
+    // A waiting harvester stopped at the source goes back to work, which is how a player sends it.
+    Place(Harvester, SourceAt);
+    F.Step();
+    TestEqual(TEXT("G-A12 stopping at the source resumes the routine"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Loading));
+    // A player's admitted order takes it off the routine. Its own orders do not.
+    {
+        const auto* Moved = F.Submit(Host, F.Intent(Host, OrderKind::Move, HarvesterId, 0, 1000.0, 1000.0));
+        TestTrue(TEXT("G-A13 a player's move is admitted"), Moved && Moved->accepted);
+        TestEqual(TEXT("G-A13 and it leaves the routine"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Waiting));
+        TestEqual(TEXT("G-A13 no gold moved"), Account->sourceRemaining, pe::kSourceGold - pe::kLoadGold);
+        F.Step(5);
+        TestEqual(TEXT("G-A13 its own routine does not take it back"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Waiting));
+        // A player's stop at the source holds it there.
+        Place(Harvester, SourceAt);
+        F.Step();
+        TestEqual(TEXT("G-A13 arriving at the source resumes"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Loading));
+        const auto* Stopped = F.Submit(Host, F.Intent(Host, OrderKind::Stop, HarvesterId));
+        TestTrue(TEXT("G-A13 a player's stop is admitted"), Stopped && Stopped->accepted);
+        F.Step(5);
+        TestEqual(TEXT("G-A13 and holds it at the source"), static_cast<int32>(State->phase), static_cast<int32>(HarvesterPhase::Waiting));
+        Place(Harvester, SourceAt);
+        F.Step(pe::kHarvesterLoadSteps + 1);
+        TestTrue(TEXT("G-A13 sent back to the source it loads"), Harvester->IsCarryingGold());
+    }
+    // An attack order is refused: it has no weapon, and the refusal does not disturb its routine.
+    APolitikaPrototypeUnit* Foe = F.AddUnit(EnemyId, Clear + FVector2D(300.0, 0.0));
+    if (!TestNotNull(TEXT("An enemy spawns"), Foe)) return false;
+    {
+        Place(Harvester, Clear);
+        const HarvesterPhase PhaseBefore = State->phase;
+        const auto* Refused = F.Submit(Host, F.Intent(Host, OrderKind::Attack, HarvesterId, Foe->GetStableId()));
+        TestTrue(TEXT("G-A14 an attack order is refused"), Refused && !Refused->accepted);
+        TestTrue(TEXT("G-A14 and nothing changed"), State->phase == PhaseBefore || State->phase == HarvesterPhase::Waiting);
+        const int32 FoeHealth = Foe->GetHealth();
+        F.Step(40);
+        TestEqual(TEXT("G-A14 it never fires"), Foe->GetHealth(), FoeHealth);
+    }
+    Foe->Health = 0;
+    F.Step();
+    // Sent to the base with a load, it unloads and carries on.
+    Place(Harvester, DepotAt);
+    F.Step(pe::kHarvesterUnloadSteps + 1);
+    TestEqual(TEXT("G-A15 stopping at the base delivers the load"), Account->goldHeld, pe::kLoadGold);
+    TestFalse(TEXT("G-A15 and empties it"), Harvester->IsCarryingGold());
+
+    // A harvester passing through a control point neither takes nor contests it.
+    if (APolitikaPrototypeObjective* Objective = F.Match->GetObjective())
+    {
+        const float Progress = Objective->GetProgress();
+        Objective->UpdateCapture({Harvester}, 0.05f);
+        TestEqual(TEXT("G-A16 a harvester takes no control point"), Objective->GetProgress(), Progress);
+    }
+
+    // Two sales in one step: the second finds what the first left, the third nothing. Arrival order
+    // holds within a participant.
+    Place(Harvester, SourceAt);
+    F.Step(pe::kHarvesterLoadSteps + 1);
+    Place(Harvester, DepotAt);
+    F.Step(pe::kHarvesterUnloadSteps + 1);
+    const pe::Gold Stock = Account->goldHeld;
+    TestEqual(TEXT("G-A17 a second delivery arrives"), Stock, 2 * pe::kLoadGold);
+    const FPolitikaNetEconomyIntent SaleA = Request(Host, pe::EconomyOp::SellGold, 0);
+    const FPolitikaNetEconomyIntent SaleB = Request(Host, pe::EconomyOp::SellGold, 0);
+    const FPolitikaNetEconomyIntent SaleC = Request(Host, pe::EconomyOp::SellGold, 0);
+    F.Match->SubmitEconomyIntent(Host, SaleA);
+    F.Match->SubmitEconomyIntent(Host, SaleB);
+    F.Match->SubmitEconomyIntent(Host, SaleC);
+    F.Step();
+    TestEqual(TEXT("G-A17 the first sale takes a lot"), OutcomeOf(SaleA)->GoldSold, static_cast<int32>(pe::kSaleLotGold));
+    TestEqual(TEXT("G-A17 the second takes what is left"), OutcomeOf(SaleB)->GoldSold, static_cast<int32>(Stock - pe::kSaleLotGold));
+    TestEqual(TEXT("G-A17 the third finds nothing"), static_cast<int32>(OutcomeOf(SaleC)->Rejection), NothingToSell);
+    TestEqual(TEXT("G-A17 the stock is empty"), Account->goldHeld, static_cast<int64>(0));
+    TestTrue(TEXT("G-A17 both ledgers reconcile"), Account->Reconciles() && Account->GoldReconciles());
+
+    // A dead harvester's load is gone. It is neither delivered nor back at the source.
+    Place(Harvester, SourceAt);
+    F.Step(pe::kHarvesterLoadSteps + 1);
+    TestTrue(TEXT("G-A18 the harvester has its load"), Harvester->IsCarryingGold());
+    const pe::Gold AtSource = Account->sourceRemaining;
+    const pe::Gold Delivered = Account->goldDelivered;
+    Harvester->Health = 0;
+    F.Step();
+    TestEqual(TEXT("G-A18 the load is lost"), Account->goldLost, pe::kLoadGold);
+    TestEqual(TEXT("G-A18 the source does not get it back"), Account->sourceRemaining, AtSource);
+    TestEqual(TEXT("G-A18 it was not delivered"), Account->goldDelivered, Delivered);
+    TestTrue(TEXT("G-A18 the account has no harvester now"), Account->harvesters.empty());
+    TestEqual(TEXT("G-A18 the view reports it"), Host->GetOwnEconomy().Harvesters, 0);
+    TestTrue(TEXT("G-A18 the gold reconciles"), Account->GoldReconciles());
+    TestEqual(TEXT("G-A18 the other seat's source never moved"), Other->sourceRemaining, pe::kSourceGold);
+
+    // A replacement can be trained, and an empty source refuses one.
+    TestEqual(TEXT("G-A19 a replacement is admitted"), Send(Host, Request(Host, pe::EconomyOp::Train, HarvesterRecipe)), None);
+    F.Match->Economy.Clear();
+    F.Match->Economy.AddParticipant(HostId, pe::kStartingCents, true, F.Match->SimulationStepsExecuted + 1);
+    F.Match->Economy.SetSource(HostId, 0);
+    Account = F.Match->GetEconomy().Find(HostId);
+    TestEqual(TEXT("G-A19 an empty source refuses one"), Send(Host, Request(Host, pe::EconomyOp::Train, HarvesterRecipe)),
+        static_cast<int32>(pe::EconomyRejection::NoGoldSource));
+
+    // The next match starts fresh.
+    F.Match->ClearEconomy(TEXT("automation"));
+    TestNull(TEXT("G-A20 the ledger is gone"), F.Match->GetEconomy().Find(HostId));
+    F.Match->InitializeEconomy();
+    const pe::Account* Fresh = F.Match->GetEconomy().Find(HostId);
+    TestTrue(TEXT("G-A20 the next match starts from a full source and no harvester"),
+        Fresh && Fresh->sourceRemaining == pe::kSourceGold && Fresh->goldHeld == 0 && Fresh->goldDelivered == 0 && Fresh->saleCredited == 0 && Fresh->harvesters.empty());
+    F.Match->FormationSlotProbeForTest = nullptr;
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerPowerTest,
     "Politika.RTS.Multiplayer.Power",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -3666,15 +3942,18 @@ bool FPolitikaMultiplayerPowerTest::RunTest(const FString& Parameters)
 
     // One producer and one generator per seat, each reaching its own team only.
     int32 Producers = 0;
+    int32 Buildings = 0;
     for (const APolitikaPrototypeStructure* Structure : F.Match->Structures)
     {
+        // A gold source shares the actor but is not a building: it has no load and no grid entry.
+        Buildings += Structure->IsGoldSource() ? 0 : 1;
         Producers += Structure->IsProducer() ? 1 : 0;
         APolitikaPrototypePlayerController* Owner = Structure->GetOwnerPlayer() == HostId ? Host : Enemy;
         APolitikaPrototypePlayerController* Opponent = Structure->GetOwnerPlayer() == HostId ? Enemy : Host;
         TestTrue(TEXT("P-A02 the owner receives its building"), Structure->IsNetRelevantFor(Owner, Owner, FVector::ZeroVector));
         TestFalse(TEXT("P-A02 the enemy does not"), Structure->IsNetRelevantFor(Opponent, Opponent, FVector::ZeroVector));
     }
-    TestEqual(TEXT("P-A02 two buildings per seat"), F.Match->Structures.Num(), 4);
+    TestEqual(TEXT("P-A02 two buildings per seat"), Buildings, 4);
     TestEqual(TEXT("P-A02 half are producers"), Producers, 2);
     const APolitikaPrototypeStructure* Producer = F.Match->FindStructureOf(HostId);
     TestTrue(TEXT("P-A02 a seat's structure lookup finds its producer"), Producer && Producer->IsProducer());
@@ -3790,7 +4069,9 @@ bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("E-A01 the host has an account"), Account) || !TestNotNull(TEXT("E-A01 the enemy has an account"), Other)) return false;
     TestEqual(TEXT("E-A01 a treasury starts at the fixture amount"), Account->available, pe::kStartingCents);
     TestTrue(TEXT("E-A01 each seat has a producer"), Account->hasProducer && Other->hasProducer);
-    TestEqual(TEXT("E-A02 a producer and a generator per seat"), F.Match->Structures.Num(), 4);
+    int32 Buildings = 0;
+    for (const APolitikaPrototypeStructure* Structure : F.Match->Structures) Buildings += Structure->IsGoldSource() ? 0 : 1;
+    TestEqual(TEXT("E-A02 a producer and a generator per seat"), Buildings, 4);
 
     // Structures reach their own team only.
     const APolitikaPrototypeStructure* HostStructure = F.Match->FindStructureOf(HostId);

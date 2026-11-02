@@ -965,7 +965,8 @@ void APolitikaPrototypeObjective::UpdateCapture(const TArray<APolitikaPrototypeU
     const APolitikaPrototypeUnit* FirstEligible = nullptr;
     for (const APolitikaPrototypeUnit* Unit : Units)
     {
-        if (!Unit || !Unit->IsAlive() || FlatDistance(Unit->GetActorLocation(), GetActorLocation()) > CaptureRadius) continue;
+        // A control point is held by soldiers: a harvester passing through neither takes nor contests it.
+        if (!Unit || !Unit->IsAlive() || !Unit->IsMilitary() || FlatDistance(Unit->GetActorLocation(), GetActorLocation()) > CaptureRadius) continue;
         PresentSides.AddUnique(SideOf(Unit));
         if (!FirstEligible && IsEligible(Unit)) FirstEligible = Unit;
     }
@@ -2604,6 +2605,8 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
         // FORM-F3: a formation's own member order keeps the member following; any other
         // admitted order makes it independent while it stays a member.
         NoteFormationOrderAdmitted(Unit, Pending);
+        // ECON-E4: any order but a harvester's own takes it off its routine.
+        NoteHarvesterOrderAdmitted(Unit, Pending.Request.sequence);
         QueueGameplayEvent(politika::rules::CommandOutcomeEvent{
             SimulationStepsExecuted + 1, Pending.Request.sequence, Pending.Request.correlation_id,
             Pending.Request.issuer_entity_id, politika::rules::KindOf(Pending.Request.intent), true,
@@ -2951,6 +2954,8 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeGroupMoveShape"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleGroupMoveShape);
     InputComponent->BindAction(TEXT("PrototypeTrainUnit"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainOrCancelAtProducer);
     InputComponent->BindAction(TEXT("PrototypeBuyFood"), IE_Pressed, this, &APolitikaPrototypePlayerController::BuyFood);
+    InputComponent->BindAction(TEXT("PrototypeSellGold"), IE_Pressed, this, &APolitikaPrototypePlayerController::SellGold);
+    InputComponent->BindAction(TEXT("PrototypeTrainHarvester"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainHarvester);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
     InputComponent->BindAction(TEXT("PrototypeCycleStance"), IE_Pressed, this, &APolitikaPrototypePlayerController::CycleStanceSelected);
@@ -4329,11 +4334,13 @@ void APolitikaPrototypeHUD::DrawHUD()
             const APolitikaPrototypePlayerController* Viewing = Cast<APolitikaPrototypePlayerController>(Controller);
             const FPolitikaNetFormationInfo* Formation = Viewing && Unit->GetOwnerPlayer() == Viewer
                 ? Viewing->FindOwnFormationOf(Unit->GetStableId()) : nullptr;
-            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, (Formation ? 165 : 135)*UiScale, 22*UiScale);
-            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d%s"),
+            // A load on its way to the base (owner-only state, ECON-E4).
+            const bool bGold = Unit->GetOwnerPlayer() == Viewer && Unit->IsCarryingGold();
+            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, ((Formation ? 165 : 135) + (bGold ? 45 : 0))*UiScale, 22*UiScale);
+            DrawText(FString::Printf(TEXT("%s #%llu  %d/%d%s%s"),
                 bFriendly ? TEXT("ALLY") : bUnaligned ? TEXT("UNALIGNED") : TEXT("TARGET"),
                 Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth(),
-                Formation ? *FString::Printf(TEXT("  F%u"), Formation->FormationId) : TEXT("")), TeamColor,
+                Formation ? *FString::Printf(TEXT("  F%u"), Formation->FormationId) : TEXT(""), bGold ? TEXT("  GOLD") : TEXT("")), TeamColor,
                 LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
         }
     }
@@ -4410,7 +4417,8 @@ void APolitikaPrototypeHUD::DrawHUD()
         FString Training = TEXT("idle");
         if (Economy.Queued > 0)
             Training = Economy.bHeadBlocked ? FString(TEXT("output blocked"))
-                : FString::Printf(TEXT("Rifleman %.1f s"), Economy.HeadRemainingSteps * SimulationStepSecondsForHud);
+                : FString::Printf(TEXT("%s %.1f s"), Economy.HeadRecipe == static_cast<uint8>(pe::Recipe::Harvester) ? TEXT("Harvester") : TEXT("Rifleman"),
+                    Economy.HeadRemainingSteps * SimulationStepSecondsForHud);
         if (!Economy.bProducerPowered && Economy.bHasProducer) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: no power") : FString(TEXT("no power"));
         else if (Economy.bFoodShortage) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: food shortage") : FString(TEXT("food shortage"));
         if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
@@ -4431,6 +4439,21 @@ void APolitikaPrototypeHUD::DrawHUD()
                 Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *PurchaseText);
         DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
+        // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.
+        if (Economy.bHasGoldSource)
+        {
+            const std::optional<pe::GoldQuote> Lot = pe::QuoteGoldLot(Economy.GoldHeld);
+            const pe::RecipeDefinition Harvester = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Harvester));
+            const FString SaleText = Lot
+                ? FString::Printf(TEXT("L sell %lld for %s"), Lot->quantity, UTF8_TO_TCHAR(pe::FormatUsd(Lot->net).c_str()))
+                : FString(TEXT("nothing to sell yet"));
+            const FString HarvesterText = Economy.GoldAtSource > 0
+                ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("cache empty"));
+            DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache  ·  %d harvesters, %d on the way  ·  %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
+                Economy.Harvesters, Economy.GoldCarried, *SaleText, *HarvesterText),
+                FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+            Y += 26.0f * UiScale;
+        }
     }
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
     DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),

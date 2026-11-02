@@ -38,6 +38,7 @@ namespace
         TEXT("-PolitikaMPEconomyStartCents="),
         TEXT("-PolitikaMPPowerOutage="),
         TEXT("-PolitikaMPEconomyStartFood="),
+        TEXT("-PolitikaMPEconomySourceGold="),
         TEXT("-PolitikaMPDisciplineRoutSeed="),
         TEXT("-PolitikaMPDisciplineDoctrine="),
         TEXT("-PolitikaNavigationFailure="),

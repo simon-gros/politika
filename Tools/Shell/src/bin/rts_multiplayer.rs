@@ -12904,7 +12904,7 @@ fn economy_replay(lines: &[String], start: i64) -> Result<(), String> {
     for line in lines {
         let amount = econ_int(line, "amount");
         match field(line, "kind") {
-            Some("income") | Some("refund") => available += amount,
+            Some("income") | Some("refund") | Some("sale") => available += amount,
             Some("train") | Some("food") => available -= amount,
             other => return Err(format!("unknown kind {other:?}: {}", line.trim())),
         }
@@ -12954,6 +12954,15 @@ fn economy_start_session(
     options: &DedicatedOptions,
     extra: &[String],
 ) -> Result<(Game, Game, Game, Display, String), String> {
+    economy_start_session_with(options, extra, &[])
+}
+
+/// As `economy_start_session`, with extra switches for the rendered client.
+fn economy_start_session_with(
+    options: &DedicatedOptions,
+    extra: &[String],
+    client_a_extra: &[String],
+) -> Result<(Game, Game, Game, Display, String), String> {
     let client_options = &options.client;
     let evidence = &client_options.evidence;
     let mut args = server_args(client_options.port, "1v1");
@@ -12963,11 +12972,13 @@ fn economy_start_session(
     let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
     let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
     let display_a = Display::start(evidence, "client-a")?;
+    let mut args_a = client_args(client_options, true, false, false);
+    args_a.extend_from_slice(client_a_extra);
     let mut client_a = Game::launch(
         &client_options.binary,
         "client-a",
         evidence,
-        &client_args(client_options, true, false, false),
+        &args_a,
         Some(&display_a.name()),
     )?;
     server.wait(
@@ -13771,6 +13782,674 @@ fn power_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
     result
 }
 
+// `--gold SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E4) plays the whole route with real
+// input. Seat 1's source holds a load and a part load. K trains a harvester, which drives its first
+// trip with no further input. L sells the lot. A right-click parks the harvester, a right-click on
+// the cache sends it back to work, and it empties the source and stops. L sells what is left, K is
+// refused, and then a match end and the next generation.
+const GOLD_FIXTURE_SOURCE: i64 = 40;
+const GOLD_NORMAL_SOURCE: i64 = 500;
+const GOLD_LOAD: i64 = 25;
+const GOLD_LAST_LOAD: i64 = 15;
+const GOLD_HARVESTER_CENTS: i64 = 30_000;
+const GOLD_HARVESTER_STEPS: i64 = 300;
+const GOLD_LOAD_STEPS: i64 = 60;
+const GOLD_UNLOAD_STEPS: i64 = 40;
+// Seat 1's source and producer on the multiplayer test map, and open ground between them. Seat 2
+// mirrors the first two.
+const GOLD_SOURCE_AT: (f64, f64) = (-826.0, -1580.4);
+const GOLD_DEPOT_AT: (f64, f64) = (-1740.2, -937.0);
+const GOLD_PARK_AT: (f64, f64) = (-1200.0, -1000.0);
+const GOLD_PICKUP_RADIUS_CM: f64 = 250.0;
+const GOLD_DEPOT_RADIUS_CM: f64 = 350.0;
+const GOLD_HARVESTER_CM_PER_STEP: f64 = 280.0 * 0.05;
+
+/// A participant's gold lines in one generation: every line follows from the last, and all of the
+/// source's gold is accounted for. Returns the number of lines.
+fn gold_replay(
+    text: &str,
+    participant: u32,
+    generation: &str,
+    start: i64,
+) -> Result<usize, String> {
+    let tag = format!("RTS_GOLD_TX participant={participant} ");
+    let generation = format!("generation={generation} ");
+    let (mut source, mut carried, mut held, mut delivered, mut sold, mut lost) =
+        (start, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64);
+    let mut count = 0;
+    for line in text
+        .lines()
+        .filter(|l| l.contains(&tag) && l.contains(&generation))
+    {
+        let amount = econ_int(line, "amount");
+        match field(line, "kind") {
+            Some("load") => {
+                source -= amount;
+                carried += amount;
+            }
+            Some("deliver") => {
+                carried -= amount;
+                held += amount;
+                delivered += amount;
+            }
+            Some("sale") => {
+                held -= amount;
+                sold += amount;
+                if econ_int(line, "gross") - econ_int(line, "fee") <= 0 {
+                    return Err(format!("a sale paid nothing: {}", line.trim()));
+                }
+            }
+            Some("lost") => {
+                carried -= amount;
+                lost += amount;
+            }
+            Some("harvester") | Some("loading") | Some("detached") | Some("waiting")
+            | Some("resumed") => {
+                if amount != 0 {
+                    return Err(format!("this kind moves no gold: {}", line.trim()));
+                }
+            }
+            other => return Err(format!("unknown kind {other:?}: {}", line.trim())),
+        }
+        let expected = [
+            ("source", source),
+            ("carried", carried),
+            ("held", held),
+            ("delivered", delivered),
+            ("sold", sold),
+            ("lost", lost),
+        ];
+        if expected
+            .iter()
+            .any(|(key, value)| econ_int(line, key) != *value)
+            || field(line, "reconciles") != Some("1")
+            || source < 0
+            || carried < 0
+            || held < 0
+        {
+            return Err(format!("expected {expected:?}: {}", line.trim()));
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// The latest position a rendered client has sampled for an entity.
+fn client_unit_position(text: &str, entity: u64) -> Option<(f64, f64)> {
+    text.lines()
+        .rev()
+        .filter(|l| l.contains("MP_CLIENT_SAMPLE"))
+        .find(|l| field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(entity))
+        .and_then(|l| Some((number(l, "x")?, number(l, "y")?)))
+}
+
+fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session_with(
+            options,
+            &[format!(
+                "-PolitikaMPEconomySourceGold=1:{GOLD_FIXTURE_SOURCE}"
+            )],
+            &[format!(
+                "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
+                GOLD_SOURCE_AT.0,
+                GOLD_SOURCE_AT.1,
+                GOLD_DEPOT_AT.0,
+                GOLD_DEPOT_AT.1,
+                GOLD_PARK_AT.0,
+                GOLD_PARK_AT.1
+            )],
+        )?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        let text = server.text();
+        let starts: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_GOLD_START") && l.contains(&format!("generation={generation}"))
+            })
+            .collect();
+        let at = |line: &str, x: f64, y: f64| {
+            (number(line, "x").unwrap_or(f64::MAX) - x).abs() < 1.0
+                && (number(line, "y").unwrap_or(f64::MAX) - y).abs() < 1.0
+        };
+        report.verdict(
+            "GOLD-P01-SOURCES-AT-THE-START",
+            starts.len() == 2
+                && field(starts[0], "participant") == Some("1")
+                && econ_int(starts[0], "source") == GOLD_FIXTURE_SOURCE
+                && at(starts[0], GOLD_SOURCE_AT.0, GOLD_SOURCE_AT.1)
+                && field(starts[1], "participant") == Some("2")
+                && econ_int(starts[1], "source") == GOLD_NORMAL_SOURCE
+                && at(starts[1], -GOLD_SOURCE_AT.0, -GOLD_SOURCE_AT.1),
+            starts.join(" | "),
+        );
+        let sources = |t: &str| -> Vec<String> {
+            t.lines()
+                .filter(|l| l.contains("RTS_GOLD_SOURCE_RELEVANT"))
+                .filter_map(|l| field(l, "owner").map(str::to_owned))
+                .collect()
+        };
+        client_a.wait(&["RTS_GOLD_SOURCE_RELEVANT"], Duration::from_secs(10))?;
+        client_b.wait(&["RTS_GOLD_SOURCE_RELEVANT"], Duration::from_secs(10))?;
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        report.verdict(
+            "GOLD-P02-SOURCE-OWN-TEAM-ONLY",
+            sources(&text_a) == ["1"] && sources(&text_b) == ["2"],
+            format!(
+                "client A received {:?}, client B received {:?}",
+                sources(&text_a),
+                sources(&text_b)
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Nothing to sell yet.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("l")?;
+        let refused = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "op=3"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let refused_client = client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=3"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        report.verdict(
+            "GOLD-P03-NOTHING-TO-SELL-YET",
+            field(&refused, "rejection") == Some("nothing_to_sell")
+                && field(&refused_client, "accepted") == Some("0")
+                && econ_int(&refused_client, "amount") == 0
+                && !server.text().contains("RTS_GOLD_TX participant=1"),
+            format!("{} | client {}", refused.trim(), refused_client.trim()),
+        );
+
+        // K trains a harvester; nothing else is pressed until it has delivered.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("k")?;
+        let bought = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=0", "accepted=1"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        let spawned = server.wait(
+            &["RTS_PRODUCTION_SPAWN participant=1", "recipe=1"],
+            Duration::from_secs(30),
+        )?;
+        let harvester = econ_int(&spawned, "entity") as u64;
+        report.verdict(
+            "GOLD-P04-K-TRAINS-A-HARVESTER",
+            econ_int(&bought, "amount") == GOLD_HARVESTER_CENTS
+                && field(&bought, "reconciles") == Some("1")
+                && econ_int(&spawned, "step") - econ_int(&bought, "step") == GOLD_HARVESTER_STEPS,
+            format!("{} | {}", bought.trim(), spawned.trim()),
+        );
+        let unit_tag = format!("unit={harvester} ");
+
+        // Its first trip, with no further input.
+        let loaded = server.wait(
+            &["RTS_GOLD_TX participant=1 kind=load ", &unit_tag],
+            Duration::from_secs(30),
+        )?;
+        let loaded_view = client_a.wait(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                &format!("gold_carried={GOLD_LOAD} "),
+            ],
+            Duration::from_secs(5),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_carrying_png",
+            &client_a.screenshot(&evidence, "02-carrying")?,
+        );
+        let delivered = server.wait(
+            &["RTS_GOLD_TX participant=1 kind=deliver", &unit_tag],
+            Duration::from_secs(30),
+        )?;
+        let delivered_view = client_a.wait(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                &format!("gold_held={GOLD_LOAD} "),
+                "gold_carried=0 ",
+            ],
+            Duration::from_secs(5),
+        );
+        // It really drove: from the output to the source and back, at its speed, with the full
+        // loading and unloading times.
+        let gap = ((GOLD_SOURCE_AT.0 - GOLD_DEPOT_AT.0).powi(2)
+            + (GOLD_SOURCE_AT.1 - GOLD_DEPOT_AT.1).powi(2))
+        .sqrt()
+            - GOLD_PICKUP_RADIUS_CM
+            - GOLD_DEPOT_RADIUS_CM;
+        let home = econ_int(&delivered, "step") - econ_int(&loaded, "step");
+        let least_home = (gap / GOLD_HARVESTER_CM_PER_STEP) as i64 + GOLD_UNLOAD_STEPS;
+        report.verdict(
+            "GOLD-P05-THE-FIRST-TRIP-DRIVES-ITSELF",
+            econ_int(&loaded, "amount") == GOLD_LOAD
+                && econ_int(&loaded, "source") == GOLD_FIXTURE_SOURCE - GOLD_LOAD
+                && econ_int(&loaded, "held") == 0
+                && econ_int(&loaded, "step") - econ_int(&spawned, "step") >= GOLD_LOAD_STEPS
+                && econ_int(&delivered, "amount") == GOLD_LOAD
+                && econ_int(&delivered, "held") == GOLD_LOAD
+                && econ_int(&delivered, "carried") == 0
+                && home >= least_home
+                && loaded_view.is_ok()
+                && delivered_view.is_ok(),
+            format!(
+                "{home} steps home, at least {least_home} | {} | {} | views {loaded_view:?} {delivered_view:?}",
+                loaded.trim(),
+                delivered.trim()
+            ),
+        );
+
+        // L sells the lot, at the quote.
+        let sell =
+            |client: &mut Game, server: &mut Game| -> Result<(String, String, String), String> {
+                let (client_mark, server_mark) = (client.offset(), server.offset());
+                client.key("l")?;
+                let money = server.wait_line(
+                    &["RTS_ECONOMY_TX participant=1 kind=sale"],
+                    Duration::from_secs(5),
+                    server_mark,
+                )?;
+                let gold = server.wait_line(
+                    &["RTS_GOLD_TX participant=1 kind=sale"],
+                    Duration::from_secs(5),
+                    server_mark,
+                )?;
+                let outcome = client.wait_line(
+                    &["RTS_ECONOMY_OUTCOME participant=1", "op=3", "accepted=1"],
+                    Duration::from_secs(5),
+                    client_mark,
+                )?;
+                Ok((money, gold, outcome))
+            };
+        let (money_1, gold_1, outcome_1) = sell(&mut client_a, &mut server)?;
+        report.verdict(
+            "GOLD-P06-A-LOT-AT-THE-QUOTE",
+            econ_int(&gold_1, "amount") == 25
+                && econ_int(&gold_1, "gross") == 6_250
+                && econ_int(&gold_1, "fee") == 188
+                && econ_int(&money_1, "amount") == 6_062
+                && econ_int(&gold_1, "held") == 0
+                && econ_int(&outcome_1, "amount") == 6_062
+                && econ_int(&outcome_1, "gold_sold") == 25,
+            format!(
+                "{} | {} | client {}",
+                money_1.trim(),
+                gold_1.trim(),
+                outcome_1.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_sold_png",
+            &client_a.screenshot(&evidence, "03-sold")?,
+        );
+
+        // A right-click parks it during its next load, before any gold has moved, and it stays there.
+        // It is selected while it stands at the source, because a sampled position trails a moving unit.
+        let park_screen = wait_screen(
+            &mut client_a,
+            |t| probe_screen(t, 2),
+            "the parking point on client A",
+        )?;
+        let source_screen = wait_screen(
+            &mut client_a,
+            |t| probe_screen(t, 0),
+            "the gold source on client A",
+        )?;
+        let server_mark = server.offset();
+        server.wait(
+            &[
+                "RTS_GOLD_TX participant=1 kind=loading",
+                &unit_tag,
+                "source=15 ",
+            ],
+            Duration::from_secs(20),
+        )?;
+        thread::sleep(Duration::from_millis(900));
+        let mut selected = false;
+        for (dx, dy) in [(0.0, 0.0), (0.0, -8.0), (0.0, -16.0), (4.0, -4.0)] {
+            let mark = client_a.offset();
+            client_a.click(source_screen.0 + dx, source_screen.1 + dy, "1")?;
+            if client_a
+                .wait_line(
+                    &["RTS_SELECTION player=", &format!("unit={harvester}")],
+                    Duration::from_millis(400),
+                    mark,
+                )
+                .is_ok()
+            {
+                selected = true;
+                break;
+            }
+        }
+        if !selected {
+            return Err("could not select the harvester at the source".to_owned());
+        }
+        let move_mark = server.offset();
+        client_a.click(park_screen.0, park_screen.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={harvester}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            move_mark,
+        )?;
+        let detached = server.wait_line(
+            &["RTS_GOLD_TX participant=1 kind=detached", &unit_tag],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let start = Instant::now();
+        let mut parked = false;
+        while start.elapsed() < Duration::from_secs(30) && !parked {
+            parked = client_unit_position(&client_a.text(), harvester).is_some_and(|(x, y)| {
+                ((x - GOLD_PARK_AT.0).powi(2) + (y - GOLD_PARK_AT.1).powi(2)).sqrt() < 60.0
+            });
+            thread::sleep(Duration::from_millis(250));
+        }
+        thread::sleep(Duration::from_secs(4));
+        let text = server.text();
+        let while_parked: Vec<&str> = text[server_mark.min(text.len())..]
+            .lines()
+            .filter(|l| l.contains("RTS_GOLD_TX participant=1"))
+            .filter(|l| !matches!(field(l, "kind"), Some("detached") | Some("loading")))
+            .collect();
+        report.verdict(
+            "GOLD-P07-A-PLAYER-ORDER-PARKS-IT",
+            econ_int(&detached, "source") == GOLD_LAST_LOAD && parked && while_parked.is_empty(),
+            format!(
+                "parked {parked}, {} gold lines while parked | {}",
+                while_parked.len(),
+                detached.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_parked_png",
+            &client_a.screenshot(&evidence, "04-parked")?,
+        );
+
+        // A right-click on the cache sends it back to work. The last load is what is left, and the
+        // routine ends by itself with the source empty.
+        let server_mark = server.offset();
+        order_move(&mut client_a, &mut server, harvester, source_screen)?;
+        let resumed = server.wait_line(
+            &["RTS_GOLD_TX participant=1 kind=resumed", &unit_tag],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        let last = server.wait_line(
+            &["RTS_GOLD_TX participant=1 kind=load ", &unit_tag],
+            Duration::from_secs(20),
+            server_mark,
+        )?;
+        let last_home = server.wait_line(
+            &["RTS_GOLD_TX participant=1 kind=deliver", &unit_tag],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        let stopped = server.wait_line(
+            &["RTS_GOLD_TX participant=1 kind=waiting", &unit_tag],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        report.verdict(
+            "GOLD-P08-THE-CACHE-SENDS-IT-BACK",
+            econ_int(&resumed, "source") == GOLD_LAST_LOAD
+                && econ_int(&last, "amount") == GOLD_LAST_LOAD
+                && econ_int(&last, "source") == 0
+                && econ_int(&last, "step") - econ_int(&resumed, "step") == GOLD_LOAD_STEPS
+                && econ_int(&last_home, "amount") == GOLD_LAST_LOAD
+                && econ_int(&last_home, "held") == GOLD_LAST_LOAD
+                && econ_int(&stopped, "step") == econ_int(&last_home, "step"),
+            format!(
+                "{} | {} | {} | {}",
+                resumed.trim(),
+                last.trim(),
+                last_home.trim(),
+                stopped.trim()
+            ),
+        );
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_a_empty_png",
+            &client_a.screenshot(&evidence, "05-source-empty")?,
+        );
+
+        // Less than a lot sells what is left, then nothing, and an empty cache refuses K.
+        let (money_2, gold_2, outcome_2) = sell(&mut client_a, &mut server)?;
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("l")?;
+        let nothing = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "op=3"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=3", "accepted=0"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("k")?;
+        let no_source = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "op=0"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=0", "accepted=0"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        report.verdict(
+            "GOLD-P09-WHAT-IS-LEFT-THEN-NOTHING",
+            econ_int(&gold_2, "amount") == GOLD_LAST_LOAD
+                && econ_int(&gold_2, "gross") == 3_750
+                && econ_int(&gold_2, "fee") == 113
+                && econ_int(&money_2, "amount") == 3_637
+                && econ_int(&gold_2, "held") == 0
+                && econ_int(&outcome_2, "gold_sold") == GOLD_LAST_LOAD
+                && field(&nothing, "rejection") == Some("nothing_to_sell")
+                && field(&no_source, "rejection") == Some("no_gold_source"),
+            format!(
+                "{} | {} | {} | {}",
+                money_2.trim(),
+                gold_2.trim(),
+                nothing.trim(),
+                no_source.trim()
+            ),
+        );
+
+        // Only seat 1 moved, and each client saw only its own gold.
+        let text = server.text();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let enemy_lines = text
+            .lines()
+            .filter(|l| l.contains("RTS_GOLD_TX participant=2"))
+            .count();
+        let a_leaks = text_a
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=2"))
+            .count();
+        let b_leaks = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .count();
+        let b_gold = text_b
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ECONOMY_VIEW")
+                    && (econ_int(l, "gold_held") != 0
+                        || econ_int(l, "gold_carried") != 0
+                        || econ_int(l, "harvesters") != 0)
+            })
+            .count();
+        report.verdict(
+            "GOLD-P10-OWNER-ONLY",
+            enemy_lines == 0 && a_leaks == 0 && b_leaks == 0 && b_gold == 0,
+            format!("enemy gold lines {enemy_lines}; A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}, B gold views {b_gold}"),
+        );
+        let replay = gold_replay(&text, 1, &generation, GOLD_FIXTURE_SOURCE);
+        report.verdict(
+            "GOLD-P11-GOLD-REPLAYS",
+            replay == Ok(12),
+            format!("{replay:?}: harvester, loading, load, deliver, sale, loading, detached, resumed, load, deliver, waiting, sale"),
+        );
+        let lines_1 = economy_lines(&text, 1, &generation);
+        let money = economy_replay(&lines_1, ECONOMY_START_CENTS);
+        let sales = lines_1
+            .iter()
+            .filter(|l| field(l, "kind") == Some("sale"))
+            .count();
+        report.verdict(
+            "GOLD-P12-MONEY-REPLAYS",
+            money.is_ok() && sales == 2,
+            format!("{} money lines, {sales} sales; {money:?}", lines_1.len()),
+        );
+
+        // Repeatability: the normalized sequence, without timing or income interleaving.
+        let mut trace = String::new();
+        for line in text.lines().filter(|l| {
+            l.contains("RTS_GOLD_TX participant=1")
+                && l.contains(&format!("generation={generation} "))
+        }) {
+            trace.push_str(&format!(
+                "gold {} amount={} gross={} fee={} source={} carried={} held={} delivered={} sold={}\n",
+                field(line, "kind").unwrap_or("?"),
+                econ_int(line, "amount"),
+                econ_int(line, "gross"),
+                econ_int(line, "fee"),
+                econ_int(line, "source"),
+                econ_int(line, "carried"),
+                econ_int(line, "held"),
+                econ_int(line, "delivered"),
+                econ_int(line, "sold"),
+            ));
+        }
+        for line in lines_1
+            .iter()
+            .filter(|l| field(l, "kind") != Some("income"))
+        {
+            trace.push_str(&format!(
+                "money {} amount={} queued={}\n",
+                field(line, "kind").unwrap_or("?"),
+                econ_int(line, "amount"),
+                econ_int(line, "queued"),
+            ));
+        }
+        fs::write(evidence.join("gold-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("gold_trace", &evidence.join("gold-trace.txt"));
+
+        // A match end with a harvester alive, taken by a soldier, then a next generation that owes
+        // nothing to this one.
+        let owned: Vec<u64> = entity_owners(&server.text())
+            .iter()
+            .filter(|(id, owner)| *owner == 1 && *id != harvester)
+            .map(|(id, _)| *id)
+            .collect();
+        let unit = *owned.first().ok_or("no authored unit for participant 1")?;
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", unit)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        let at_move = server.offset();
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={unit}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            at_move,
+        )?;
+        server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(180),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let starts2: Vec<&str> = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_GOLD_START") && l.contains(&format!("generation={generation2}"))
+            })
+            .collect();
+        report.verdict(
+            "GOLD-P13-NEXT-GENERATION-FRESH",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && field(&cleared, "gold_reconciles") == Some("1")
+                && econ_int(&cleared, "sale_credited") == 6_062 + 3_637
+                && starts2.len() == 2
+                && econ_int(starts2[0], "source") == GOLD_FIXTURE_SOURCE
+                && econ_int(starts2[1], "source") == GOLD_NORMAL_SOURCE
+                && !tail.lines().any(|l| l.contains("RTS_GOLD_TX")),
+            format!(
+                "generation {generation} then {generation2}: {} | {}",
+                cleared.trim(),
+                starts2.join(" | ")
+            ),
+        );
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "GOLD-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 // `--food SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E3) plays one food shortage with real
 // input. Seat 1 starts with two rations, so step 200 empties the reserve and step 400 cannot be
 // paid. Seat 2 keeps the normal reserve. Two purchases, the shortage, a refused purchase, N during
@@ -14462,6 +15141,14 @@ fn main() {
             power_session,
         );
     }
+    if env::args().nth(1).as_deref() == Some("--gold") {
+        run_dedicated_session(
+            "--gold",
+            "politika.econ.gold-evidence.v1",
+            "gold",
+            gold_session,
+        );
+    }
     if env::args().nth(1).as_deref() == Some("--food") {
         run_dedicated_session(
             "--food",
@@ -14653,6 +15340,39 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gold_replay_follows_the_ledger_and_refuses_a_mismatch() {
+        let tx = |kind: &str,
+                  amount: i64,
+                  source: i64,
+                  carried: i64,
+                  held: i64,
+                  delivered: i64,
+                  sold: i64| {
+            format!(
+                "RTS_GOLD_TX participant=1 kind={kind} unit=1 amount={amount} gross=6250 fee=188 source={source} carried={carried} held={held} delivered={delivered} sold={sold} lost=0 harvesters=1 reconciles=1 generation=1 step=1"
+            )
+        };
+        let good = [
+            tx("harvester", 0, 60, 0, 0, 0, 0),
+            tx("load", 25, 35, 25, 0, 0, 0),
+            tx("detached", 0, 35, 25, 0, 0, 0),
+            tx("deliver", 25, 35, 0, 25, 25, 0),
+            tx("sale", 25, 35, 0, 0, 25, 25),
+        ]
+        .join("\n");
+        assert_eq!(super::gold_replay(&good, 1, "1", 60), Ok(5));
+        assert_eq!(super::gold_replay(&good, 2, "1", 60), Ok(0));
+        // A delivery that creates gold, and a line that says it does not reconcile.
+        let created = tx("load", 25, 35, 25, 0, 0, 0) + "\n" + &tx("deliver", 40, 35, 0, 40, 40, 0);
+        assert!(super::gold_replay(&created, 1, "1", 60).is_err());
+        let unreconciled = tx("load", 25, 35, 25, 0, 0, 0).replace("reconciles=1", "reconciles=0");
+        assert!(super::gold_replay(&unreconciled, 1, "1", 60).is_err());
+        // Selling gold that was never delivered, and a routine line that moves gold.
+        assert!(super::gold_replay(&tx("sale", 25, 60, 0, -25, 0, 25), 1, "1", 60).is_err());
+        assert!(super::gold_replay(&tx("waiting", 5, 60, 0, 0, 0, 0), 1, "1", 60).is_err());
+    }
+
     use super::{
         ENGAGE_FACING_POST, ENGAGE_WITHHELD_POST, FACING_PROBES, SIGHT_CM, compare_normalized,
         contact_memory_audit, distance, drag_expect, frame_extent, frame_windows,

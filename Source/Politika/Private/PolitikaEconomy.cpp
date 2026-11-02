@@ -34,6 +34,19 @@ constexpr FVector::FReal kStructureHalfHeightCm = 150.0;
 constexpr FVector::FReal kUnitOriginAboveGroundCm = 42.0;
 // Steps per HUD refresh of the training countdown: a quarter second at 20 Hz.
 constexpr int32 kViewRemainingGranularity = 5;
+// ECON-E4: where a seat's gold source stands: to one side of its start, this far away, or nearer
+// if neither side is open ground. The first distance keeps it clear of the opening force.
+constexpr double kGoldSourceOffsetCm = 1000.0;
+constexpr double kGoldSourceNearOffsetCm = 700.0;
+constexpr FVector::FReal kGoldSourceHalfHeightCm = 30.0;
+// How close a harvester must be: to the source to load, to the producer to unload.
+constexpr double kGoldPickupRadiusCm = 250.0;
+constexpr double kGoldDepotRadiusCm = 350.0;
+// The harvester's fixture figures: a placeholder, not a balance decision or an authored vehicle.
+constexpr int32 kHarvesterMaxHealth = 400;
+constexpr float kHarvesterSpeedCmPerSecond = 280.0f;
+const FLinearColor kGoldSourceTint(0.95f, 0.72f, 0.12f);
+const FLinearColor kGoldSourceEmptyTint(0.22f, 0.2f, 0.16f);
 
 APolitikaPrototypeMatch* FindEconomyMatch(UWorld* World)
 {
@@ -56,6 +69,8 @@ FString EconomyRejectionText(pe::EconomyRejection Rejection)
         case pe::EconomyRejection::ProducerUnpowered: return TEXT("the training building has no power");
         case pe::EconomyRejection::FoodShortage: return TEXT("your force is short of food");
         case pe::EconomyRejection::FoodStoreFull: return TEXT("the food store is full");
+        case pe::EconomyRejection::NothingToSell: return TEXT("no gold has reached your base");
+        case pe::EconomyRejection::NoGoldSource: return TEXT("your gold cache is empty");
         case pe::EconomyRejection::MatchInactive: return TEXT("the match is not active");
         case pe::EconomyRejection::StaleMatch: return TEXT("that request was for an earlier match");
         case pe::EconomyRejection::RateLimited: return TEXT("too many requests at once");
@@ -115,12 +130,35 @@ void APolitikaPrototypeStructure::Configure(APolitikaPrototypeMatch* InMatch, po
     if (bHiddenLocally) Body->SetHiddenInGame(true, true);
 }
 
+void APolitikaPrototypeStructure::ConfigureGoldSource(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam, bool bHiddenLocally)
+{
+    AuthorityMatch = InMatch;
+    Kind = GoldSourceKind;
+    OwnerPlayer = InOwner;
+    TeamId = InTeam;
+    Tint = kGoldSourceTint;
+    ApplyTint();
+    if (bHiddenLocally) Body->SetHiddenInGame(true, true);
+}
+
+void APolitikaPrototypeStructure::MarkGoldSourceEmpty()
+{
+    Tint = kGoldSourceEmptyTint;
+    ApplyTint();
+}
+
 void APolitikaPrototypeStructure::BeginPlay()
 {
     Super::BeginPlay();
     if (HasAuthority()) return;
     ApplyTint();
 #if !UE_BUILD_SHIPPING
+    if (IsGoldSource())
+    {
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GOLD_SOURCE_RELEVANT owner=%u team=%u x=%.1f y=%.1f"),
+            OwnerPlayer, static_cast<uint32>(TeamId), GetActorLocation().X, GetActorLocation().Y);
+        return;
+    }
     UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STRUCTURE_RELEVANT kind=%s owner=%u team=%u x=%.1f y=%.1f"),
         IsProducer() ? TEXT("producer") : TEXT("generator"), OwnerPlayer, static_cast<uint32>(TeamId), GetActorLocation().X, GetActorLocation().Y);
 #endif
@@ -129,8 +167,10 @@ void APolitikaPrototypeStructure::BeginPlay()
 void APolitikaPrototypeStructure::ApplyTint()
 {
     if (GetNetMode() == NM_DedicatedServer) return;
-    // The generator is the narrower of the two placeholder blocks, at the same height.
-    if (!IsProducer()) Body->SetRelativeScale3D(FVector(2.0, 2.0, 3.0));
+    // The generator is the narrower of the two placeholder blocks, at the same height. A gold
+    // source is a low slab, so a unit standing at it stays visible.
+    if (IsGoldSource()) Body->SetRelativeScale3D(FVector(1.5, 1.5, kGoldSourceHalfHeightCm / 50.0));
+    else if (!IsProducer()) Body->SetRelativeScale3D(FVector(2.0, 2.0, 3.0));
     if (UMaterialInstanceDynamic* Material = Body->CreateAndSetMaterialInstanceDynamic(0))
         Material->SetVectorParameterValue(TEXT("Color"), Tint);
 }
@@ -194,6 +234,19 @@ void APolitikaPrototypeMatch::InitializeEconomy()
         FixtureFoodParticipant = static_cast<uint32>(FCString::Atoi(*FoodParticipantText));
         FixtureFoodRations = FCString::Atoi64(*FoodRationsText);
     }
+    // Development fixture "participant:gold" for packaged checks of an emptied source.
+    uint32 FixtureGoldParticipant = 0;
+    int64 FixtureGold = -1;
+    FString GoldFixture;
+    FString GoldParticipantText;
+    FString GoldAmountText;
+    if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPEconomySourceGold="), GoldFixture)
+        && GoldFixture.Split(TEXT(":"), &GoldParticipantText, &GoldAmountText)
+        && GoldParticipantText.IsNumeric() && GoldAmountText.IsNumeric())
+    {
+        FixtureGoldParticipant = static_cast<uint32>(FCString::Atoi(*GoldParticipantText));
+        FixtureGold = FCString::Atoi64(*GoldAmountText);
+    }
 #endif
     const FVector2D Centre = (PlayableMin + PlayableMax) * 0.5;
     const uint8 LocalTeam = LocalRuntimePlayerId != 0 ? GetTeamForParticipant(LocalRuntimePlayerId) : politika::rules::kNoTeam;
@@ -243,7 +296,25 @@ void APolitikaPrototypeMatch::InitializeEconomy()
             }
         }
         Economy.AddParticipant(Participant.RuntimePlayerId, StartingCents, Structure != nullptr, pe::kIncomeIntervalSteps);
+        // A source needs a base to deliver to.
+        if (Structure)
+        {
+            const FVector2D Start(Slot->StartLocation.X, Slot->StartLocation.Y);
+            FVector2D Away = Start - Centre;
+            Away = Away.IsNearlyZero() ? FVector2D(0.0, -1.0) : Away.GetSafeNormal();
+            PlaceGoldSource(Participant.RuntimePlayerId, Participant.TeamId, Start, FVector2D(-Away.Y, Away.X), Template->Location.Z,
+                bFogOfWar && LocalTeam != politika::rules::kNoTeam && LocalTeam != Participant.TeamId);
+        }
 #if !UE_BUILD_SHIPPING
+        if (Participant.RuntimePlayerId == FixtureGoldParticipant && Economy.Find(Participant.RuntimePlayerId)->hasSource)
+            Economy.SetSource(Participant.RuntimePlayerId, FixtureGold);
+        if (const pe::Account* Account = Economy.Find(Participant.RuntimePlayerId))
+        {
+            const APolitikaPrototypeStructure* Source = FindGoldSourceOf(Participant.RuntimePlayerId);
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_GOLD_START participant=%u source=%lld has_source=%d x=%.1f y=%.1f generation=%llu"),
+                Participant.RuntimePlayerId, Account->sourceRemaining, Account->hasSource ? 1 : 0,
+                Source ? Source->GetActorLocation().X : 0.0, Source ? Source->GetActorLocation().Y : 0.0, MatchGeneration);
+        }
         if (Participant.RuntimePlayerId == FixtureFoodParticipant) Economy.SetStartingRations(Participant.RuntimePlayerId, FixtureFoodRations);
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ECONOMY_START participant=%u available=%lld producer=%d x=%.1f y=%.1f generation=%llu"),
             Participant.RuntimePlayerId, StartingCents, Structure ? 1 : 0, Structure ? Structure->GetActorLocation().X : 0.0,
@@ -261,6 +332,35 @@ void APolitikaPrototypeMatch::InitializeEconomy()
     }
 }
 
+void APolitikaPrototypeMatch::PlaceGoldSource(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side,
+    float GroundZ, bool bHiddenLocally)
+{
+    // A fixed order of candidates, so equal maps place equal sources. A seat with no open ground
+    // for one has no source, and its HUD says nothing about gold.
+    for (const double Distance : {kGoldSourceOffsetCm, kGoldSourceNearOffsetCm})
+    {
+        for (const double Sign : {1.0, -1.0})
+        {
+            const FVector2D Point = Start + Side * Sign * Distance;
+            const FVector2D MapPosition = Point - PlayableMin;
+            bool bOpen = false;
+#if WITH_DEV_AUTOMATION_TESTS
+            if (FormationSlotProbeForTest) bOpen = FormationSlotProbeForTest(MapPosition);
+            else
+#endif
+            bOpen = IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, MapPosition, GroundZ);
+            if (!bOpen) continue;
+            const FVector Location(Point.X, Point.Y, GroundZ - kUnitOriginAboveGroundCm + kGoldSourceHalfHeightCm);
+            APolitikaPrototypeStructure* Source = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(Location, FRotator::ZeroRotator);
+            if (!Source) return;
+            Source->ConfigureGoldSource(this, ParticipantId, InTeamId, bHiddenLocally);
+            Structures.Add(Source);
+            Economy.SetSource(ParticipantId, pe::kSourceGold);
+            return;
+        }
+    }
+}
+
 void APolitikaPrototypeMatch::ClearEconomy(const TCHAR* Reason)
 {
     if (!HasAuthority()) return;
@@ -272,14 +372,18 @@ void APolitikaPrototypeMatch::ClearEconomy(const TCHAR* Reason)
 #if !UE_BUILD_SHIPPING
     for (const pe::Account& Account : Economy.All())
         UE_LOG(LogPolitikaStartup, Display,
-            TEXT("RTS_ECONOMY_CLEARED participant=%u reason=%s available=%lld credited=%lld spent=%lld refunded=%lld dropped_queue=%d produced=%u reconciles=%d generation=%llu step=%llu"),
+            TEXT("RTS_ECONOMY_CLEARED participant=%u reason=%s available=%lld credited=%lld spent=%lld refunded=%lld dropped_queue=%d produced=%u reconciles=%d generation=%llu step=%llu sale_credited=%lld gold_held=%lld gold_reconciles=%d"),
             Account.participant, Reason, Account.available, Account.credited, Account.spent, Account.refunded,
-            static_cast<int32>(Account.queue.size()), Account.produced, Account.Reconciles() ? 1 : 0, MatchGeneration, SimulationStepsExecuted);
+            static_cast<int32>(Account.queue.size()), Account.produced, Account.Reconciles() ? 1 : 0, MatchGeneration, SimulationStepsExecuted,
+            Account.saleCredited, Account.goldHeld, Account.GoldReconciles() ? 1 : 0);
 #else
     (void)Reason;
 #endif
-    // Money and queues belong to the active match; the next generation starts from its own start.
+    // Money, queues and loads belong to the active match; the next generation starts from its own start.
     Economy.Clear();
+    HarvesterOrderSequences.Reset();
+    for (APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit)) Unit->SetCarryingGold(false);
 }
 
 // ----------------------------------------------------------------------------
@@ -287,7 +391,7 @@ void APolitikaPrototypeMatch::ClearEconomy(const TCHAR* Reason)
 // ----------------------------------------------------------------------------
 
 void APolitikaPrototypeMatch::SendEconomyOutcome(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent,
-    pe::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued)
+    pe::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued, int32 GoldSold)
 {
     APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(Source);
     if (!Controller) return;
@@ -298,6 +402,7 @@ void APolitikaPrototypeMatch::SendEconomyOutcome(APlayerController* Source, cons
     Outcome.Rejection = static_cast<uint8>(Rejection);
     Outcome.bAccepted = Rejection == pe::EconomyRejection::None;
     Outcome.AmountCents = AmountCents;
+    Outcome.GoldSold = GoldSold;
     Outcome.AvailableCents = AvailableCents;
     Outcome.Queued = Queued;
     Outcome.MatchGeneration = MatchGeneration;
@@ -388,6 +493,13 @@ int32 APolitikaPrototypeMatch::CountLivingUnits(uint32 ParticipantId) const
     return Living;
 }
 
+const APolitikaPrototypeStructure* APolitikaPrototypeMatch::FindGoldSourceOf(uint32 ParticipantId) const
+{
+    for (const APolitikaPrototypeStructure* Structure : Structures)
+        if (IsValid(Structure) && Structure->IsGoldSource() && Structure->GetOwnerPlayer() == ParticipantId) return Structure;
+    return nullptr;
+}
+
 const APolitikaPrototypeStructure* APolitikaPrototypeMatch::FindStructureOf(uint32 ParticipantId) const
 {
     for (const APolitikaPrototypeStructure* Structure : Structures)
@@ -430,6 +542,42 @@ bool APolitikaPrototypeMatch::FindProducerOutput(uint32 ParticipantId, FVector& 
         return true;
     }
     return false;
+}
+
+const UPolitikaUnitArchetypeDefinition* APolitikaPrototypeMatch::GetHarvesterDefinition()
+{
+    if (HarvesterDefinition) return HarvesterDefinition;
+    // Transient and identical on every process, so clients can present a unit whose archetype no
+    // catalog holds. A harvester has no weapon: CanAttack is false and attack orders are refused.
+    HarvesterDefinition = NewObject<UPolitikaUnitArchetypeDefinition>(this, TEXT("HarvesterFixture"), RF_Transient);
+    HarvesterDefinition->StableId = HarvesterArchetypeId();
+    HarvesterDefinition->DisplayName = FText::FromString(TEXT("Harvester [Playtest Placeholder]"));
+    HarvesterDefinition->UnitCategory = EPolitikaUnitCategory::NonCombat;
+    HarvesterDefinition->MaxHealth = kHarvesterMaxHealth;
+    HarvesterDefinition->MovementSpeedCmPerSecond = kHarvesterSpeedCmPerSecond;
+    HarvesterDefinition->VisualMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    HarvesterDefinition->VisualScale = FVector(1.1f, 0.7f, 0.6f);
+    HarvesterDefinition->FactionTint = FLinearColor(0.85f, 0.6f, 0.12f);
+    return HarvesterDefinition;
+}
+
+APolitikaPrototypeUnit* APolitikaPrototypeMatch::SpawnHarvester(uint32 ParticipantId, const FVector& Location, const FRotator& Rotation)
+{
+    const FPolitikaPrototypeRuntimeParticipant* Seat = RuntimeParticipants.FindByPredicate(
+        [ParticipantId](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == ParticipantId; });
+    const UPolitikaUnitArchetypeDefinition* Definition = GetHarvesterDefinition();
+    if (!Seat || !Definition) return nullptr;
+    APolitikaPrototypeUnit* Unit = GetWorld()->SpawnActor<APolitikaPrototypeUnit>(Location, Rotation);
+    if (!Unit) return nullptr;
+    Unit->Configure(NextStableId++, ParticipantId, Definition->DisplayName, Definition->MaxHealth, Definition->MovementSpeedCmPerSecond,
+        0.0f, 0.0f, 0.0f, true, Definition->VisualMesh, Definition->VisualScale, Definition->FactionTint, Seat->FactionId, false);
+    Unit->SetArchetypeId(Definition->StableId);
+    Unit->SetUnitCategory(Definition->UnitCategory);
+    Unit->SetTeamId(Seat->TeamId);
+    Unit->SetSightRadius(Definition->SightRadiusCm);
+    Unit->AuthorityMatch = this;
+    Units.Add(Unit);
+    return Unit;
 }
 
 APolitikaPrototypeUnit* APolitikaPrototypeMatch::SpawnProducedUnit(uint32 ParticipantId, const FVector& Location, const FRotator& Rotation)
@@ -484,6 +632,83 @@ void APolitikaPrototypeMatch::ApplyPowerOutageFixture(uint64 Step, uint32 FirstB
 }
 #endif
 
+void APolitikaPrototypeMatch::LogGold(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const
+{
+#if !UE_BUILD_SHIPPING
+    if (const pe::Account* Account = Economy.Find(ParticipantId))
+        UE_LOG(LogPolitikaStartup, Display,
+            TEXT("RTS_GOLD_TX participant=%u kind=%s unit=%llu amount=%lld gross=%lld fee=%lld source=%lld carried=%lld held=%lld delivered=%lld sold=%lld lost=%lld harvesters=%d reconciles=%d generation=%llu step=%llu"),
+            ParticipantId, Kind, UnitId, Amount, GrossCents, FeeCents, Account->sourceRemaining, Account->GoldCarried(), Account->goldHeld,
+            Account->goldDelivered, Account->goldSold, Account->goldLost, static_cast<int32>(Account->harvesters.size()),
+            Account->GoldReconciles() ? 1 : 0, MatchGeneration, Step);
+#else
+    (void)Kind; (void)ParticipantId; (void)UnitId; (void)Amount; (void)GrossCents; (void)FeeCents; (void)Step;
+#endif
+}
+
+void APolitikaPrototypeMatch::SendHarvester(APolitikaPrototypeUnit* Unit, const FVector& Destination)
+{
+    // The same command path as a player's Move, as its owner. Remembering the sequence is what tells
+    // this order apart from a player's when it is admitted.
+    const politika::rules::Position Target{Destination.X - PlayableMin.X, Destination.Y - PlayableMin.Y};
+    HarvesterOrderSequences.Add(SubmitCommand(Unit->GetOwnerPlayer(), Unit, nullptr, politika::rules::MoveOrder{Target}));
+}
+
+void APolitikaPrototypeMatch::NoteHarvesterOrderAdmitted(const APolitikaPrototypeUnit* Unit, uint64 Sequence)
+{
+    if (HarvesterOrderSequences.Remove(Sequence) > 0 || !Unit) return;
+    const uint32 ParticipantId = Unit->GetOwnerPlayer();
+    if (!Economy.DetachHarvester(ParticipantId, Unit->GetStableId())) return;
+    LogGold(TEXT("detached"), ParticipantId, Unit->GetStableId(), 0, 0, 0, SimulationStepsExecuted);
+}
+
+void APolitikaPrototypeMatch::RunHarvesters(uint64 Step)
+{
+    TArray<uint32> Participants;
+    for (const pe::Account& Account : Economy.All())
+        if (!Account.harvesters.empty()) Participants.Add(Account.participant);
+    for (const uint32 ParticipantId : Participants)
+    {
+        const APolitikaPrototypeStructure* Depot = FindStructureOf(ParticipantId);
+        const APolitikaPrototypeStructure* Source = FindGoldSourceOf(ParticipantId);
+        // Ascending unit order: a copy, because this step's casualties leave the list.
+        TArray<pe::UnitId> Harvesters;
+        for (const pe::Harvester& Harvester : Economy.Find(ParticipantId)->harvesters) Harvesters.Add(Harvester.unit);
+        for (const pe::UnitId UnitId : Harvesters)
+        {
+            const TObjectPtr<APolitikaPrototypeUnit>* Found = Units.FindByPredicate([UnitId, ParticipantId](const APolitikaPrototypeUnit* Unit)
+            {
+                return IsValid(Unit) && Unit->IsAlive() && Unit->GetStableId() == UnitId && Unit->GetOwnerPlayer() == ParticipantId;
+            });
+            if (!Found)
+            {
+                const pe::Gold Lost = Economy.LoseHarvester(ParticipantId, UnitId);
+                LogGold(TEXT("lost"), ParticipantId, UnitId, Lost, 0, 0, Step);
+                continue;
+            }
+            APolitikaPrototypeUnit* Unit = *Found;
+            pe::HarvesterSituation Situation;
+            Situation.atSource = Source && FVector::DistSquared2D(Unit->GetActorLocation(), Source->GetActorLocation()) <= kGoldPickupRadiusCm * kGoldPickupRadiusCm;
+            Situation.atBase = Depot && FVector::DistSquared2D(Unit->GetActorLocation(), Depot->GetActorLocation()) <= kGoldDepotRadiusCm * kGoldDepotRadiusCm;
+            // Stop stays the current order after a player's X or a failed route; arriving ends in Idle.
+            Situation.moving = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Move;
+            Situation.halted = Unit->GetCurrentOrder() == EPolitikaPrototypeOrder::Stop;
+            const pe::HarvesterStep Result = Economy.StepHarvester(ParticipantId, UnitId, Situation);
+            if (Result.arrivedAtSource) LogGold(TEXT("loading"), ParticipantId, UnitId, 0, 0, 0, Step);
+            if (Result.loaded > 0) LogGold(TEXT("load"), ParticipantId, UnitId, Result.loaded, 0, 0, Step);
+            if (Result.delivered > 0) LogGold(TEXT("deliver"), ParticipantId, UnitId, Result.delivered, 0, 0, Step);
+            if (Result.startedWaiting) LogGold(TEXT("waiting"), ParticipantId, UnitId, 0, 0, 0, Step);
+            if (Result.stoppedWaiting) LogGold(TEXT("resumed"), ParticipantId, UnitId, 0, 0, 0, Step);
+            Unit->SetCarryingGold(Economy.FindHarvester(ParticipantId, UnitId)->load > 0);
+            if (Result.goToBase && Depot) SendHarvester(Unit, Depot->GetActorLocation());
+            if (Result.goToSource && Source) SendHarvester(Unit, Source->GetActorLocation());
+        }
+        if (Economy.Find(ParticipantId)->sourceRemaining == 0)
+            for (APolitikaPrototypeStructure* Structure : Structures)
+                if (Structure == Source) Structure->MarkGoldSourceEmpty();
+    }
+}
+
 void APolitikaPrototypeMatch::RunEconomyPhase()
 {
     const uint64 Step = SimulationStepsExecuted;
@@ -525,6 +750,7 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
             ? Economy.Train(Request.ParticipantId, Request.Intent.ClientSequence, Request.Intent.Recipe,
                 CountLivingUnits(Request.ParticipantId), politika::unitscale::kMaxUnitsPerSeat)
             : Op == pe::EconomyOp::BuyFood ? Economy.BuyFood(Request.ParticipantId, Request.Intent.ClientSequence)
+            : Op == pe::EconomyOp::SellGold ? Economy.SellGold(Request.ParticipantId, Request.Intent.ClientSequence)
             : Economy.CancelLast(Request.ParticipantId, Request.Intent.ClientSequence);
         if (!Result)
         {
@@ -532,12 +758,17 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
             continue;
         }
         if (Op == pe::EconomyOp::Train) FirstAdmitted.FindOrAdd(Request.ParticipantId, Request.Intent.ClientSequence);
-        LogMoney(Op == pe::EconomyOp::Train ? TEXT("train") : Op == pe::EconomyOp::BuyFood ? TEXT("food") : TEXT("refund"),
+        LogMoney(Op == pe::EconomyOp::Train ? TEXT("train") : Op == pe::EconomyOp::BuyFood ? TEXT("food")
+            : Op == pe::EconomyOp::SellGold ? TEXT("sale") : TEXT("refund"),
             Request.ParticipantId, Request.Intent.ClientSequence, Result.amount);
         if (Op == pe::EconomyOp::BuyFood) LogFood(TEXT("purchase"), Request.ParticipantId, 0, 0, 0u);
+        if (Op == pe::EconomyOp::SellGold) LogGold(TEXT("sale"), Request.ParticipantId, 0, Result.sale.quantity, Result.sale.gross, Result.sale.fee, Step);
         SendEconomyOutcome(Source, Request.Intent, pe::EconomyRejection::None, Result.amount, Result.available,
-            static_cast<int32>(Result.queued));
+            static_cast<int32>(Result.queued), static_cast<int32>(Result.sale.quantity));
     }
+
+    // Harvesters after requests, so gold delivered in this step can be sold from the next one.
+    RunHarvesters(Step);
 
 #if !UE_BUILD_SHIPPING
     {
@@ -573,16 +804,25 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
         if (!Result.spawnDue) continue;
         FVector Location = FVector::ZeroVector;
         FRotator Rotation = FRotator::ZeroRotator;
-        APolitikaPrototypeUnit* Unit = FindProducerOutput(ParticipantId, Location, Rotation)
-            ? SpawnProducedUnit(ParticipantId, Location, Rotation) : nullptr;
+        const bool bHarvester = Result.recipe == pe::Recipe::Harvester;
+        APolitikaPrototypeUnit* Unit = !FindProducerOutput(ParticipantId, Location, Rotation) ? nullptr
+            : bHarvester ? SpawnHarvester(ParticipantId, Location, Rotation) : SpawnProducedUnit(ParticipantId, Location, Rotation);
         if (Unit && Economy.CompleteHead(ParticipantId, Result.transaction))
         {
             bSpawned = true;
+            if (bHarvester)
+            {
+                Economy.AddHarvester(ParticipantId, Unit->GetStableId());
+                LogGold(TEXT("harvester"), ParticipantId, Unit->GetStableId(), 0, 0, 0, Step);
+                if (const APolitikaPrototypeStructure* Source = FindGoldSourceOf(ParticipantId);
+                    Source && Economy.FindHarvester(ParticipantId, Unit->GetStableId())->phase == pe::HarvesterPhase::ToSource)
+                    SendHarvester(Unit, Source->GetActorLocation());
+            }
 #if !UE_BUILD_SHIPPING
             UE_LOG(LogPolitikaStartup, Display,
-                TEXT("RTS_PRODUCTION_SPAWN participant=%u transaction=%u entity=%llu team=%u x=%.1f y=%.1f living=%d generation=%llu step=%llu"),
+                TEXT("RTS_PRODUCTION_SPAWN participant=%u transaction=%u entity=%llu team=%u x=%.1f y=%.1f living=%d generation=%llu step=%llu recipe=%u"),
                 ParticipantId, Result.transaction, Unit->GetStableId(), static_cast<uint32>(Unit->GetTeamId()), Location.X, Location.Y,
-                CountLivingUnits(ParticipantId), MatchGeneration, Step);
+                CountLivingUnits(ParticipantId), MatchGeneration, Step, static_cast<uint32>(Result.recipe));
 #endif
         }
         else
@@ -623,8 +863,14 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.Rations = static_cast<int32>(Account->rations);
             View.UpkeepRations = static_cast<int32>(CountLivingUnits(Binding.RuntimePlayerId) * pe::kRationsPerUnit);
             View.bFoodShortage = Account->foodShortage;
+            View.bHasGoldSource = Account->hasSource;
+            View.GoldHeld = static_cast<int32>(Account->goldHeld);
+            View.GoldCarried = static_cast<int32>(Account->GoldCarried());
+            View.GoldAtSource = static_cast<int32>(Account->sourceRemaining);
+            View.Harvesters = static_cast<int32>(Account->harvesters.size());
             if (!Account->queue.empty())
             {
+                View.HeadRecipe = static_cast<uint8>(Account->queue.front().recipe);
                 const int32 Remaining = static_cast<int32>(Account->queue.front().remainingSteps);
                 View.HeadRemainingSteps = FMath::DivideAndRoundUp(Remaining, kViewRemainingGranularity) * kViewRemainingGranularity;
                 View.bHeadBlocked = Account->queue.front().blocked;
@@ -654,12 +900,12 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_source=%d harvesters=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
         OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0, OwnEconomy.Rations, OwnEconomy.UpkeepRations,
-        OwnEconomy.bFoodShortage ? 1 : 0);
+        OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldAtSource, OwnEconomy.Harvesters);
 #else
     (void)Source;
 #endif
@@ -675,6 +921,16 @@ void APolitikaPrototypePlayerController::TrainOrCancelAtProducer()
 void APolitikaPrototypePlayerController::BuyFood()
 {
     SubmitEconomyRequest(pe::EconomyOp::BuyFood, 0);
+}
+
+void APolitikaPrototypePlayerController::TrainHarvester()
+{
+    SubmitEconomyRequest(pe::EconomyOp::Train, static_cast<uint8>(pe::Recipe::Harvester));
+}
+
+void APolitikaPrototypePlayerController::SellGold()
+{
+    SubmitEconomyRequest(pe::EconomyOp::SellGold, 0);
 }
 
 bool APolitikaPrototypePlayerController::SubmitEconomyRequest(pe::EconomyOp Op, uint8 Recipe)
@@ -708,14 +964,15 @@ void APolitikaPrototypePlayerController::ClientReceiveEconomyOutcome_Implementat
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_OUTCOME participant=%u op=%u correlation=%u client_sequence=%u accepted=%d rejection=%u amount=%lld available=%lld queued=%d generation=%llu authority=%d"),
+        TEXT("RTS_ECONOMY_OUTCOME participant=%u op=%u correlation=%u client_sequence=%u accepted=%d rejection=%u amount=%lld available=%lld queued=%d generation=%llu authority=%d gold_sold=%d"),
         GetCommandPlayerId(), static_cast<uint32>(Outcome.Op), Outcome.CorrelationId, Outcome.ClientSequence, Outcome.bAccepted ? 1 : 0,
-        static_cast<uint32>(Outcome.Rejection), Outcome.AmountCents, Outcome.AvailableCents, Outcome.Queued, Outcome.MatchGeneration, HasAuthority() ? 1 : 0);
+        static_cast<uint32>(Outcome.Rejection), Outcome.AmountCents, Outcome.AvailableCents, Outcome.Queued, Outcome.MatchGeneration, HasAuthority() ? 1 : 0, Outcome.GoldSold);
 #endif
     const bool bFood = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::BuyFood;
+    const bool bSale = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::SellGold;
     if (!Outcome.bAccepted)
     {
-        ShowLocalFeedback(FString::Printf(TEXT("%s refused: %s"), bFood ? TEXT("Food purchase") : TEXT("Training"),
+        ShowLocalFeedback(FString::Printf(TEXT("%s refused: %s"), bFood ? TEXT("Food purchase") : bSale ? TEXT("Gold sale") : TEXT("Training"),
             *EconomyRejectionText(static_cast<pe::EconomyRejection>(Outcome.Rejection))));
         return;
     }
@@ -724,7 +981,12 @@ void APolitikaPrototypePlayerController::ClientReceiveEconomyOutcome_Implementat
         ShowLocalFeedback(FString::Printf(TEXT("%lld rations bought for %s"), pe::kFoodPurchaseRations, *UsdText(Outcome.AmountCents)));
         return;
     }
+    if (bSale)
+    {
+        ShowLocalFeedback(FString::Printf(TEXT("%d gold sold for %s"), Outcome.GoldSold, *UsdText(Outcome.AmountCents)));
+        return;
+    }
     ShowLocalFeedback(static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::Train
-        ? FString::Printf(TEXT("Rifleman queued for %s  ·  %d in the queue"), *UsdText(Outcome.AmountCents), Outcome.Queued)
+        ? FString::Printf(TEXT("Queued for %s  ·  %d in the queue"), *UsdText(Outcome.AmountCents), Outcome.Queued)
         : FString::Printf(TEXT("Training cancelled: %s refunded  ·  %d in the queue"), *UsdText(Outcome.AmountCents), Outcome.Queued));
 }

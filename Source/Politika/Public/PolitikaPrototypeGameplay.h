@@ -218,9 +218,9 @@ struct POLITIKA_API FPolitikaNetEconomyIntent
 {
     GENERATED_BODY()
     UPROPERTY() int32 ProtocolVersion = 0;
-    // politika::economy::EconomyOp: Train or Cancel.
+    // politika::economy::EconomyOp.
     UPROPERTY() uint8 Op = 0;
-    // politika::economy::Recipe for Train; zero for Cancel.
+    // politika::economy::Recipe for Train; zero for every other operation.
     UPROPERTY() uint8 Recipe = 0;
     // Shares the connection's single-use command sequence; also the ledger's transaction ID.
     UPROPERTY() uint32 ClientSequence = 0;
@@ -238,8 +238,11 @@ struct POLITIKA_API FPolitikaNetEconomyOutcome
     UPROPERTY() uint8 Op = 0;
     UPROPERTY() uint8 Rejection = 0;
     UPROPERTY() bool bAccepted = false;
-    // The price debited by a Train or the amount refunded by a Cancel.
+    // The price debited by a Train or BuyFood, the amount refunded by a Cancel or the net amount
+    // credited by a SellGold.
     UPROPERTY() int64 AmountCents = 0;
+    // The gold a SellGold took from the stock.
+    UPROPERTY() int32 GoldSold = 0;
     UPROPERTY() int64 AvailableCents = 0;
     UPROPERTY() int32 Queued = 0;
     UPROPERTY() uint64 MatchGeneration = 0;
@@ -269,6 +272,14 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() int32 Rations = 0;
     UPROPERTY() int32 UpkeepRations = 0;
     UPROPERTY() bool bFoodShortage = false;
+    // ECON-E4: this participant's gold: the stock at its base, on the way, and left at its source.
+    UPROPERTY() bool bHasGoldSource = false;
+    UPROPERTY() int32 GoldHeld = 0;
+    UPROPERTY() int32 GoldCarried = 0;
+    UPROPERTY() int32 GoldAtSource = 0;
+    UPROPERTY() int32 Harvesters = 0;
+    // politika::economy::Recipe of the item in training.
+    UPROPERTY() uint8 HeadRecipe = 0;
     UPROPERTY() int32 Produced = 0;
     bool operator==(const FPolitikaNetEconomyView& Other) const
     {
@@ -277,7 +288,9 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && Queued == Other.Queued && HeadRemainingSteps == Other.HeadRemainingSteps
             && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced && SuppliedKw == Other.SuppliedKw
             && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
-            && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage;
+            && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage
+            && bHasGoldSource == Other.bHasGoldSource && GoldHeld == Other.GoldHeld && GoldCarried == Other.GoldCarried
+            && GoldAtSource == Other.GoldAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
 
@@ -409,6 +422,10 @@ public:
     // Rout (DISC-D4): a soldier whose Discipline broke flees and refuses orders until it rallies.
     // Owner-only replicated; only the authority's fixed-step simulation changes it.
     bool IsRouted() const { return bRouted; }
+    // ECON-E4: a harvester holding a load of gold. The ledger owns the load; this owner-only copy is
+    // for the HUD, and only the authority's economy phase changes it.
+    bool IsCarryingGold() const { return bCarryingGold; }
+    void SetCarryingGold(bool bCarrying) { bCarryingGold = bCarrying; }
     // Authority (DISC-D3): the combined multiplier of every modifier source for one attribute,
     // in permille, and as a scale factor.
     int32 GetModifierPermille(politika::modifiers::Attribute Attribute) const { return Modifiers.Combined(Attribute); }
@@ -441,6 +458,7 @@ private:
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
+    friend class FPolitikaMultiplayerGoldTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -562,6 +580,7 @@ private:
     // Rout (DISC-D4), owner-only replicated for the HUD; the rally point and start step are
     // authority-only. HomeLocation is where the unit entered the match.
     UPROPERTY(Replicated) bool bRouted = false;
+    UPROPERTY(Replicated) bool bCarryingGold = false;
     FVector RoutRallyPoint = FVector::ZeroVector;
     uint64 RoutStartStep = 0;
     FVector HomeLocation = FVector::ZeroVector;
@@ -679,12 +698,18 @@ public:
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
     void Configure(APolitikaPrototypeMatch* InMatch, politika::power::BuildingKind InKind, uint32 InOwner, uint8 InTeam,
         const FLinearColor& InTint, bool bHiddenLocally);
+    // A participant's gold source (ECON-E4). Not a building: it has no electrical load and no grid
+    // entry, so it takes the kind value after the two power::BuildingKind values.
+    void ConfigureGoldSource(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam, bool bHiddenLocally);
+    void MarkGoldSourceEmpty();
     bool IsProducer() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Producer); }
+    bool IsGoldSource() const { return Kind == GoldSourceKind; }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     uint8 GetTeamId() const { return TeamId; }
 protected:
     virtual void BeginPlay() override;
 private:
+    static constexpr uint8 GoldSourceKind = 2;
     UFUNCTION() void ApplyTint();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(Replicated) uint8 Kind = 0;
@@ -753,6 +778,9 @@ public:
     uint64 GetMatchGeneration() const { return MatchGeneration; }
     APolitikaPrototypeUnit* FindUnitByStableId(uint64 StableId) const;
     const class UPolitikaPrototypeContentCatalog* GetContentCatalog() const { return ContentCatalog; }
+    // The harvester archetype (ECON-E4) is a code fixture that no catalog holds.
+    static FName HarvesterArchetypeId() { return FName(TEXT("unit.playtest.harvester")); }
+    const UPolitikaUnitArchetypeDefinition* GetHarvesterDefinition();
     const TArray<FPolitikaNetParticipantInfo>& GetReplicatedParticipants() const { return ReplicatedParticipants; }
     // Remote observer only: the participant assigned to this process by its server.
     void SetLocalViewerParticipant(uint32 PlayerId);
@@ -1092,10 +1120,21 @@ private:
     UPROPERTY() TArray<TObjectPtr<APolitikaPrototypeStructure>> Structures;
     void InitializeEconomy();
     void RunEconomyPhase();
+    // ECON-E4: every harvester's routine for this step, in ascending unit order per account.
+    void RunHarvesters(uint64 Step);
+    void SendHarvester(APolitikaPrototypeUnit* Unit, const FVector& Destination);
+    void NoteHarvesterOrderAdmitted(const APolitikaPrototypeUnit* Unit, uint64 Sequence);
+    APolitikaPrototypeUnit* SpawnHarvester(uint32 ParticipantId, const FVector& Location, const FRotator& Rotation);
+    // The sequences of orders a harvester's own routine has sent and not yet seen admitted.
+    TSet<uint64> HarvesterOrderSequences;
+    UPROPERTY(Transient) TObjectPtr<UPolitikaUnitArchetypeDefinition> HarvesterDefinition;
+    void PlaceGoldSource(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
+    void LogGold(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
+    const APolitikaPrototypeStructure* FindGoldSourceOf(uint32 ParticipantId) const;
     void ClearEconomy(const TCHAR* Reason);
     void SyncEconomyReplication();
     void SendEconomyOutcome(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent,
-        politika::economy::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued);
+        politika::economy::EconomyRejection Rejection, int64 AmountCents, int64 AvailableCents, int32 Queued, int32 GoldSold = 0);
     void RejectEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent, uint32 ParticipantId,
         politika::economy::EconomyRejection Rejection);
     const APolitikaPrototypeStructure* FindStructureOf(uint32 ParticipantId) const;
@@ -1123,6 +1162,7 @@ private:
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
+    friend class FPolitikaMultiplayerGoldTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
@@ -1371,6 +1411,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
+    friend class FPolitikaMultiplayerGoldTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -1565,6 +1606,10 @@ private:
     void TrainOrCancelAtProducer();
     // N buys one pack of rations (ECON-E3).
     void BuyFood();
+    // K trains a harvester (ECON-E4); Shift+B cancels it like any other entry.
+    void TrainHarvester();
+    // L sells one lot of gold (ECON-E4).
+    void SellGold();
     bool SubmitEconomyRequest(politika::economy::EconomyOp Op, uint8 Recipe);
     // Advisory check of one candidate slot on this process: inside the playable area, on
     // ground level with the clicked point and not too steep, and on the local navmesh when
