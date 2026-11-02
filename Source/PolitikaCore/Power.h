@@ -24,8 +24,8 @@ enum class BuildingKind : std::uint8_t { Producer, Generator };
 inline constexpr Kilowatts kGeneratorCapacityKw = 100;
 inline constexpr Kilowatts kGeneratorAuxiliaryKw = 10;
 inline constexpr Kilowatts kProducerLoadKw = 40;
-// Fixture health. A generator supplies power only at full health. A producer stays on the grid
-// until it reaches zero, which is the one moment its queue is failed.
+// Fixture health. A generator supplies power only at full health. A building at zero stays on
+// the grid but draws no load; one point of damage does not.
 inline constexpr std::int32_t kGeneratorHealth = 100;
 inline constexpr std::int32_t kProducerHealth = 200;
 // Fixture, not balance. A unit already in this radius finishes a capture in this many 20 Hz steps.
@@ -142,7 +142,12 @@ public:
     // does not stop a smaller one behind it.
     Allocation Allocate() noexcept {
         Allocation result;
-        for (const Building& building : buildings) {
+        for (Building& building : buildings) {
+            // A destroyed building stays on the grid so it can be repaired, but it is not a load.
+            if (building.health <= 0) {
+                building.powered = false;
+                continue;
+            }
             if (building.kind == BuildingKind::Generator && building.generating) result.suppliedKw += building.capacityKw;
             result.requiredKw += building.loadKw;
         }
@@ -152,9 +157,9 @@ public:
             if (building.powered) remaining -= building.loadKw;
         };
         for (Building& building : buildings)
-            if (building.kind == BuildingKind::Generator) serve(building);
+            if (building.health > 0 && building.kind == BuildingKind::Generator) serve(building);
         for (Building& building : buildings)
-            if (building.kind != BuildingKind::Generator) serve(building);
+            if (building.health > 0 && building.kind != BuildingKind::Generator) serve(building);
         return result;
     }
 

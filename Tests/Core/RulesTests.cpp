@@ -2340,6 +2340,8 @@ int main() {
         assert(!Ledger.SetGeneratorOnline(1, true));
         const pe::StepResult Off = Ledger.Advance(1, ++Step);
         assert(Off.powerChanged && !A.producerPowered && A.queue.front().remainingSteps == Held);
+        // One point of damage takes the plant offline. The building is still there, so its load stays.
+        assert(A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw && A.allocation.suppliedKw == 0);
         const pe::RequestResult Refused = Ledger.Train(1, 2, Rifleman, 0, 20);
         assert(Refused.rejection == EconomyRejection::ProducerUnpowered && A.spent == Spent && A.queue.size() == 1);
         assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding));
@@ -2359,6 +2361,19 @@ int main() {
         const auto Again = Ledger.DamageBuilding(1, pe::kProducerBuilding, pw::kProducerHealth);
         assert(Again.applied == 0 && !Again.producerLost && Again.refunded == 0 && A.refunded == Price);
         assert(Ledger.Train(1, 3, Rifleman, 0, 20).rejection == EconomyRejection::NoProducer);
+        // The dead producer stays on the grid and no longer draws its load. The living plant still supplies.
+        const pe::StepResult Husk = Ledger.Advance(1, ++Step);
+        assert(Husk.powerChanged && A.grid.Count() == Buildings && A.grid.Find(pe::kProducerBuilding)->health == 0
+            && !A.grid.Find(pe::kProducerBuilding)->powered
+            && A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw && A.allocation.suppliedKw == pw::kGeneratorCapacityKw);
+        assert(Ledger.DamageBuilding(1, pe::kGeneratorBuilding, pw::kGeneratorHealth).applied == pw::kGeneratorHealth);
+        const pe::StepResult Dark = Ledger.Advance(1, ++Step);
+        assert(Dark.powerChanged && A.allocation.requiredKw == 0 && A.allocation.suppliedKw == 0
+            && !A.grid.Find(pe::kGeneratorBuilding)->powered);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding));
+        const pe::StepResult Back = Ledger.Advance(1, ++Step);
+        assert(Back.powerChanged && A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw
+            && A.allocation.suppliedKw == pw::kGeneratorCapacityKw && A.grid.Find(pe::kGeneratorBuilding)->powered);
 
         // A source, or any id that is not a building, does not join the grid.
         const auto Miss = Ledger.DamageBuilding(1, 99, 50);

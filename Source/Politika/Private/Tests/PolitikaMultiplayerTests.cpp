@@ -4876,6 +4876,10 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     const pe::Account* Host = F.Match->GetEconomy().Find(HostId);
     TestTrue(TEXT("BD-01 the queue is refunded once"), Host && Host->queue.empty() && Host->refunded == Price && Host->available == Before + Price);
     TestFalse(TEXT("BD-01 a dead producer is drawn grey"), OwnProducer->GetPresentedTint().Equals(ProducerTint));
+    F.Step();
+    Host = F.Match->GetEconomy().Find(HostId);
+    TestEqual(TEXT("BD-07 a dead producer draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kGeneratorAuxiliaryKw));
+    TestEqual(TEXT("BD-07 the living plant still supplies"), Host->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
     TestFalse(TEXT("BD-02 demolishing it again does nothing"), F.Match->DemolishOwnedBuilding(OwnProducer, HostId));
     const int32 EnemyHealth = EnemyProducer->GetHealth();
     TestFalse(TEXT("BD-03 an enemy building is refused"), F.Match->DemolishOwnedBuilding(EnemyProducer, HostId));
@@ -4895,11 +4899,22 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestTrue(TEXT("BD-05 the plant is dead and offline"), Plant && Plant->health == 0 && !Plant->generating);
     TestTrue(TEXT("BD-05 both husks share the dead color"), OwnGenerator->GetPresentedTint().Equals(OwnProducer->GetPresentedTint()));
     TestFalse(TEXT("BD-05 the dead color is not the plant color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
+    F.Step();
+    Host = F.Match->GetEconomy().Find(HostId);
+    TestEqual(TEXT("BD-07 a dead plant draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kProducerLoadKw));
+    TestEqual(TEXT("BD-07 a dead plant supplies nothing"), Host->allocation.suppliedKw, static_cast<int64>(0));
+    TestFalse(TEXT("BD-07 the producer is unpowered"), Host->producerPowered);
     TestTrue(TEXT("BD-06 the generator can be repaired"), F.Match->RepairOwnedBuilding(OwnGenerator));
     TestEqual(TEXT("BD-06 repair restores its health"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
     TestTrue(TEXT("BD-06 repair restores its color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
     Plant = F.Match->GetEconomy().Find(HostId)->grid.Find(pe::kGeneratorBuilding);
     TestTrue(TEXT("BD-06 the plant supplies again"), Plant && Plant->generating && Plant->health == pw::kGeneratorHealth);
+    F.Step();
+    Host = F.Match->GetEconomy().Find(HostId);
+    TestEqual(TEXT("BD-07 repair puts the plant's load back"), Host->allocation.requiredKw,
+        static_cast<int64>(pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw));
+    TestEqual(TEXT("BD-07 repair restores supply"), Host->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
+    TestTrue(TEXT("BD-07 the producer is powered again"), Host->producerPowered);
     return true;
 }
 
