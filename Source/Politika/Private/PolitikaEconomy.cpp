@@ -371,14 +371,17 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
     const bool bAllied = !bOurs && ViewerTeam != politika::rules::kNoTeam && ViewerTeam == Structure->GetTeamId();
     const TCHAR* Who = bOurs ? TEXT("Your") : bAllied ? TEXT("Allied") : TEXT("Enemy");
     const TCHAR* Kind = Structure->IsProducer() ? TEXT("producer") : TEXT("generator");
-    if (!Structure->IsAlive()) return FString::Printf(TEXT("%s %s  destroyed"), Who, Kind);
+    // A producer at zero has left the map. A generator husk is still there and can be repaired.
+    if (!Structure->IsAlive() && !Structure->IsGenerator()) return FString::Printf(TEXT("%s %s  destroyed"), Who, Kind);
     const int32 MaxHealth = Structure->IsProducer() ? politika::power::kProducerHealth : politika::power::kGeneratorHealth;
     FString State;
     if (Structure->IsGenerator())
     {
         const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer());
         const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
-        State = Plant && Plant->generating ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
+        const bool bOnline = Plant && Plant->generating;
+        State = bOnline ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
+        if (bOurs && !bOnline) State += TEXT("  \u00b7  click to repair");
     }
     const APolitikaPrototypeUnit* Captor = nullptr;
     for (const APolitikaPrototypeUnit* Unit : Units)

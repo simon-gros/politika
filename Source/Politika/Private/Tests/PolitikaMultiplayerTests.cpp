@@ -4860,7 +4860,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
         FString(TEXT("Your generator  100 / 100  \u00b7  online")));
     TestEqual(TEXT("BD-08 one hit takes the plant offline"), F.Match->DamageOwnedBuilding(OwnGenerator, 1), 1);
     TestEqual(TEXT("BD-08 a damaged plant reads as offline"), F.Match->BuildingCursorText(OwnGenerator, HostId),
-        FString(TEXT("Your generator  99 / 100  \u00b7  offline")));
+        FString(TEXT("Your generator  99 / 100  \u00b7  offline  \u00b7  click to repair")));
     TestTrue(TEXT("BD-08 repair brings the plant back"), F.Match->RepairOwnedBuilding(OwnGenerator));
     TestEqual(TEXT("BD-08 a repaired plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
         FString(TEXT("Your generator  100 / 100  \u00b7  online")));
@@ -4939,6 +4939,8 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestTrue(TEXT("BD-05 both husks share the dead color"), OwnGenerator->GetPresentedTint().Equals(OwnProducer->GetPresentedTint()));
     TestFalse(TEXT("BD-05 the dead color is not the plant color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
     TestFalse(TEXT("BD-11 a dead plant stays to be repaired"), OwnGenerator->IsWithdrawn() || OwnGenerator->IsBodyHidden());
+    TestEqual(TEXT("BD-13 a husk says how to repair it"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString::Printf(TEXT("Your generator  0 / %d  \u00b7  offline  \u00b7  click to repair"), pw::kGeneratorHealth));
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("BD-07 a dead plant draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kProducerLoadKw));
