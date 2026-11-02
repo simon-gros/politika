@@ -451,6 +451,28 @@ APolitikaPrototypeUnit* APolitikaPrototypeMatch::FindUnitByStableId(uint64 InSta
     return nullptr;
 }
 
+APolitikaPrototypeStructure* APolitikaPrototypeMatch::FindStructureByStableId(uint64 InStableId) const
+{
+    if (InStableId == 0) return nullptr;
+    for (APolitikaPrototypeStructure* Structure : Structures)
+        if (IsValid(Structure) && Structure->GetStableId() == InStableId) return Structure;
+    return nullptr;
+}
+
+bool APolitikaPrototypeMatch::IsStructureObservedByParticipant(const APolitikaPrototypeStructure* Structure, uint32 PlayerId) const
+{
+    if (!Structure) return false;
+    if (!bFogOfWar || Structure->GetOwnerPlayer() == PlayerId) return true;
+    const uint8 Team = GetTeamForParticipant(PlayerId);
+    if (Team != politika::rules::kNoTeam && Team == Structure->GetTeamId()) return true;
+    for (const APolitikaPrototypeUnit* Unit : Units)
+    {
+        if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetOwnerPlayer() != PlayerId) continue;
+        if (FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= Unit->GetSightRadius()) return true;
+    }
+    return false;
+}
+
 void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     if (UWorld* World = GetWorld())
@@ -880,6 +902,7 @@ bool APolitikaPrototypeMatch::SubmitControllerIntent(APlayerController* Source, 
     // remain the shared kernel's responsibility.
     APolitikaPrototypeUnit* Issuer = FindUnitByStableId(Intent.IssuerEntityId);
     APolitikaPrototypeUnit* Target = FindUnitByStableId(Intent.TargetEntityId);
+    APolitikaPrototypeStructure* Structure = Target ? nullptr : FindStructureByStableId(Intent.TargetEntityId);
     const uint64 ExpectedSequence = NextCommandSequence;
     OutcomeRoutes.Add(ExpectedSequence, {Source, Intent.ClientSequence, Intent.CorrelationId, MatchGeneration, Intent.OrderKind});
 #if !UE_BUILD_SHIPPING
@@ -889,7 +912,7 @@ bool APolitikaPrototypeMatch::SubmitControllerIntent(APlayerController* Source, 
         Intent.IssuerEntityId, Intent.TargetEntityId, Intent.MatchGeneration, ExpectedSequence);
 #endif
     const uint64 AssignedSequence = SubmitCommand(ParticipantId, Issuer, Target, Decoded, Intent.IssuerEntityId,
-        Intent.CorrelationId, Intent.MatchGeneration);
+        Intent.CorrelationId, Intent.MatchGeneration, 0, Structure);
     ensureMsgf(AssignedSequence == ExpectedSequence, TEXT("Command sequence routing drifted"));
     return true;
 }

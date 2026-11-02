@@ -442,6 +442,8 @@ void APolitikaPrototypeMatch::PlaceSources(uint32 ParticipantId, uint8 InTeamId,
                 APolitikaPrototypeStructure* Source = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(Location, FRotator::ZeroRotator);
                 if (!Source) continue;
                 Source->ConfigureSource(this, Resource, ParticipantId, InTeamId, bHiddenLocally);
+                // An id so an attack order can find it and refuse it. It is still not a building.
+                Source->SetBuildingIdentity(NextStableId++, 0, 0);
                 Structures.Add(Source);
                 Placed.Add(Point);
                 Economy.SetSource(ParticipantId, Resource, Resource == pe::Resource::Gold ? pe::kSourceGold : pe::kSourceFood);

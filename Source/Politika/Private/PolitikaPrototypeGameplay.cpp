@@ -263,6 +263,7 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
     NavigationReplanCooldownSeconds = 0.0f;
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
+    OrderStructure.Reset();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -283,6 +284,28 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
     CurrentOrder = EPolitikaPrototypeOrder::Attack;
     ResetAutonomy();
     OrderTarget = Target;
+    OrderStructure.Reset();
+#if !UE_BUILD_SHIPPING
+    bAcceptanceMovementLogged = false;
+#endif
+}
+
+void APolitikaPrototypeUnit::SetAttackStructure(APolitikaPrototypeStructure* Structure)
+{
+    GrenadeWindup = 0;
+    GrenadeTarget.Reset();
+    InfantryPresentation->CancelGrenade();
+    PlayLocalAcknowledgement(TEXT("attack"));
+    NavigationWaypoints.Reset();
+    NavigationWaypointIndex = 0;
+    NavigationMatchGeneration = 0;
+    NavigationOrderSequence = 0;
+    NavigationReplanCooldownSeconds = 0.0f;
+    NavigationReplanAttempts = 0;
+    CurrentOrder = EPolitikaPrototypeOrder::Attack;
+    ResetAutonomy();
+    OrderTarget.Reset();
+    OrderStructure = Structure && Structure->IsBuilding() ? Structure : nullptr;
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -302,6 +325,7 @@ void APolitikaPrototypeUnit::SetGuardOrder()
     CurrentOrder = EPolitikaPrototypeOrder::Guard;
     ResetAutonomy();
     OrderTarget.Reset();
+    OrderStructure.Reset();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -321,6 +345,7 @@ void APolitikaPrototypeUnit::StopOrder()
     NavigationReplanCooldownSeconds = 0.0f;
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
+    OrderStructure.Reset();
     OrderDestination = GetActorLocation();
 }
 
@@ -355,18 +380,26 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
             && HasLineOfFire(Candidate))
             return politika::rules::OrderEndReason::None;
     }
+    const bool bStructureAttack = CurrentOrder == EPolitikaPrototypeOrder::Attack
+        && OrderStructure.IsValid() && OrderStructure->IsBuilding() && OrderStructure->IsAlive();
     const bool bCanAdvance = CurrentOrder == EPolitikaPrototypeOrder::Move
         || CurrentOrder == EPolitikaPrototypeOrder::AttackMove
         || ((CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
-            && OrderTarget.IsValid());
+            && OrderTarget.IsValid())
+        || bStructureAttack;
     if (!bCanAdvance) return politika::rules::OrderEndReason::None;
 
     FVector Destination = OrderDestination;
     bool bTargetAlreadyInRange = false;
+    const AActor* Chase = nullptr;
     if ((CurrentOrder == EPolitikaPrototypeOrder::Attack || CurrentOrder == EPolitikaPrototypeOrder::Guard)
         && OrderTarget.IsValid())
+        Chase = OrderTarget.Get();
+    else if (bStructureAttack)
+        Chase = OrderStructure.Get();
+    if (Chase)
     {
-        Destination = OrderTarget->GetActorLocation();
+        Destination = Chase->GetActorLocation();
         const FVector ToTarget = Destination - GetActorLocation();
         if (ToTarget.Size2D() <= WeaponRange)
         {
@@ -813,6 +846,7 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     if (bRouted)
     {
         OrderTarget.Reset();
+        OrderStructure.Reset();
         return;
     }
     const bool bIdle = CurrentOrder == EPolitikaPrototypeOrder::Idle;
@@ -842,6 +876,40 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     else if (CurrentOrder == EPolitikaPrototypeOrder::Guard && !OrderTarget.IsValid())
     {
         AutoAcquireForAttackMove();
+    }
+
+    if (APolitikaPrototypeStructure* Structure = OrderStructure.Get())
+    {
+        const bool bHostile = Structure->IsBuilding() && Structure->IsAlive()
+            && Structure->GetOwnerPlayer() != OwnerPlayer
+            && !politika::rules::AreAllied(OwnerPlayer, TeamId, Structure->GetOwnerPlayer(), Structure->GetTeamId());
+        if (!bHostile)
+        {
+            if (CurrentOrder == EPolitikaPrototypeOrder::Attack) CurrentOrder = EPolitikaPrototypeOrder::Idle;
+            OrderStructure.Reset();
+            return;
+        }
+        if (const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+            Match && Match->IsFogOfWarEnabled() && !Match->IsStructureObservedByParticipant(Structure, OwnerPlayer))
+            return;
+        if (InfantryBehavior)
+        {
+            const FRotator Aim = (Structure->GetActorLocation() - GetActorLocation()).Rotation();
+            SetActorRotation(FMath::RInterpConstantTo(GetActorRotation(), FRotator(0, Aim.Yaw, 0), DeltaSeconds,
+                InfantryBehavior->TurnDegreesPerSecond));
+            // The building mesh sits on the shot, so a unit line-of-fire trace would always hit it.
+            if (bMovedThisStep || FMath::Abs(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, Aim.Yaw))
+                > InfantryBehavior->AcceptableAimDegrees) return;
+        }
+        if (FlatDistance(GetActorLocation(), Structure->GetActorLocation()) <= WeaponRange && CooldownRemaining <= 0.0f)
+        {
+            if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get())
+                Match->DamageOwnedBuilding(Structure, FMath::Max(1, FMath::RoundToInt(WeaponDamage)));
+            CooldownRemaining = NextFireInterval(DeltaSeconds);
+            if (InfantryBehavior) --Ammo;
+            if (InfantryPresentation) InfantryPresentation->Shot(Structure->GetActorLocation(), CooldownRemaining);
+        }
+        return;
     }
 
     APolitikaPrototypeUnit* Target = OrderTarget.Get();
@@ -906,6 +974,14 @@ uint64 APolitikaPrototypeUnit::CleanupDeadTarget()
     {
         const uint64 LostTargetId = Target->GetStableId();
         OrderTarget.Reset();
+        if (CurrentOrder == EPolitikaPrototypeOrder::Attack) CurrentOrder = EPolitikaPrototypeOrder::Idle;
+        return LostTargetId;
+    }
+    if (APolitikaPrototypeStructure* Structure = OrderStructure.Get();
+        Structure && (!Structure->IsBuilding() || !Structure->IsAlive()))
+    {
+        const uint64 LostTargetId = Structure->GetStableId();
+        OrderStructure.Reset();
         if (CurrentOrder == EPolitikaPrototypeOrder::Attack) CurrentOrder = EPolitikaPrototypeOrder::Idle;
         return LostTargetId;
     }
@@ -2094,7 +2170,8 @@ void APolitikaPrototypeMatch::SubmitGuard(uint32 PlayerId, APolitikaPrototypeUni
 
 uint64 APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit,
     APolitikaPrototypeUnit* Target, const politika::rules::Order& Intent, uint64 RequestedIssuerId,
-    uint64 CorrelationId, TOptional<uint64> GenerationHint, uint32 FormationId)
+    uint64 CorrelationId, TOptional<uint64> GenerationHint, uint32 FormationId,
+    APolitikaPrototypeStructure* Structure)
 {
     APolitikaPrototypeUnit* ValidUnit = IsValid(Unit) ? Unit : nullptr;
     FPendingOrder Pending;
@@ -2157,6 +2234,7 @@ uint64 APolitikaPrototypeMatch::SubmitCommand(uint32 PlayerId, APolitikaPrototyp
     }
     Pending.Unit = ValidUnit;
     Pending.Target = Target;
+    Pending.Structure = Structure;
     if (const auto* Move = std::get_if<politika::rules::MoveOrder>(&Intent))
     {
         Pending.Kind = EPolitikaPrototypeOrder::Move;
@@ -2202,6 +2280,7 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
 
     politika::rules::Entity TargetRules;
     const APolitikaPrototypeUnit* Target = Pending.Target.Get();
+    const APolitikaPrototypeStructure* Structure = Pending.Structure.Get();
     if (Target)
     {
         TargetRules.id = Target->GetStableId();
@@ -2211,18 +2290,28 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
         TargetRules.team = Target->GetTeamId();
         TargetRules.observed = IsUnitObservedByParticipant(Target, Pending.Request.participant_id);
     }
+    else if (Structure)
+    {
+        TargetRules.id = Structure->GetStableId();
+        TargetRules.owner_player = Structure->GetOwnerPlayer();
+        TargetRules.attackable = Structure->IsBuilding() && Structure->IsAlive();
+        TargetRules.alive = Structure->IsAlive();
+        TargetRules.team = Structure->GetTeamId();
+        TargetRules.observed = IsStructureObservedByParticipant(Structure, Pending.Request.participant_id);
+    }
     // Under fog an unresolvable target ID is indistinguishable from a hidden one, so a
     // client cannot probe whether an unseen entity exists.
     uint64 RequestedTargetId = 0;
     if (const auto* Attack = std::get_if<politika::rules::AttackOrder>(&Pending.Request.intent)) RequestedTargetId = Attack->target_id;
     else if (const auto* Grenade = std::get_if<politika::rules::GrenadeOrder>(&Pending.Request.intent)) RequestedTargetId = Grenade->target_id;
-    const bool bHiddenUnknownTarget = bFogOfWar && !Target && RequestedTargetId != 0;
+    const bool bKnownTarget = Target || Structure;
+    const bool bHiddenUnknownTarget = bFogOfWar && !bKnownTarget && RequestedTargetId != 0;
     if (bHiddenUnknownTarget) { TargetRules.id = RequestedTargetId; TargetRules.observed = false; }
     const auto Admission = politika::rules::AdmitCommand(Pending.Request, MatchGeneration,
         bContentReady && Lifecycle.IsActive(),
         Issuer ? &IssuerRules : nullptr,
         {PlayableMax.X - PlayableMin.X, PlayableMax.Y - PlayableMin.Y},
-        Target || bHiddenUnknownTarget ? &TargetRules : nullptr);
+        bKnownTarget || bHiddenUnknownTarget ? &TargetRules : nullptr);
     if (!Admission) return Admission;
     if ((Pending.Kind == EPolitikaPrototypeOrder::Grenade && !Issuer->CanUseGrenade(Target))
         || (Pending.Kind == EPolitikaPrototypeOrder::Reload && !Issuer->CanReload())
@@ -2579,11 +2668,16 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
                 }
                 break;
             case EPolitikaPrototypeOrder::Attack:
-                Unit->SetAttackOrder(Pending.Target.Get());
+            {
+                if (APolitikaPrototypeStructure* Building = Pending.Structure.Get())
+                    Unit->SetAttackStructure(Building);
+                else
+                    Unit->SetAttackOrder(Pending.Target.Get());
                 Unit->NavigationMatchGeneration = MatchGeneration;
                 Unit->NavigationOrderSequence = Pending.Request.sequence;
                 LastCommandFeedback = TEXT("Attack order accepted.");
                 break;
+            }
             case EPolitikaPrototypeOrder::Guard:
                 Unit->SetGuardOrder();
                 Unit->NavigationMatchGeneration = MatchGeneration;
@@ -2640,11 +2734,12 @@ void APolitikaPrototypeMatch::AdmitPendingOrders()
 #if !UE_BUILD_SHIPPING
         const APolitikaPrototypeUnit* AdmittedUnit = Pending.Unit.Get();
         const APolitikaPrototypeUnit* AdmittedTarget = Pending.Target.Get();
+        const APolitikaPrototypeStructure* AdmittedStructure = Pending.Structure.Get();
         static const TCHAR* OrderNames[] = { TEXT("Idle"), TEXT("Move"), TEXT("Attack"), TEXT("AttackMove"), TEXT("Stop"), TEXT("Guard"), TEXT("Grenade"), TEXT("Reload"), TEXT("Sprint") };
         const int32 OrderIndex = static_cast<int32>(Pending.Kind);
         UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_ORDER_ADMITTED order=%s unit=%llu target=%llu sequence=%llu participant=%u correlation=%llu generation=%llu"),
             OrderNames[OrderIndex], AdmittedUnit ? AdmittedUnit->GetStableId() : 0,
-            AdmittedTarget ? AdmittedTarget->GetStableId() : 0, Pending.Request.sequence,
+            AdmittedTarget ? AdmittedTarget->GetStableId() : AdmittedStructure ? AdmittedStructure->GetStableId() : 0, Pending.Request.sequence,
             Pending.Request.participant_id, Pending.Request.correlation_id, Pending.Request.match_generation);
 #endif
     }
@@ -3805,22 +3900,9 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
             else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
             return;
         }
-        APolitikaPrototypeUnit* Attacker = nullptr;
-        for (APolitikaPrototypeUnit* Unit : Selected)
-        {
-            if (Unit && Unit->CanAttack() && FlatDistance(Unit->GetActorLocation(), Structure->GetActorLocation()) <= Unit->GetWeaponRange())
-            {
-                Attacker = Unit;
-                break;
-            }
-        }
-        if (!Attacker)
-        {
-            ShowLocalFeedback(TEXT("Move a unit into range to damage that building."));
-            return;
-        }
-        const int32 Applied = ActiveMatch->DamageOwnedBuilding(Structure, FMath::Max(1, FMath::RoundToInt(Attacker->GetWeaponDamage())));
-        ShowLocalFeedback(Applied > 0 ? TEXT("Building hit.") : TEXT("That building took no damage."));
+        // The same attack order used on a unit: the server walks each attacker into range and
+        // keeps firing. A click no longer spends the shot by itself.
+        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackOrder{Structure->GetStableId()});
         return;
     }
     const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();

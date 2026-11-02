@@ -4511,4 +4511,106 @@ bool FPolitikaMultiplayerBuildingDamageTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingAttackTest,
+    "Politika.RTS.Multiplayer.BuildingAttack",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E7: an attack order on a hostile building walks into range and keeps firing through the
+// same damage rules. A friendly building and a resource source are refused.
+bool FPolitikaMultiplayerBuildingAttackTest::RunTest(const FString& Parameters)
+{
+    using namespace politika::rules;
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    APolitikaPrototypeStructure* EnemyProducer = nullptr;
+    APolitikaPrototypeStructure* EnemyGenerator = nullptr;
+    APolitikaPrototypeStructure* OwnGenerator = nullptr;
+    APolitikaPrototypeStructure* Source = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure) continue;
+        if (Structure->IsSource() && Structure->GetStableId() != 0) Source = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsProducer()) EnemyProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsGenerator()) EnemyGenerator = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsGenerator()) OwnGenerator = Structure;
+    }
+    if (!TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)
+        || !TestNotNull(TEXT("The enemy has a generator"), EnemyGenerator)
+        || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+
+    const uint8 Rifleman = static_cast<uint8>(pe::Recipe::Rifleman);
+    const pe::Cents Price = pe::FindRecipe(Rifleman)->cost;
+    FPolitikaNetEconomyIntent Train;
+    Train.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+    Train.Op = static_cast<uint8>(pe::EconomyOp::Train);
+    Train.Recipe = Rifleman;
+    Train.ClientSequence = 1;
+    Train.CorrelationId = F.NextCorrelation++;
+    Train.MatchGeneration = F.Match->GetMatchGeneration();
+    TestTrue(TEXT("BA-01 the enemy queues a rifleman"), F.Match->SubmitEconomyIntent(F.Remotes[0], Train));
+    F.Step();
+    const pe::Account* Enemy = F.Match->GetEconomy().Find(EnemyId);
+    if (!TestTrue(TEXT("BA-01 one item is queued"), Enemy && Enemy->queue.size() == 1)) return false;
+    const int64 Before = Enemy->available;
+
+    TestTrue(TEXT("BA-02 the producer is left with one shot of health"),
+        F.Match->DamageOwnedBuilding(EnemyProducer, pw::kProducerHealth - 10) == pw::kProducerHealth - 10);
+    const FVector2D ProducerAt(EnemyProducer->GetActorLocation().X, EnemyProducer->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Killer = F.AddUnit(HostId, ProducerAt + FVector2D(80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BA-02 the attacker spawns"), Killer)) return false;
+    const CommandOutcomeEvent* Kill = F.Submit(Host, F.Intent(Host, OrderKind::Attack, Killer->GetStableId(), EnemyProducer->GetStableId()));
+    TestTrue(TEXT("BA-02 the attack is admitted"), Kill && Kill->accepted);
+    TestEqual(TEXT("BA-02 the shot destroys the producer"), EnemyProducer->GetHealth(), 0);
+    TestEqual(TEXT("BA-02 the order ends"), static_cast<int32>(Killer->GetCurrentOrder()), static_cast<int32>(EPolitikaPrototypeOrder::Idle));
+    Enemy = F.Match->GetEconomy().Find(EnemyId);
+    TestTrue(TEXT("BA-02 the queue is refunded once"), Enemy && !Enemy->hasProducer && Enemy->queue.empty()
+        && Enemy->refunded == Price && Enemy->available == Before + Price);
+
+    const FVector2D GeneratorAt(EnemyGenerator->GetActorLocation().X, EnemyGenerator->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Gunner = F.AddUnit(HostId, GeneratorAt + FVector2D(80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("BA-03 the gunner spawns"), Gunner)) return false;
+    const int32 HealthBefore = EnemyGenerator->GetHealth();
+    const CommandOutcomeEvent* Hit = F.Submit(Host, F.Intent(Host, OrderKind::Attack, Gunner->GetStableId(), EnemyGenerator->GetStableId()));
+    TestTrue(TEXT("BA-03 the generator attack is admitted"), Hit && Hit->accepted);
+    TestEqual(TEXT("BA-03 one shot lands"), EnemyGenerator->GetHealth(), HealthBefore - 10);
+    TestEqual(TEXT("BA-03 the order keeps firing"), static_cast<int32>(Gunner->GetCurrentOrder()), static_cast<int32>(EPolitikaPrototypeOrder::Attack));
+    TestFalse(TEXT("BA-03 the generator is offline"), F.Match->GetEconomy().Find(EnemyId)->grid.Find(pe::kGeneratorBuilding)->generating);
+    F.Step();
+    TestEqual(TEXT("BA-03 the cooldown holds the next shot"), EnemyGenerator->GetHealth(), HealthBefore - 10);
+
+    APolitikaPrototypeUnit* Far = F.AddUnit(HostId, GeneratorAt + FVector2D(900.0, 0.0), 400.0f);
+    if (!TestNotNull(TEXT("BA-04 the far attacker spawns"), Far)) return false;
+    const CommandOutcomeEvent* Waiting = F.Submit(Host, F.Intent(Host, OrderKind::Attack, Far->GetStableId(), EnemyGenerator->GetStableId()));
+    TestTrue(TEXT("BA-04 an attack from outside range is admitted"), Waiting && Waiting->accepted);
+    TestEqual(TEXT("BA-04 no shot is spent out of range"), EnemyGenerator->GetHealth(), HealthBefore - 10);
+    // This world has no navigation mesh, so the chase stops instead of walking in. The same
+    // route used for a unit attack is what would close the distance on a cooked map.
+    TestEqual(TEXT("BA-04 the chase stops without a route"), static_cast<int32>(Far->GetCurrentOrder()), static_cast<int32>(EPolitikaPrototypeOrder::Stop));
+
+    const CommandOutcomeEvent* Friendly = F.Submit(Host, F.Intent(Host, OrderKind::Attack, Gunner->GetStableId(), OwnGenerator->GetStableId()));
+    TestTrue(TEXT("BA-05 a friendly building is refused"), Friendly && !Friendly->accepted
+        && Friendly->rejection == OrderRejection::FriendlyTarget);
+    TestEqual(TEXT("BA-05 the host generator is untouched"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
+
+    if (Source)
+    {
+        const CommandOutcomeEvent* Resource = F.Submit(Host, F.Intent(Host, OrderKind::Attack, Gunner->GetStableId(), Source->GetStableId()));
+        TestTrue(TEXT("BA-06 a resource is not a building"), Resource && !Resource->accepted
+            && Resource->rejection == OrderRejection::TargetNotAttackable);
+    }
+    return true;
+}
+
 #endif

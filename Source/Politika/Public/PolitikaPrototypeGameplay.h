@@ -348,6 +348,7 @@ public:
     void SetMoveOrder(EPolitikaPrototypeOrder Kind, const FVector& Destination,
         const FVector& ResolvedDestination, TArray<FVector>&& Route);
     void SetAttackOrder(APolitikaPrototypeUnit* Target);
+    void SetAttackStructure(APolitikaPrototypeStructure* Structure);
     void SetGuardOrder();
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
@@ -571,6 +572,8 @@ private:
     UPROPERTY(Transient) float NavigationReplanCooldownSeconds = 0.0f;
     UPROPERTY(Transient) uint8 NavigationReplanAttempts = 0;
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeUnit> OrderTarget;
+    // An attack on a building, parallel to OrderTarget. A resource is never stored here.
+    UPROPERTY() TWeakObjectPtr<APolitikaPrototypeStructure> OrderStructure;
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;
 #endif
@@ -809,6 +812,7 @@ public:
     bool IsDedicatedHosting() const { return GetHostingMode() == politika::rules::HostingMode::Dedicated; }
     uint64 GetMatchGeneration() const { return MatchGeneration; }
     APolitikaPrototypeUnit* FindUnitByStableId(uint64 StableId) const;
+    APolitikaPrototypeStructure* FindStructureByStableId(uint64 StableId) const;
     const class UPolitikaPrototypeContentCatalog* GetContentCatalog() const { return ContentCatalog; }
     // The harvester archetype (ECON-E4) is a code fixture that no catalog holds.
     static FName HarvesterArchetypeId() { return FName(TEXT("unit.playtest.harvester")); }
@@ -825,6 +829,9 @@ public:
     // replication, target admission and acquisition. Offline play keeps full vision.
     bool IsFogOfWarEnabled() const { return bFogOfWar; }
     bool IsUnitObservedByParticipant(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
+    // Own buildings are always seen. A hostile building is seen when one of this participant's
+    // living units is within sight of it. Replication of the mesh stays own-team only.
+    bool IsStructureObservedByParticipant(const APolitikaPrototypeStructure* Structure, uint32 PlayerId) const;
     // Shot presentation for one viewer participant: the exact target point only when the
     // viewer observes the target, otherwise a point along the shooter's facing, or nothing
     // when the shooter is unseen. Under fog, participant 0 (unbound) sees nothing.
@@ -1068,6 +1075,7 @@ private:
         politika::rules::CommandRequest Request;
         TWeakObjectPtr<APolitikaPrototypeUnit> Unit;
         TWeakObjectPtr<APolitikaPrototypeUnit> Target;
+        TWeakObjectPtr<APolitikaPrototypeStructure> Structure;
         FVector Destination = FVector::ZeroVector;
         EPolitikaPrototypeOrder Kind = EPolitikaPrototypeOrder::Idle;
         // The formation whose move or stop produced this member command; zero for every
@@ -1200,6 +1208,7 @@ private:
     friend class FPolitikaMultiplayerEconomyTest;
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerBuildingDamageTest;
+    friend class FPolitikaMultiplayerBuildingAttackTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerHarvestTest;
@@ -1278,7 +1287,8 @@ private:
     // generation hint are supplied by the controller intake; trusted callers omit them.
     uint64 SubmitCommand(uint32 PlayerId, APolitikaPrototypeUnit* Unit, APolitikaPrototypeUnit* Target,
         const politika::rules::Order& Intent, uint64 RequestedIssuerId = 0, uint64 CorrelationId = 0,
-        TOptional<uint64> GenerationHint = {}, uint32 FormationId = 0);
+        TOptional<uint64> GenerationHint = {}, uint32 FormationId = 0,
+        APolitikaPrototypeStructure* Structure = nullptr);
     bool IsCommandableUnit(const APolitikaPrototypeUnit* Unit, uint32 PlayerId) const;
     static bool BuildRuntimeParticipantsFromSlots(const UPolitikaPrototypeMapDefinition& Definition,
         TArray<FPolitikaPrototypeRuntimeParticipant>& OutParticipants, uint32& OutLocalRuntimePlayerId,
