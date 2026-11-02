@@ -741,8 +741,13 @@ public:
     void SetHealth(int32 InHealth)
     {
         Health = FMath::Max(0, InHealth);
+        if (IsProducer() && Health <= 0) bWithdrawn = true;
         ApplyTint();
+        ApplyPresence();
     }
+    // A destroyed producer leaves the map. A generator husk stays so it can be repaired.
+    bool IsWithdrawn() const { return bWithdrawn; }
+    bool IsBodyHidden() const { return !Body || Body->bHiddenInGame; }
     void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth, const FLinearColor& InTint);
     FLinearColor GetTint() const { return Tint; }
     // Faction color while the building stands; one shared grey once it is dead.
@@ -760,6 +765,7 @@ private:
     static constexpr uint8 GoldSourceKind = 2;
     static constexpr uint8 FoodSourceKind = 3;
     UFUNCTION() void ApplyTint();
+    UFUNCTION() void ApplyPresence();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(Replicated) uint8 Kind = 0;
     UPROPERTY(Replicated) uint64 StableId = 0;
@@ -768,6 +774,8 @@ private:
     UPROPERTY(Replicated) uint32 OwnerPlayer = 0;
     UPROPERTY(Replicated) uint8 TeamId = 0;
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
+    UPROPERTY(ReplicatedUsing=ApplyPresence)
+    bool bWithdrawn = false;
     bool bLocalFogHidden = false;
     bool bLocalFogApplied = false;
     TWeakObjectPtr<APolitikaPrototypeMatch> AuthorityMatch;

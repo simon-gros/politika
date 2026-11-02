@@ -4892,6 +4892,8 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestFalse(TEXT("BD-01 a dead producer is drawn grey"), OwnProducer->GetPresentedTint().Equals(ProducerTint));
     TestEqual(TEXT("BD-08 a dead producer reads as destroyed"), F.Match->BuildingCursorText(OwnProducer, HostId),
         FString(TEXT("Your producer  destroyed")));
+    TestTrue(TEXT("BD-11 a dead producer leaves the map"), OwnProducer->IsWithdrawn() && OwnProducer->IsBodyHidden());
+    TestFalse(TEXT("BD-11 the living plant stays"), OwnGenerator->IsWithdrawn() || OwnGenerator->IsBodyHidden());
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("BD-07 a dead producer draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kGeneratorAuxiliaryKw));
@@ -4929,6 +4931,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestTrue(TEXT("BD-05 the plant is dead and offline"), Plant && Plant->health == 0 && !Plant->generating);
     TestTrue(TEXT("BD-05 both husks share the dead color"), OwnGenerator->GetPresentedTint().Equals(OwnProducer->GetPresentedTint()));
     TestFalse(TEXT("BD-05 the dead color is not the plant color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
+    TestFalse(TEXT("BD-11 a dead plant stays to be repaired"), OwnGenerator->IsWithdrawn() || OwnGenerator->IsBodyHidden());
     F.Step();
     Host = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("BD-07 a dead plant draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kProducerLoadKw));

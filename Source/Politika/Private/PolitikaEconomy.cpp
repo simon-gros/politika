@@ -117,6 +117,14 @@ void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimePro
     DOREPLIFETIME(APolitikaPrototypeStructure, OwnerPlayer);
     DOREPLIFETIME(APolitikaPrototypeStructure, TeamId);
     DOREPLIFETIME(APolitikaPrototypeStructure, Tint);
+    DOREPLIFETIME(APolitikaPrototypeStructure, bWithdrawn);
+}
+
+void APolitikaPrototypeStructure::ApplyPresence()
+{
+    if (!Body || !bWithdrawn) return;
+    Body->SetHiddenInGame(true, true);
+    Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 bool APolitikaPrototypeStructure::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
@@ -272,7 +280,8 @@ void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
     bLocalFogApplied = true;
     bLocalFogHidden = bHidden;
     // Component state only. Actor bHidden would replicate and hide the mesh for every connection.
-    if (Body) Body->SetHiddenInGame(bHidden, true);
+    // A withdrawn producer stays gone even when its owner would otherwise draw it.
+    if (Body) Body->SetHiddenInGame(bWithdrawn || bHidden, true);
 #if !UE_BUILD_SHIPPING
     if (bChanged)
         UE_LOG(LogPolitikaStartup, Display, TEXT("MP_HOST_STRUCTURE_FOG entity=%llu owner=%u team=%u hidden=%d x=%.1f y=%.1f"),
