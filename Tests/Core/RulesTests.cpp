@@ -1794,6 +1794,16 @@ int main() {
     static_assert(!CanPlantExplosives(Faction::IronAscendancy, SabotageOperator::Conventional, true));
     static_assert(!CanPlantExplosives(Faction::Unaligned, SabotageOperator::Spy, true));
 
+    // ECON-E5: a box over soldiers and a harvester takes the soldiers only.
+    {
+        namespace ps = politika::selection;
+        const auto Combat = [](int Unit) { return Unit > 0; };
+        assert((ps::PreferCombat<int>({1, -2, 3}, ps::SelectionOp::Replace, Combat) == std::vector<int>{1, 3}));
+        assert((ps::PreferCombat<int>({1, -2}, ps::SelectionOp::Union, Combat) == std::vector<int>{1}));
+        assert((ps::PreferCombat<int>({-2, -4}, ps::SelectionOp::Replace, Combat) == std::vector<int>{-2, -4}));
+        assert((ps::PreferCombat<int>({1, -2}, ps::SelectionOp::Subtract, Combat) == std::vector<int>{1, -2}));
+    }
+
     // ECON-E4: a finite source, harvesters that haul it on their own, and an atomic sale at a fixed quote.
     {
         namespace pe = politika::economy;
@@ -1820,10 +1830,20 @@ int main() {
         constexpr std::uint8_t RiflemanRecipe = static_cast<std::uint8_t>(pe::Recipe::Rifleman);
         constexpr std::uint8_t HarvesterRecipe = static_cast<std::uint8_t>(pe::Recipe::Harvester);
         assert(pe::FindRecipe(HarvesterRecipe) && !pe::FindRecipe(pe::kRecipeCount));
-        const pe::HarvesterSituation Driving{false, false, true};
-        const pe::HarvesterSituation AtSource{true, false, true};
-        const pe::HarvesterSituation AtBase{false, true, true};
-        const pe::HarvesterSituation Stopped{false, false, false};
+        constexpr pe::Resource GoldKind = pe::Resource::Gold;
+        constexpr pe::Resource FoodKind = pe::Resource::Food;
+        const pe::HarvesterSituation Driving{std::nullopt, false, true};
+        const pe::HarvesterSituation AtSource{GoldKind, false, true};
+        const pe::HarvesterSituation ArrivedAtSource{GoldKind, false, false};
+        const pe::HarvesterSituation ArrivedAtFood{FoodKind, false, false};
+        const pe::HarvesterSituation AtFood{FoodKind, false, true};
+        const pe::HarvesterSituation AtBase{std::nullopt, true, true};
+        const pe::HarvesterSituation ArrivedAtBase{std::nullopt, true, false};
+        const pe::HarvesterSituation Stopped{std::nullopt, false, false};
+        // A new harvester takes its first order at its first step.
+        const auto Hire = [&Driving](pe::Ledger& Ledger, pe::ParticipantId Participant, pe::UnitId Unit) {
+            return Ledger.AddHarvester(Participant, Unit) && Ledger.StepHarvester(Participant, Unit, Driving).goToSource;
+        };
         const auto Run = [](pe::Ledger& Ledger, pe::ParticipantId Participant, pe::UnitId Unit, pe::HarvesterSituation Situation, std::uint32_t Steps) {
             pe::HarvesterStep Last;
             for (std::uint32_t Index = 0; Index < Steps; ++Index) Last = Ledger.StepHarvester(Participant, Unit, Situation);
@@ -1835,11 +1855,11 @@ int main() {
         const pe::Account& A = *Ledger.Find(1);
         const pe::Account& B = *Ledger.Find(2);
         // A seat without a source cannot train a harvester or keep one.
-        assert(Ledger.Train(1, 1, HarvesterRecipe, 2, 20).rejection == EconomyRejection::NoGoldSource && A.available == pe::kStartingCents && A.lastTransaction == 0);
+        assert(Ledger.Train(1, 1, HarvesterRecipe, 2, 20).rejection == EconomyRejection::NoResourceSource && A.available == pe::kStartingCents && A.lastTransaction == 0);
         assert(!Ledger.AddHarvester(1, 10));
-        assert(!Ledger.SetSource(9, 10) && !Ledger.SetSource(1, -1));
-        assert(Ledger.SetSource(1, pe::kLoadGold + 10) && Ledger.SetSource(2, pe::kLoadGold));
-        assert(A.hasSource && A.sourceRemaining == pe::kLoadGold + 10 && A.GoldReconciles());
+        assert(!Ledger.SetSource(9, pe::Resource::Gold, 10) && !Ledger.SetSource(1, pe::Resource::Gold, -1));
+        assert(Ledger.SetSource(1, pe::Resource::Gold, pe::kLoadGold + 10) && Ledger.SetSource(2, pe::Resource::Gold, pe::kLoadGold));
+        assert(A.goldSource.present && A.goldSource.remaining == pe::kLoadGold + 10 && A.GoldReconciles());
 
         // Nothing to sell yet, and the refusal uses up no transaction.
         assert(Ledger.SellGold(1, 1).rejection == EconomyRejection::NothingToSell && A.available == pe::kStartingCents && A.lastTransaction == 0);
@@ -1849,19 +1869,21 @@ int main() {
         assert(!Ledger.AddHarvester(1, 0) && !Ledger.AddHarvester(9, 10));
         assert(Ledger.AddHarvester(1, 10) && !Ledger.AddHarvester(1, 10) && !Ledger.FindHarvester(2, 10));
         const pe::Harvester* H = Ledger.FindHarvester(1, 10);
-        assert(H->phase == HarvesterPhase::ToSource && H->load == 0);
+        assert(H->phase == HarvesterPhase::Starting && H->load == 0 && H->target == GoldKind);
+        // Its first order comes at its first step, whatever it stands beside.
+        assert(Ledger.StepHarvester(1, 10, Stopped).goToSource == GoldKind && H->phase == HarvesterPhase::ToSource);
         // Unknown units do nothing.
         assert(Ledger.StepHarvester(1, 99, AtSource).loaded == 0 && Ledger.StepHarvester(9, 10, AtSource).loaded == 0);
 
         // Driving to the source changes nothing, and loading takes its full time.
         Run(Ledger, 1, 10, Driving, 5);
-        assert(H->phase == HarvesterPhase::ToSource && A.sourceRemaining == pe::kLoadGold + 10);
+        assert(H->phase == HarvesterPhase::ToSource && A.goldSource.remaining == pe::kLoadGold + 10);
         assert(Ledger.StepHarvester(1, 10, AtSource).loaded == 0 && H->phase == HarvesterPhase::Loading);
         Run(Ledger, 1, 10, AtSource, pe::kHarvesterLoadSteps - 1);
-        assert(H->phase == HarvesterPhase::Loading && H->load == 0 && A.sourceRemaining == pe::kLoadGold + 10);
+        assert(H->phase == HarvesterPhase::Loading && H->load == 0 && A.goldSource.remaining == pe::kLoadGold + 10);
         pe::HarvesterStep Step = Ledger.StepHarvester(1, 10, AtSource);
         assert(Step.loaded == pe::kLoadGold && Step.goToBase && !Step.goToSource && H->phase == HarvesterPhase::ToBase);
-        assert(H->load == pe::kLoadGold && A.GoldCarried() == pe::kLoadGold && A.sourceRemaining == 10 && A.goldHeld == 0 && A.GoldReconciles());
+        assert(H->load == pe::kLoadGold && A.GoldCarried() == pe::kLoadGold && A.goldSource.remaining == 10 && A.goldHeld == 0 && A.GoldReconciles());
 
         // Driving home, then unloading: carried is not held until it ends, and it counts once.
         Run(Ledger, 1, 10, Driving, 5);
@@ -1870,68 +1892,68 @@ int main() {
         Run(Ledger, 1, 10, AtBase, pe::kHarvesterUnloadSteps - 1);
         assert(A.goldHeld == 0 && H->load == pe::kLoadGold);
         Step = Ledger.StepHarvester(1, 10, AtBase);
-        assert(Step.delivered == pe::kLoadGold && Step.goToSource && !Step.goToBase && H->phase == HarvesterPhase::ToSource);
-        assert(H->load == 0 && A.goldHeld == pe::kLoadGold && A.goldDelivered == pe::kLoadGold && A.GoldReconciles());
+        assert(Step.delivered == pe::kLoadGold && Step.goToSource == GoldKind && !Step.goToBase && H->phase == HarvesterPhase::ToSource);
+        assert(H->load == 0 && A.goldHeld == pe::kLoadGold && A.goldSource.delivered == pe::kLoadGold && A.GoldReconciles());
 
         // A player's order takes it off the routine. It goes where it was sent and stays there.
         assert(!Ledger.DetachHarvester(1, 99) && Ledger.DetachHarvester(1, 10) && H->phase == HarvesterPhase::Waiting);
         assert(!Ledger.DetachHarvester(1, 10));
         Run(Ledger, 1, 10, Driving, 5);
         Run(Ledger, 1, 10, Stopped, 5);
-        assert(H->phase == HarvesterPhase::Waiting && A.sourceRemaining == 10);
+        assert(H->phase == HarvesterPhase::Waiting && A.goldSource.remaining == 10);
         // Passing the source under a player's order is not a return to work.
         assert(!Ledger.StepHarvester(1, 10, AtSource).stoppedWaiting && H->phase == HarvesterPhase::Waiting);
         // Nor is a player's stop at the source: it holds there until it is sent somewhere.
-        assert(!Ledger.StepHarvester(1, 10, {true, false, false, true}).stoppedWaiting && H->phase == HarvesterPhase::Waiting);
+        assert(!Ledger.StepHarvester(1, 10, {GoldKind, false, false, true}).stoppedWaiting && H->phase == HarvesterPhase::Waiting);
         // Arriving at the source is: the last load is what is left.
-        Step = Ledger.StepHarvester(1, 10, {true, false, false});
+        Step = Ledger.StepHarvester(1, 10, ArrivedAtSource);
         assert(Step.stoppedWaiting && H->phase == HarvesterPhase::Loading);
         Step = Run(Ledger, 1, 10, AtSource, pe::kHarvesterLoadSteps);
-        assert(Step.loaded == 10 && Step.goToBase && A.sourceRemaining == 0 && H->load == 10 && A.GoldReconciles());
+        assert(Step.loaded == 10 && Step.goToBase && A.goldSource.remaining == 0 && H->load == 10 && A.GoldReconciles());
 
         // Sent away with a load, it keeps it, and stopping at the base delivers it.
         assert(Ledger.DetachHarvester(1, 10));
         Run(Ledger, 1, 10, Stopped, 5);
         assert(H->phase == HarvesterPhase::Waiting && H->load == 10);
-        Step = Ledger.StepHarvester(1, 10, {false, true, false});
+        Step = Ledger.StepHarvester(1, 10, ArrivedAtBase);
         assert(Step.stoppedWaiting && H->phase == HarvesterPhase::Unloading);
         // With the source empty the routine ends, and the empty source does not restart it.
         Step = Run(Ledger, 1, 10, AtBase, pe::kHarvesterUnloadSteps);
         assert(Step.delivered == 10 && Step.startedWaiting && !Step.goToSource && H->phase == HarvesterPhase::Waiting);
-        assert(!Ledger.StepHarvester(1, 10, {true, false, false}).stoppedWaiting && H->phase == HarvesterPhase::Waiting);
+        assert(!Ledger.StepHarvester(1, 10, ArrivedAtSource).stoppedWaiting && H->phase == HarvesterPhase::Waiting);
         assert(A.goldHeld == pe::kLoadGold + 10 && A.GoldReconciles());
         // An empty source refuses a new harvester, and a seat's rifleman is unaffected.
-        assert(Ledger.Train(1, 1, HarvesterRecipe, 3, 20).rejection == EconomyRejection::NoGoldSource && A.lastTransaction == 0);
-        assert(!Ledger.SetSource(1, 100) && A.sourceStart == pe::kLoadGold + 10);
+        assert(Ledger.Train(1, 1, HarvesterRecipe, 3, 20).rejection == EconomyRejection::NoResourceSource && A.lastTransaction == 0);
+        assert(!Ledger.SetSource(1, GoldKind, 100) && A.goldSource.start == pe::kLoadGold + 10);
 
         // A route that fails on the way ends the routine rather than spinning.
         pe::Ledger Lost;
-        assert(Lost.AddParticipant(1, pe::kStartingCents, true, 200) && Lost.SetSource(1, 2 * pe::kLoadGold));
+        assert(Lost.AddParticipant(1, pe::kStartingCents, true, 200) && Lost.SetSource(1, pe::Resource::Gold, 2 * pe::kLoadGold));
         const pe::Account& L = *Lost.Find(1);
-        assert(Lost.AddHarvester(1, 7));
+        assert(Hire(Lost, 1, 7));
         Step = Lost.StepHarvester(1, 7, Stopped);
         assert(Step.startedWaiting && Lost.FindHarvester(1, 7)->phase == HarvesterPhase::Waiting);
         // A dead harvester's load is gone: not held, and not back at the source.
-        assert(Lost.LoseHarvester(1, 99) == 0 && Lost.StepHarvester(1, 7, {true, false, false}).stoppedWaiting);
+        assert(Lost.LoseHarvester(1, 99) == 0 && Lost.StepHarvester(1, 7, ArrivedAtSource).stoppedWaiting);
         Run(Lost, 1, 7, AtSource, pe::kHarvesterLoadSteps);
-        assert(Lost.FindHarvester(1, 7)->load == pe::kLoadGold && L.sourceRemaining == pe::kLoadGold);
-        assert(Lost.LoseHarvester(1, 7) == pe::kLoadGold && L.goldLost == pe::kLoadGold && L.sourceRemaining == pe::kLoadGold && L.goldHeld == 0);
+        assert(Lost.FindHarvester(1, 7)->load == pe::kLoadGold && L.goldSource.remaining == pe::kLoadGold);
+        assert(Lost.LoseHarvester(1, 7) == pe::kLoadGold && L.goldSource.lost == pe::kLoadGold && L.goldSource.remaining == pe::kLoadGold && L.goldHeld == 0);
         assert(L.harvesters.empty() && !Lost.FindHarvester(1, 7) && Lost.LoseHarvester(1, 7) == 0 && L.GoldReconciles());
 
         // Two harvesters at one source: the lower unit takes the load, the other what is left.
         pe::Ledger Shared;
-        assert(Shared.AddParticipant(1, pe::kStartingCents, true, 200) && Shared.SetSource(1, pe::kLoadGold + 5));
+        assert(Shared.AddParticipant(1, pe::kStartingCents, true, 200) && Shared.SetSource(1, pe::Resource::Gold, pe::kLoadGold + 5));
         const pe::Account& S2 = *Shared.Find(1);
-        assert(Shared.AddHarvester(1, 9) && Shared.AddHarvester(1, 3) && S2.harvesters[0].unit == 3 && S2.harvesters[1].unit == 9);
+        assert(Hire(Shared, 1, 9) && Hire(Shared, 1, 3) && S2.harvesters[0].unit == 3 && S2.harvesters[1].unit == 9);
         Run(Shared, 1, 3, AtSource, pe::kHarvesterLoadSteps);
         Run(Shared, 1, 9, AtSource, pe::kHarvesterLoadSteps);
         assert(Shared.FindHarvester(1, 3)->phase == HarvesterPhase::Loading && Shared.FindHarvester(1, 9)->phase == HarvesterPhase::Loading);
         assert(Shared.StepHarvester(1, 3, AtSource).loaded == pe::kLoadGold);
-        assert(Shared.StepHarvester(1, 9, AtSource).loaded == 5 && S2.sourceRemaining == 0 && S2.GoldCarried() == pe::kLoadGold + 5 && S2.GoldReconciles());
+        assert(Shared.StepHarvester(1, 9, AtSource).loaded == 5 && S2.goldSource.remaining == 0 && S2.GoldCarried() == pe::kLoadGold + 5 && S2.GoldReconciles());
         // One that arrives at a source just emptied goes back to waiting, with nothing taken.
         pe::Ledger Late;
-        assert(Late.AddParticipant(1, pe::kStartingCents, true, 200) && Late.SetSource(1, pe::kLoadGold));
-        assert(Late.AddHarvester(1, 1) && Late.AddHarvester(1, 2));
+        assert(Late.AddParticipant(1, pe::kStartingCents, true, 200) && Late.SetSource(1, pe::Resource::Gold, pe::kLoadGold));
+        assert(Hire(Late, 1, 1) && Hire(Late, 1, 2));
         Run(Late, 1, 1, AtSource, pe::kHarvesterLoadSteps + 1);
         assert(Late.StepHarvester(1, 2, AtSource).startedWaiting && Late.FindHarvester(1, 2)->load == 0);
         // A harvester trained after the source emptied starts by waiting.
@@ -1939,16 +1961,16 @@ int main() {
 
         // One lot: gold out and net dollars in, once.
         pe::Ledger Seller;
-        assert(Seller.AddParticipant(1, pe::kStartingCents, true, 200) && Seller.SetSource(1, 30));
+        assert(Seller.AddParticipant(1, pe::kStartingCents, true, 200) && Seller.SetSource(1, pe::Resource::Gold, 30));
         const pe::Account& C = *Seller.Find(1);
         const auto Haul = [&](pe::UnitId Unit) {
-            assert(Seller.AddHarvester(1, Unit));
+            assert(Hire(Seller, 1, Unit));
             Run(Seller, 1, Unit, AtSource, pe::kHarvesterLoadSteps + 1);
             Run(Seller, 1, Unit, AtBase, pe::kHarvesterUnloadSteps + 1);
         };
         Haul(1);
         Haul(2);
-        assert(C.goldHeld == 30 && C.sourceRemaining == 0);
+        assert(C.goldHeld == 30 && C.goldSource.remaining == 0);
         const pe::RequestResult First = Seller.SellGold(1, 1);
         assert(First && First.amount == 6'062 && First.sale.quantity == pe::kSaleLotGold && First.sale.gross == 6'250 && First.sale.fee == 188);
         assert(C.available == pe::kStartingCents + 6'062 && C.saleCredited == 6'062 && C.credited == 0);
@@ -1961,13 +1983,13 @@ int main() {
         assert(C.goldHeld == 0 && C.goldSold == 30 && C.saleCredited == 7'274 && C.Reconciles() && C.GoldReconciles());
         assert(Seller.SellGold(1, 3).rejection == EconomyRejection::NothingToSell && C.lastTransaction == 2);
         // The other seat's gold never moved.
-        assert(B.sourceRemaining == pe::kLoadGold && B.goldHeld == 0 && B.available == pe::kStartingCents);
+        assert(B.goldSource.remaining == pe::kLoadGold && B.goldHeld == 0 && B.available == pe::kStartingCents);
 
         // Selling works during a food shortage and an outage: it can pay the way out of both.
         pe::Ledger Short;
-        assert(Short.AddParticipant(1, pe::kStartingCents, true, 200) && Short.SetSource(1, pe::kLoadGold) && Short.SetStartingRations(1, 0));
+        assert(Short.AddParticipant(1, pe::kStartingCents, true, 200) && Short.SetSource(1, pe::Resource::Gold, pe::kLoadGold) && Short.SetStartingRations(1, 0));
         const pe::Account& S = *Short.Find(1);
-        assert(Short.AddHarvester(1, 1));
+        assert(Hire(Short, 1, 1));
         Run(Short, 1, 1, AtSource, pe::kHarvesterLoadSteps + 1);
         Run(Short, 1, 1, AtBase, pe::kHarvesterUnloadSteps + 1);
         Short.Advance(1, 200, 0, 3);
@@ -1979,9 +2001,9 @@ int main() {
         // and refunds like any other recipe.
         pe::Ledger Poor;
         const pe::Cents Price = pe::FindRecipe(RiflemanRecipe)->cost;
-        assert(Poor.AddParticipant(1, Price - 1, true, 200) && Poor.SetSource(1, 2 * pe::kLoadGold));
+        assert(Poor.AddParticipant(1, Price - 1, true, 200) && Poor.SetSource(1, pe::Resource::Gold, 2 * pe::kLoadGold));
         const pe::Account& P = *Poor.Find(1);
-        assert(Poor.AddHarvester(1, 1));
+        assert(Hire(Poor, 1, 1));
         Run(Poor, 1, 1, AtSource, pe::kHarvesterLoadSteps + 1);
         Run(Poor, 1, 1, AtBase, pe::kHarvesterUnloadSteps + 1);
         assert(Poor.Train(1, 1, RiflemanRecipe, 2, 20).rejection == EconomyRejection::InsufficientFunds && P.lastTransaction == 0);
@@ -1995,12 +2017,109 @@ int main() {
 
         // A sale that would overflow the treasury changes nothing.
         pe::Ledger Rich;
-        assert(Rich.AddParticipant(1, std::numeric_limits<pe::Cents>::max() - 1, false, 200) && Rich.SetSource(1, pe::kLoadGold));
+        assert(Rich.AddParticipant(1, std::numeric_limits<pe::Cents>::max() - 1, false, 200) && Rich.SetSource(1, pe::Resource::Gold, pe::kLoadGold));
         const pe::Account& R = *Rich.Find(1);
-        assert(Rich.AddHarvester(1, 1));
+        assert(Hire(Rich, 1, 1));
         Run(Rich, 1, 1, AtSource, pe::kHarvesterLoadSteps + 1);
         Run(Rich, 1, 1, AtBase, pe::kHarvesterUnloadSteps + 1);
         assert(Rich.SellGold(1, 1).rejection == EconomyRejection::Overflow && R.goldHeld == pe::kLoadGold && R.goldSold == 0 && R.lastTransaction == 0);
+
+        // ECON-E5: food is a second typed source, and a harvester collects either.
+        pe::Ledger Mixed;
+        assert(Mixed.AddParticipant(1, pe::kStartingCents, true, 200) && Mixed.SetSource(1, GoldKind, 2 * pe::kLoadGold) && Mixed.SetSource(1, FoodKind, pe::kLoadFood + 5));
+        const pe::Account& M = *Mixed.Find(1);
+        assert(M.foodSource.present && M.foodSource.remaining == pe::kLoadFood + 5 && M.FoodSourceReconciles());
+        assert(Hire(Mixed, 1, 1));
+        const pe::Harvester* MH = Mixed.FindHarvester(1, 1);
+        assert(MH->target == GoldKind);
+        // Passing the other source on the way changes nothing.
+        Run(Mixed, 1, 1, AtFood, 5);
+        assert(MH->phase == HarvesterPhase::ToSource && M.foodSource.remaining == pe::kLoadFood + 5);
+        // A player sends it to the food during loading: no gold has moved, and food becomes its target.
+        assert(Mixed.StepHarvester(1, 1, AtSource).arrivedAtSource && Mixed.DetachHarvester(1, 1));
+        assert(M.goldSource.remaining == 2 * pe::kLoadGold);
+        Step = Mixed.StepHarvester(1, 1, ArrivedAtFood);
+        assert(Step.stoppedWaiting && MH->phase == HarvesterPhase::Loading && MH->target == FoodKind);
+        Step = Run(Mixed, 1, 1, AtFood, pe::kHarvesterLoadSteps);
+        assert(Step.loaded == pe::kLoadFood && Step.resource == FoodKind && Step.goToBase);
+        assert(MH->loadKind == FoodKind && MH->load == pe::kLoadFood && M.FoodCarried() == pe::kLoadFood && M.GoldCarried() == 0);
+        assert(M.FoodSourceReconciles() && M.GoldReconciles());
+        // Food goes straight into the reserve, once, and leaves the gold stock alone.
+        const pe::Rations FedBefore = M.rations;
+        Step = Mixed.StepHarvester(1, 1, AtBase);
+        Step = Run(Mixed, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == pe::kLoadFood && Step.resource == FoodKind && Step.goToSource == FoodKind && !Step.retargeted);
+        assert(M.rations == FedBefore + pe::kLoadFood && M.foodSource.delivered == pe::kLoadFood && M.goldHeld == 0);
+        assert(M.RationsReconcile() && M.FoodSourceReconciles());
+        // It keeps to food: the part load, then the food has run out and it moves on to the gold.
+        assert(Mixed.StepHarvester(1, 1, AtFood).arrivedAtSource);
+        Step = Run(Mixed, 1, 1, AtFood, pe::kHarvesterLoadSteps);
+        assert(Step.loaded == 5 && M.foodSource.remaining == 0);
+        Mixed.StepHarvester(1, 1, AtBase);
+        Step = Run(Mixed, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == 5 && Step.retargeted && Step.goToSource == GoldKind && MH->target == GoldKind);
+        // Sent to the food with a gold load, it takes the gold home first, then goes for the food.
+        pe::Ledger Sent;
+        assert(Sent.AddParticipant(1, pe::kStartingCents, true, 200) && Sent.SetSource(1, GoldKind, 2 * pe::kLoadGold) && Sent.SetSource(1, FoodKind, pe::kLoadFood));
+        const pe::Account& N = *Sent.Find(1);
+        assert(Hire(Sent, 1, 1));
+        const pe::Harvester* NH = Sent.FindHarvester(1, 1);
+        Sent.StepHarvester(1, 1, AtSource);
+        Run(Sent, 1, 1, AtSource, pe::kHarvesterLoadSteps);
+        assert(NH->load == pe::kLoadGold && NH->phase == HarvesterPhase::ToBase && Sent.DetachHarvester(1, 1));
+        Step = Sent.StepHarvester(1, 1, ArrivedAtFood);
+        assert(Step.stoppedWaiting && Step.goToBase && NH->target == FoodKind && NH->loadKind == GoldKind && N.foodSource.remaining == pe::kLoadFood);
+        Sent.StepHarvester(1, 1, AtBase);
+        Step = Run(Sent, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == pe::kLoadGold && Step.resource == GoldKind && N.goldHeld == pe::kLoadGold && Step.goToSource == FoodKind && !Step.retargeted);
+        // A dead harvester's food is lost to the food source's account, not the gold's.
+        Sent.StepHarvester(1, 1, AtFood);
+        Run(Sent, 1, 1, AtFood, pe::kHarvesterLoadSteps);
+        assert(Sent.LoseHarvester(1, 1) == pe::kLoadFood && N.foodSource.lost == pe::kLoadFood && N.goldSource.lost == 0);
+        assert(N.FoodSourceReconciles() && N.GoldReconciles());
+        // Nothing left of either: a harvester is refused, and one that is hired anyway waits.
+        pe::Ledger Bare;
+        assert(Bare.AddParticipant(1, pe::kStartingCents, true, 200) && Bare.SetSource(1, GoldKind, 0) && Bare.SetSource(1, FoodKind, 0));
+        assert(Bare.Train(1, 1, HarvesterRecipe, 2, 20).rejection == EconomyRejection::NoResourceSource);
+        assert(Bare.AddHarvester(1, 1) && Bare.FindHarvester(1, 1)->phase == HarvesterPhase::Waiting);
+        // Food alone is enough for a harvester, and it starts on that.
+        pe::Ledger FoodOnly;
+        assert(FoodOnly.AddParticipant(1, pe::kStartingCents, true, 200) && FoodOnly.SetSource(1, FoodKind, pe::kLoadFood));
+        assert(FoodOnly.Train(1, 1, HarvesterRecipe, 2, 20));
+        assert(FoodOnly.AddHarvester(1, 1));
+        Step = FoodOnly.StepHarvester(1, 1, Stopped);
+        assert(Step.goToSource == FoodKind && Step.retargeted);
+        // A full store takes what fits. The rest stays on the harvester until there is room.
+        pe::Ledger FullStore;
+        assert(FullStore.AddParticipant(1, pe::kStartingCents, true, 200) && FullStore.SetSource(1, FoodKind, pe::kLoadFood));
+        assert(FullStore.SetStartingRations(1, pe::kFoodCapacityRations - 10));
+        const pe::Account& U = *FullStore.Find(1);
+        assert(Hire(FullStore, 1, 1));
+        const pe::Harvester* UH = FullStore.FindHarvester(1, 1);
+        FullStore.StepHarvester(1, 1, AtFood);
+        Run(FullStore, 1, 1, AtFood, pe::kHarvesterLoadSteps);
+        FullStore.StepHarvester(1, 1, AtBase);
+        Step = Run(FullStore, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == 10 && U.rations == pe::kFoodCapacityRations && UH->load == pe::kLoadFood - 10);
+        assert(UH->phase == HarvesterPhase::Unloading && U.RationsReconcile() && U.FoodSourceReconciles());
+        Step = Run(FullStore, 1, 1, AtBase, pe::kHarvesterStoreRetrySteps);
+        assert(Step.delivered == 0 && UH->phase == HarvesterPhase::Unloading && UH->load == pe::kLoadFood - 10);
+        FullStore.Advance(1, 200, 0, 5);
+        Step = Run(FullStore, 1, 1, AtBase, pe::kHarvesterStoreRetrySteps);
+        assert(Step.delivered == 5 && U.rations == pe::kFoodCapacityRations && U.RationsReconcile());
+        // Harvested food ends a shortage the same way bought food does: at the next full issue.
+        pe::Ledger Hungry;
+        assert(Hungry.AddParticipant(1, pe::kStartingCents, true, 200) && Hungry.SetSource(1, FoodKind, pe::kLoadFood) && Hungry.SetStartingRations(1, 0));
+        const pe::Account& Y = *Hungry.Find(1);
+        Hungry.Advance(1, 200, 0, 3);
+        assert(Y.foodShortage && Hire(Hungry, 1, 1));
+        Hungry.StepHarvester(1, 1, AtFood);
+        Run(Hungry, 1, 1, AtFood, pe::kHarvesterLoadSteps);
+        Hungry.StepHarvester(1, 1, AtBase);
+        Run(Hungry, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Y.rations == pe::kLoadFood && Y.foodShortage);
+        Hungry.Advance(1, 400, 0, 3);
+        assert(!Y.foodShortage && Y.rations == pe::kLoadFood - 3 && Y.RationsReconcile());
 
         // A cleared ledger keeps nothing for the next match.
         Ledger.Clear();

@@ -130,7 +130,7 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveMilli, COND_OwnerOnly);
     // DISC-D4: an opponent sees a routed unit run, never the state itself.
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bRouted, COND_OwnerOnly);
-    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bCarryingGold, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, CarriedResource, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, ResolveTrend, COND_OwnerOnly);
 }
 
@@ -1062,6 +1062,14 @@ void APolitikaPrototypeUnit::TryApplyObservedPresentation()
     ApplyObservedArchetypePresentation(Catalog->FindUnit(ArchetypeId));
 }
 
+void APolitikaPrototypeUnit::OnRep_CarriedResource()
+{
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_HARVESTER_CARRY_CLIENT entity=%llu owner=%u carried=%u military=%d"),
+        StableId, OwnerPlayer, static_cast<uint32>(CarriedResource), IsMilitary() ? 1 : 0);
+#endif
+}
+
 void APolitikaPrototypeUnit::OnRep_ArchetypeId()
 {
     TryApplyObservedPresentation();
@@ -1426,12 +1434,12 @@ void APolitikaPrototypeMatch::SampleObservedState(const TCHAR* Reason)
         FVector2D Screen(-1.0, -1.0);
         if (Viewer) Viewer->ProjectWorldLocationToScreen(Location, Screen, true);
         UE_LOG(LogPolitikaStartup, Display,
-            TEXT("MP_CLIENT_SAMPLE reason=%s generation=%llu entity=%llu owner=%u team=%u health=%d x=%.1f y=%.1f screen_x=%.0f screen_y=%.0f viewer=%u units=%d resolve=%d routed=%d"),
+            TEXT("MP_CLIENT_SAMPLE reason=%s generation=%llu entity=%llu owner=%u team=%u health=%d x=%.1f y=%.1f screen_x=%.0f screen_y=%.0f viewer=%u units=%d resolve=%d routed=%d ammo=%d carried=%u"),
             Reason, MatchGeneration, Unit->GetStableId(), Unit->GetOwnerPlayer(), Unit->GetTeamId(), Unit->GetHealth(),
             Location.X, Location.Y, Screen.X, Screen.Y, LocalRuntimePlayerId, Units.Num(),
             // Owner-only replicated (DISC-D1, DISC-D4): another participant's unit always reads the
             // baseline and not routed here.
-            Unit->GetResolveMilli(), Unit->IsRouted() ? 1 : 0);
+            Unit->GetResolveMilli(), Unit->IsRouted() ? 1 : 0, Unit->GetAmmo(), static_cast<uint32>(Unit->GetCarriedResourceByte()));
     }
     if (Objective)
     {

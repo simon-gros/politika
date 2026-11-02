@@ -277,6 +277,10 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() int32 GoldHeld = 0;
     UPROPERTY() int32 GoldCarried = 0;
     UPROPERTY() int32 GoldAtSource = 0;
+    // ECON-E5: the same for food; delivered food is in Rations.
+    UPROPERTY() bool bHasFoodSource = false;
+    UPROPERTY() int32 FoodCarried = 0;
+    UPROPERTY() int32 FoodAtSource = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
     UPROPERTY() uint8 HeadRecipe = 0;
@@ -290,7 +294,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
             && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage
             && bHasGoldSource == Other.bHasGoldSource && GoldHeld == Other.GoldHeld && GoldCarried == Other.GoldCarried
-            && GoldAtSource == Other.GoldAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
+            && GoldAtSource == Other.GoldAtSource && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried
+            && FoodAtSource == Other.FoodAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
 
@@ -422,10 +427,15 @@ public:
     // Rout (DISC-D4): a soldier whose Discipline broke flees and refuses orders until it rallies.
     // Owner-only replicated; only the authority's fixed-step simulation changes it.
     bool IsRouted() const { return bRouted; }
-    // ECON-E4: a harvester holding a load of gold. The ledger owns the load; this owner-only copy is
-    // for the HUD, and only the authority's economy phase changes it.
-    bool IsCarryingGold() const { return bCarryingGold; }
-    void SetCarryingGold(bool bCarrying) { bCarryingGold = bCarrying; }
+    // ECON-E4: a harvester holding a load. The ledger owns the load; this owner-only copy is for the
+    // HUD, and only the authority's economy phase changes it. Zero is none, then Resource + 1.
+    bool IsCarryingGold() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Gold) + 1; }
+    bool IsCarryingFood() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Food) + 1; }
+    uint8 GetCarriedResourceByte() const { return CarriedResource; }
+    void SetCarriedResource(std::optional<politika::economy::Resource> Resource)
+    {
+        CarriedResource = Resource ? static_cast<uint8>(*Resource) + 1 : 0;
+    }
     // Authority (DISC-D3): the combined multiplier of every modifier source for one attribute,
     // in permille, and as a scale factor.
     int32 GetModifierPermille(politika::modifiers::Attribute Attribute) const { return Modifiers.Combined(Attribute); }
@@ -459,6 +469,7 @@ private:
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerHarvestTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -580,7 +591,8 @@ private:
     // Rout (DISC-D4), owner-only replicated for the HUD; the rally point and start step are
     // authority-only. HomeLocation is where the unit entered the match.
     UPROPERTY(Replicated) bool bRouted = false;
-    UPROPERTY(Replicated) bool bCarryingGold = false;
+    UPROPERTY(ReplicatedUsing=OnRep_CarriedResource) uint8 CarriedResource = 0;
+    UFUNCTION() void OnRep_CarriedResource();
     FVector RoutRallyPoint = FVector::ZeroVector;
     uint64 RoutStartStep = 0;
     FVector HomeLocation = FVector::ZeroVector;
@@ -698,18 +710,21 @@ public:
     virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
     void Configure(APolitikaPrototypeMatch* InMatch, politika::power::BuildingKind InKind, uint32 InOwner, uint8 InTeam,
         const FLinearColor& InTint, bool bHiddenLocally);
-    // A participant's gold source (ECON-E4). Not a building: it has no electrical load and no grid
-    // entry, so it takes the kind value after the two power::BuildingKind values.
-    void ConfigureGoldSource(APolitikaPrototypeMatch* InMatch, uint32 InOwner, uint8 InTeam, bool bHiddenLocally);
-    void MarkGoldSourceEmpty();
+    // A participant's source of one resource (ECON-E4, ECON-E5). Not a building: it has no electrical
+    // load and no grid entry, so it takes the kind values after the two power::BuildingKind values.
+    void ConfigureSource(APolitikaPrototypeMatch* InMatch, politika::economy::Resource InResource, uint32 InOwner, uint8 InTeam, bool bHiddenLocally);
+    void MarkSourceEmpty();
     bool IsProducer() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Producer); }
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
+    bool IsFoodSource() const { return Kind == FoodSourceKind; }
+    bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     uint8 GetTeamId() const { return TeamId; }
 protected:
     virtual void BeginPlay() override;
 private:
     static constexpr uint8 GoldSourceKind = 2;
+    static constexpr uint8 FoodSourceKind = 3;
     UFUNCTION() void ApplyTint();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(Replicated) uint8 Kind = 0;
@@ -1128,9 +1143,15 @@ private:
     // The sequences of orders a harvester's own routine has sent and not yet seen admitted.
     TSet<uint64> HarvesterOrderSequences;
     UPROPERTY(Transient) TObjectPtr<UPolitikaUnitArchetypeDefinition> HarvesterDefinition;
-    void PlaceGoldSource(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
-    void LogGold(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
-    const APolitikaPrototypeStructure* FindGoldSourceOf(uint32 ParticipantId) const;
+    void PlaceSources(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
+    void LogHarvest(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, politika::economy::Resource Resource, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
+    const APolitikaPrototypeStructure* FindSourceOf(uint32 ParticipantId, politika::economy::Resource Resource) const;
+    void AssignNetOwner(APolitikaPrototypeUnit* Unit) const;
+    void SpawnStartingHarvester(uint32 ParticipantId);
+#if WITH_DEV_AUTOMATION_TESTS
+    // Automation fixtures place their own forces, so a starting harvester is opt-in there.
+    bool StartingHarvestersForTest = false;
+#endif
     void ClearEconomy(const TCHAR* Reason);
     void SyncEconomyReplication();
     void SendEconomyOutcome(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent,
@@ -1163,6 +1184,7 @@ private:
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerHarvestTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
 #endif
@@ -1412,6 +1434,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerPowerTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerHarvestTest;
 #endif
 public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

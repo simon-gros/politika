@@ -39,6 +39,8 @@ namespace
         TEXT("-PolitikaMPPowerOutage="),
         TEXT("-PolitikaMPEconomyStartFood="),
         TEXT("-PolitikaMPEconomySourceGold="),
+        TEXT("-PolitikaMPEconomySourceFood="),
+        TEXT("-PolitikaMPStartingHarvesters="),
         TEXT("-PolitikaMPDisciplineRoutSeed="),
         TEXT("-PolitikaMPDisciplineDoctrine="),
         TEXT("-PolitikaNavigationFailure="),

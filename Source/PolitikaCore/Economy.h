@@ -13,7 +13,8 @@
 // dollars and credits rations atomically. A shortage stops reinforcement until upkeep is paid in
 // full again, and never touches the units themselves. ECON-E4 adds a finite gold source, harvesters
 // that haul it to the base on their own, and a sale that debits gold and credits net dollars
-// atomically.
+// atomically. ECON-E5 makes a source typed: a harvester collects gold or food, whichever its player
+// last sent it to, and each seat starts with one.
 //
 // The figures below are prototype fixture data, not balance decisions. The rifleman's price and
 // training time follow the line-infantry entry of Docs/Units/ATLANTIC_CONCORD_UNITS.md.
@@ -61,6 +62,10 @@ using Gold = std::int64_t;
 using UnitId = std::uint64_t;
 inline constexpr Gold kSourceGold = 500;
 inline constexpr Gold kLoadGold = 25;
+inline constexpr Rations kSourceFood = 600;
+inline constexpr Rations kLoadFood = 30;
+// How often a harvester holding food looks for room in a full store again (1 s).
+inline constexpr std::uint32_t kHarvesterStoreRetrySteps = 20;
 inline constexpr std::uint32_t kHarvesterLoadSteps = 60;   // 3 s at the source
 inline constexpr std::uint32_t kHarvesterUnloadSteps = 40; // 2 s at the base
 inline constexpr Gold kSaleLotGold = 25;
@@ -105,7 +110,7 @@ enum class EconomyRejection : std::uint8_t {
     FoodShortage,
     FoodStoreFull,
     NothingToSell,
-    NoGoldSource,
+    NoResourceSource,
 };
 
 [[nodiscard]] constexpr std::string_view RejectionName(EconomyRejection rejection) noexcept {
@@ -128,7 +133,7 @@ enum class EconomyRejection : std::uint8_t {
         case EconomyRejection::FoodShortage: return "food_shortage";
         case EconomyRejection::FoodStoreFull: return "food_store_full";
         case EconomyRejection::NothingToSell: return "nothing_to_sell";
-        case EconomyRejection::NoGoldSource: return "no_gold_source";
+        case EconomyRejection::NoResourceSource: return "no_resource_source";
     }
     return "unknown";
 }
@@ -197,12 +202,35 @@ struct QueueItem {
     Step nextRetryStep = 0;
 };
 
-// What a harvester is doing. Waiting covers everything it was not sent on by its own routine: a
-// player's order, an empty source or a route that failed. It keeps any load while it waits.
-enum class HarvesterPhase : std::uint8_t { ToSource, Loading, ToBase, Unloading, Waiting };
+// Wire values are stable.
+enum class Resource : std::uint8_t { Gold, Food };
+inline constexpr std::uint8_t kResourceCount = 2;
+
+[[nodiscard]] constexpr std::string_view ResourceName(Resource resource) noexcept {
+    return resource == Resource::Gold ? "gold" : "food";
+}
+
+[[nodiscard]] constexpr Gold LoadSize(Resource resource) noexcept {
+    return resource == Resource::Gold ? kLoadGold : kLoadFood;
+}
+
+// One seat's source of one resource. Everything taken from it is on a harvester, delivered or lost.
+struct ResourceSource {
+    bool present = false;
+    Gold start = 0;
+    Gold remaining = 0;
+    Gold delivered = 0;
+    Gold lost = 0;
+};
+
+// What a harvester is doing. Starting is the one step between appearing and its first order. Waiting
+// covers everything its routine did not send it on: a player's order, nothing left to collect or a
+// route that failed. It keeps any load while it waits.
+enum class HarvesterPhase : std::uint8_t { Starting, ToSource, Loading, ToBase, Unloading, Waiting };
 
 [[nodiscard]] constexpr std::string_view PhaseName(HarvesterPhase phase) noexcept {
     switch (phase) {
+        case HarvesterPhase::Starting: return "starting";
         case HarvesterPhase::ToSource: return "to_source";
         case HarvesterPhase::Loading: return "loading";
         case HarvesterPhase::ToBase: return "to_base";
@@ -215,13 +243,17 @@ enum class HarvesterPhase : std::uint8_t { ToSource, Loading, ToBase, Unloading,
 struct Harvester {
     UnitId unit = 0;
     HarvesterPhase phase = HarvesterPhase::Waiting;
+    // What it collects: gold at first, then whichever source it was last sent to or moved on to.
+    Resource target = Resource::Gold;
+    // What its load is, which differs from the target after it is sent to the other source.
+    Resource loadKind = Resource::Gold;
     Gold load = 0;
     std::uint32_t remainingSteps = 0;
 };
 
 // Where a harvester stands this step, as the coordinator measured it.
 struct HarvesterSituation {
-    bool atSource = false;
+    std::optional<Resource> atSource;
     bool atBase = false;
     bool moving = false;
     // At rest because of a player's stop or a failed route, not because it arrived somewhere.
@@ -230,13 +262,15 @@ struct HarvesterSituation {
 
 // What one harvester did in one step. goToSource and goToBase ask the coordinator for a move.
 struct HarvesterStep {
+    Resource resource = Resource::Gold; // Of loaded and delivered.
     Gold loaded = 0;
     Gold delivered = 0;
-    bool goToSource = false;
+    std::optional<Resource> goToSource;
     bool goToBase = false;
     bool arrivedAtSource = false; // Its routine reached the source and loading has begun.
-    bool stoppedWaiting = false; // A player's order led it back to work.
-    bool startedWaiting = false; // Its routine ended: no gold left, or a route failed.
+    bool retargeted = false;      // Its source ran out and it moved on to the other one.
+    bool stoppedWaiting = false;  // A player's order led it back to work.
+    bool startedWaiting = false;  // Its routine ended: nothing left to collect, or a route failed.
 };
 
 struct Account {
@@ -260,20 +294,35 @@ struct Account {
     Rations rationsIssued = 0;
     Step nextUpkeepStep = 0;
     bool foodShortage = false;
-    bool hasSource = false;
-    Gold sourceStart = 0;
-    Gold sourceRemaining = 0;
+    ResourceSource goldSource;
+    ResourceSource foodSource;
     Gold goldHeld = 0;
-    Gold goldDelivered = 0;
     Gold goldSold = 0;
-    Gold goldLost = 0;
     Cents saleCredited = 0;
     std::vector<Harvester> harvesters; // ascending unit
 
-    [[nodiscard]] Gold GoldCarried() const noexcept {
+    [[nodiscard]] const ResourceSource& Source(Resource resource) const noexcept {
+        return resource == Resource::Gold ? goldSource : foodSource;
+    }
+    [[nodiscard]] ResourceSource& Source(Resource resource) noexcept {
+        return resource == Resource::Gold ? goldSource : foodSource;
+    }
+
+    [[nodiscard]] Gold Carried(Resource resource) const noexcept {
         Gold carried = 0;
-        for (const Harvester& harvester : harvesters) carried += harvester.load;
+        for (const Harvester& harvester : harvesters)
+            if (harvester.loadKind == resource) carried += harvester.load;
         return carried;
+    }
+    [[nodiscard]] Gold GoldCarried() const noexcept { return Carried(Resource::Gold); }
+    [[nodiscard]] Gold FoodCarried() const noexcept { return Carried(Resource::Food); }
+
+    // The target if it has anything left, otherwise the other source if that has.
+    [[nodiscard]] std::optional<Resource> NextSource(Resource preferred) const noexcept {
+        const Resource other = preferred == Resource::Gold ? Resource::Food : Resource::Gold;
+        if (Source(preferred).remaining > 0) return preferred;
+        if (Source(other).remaining > 0) return other;
+        return std::nullopt;
     }
 
     // Every cent has one explanation: nothing is created or lost outside the ledger.
@@ -286,13 +335,20 @@ struct Account {
 
     // Every ration has one explanation too, and the reserve is never negative.
     [[nodiscard]] bool RationsReconcile() const noexcept {
-        return rations >= 0 && startingRations + rationsBought == rations + rationsIssued;
+        return rations >= 0 && startingRations + rationsBought + foodSource.delivered == rations + rationsIssued;
     }
 
     // All the source's gold is still there, on the way, lost, held or sold.
     [[nodiscard]] bool GoldReconciles() const noexcept {
-        return sourceRemaining >= 0 && goldHeld >= 0 && sourceStart == sourceRemaining + GoldCarried() + goldDelivered + goldLost
-            && goldDelivered == goldHeld + goldSold;
+        return goldSource.remaining >= 0 && goldHeld >= 0
+            && goldSource.start == goldSource.remaining + GoldCarried() + goldSource.delivered + goldSource.lost
+            && goldSource.delivered == goldHeld + goldSold;
+    }
+
+    // The same for the food source. Delivered food is in the ration reserve's own reconciliation.
+    [[nodiscard]] bool FoodSourceReconciles() const noexcept {
+        return foodSource.remaining >= 0
+            && foodSource.start == foodSource.remaining + FoodCarried() + foodSource.delivered + foodSource.lost;
     }
 };
 
@@ -370,13 +426,13 @@ public:
         return true;
     }
 
-    // Gives a participant its source, before any of its gold has moved. Refuses a negative amount.
-    bool SetSource(ParticipantId participant, Gold gold) noexcept {
+    // Gives a participant a source, before anything has been taken from it. Refuses a negative amount.
+    bool SetSource(ParticipantId participant, Resource resource, Gold amount) noexcept {
         Account* account = FindMutable(participant);
-        if (!account || gold < 0 || account->goldDelivered != 0 || account->goldLost != 0 || !account->harvesters.empty()) return false;
-        account->hasSource = true;
-        account->sourceStart = gold;
-        account->sourceRemaining = gold;
+        if (!account || amount < 0) return false;
+        ResourceSource& source = account->Source(resource);
+        if (source.start != source.remaining || source.delivered != 0 || source.lost != 0) return false;
+        source = ResourceSource{true, amount, amount, 0, 0};
         return true;
     }
 
@@ -388,14 +444,17 @@ public:
         return found == account->harvesters.end() ? nullptr : &*found;
     }
 
-    // A new harvester sets off for the source. Refuses a zero or repeated unit and a seat without a
-    // source. It waits if the source emptied while it was in training.
+    // A new harvester takes its first order at its next step. Refuses a zero or repeated unit and a
+    // seat with no source. It waits if there is nothing left to collect.
     bool AddHarvester(ParticipantId participant, UnitId unit) {
         Account* account = FindMutable(participant);
-        if (!account || unit == 0 || !account->hasSource || FindHarvester(participant, unit)) return false;
+        if (!account || unit == 0 || (!account->goldSource.present && !account->foodSource.present) || FindHarvester(participant, unit)) return false;
         const auto position = std::lower_bound(account->harvesters.begin(), account->harvesters.end(), unit,
             [](const Harvester& candidate, UnitId id) { return candidate.unit < id; });
-        account->harvesters.insert(position, Harvester{unit, account->sourceRemaining > 0 ? HarvesterPhase::ToSource : HarvesterPhase::Waiting, 0, 0});
+        Harvester harvester;
+        harvester.unit = unit;
+        harvester.phase = account->NextSource(Resource::Gold) ? HarvesterPhase::Starting : HarvesterPhase::Waiting;
+        account->harvesters.insert(position, harvester);
         return true;
     }
 
@@ -417,16 +476,18 @@ public:
             [unit](const Harvester& harvester) { return harvester.unit == unit; });
         if (found == account->harvesters.end()) return 0;
         const Gold load = found->load;
-        account->goldLost += load;
+        account->Source(found->loadKind).lost += load;
         account->harvesters.erase(found);
         return load;
     }
 
-    // One step of a harvester's routine. Gold leaves the source when loading ends, so two harvesters
-    // at one source cannot take the same gold: units are stepped in ascending order and the later one
-    // takes what is left. A waiting harvester that has arrived at the source with room for gold, or at
-    // the base with a load, goes back to work: that is how a player sends it back. A player's stop holds
-    // it where it is.
+    // One step of a harvester's routine. A load leaves the source when loading ends, so two harvesters
+    // at one source cannot take the same load: units are stepped in ascending order and the later one
+    // takes what is left. When its source runs out it moves on to the other one. A waiting harvester
+    // that has arrived at a source takes that as its new target; with a load of the other resource it
+    // goes home first. One that has arrived at the base with a load unloads it. That is how a player
+    // sends it to work. A player's stop holds it where it is. Food goes straight into the ration
+    // reserve; what a full store cannot take stays on the harvester, unloading, until there is room.
     HarvesterStep StepHarvester(ParticipantId participant, UnitId unit, HarvesterSituation situation) {
         HarvesterStep result;
         Account* account = FindMutable(participant);
@@ -444,54 +505,85 @@ public:
             harvester->phase = HarvesterPhase::Waiting;
             result.startedWaiting = true;
         };
+        const auto goHome = [&] {
+            harvester->phase = HarvesterPhase::ToBase;
+            result.goToBase = true;
+        };
+        const auto seekSource = [&] {
+            const std::optional<Resource> next = account->NextSource(harvester->target);
+            if (!next) {
+                wait();
+                return;
+            }
+            result.retargeted = *next != harvester->target;
+            harvester->target = *next;
+            harvester->phase = HarvesterPhase::ToSource;
+            result.goToSource = next;
+        };
         switch (harvester->phase) {
+            case HarvesterPhase::Starting:
+                seekSource();
+                break;
             case HarvesterPhase::ToSource:
-                if (account->sourceRemaining <= 0) wait();
-                else if (situation.atSource) {
+                if (account->Source(harvester->target).remaining <= 0) {
+                    seekSource();
+                } else if (situation.atSource == harvester->target) {
                     beginLoading();
                     result.arrivedAtSource = true;
+                } else if (!situation.moving) {
+                    wait();
                 }
-                else if (!situation.moving) wait();
                 break;
             case HarvesterPhase::Loading: {
                 if (--harvester->remainingSteps > 0) break;
-                const Gold taken = std::min(account->sourceRemaining, kLoadGold - harvester->load);
-                account->sourceRemaining -= taken;
+                ResourceSource& source = account->Source(harvester->target);
+                const Gold taken = std::min(source.remaining, LoadSize(harvester->target) - harvester->load);
+                source.remaining -= taken;
                 harvester->load += taken;
+                harvester->loadKind = harvester->target;
+                result.resource = harvester->target;
                 result.loaded = taken;
-                if (harvester->load <= 0) {
-                    wait();
-                } else {
-                    harvester->phase = HarvesterPhase::ToBase;
-                    result.goToBase = true;
-                }
+                if (harvester->load > 0) goHome();
+                else seekSource();
                 break;
             }
             case HarvesterPhase::ToBase:
                 if (situation.atBase) beginUnloading();
                 else if (!situation.moving) wait();
                 break;
-            case HarvesterPhase::Unloading:
+            case HarvesterPhase::Unloading: {
                 if (--harvester->remainingSteps > 0) break;
-                account->goldHeld += harvester->load;
-                account->goldDelivered += harvester->load;
-                result.delivered = harvester->load;
-                harvester->load = 0;
-                if (account->sourceRemaining > 0) {
-                    harvester->phase = HarvesterPhase::ToSource;
-                    result.goToSource = true;
+                Gold credited = harvester->load;
+                if (harvester->loadKind == Resource::Gold) {
+                    account->goldHeld += credited;
                 } else {
-                    wait();
+                    credited = std::min(credited, kFoodCapacityRations - account->rations);
+                    account->rations += credited;
                 }
+                account->Source(harvester->loadKind).delivered += credited;
+                harvester->load -= credited;
+                result.resource = harvester->loadKind;
+                result.delivered = credited;
+                if (harvester->load > 0) harvester->remainingSteps = kHarvesterStoreRetrySteps;
+                else seekSource();
                 break;
+            }
             case HarvesterPhase::Waiting:
                 if (situation.moving || situation.halted) break;
                 if (harvester->load > 0 && situation.atBase) {
                     beginUnloading();
                     result.stoppedWaiting = true;
-                } else if (harvester->load < kLoadGold && account->sourceRemaining > 0 && situation.atSource) {
-                    beginLoading();
-                    result.stoppedWaiting = true;
+                } else if (situation.atSource) {
+                    const Resource here = *situation.atSource;
+                    if (harvester->load > 0 && (harvester->loadKind != here || harvester->load >= LoadSize(here))) {
+                        harvester->target = here;
+                        goHome();
+                        result.stoppedWaiting = true;
+                    } else if (account->Source(here).remaining > 0) {
+                        harvester->target = here;
+                        beginLoading();
+                        result.stoppedWaiting = true;
+                    }
                 }
                 break;
         }
@@ -519,8 +611,8 @@ public:
         if (!definition) return Reject(EconomyRejection::UnknownRecipe, account);
         if (!account->hasProducer) return Reject(EconomyRejection::NoProducer, account);
         // A harvester with nothing to haul would only eat.
-        if (static_cast<Recipe>(recipe) == Recipe::Harvester && account->sourceRemaining <= 0)
-            return Reject(EconomyRejection::NoGoldSource, account);
+        if (static_cast<Recipe>(recipe) == Recipe::Harvester && !account->NextSource(Resource::Gold))
+            return Reject(EconomyRejection::NoResourceSource, account);
         if (!account->producerPowered) return Reject(EconomyRejection::ProducerUnpowered, account);
         if (account->foodShortage) return Reject(EconomyRejection::FoodShortage, account);
         if (account->queue.size() >= kMaxQueue) return Reject(EconomyRejection::QueueFull, account);

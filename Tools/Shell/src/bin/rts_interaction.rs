@@ -404,6 +404,8 @@ fn main() -> Result<(), String> {
         "-ResY=720",
         "-unattended",
         "-nosplash",
+        // These checks pin exact forces; the free starting harvester has its own session.
+        "-PolitikaMPStartingHarvesters=0",
     ]);
     if participant_authority {
         launch.arg("-RTSAcceptance=participantauthority");

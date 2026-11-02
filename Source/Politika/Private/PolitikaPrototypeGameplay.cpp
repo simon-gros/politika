@@ -1338,8 +1338,9 @@ void APolitikaPrototypeMatch::BuildScenario()
         MapDefinition->Objective.CaptureDurationSeconds);
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_AUTHORITATIVE_SNAPSHOT_COMPLETE units=%d objectives=%d"), Units.Num(), Objective ? 1 : 0);
 #endif
+    // The authored force: a starting harvester comes from the economy, not the map's content.
     UE_LOG(LogPolitikaStartup, Display, TEXT("MATCH_CONTENT_READY map=%s units=%d objective=%s"),
-        *MapDefinition->StableId.ToString(), Units.Num(), *MapDefinition->Objective.StableId.ToString());
+        *MapDefinition->StableId.ToString(), ExpectedUnits, *MapDefinition->Objective.StableId.ToString());
 }
 
 void APolitikaPrototypeMatch::RecoverToShellAfterAdmissionFailure(FName MapId)
@@ -3181,7 +3182,9 @@ void APolitikaPrototypePlayerController::BoxSelect(const FVector2D& CornerA, con
         }
         if (bProjected && Intersects(Box, Proxy)) Hits.Add(Unit);
     }
-    ApplySelection(Hits, Op, TEXT("box"));
+    const std::vector<APolitikaPrototypeUnit*> Preferred = PreferCombat(std::vector<APolitikaPrototypeUnit*>(Hits.GetData(), Hits.GetData() + Hits.Num()), Op,
+        [](const APolitikaPrototypeUnit* Unit) { return Unit->IsMilitary(); });
+    ApplySelection(TConstArrayView<APolitikaPrototypeUnit*>(Preferred.data(), static_cast<int32>(Preferred.size())), Op, TEXT("box"));
 }
 
 void APolitikaPrototypePlayerController::ApplySelection(TConstArrayView<APolitikaPrototypeUnit*> Hits,
@@ -4335,12 +4338,12 @@ void APolitikaPrototypeHUD::DrawHUD()
             const FPolitikaNetFormationInfo* Formation = Viewing && Unit->GetOwnerPlayer() == Viewer
                 ? Viewing->FindOwnFormationOf(Unit->GetStableId()) : nullptr;
             // A load on its way to the base (owner-only state, ECON-E4).
-            const bool bGold = Unit->GetOwnerPlayer() == Viewer && Unit->IsCarryingGold();
-            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, ((Formation ? 165 : 135) + (bGold ? 45 : 0))*UiScale, 22*UiScale);
+            const TCHAR* LoadText = Unit->GetOwnerPlayer() != Viewer ? TEXT("") : Unit->IsCarryingGold() ? TEXT("  GOLD") : Unit->IsCarryingFood() ? TEXT("  FOOD") : TEXT("");
+            DrawRect(FLinearColor(0.02f,0.025f,0.025f,0.85f), LabelX, LabelY, ((Formation ? 165 : 135) + (*LoadText ? 45 : 0))*UiScale, 22*UiScale);
             DrawText(FString::Printf(TEXT("%s #%llu  %d/%d%s%s"),
                 bFriendly ? TEXT("ALLY") : bUnaligned ? TEXT("UNALIGNED") : TEXT("TARGET"),
                 Unit->GetStableId(), Unit->GetHealth(), Unit->GetMaxHealth(),
-                Formation ? *FString::Printf(TEXT("  F%u"), Formation->FormationId) : TEXT(""), bGold ? TEXT("  GOLD") : TEXT("")), TeamColor,
+                Formation ? *FString::Printf(TEXT("  F%u"), Formation->FormationId) : TEXT(""), LoadText), TeamColor,
                 LabelX+4*UiScale, LabelY+3*UiScale, nullptr, 0.85f*UiScale);
         }
     }
@@ -4433,10 +4436,13 @@ void APolitikaPrototypeHUD::DrawHUD()
         // ECON-E3: the reserve, what the force eats and how long that lasts.
         const FString PurchaseText = FString::Printf(TEXT("N buy %lld for %s"), pe::kFoodPurchaseRations, UTF8_TO_TCHAR(pe::FormatUsd(pe::kFoodPurchaseCents).c_str()));
         const int32 UpkeepSeconds = static_cast<int32>(pe::kFoodUpkeepIntervalSteps * SimulationStepSecondsForHud);
+        // ECON-E5: what is left in the food cache and on the way from it.
+        const FString FoodCacheText = Economy.bHasFoodSource
+            ? FString::Printf(TEXT("%d in the cache, %d on the way  ·  "), Economy.FoodAtSource, Economy.FoodCarried) : FString();
         const FString FoodText = Economy.bFoodShortage
-            ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s"), Economy.Rations, *PurchaseText)
-            : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,
-                Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *PurchaseText);
+            ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s%s"), Economy.Rations, *FoodCacheText, *PurchaseText)
+            : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s%s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,
+                Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *FoodCacheText, *PurchaseText);
         DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
         // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.
@@ -4447,10 +4453,10 @@ void APolitikaPrototypeHUD::DrawHUD()
             const FString SaleText = Lot
                 ? FString::Printf(TEXT("L sell %lld for %s"), Lot->quantity, UTF8_TO_TCHAR(pe::FormatUsd(Lot->net).c_str()))
                 : FString(TEXT("nothing to sell yet"));
-            const FString HarvesterText = Economy.GoldAtSource > 0
-                ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("cache empty"));
-            DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache  ·  %d harvesters, %d on the way  ·  %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
-                Economy.Harvesters, Economy.GoldCarried, *SaleText, *HarvesterText),
+            const FString HarvesterText = Economy.GoldAtSource > 0 || Economy.FoodAtSource > 0
+                ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("caches empty"));
+            DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache, %d on the way  ·  %s  ·  %d %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
+                Economy.GoldCarried, *SaleText, Economy.Harvesters, Economy.Harvesters == 1 ? TEXT("harvester") : TEXT("harvesters"), *HarvesterText),
                 FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
             Y += 26.0f * UiScale;
         }

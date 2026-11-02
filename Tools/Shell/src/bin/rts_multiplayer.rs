@@ -712,6 +712,7 @@ fn host_args(options: &Options, rematch: bool) -> Vec<String> {
         format!("-ResX={WIDTH}"),
         format!("-ResY={HEIGHT}"),
     ];
+    args.extend(pinned_forces());
     if rematch {
         args.push(format!("-PolitikaMPRematch={url}"));
         args.push("-PolitikaMPRematchDelay=3".into());
@@ -1646,12 +1647,27 @@ fn parse_dedicated_options() -> Result<DedicatedOptions, String> {
 }
 
 fn server_args(port: u16, layout: &str) -> Vec<String> {
-    vec![
+    let mut args = vec![
         format!("/Game/Maps/RTSVerticalSlice?PolitikaLayout={layout}"),
         format!("-port={port}"),
         "-PolitikaTestFixture=MultiplayerSkirmish".into(),
         "-RTSAcceptance=multiplayer".into(),
-    ]
+    ];
+    args.extend(pinned_forces());
+    args
+}
+
+const NO_STARTING_HARVESTERS: &str = "-PolitikaMPStartingHarvesters=0";
+const STARTING_HARVESTERS: &str = "-PolitikaMPStartingHarvesters=1";
+
+/// Sessions pin exact forces, so they turn the free starting harvester off (ECON-E5), unless the
+/// matrix is running them with the normal default to see that they still hold.
+fn pinned_forces() -> Vec<String> {
+    if env::var_os("POLITIKA_HARNESS_DEFAULT_FORCES").is_some() {
+        Vec::new()
+    } else {
+        vec![NO_STARTING_HARVESTERS.into()]
+    }
 }
 
 /// Variables that would let a process reach a display server, audio server or the
@@ -2623,6 +2639,7 @@ fn dedicated_parity(options: &DedicatedOptions, report: &mut Report) -> Result<(
         "-RTSAcceptance=multiplayer".into(),
     ];
     listen_args.extend(["-nullrhi".into(), "-nosound".into()]);
+    listen_args.extend(pinned_forces());
     let mut listen = Game::launch(
         &options.client.binary,
         "parity-listen",
@@ -3419,7 +3436,7 @@ fn seat_markers(listen: bool, index: usize) -> (&'static str, &'static str) {
 }
 
 fn listen_host_args(port: u16, layout: &str) -> Vec<String> {
-    vec![
+    let mut args = vec![
         format!("/Game/Maps/RTSVerticalSlice?listen?PolitikaLayout={layout}"),
         format!("-port={port}"),
         "-PolitikaTestFixture=MultiplayerSkirmish".into(),
@@ -3427,7 +3444,9 @@ fn listen_host_args(port: u16, layout: &str) -> Vec<String> {
         "-windowed".into(),
         format!("-ResX={WIDTH}"),
         format!("-ResY={HEIGHT}"),
-    ]
+    ];
+    args.extend(pinned_forces());
+    args
 }
 
 /// (entity, host_hidden) for every unit the listen host sampled at activation.
@@ -12966,6 +12985,9 @@ fn economy_start_session_with(
     let client_options = &options.client;
     let evidence = &client_options.evidence;
     let mut args = server_args(client_options.port, "1v1");
+    if extra.iter().any(|a| a == STARTING_HARVESTERS) {
+        args.retain(|a| a != NO_STARTING_HARVESTERS);
+    }
     args.extend_from_slice(extra);
     let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
     server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
@@ -13806,20 +13828,24 @@ const GOLD_HARVESTER_CM_PER_STEP: f64 = 280.0 * 0.05;
 
 /// A participant's gold lines in one generation: every line follows from the last, and all of the
 /// source's gold is accounted for. Returns the number of lines.
-fn gold_replay(
+fn harvest_replay(
     text: &str,
     participant: u32,
     generation: &str,
+    resource: &str,
     start: i64,
 ) -> Result<usize, String> {
-    let tag = format!("RTS_GOLD_TX participant={participant} ");
+    let tag = format!("RTS_HARVEST_TX participant={participant} ");
     let generation = format!("generation={generation} ");
+    let wanted = format!("resource={resource} ");
+    // The ration reserve also moves with upkeep and purchases; food_replay follows it.
+    let gold = resource == "gold";
     let (mut source, mut carried, mut held, mut delivered, mut sold, mut lost) =
         (start, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64);
     let mut count = 0;
     for line in text
         .lines()
-        .filter(|l| l.contains(&tag) && l.contains(&generation))
+        .filter(|l| l.contains(&tag) && l.contains(&generation) && l.contains(&wanted))
     {
         let amount = econ_int(line, "amount");
         match field(line, "kind") {
@@ -13844,7 +13870,7 @@ fn gold_replay(
                 lost += amount;
             }
             Some("harvester") | Some("loading") | Some("detached") | Some("waiting")
-            | Some("resumed") => {
+            | Some("resumed") | Some("retarget") => {
                 if amount != 0 {
                     return Err(format!("this kind moves no gold: {}", line.trim()));
                 }
@@ -13861,6 +13887,7 @@ fn gold_replay(
         ];
         if expected
             .iter()
+            .filter(|(key, _)| gold || !matches!(*key, "held" | "sold"))
             .any(|(key, value)| econ_int(line, key) != *value)
             || field(line, "reconciles") != Some("1")
             || source < 0
@@ -13888,9 +13915,10 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
     let (mut server, mut client_a, mut client_b, _display, generation) =
         economy_start_session_with(
             options,
-            &[format!(
-                "-PolitikaMPEconomySourceGold=1:{GOLD_FIXTURE_SOURCE}"
-            )],
+            &[
+                format!("-PolitikaMPEconomySourceGold=1:{GOLD_FIXTURE_SOURCE}"),
+                "-PolitikaMPEconomySourceFood=1:0".to_owned(),
+            ],
             &[format!(
                 "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
                 GOLD_SOURCE_AT.0,
@@ -13971,7 +13999,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
             field(&refused, "rejection") == Some("nothing_to_sell")
                 && field(&refused_client, "accepted") == Some("0")
                 && econ_int(&refused_client, "amount") == 0
-                && !server.text().contains("RTS_GOLD_TX participant=1"),
+                && !server.text().contains("RTS_HARVEST_TX participant=1"),
             format!("{} | client {}", refused.trim(), refused_client.trim()),
         );
 
@@ -14004,7 +14032,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
 
         // Its first trip, with no further input.
         let loaded = server.wait(
-            &["RTS_GOLD_TX participant=1 kind=load ", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=load ", &unit_tag],
             Duration::from_secs(30),
         )?;
         let loaded_view = client_a.wait(
@@ -14020,7 +14048,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
             &client_a.screenshot(&evidence, "02-carrying")?,
         );
         let delivered = server.wait(
-            &["RTS_GOLD_TX participant=1 kind=deliver", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=deliver", &unit_tag],
             Duration::from_secs(30),
         )?;
         let delivered_view = client_a.wait(
@@ -14070,7 +14098,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
                     server_mark,
                 )?;
                 let gold = server.wait_line(
-                    &["RTS_GOLD_TX participant=1 kind=sale"],
+                    &["RTS_HARVEST_TX participant=1 kind=sale"],
                     Duration::from_secs(5),
                     server_mark,
                 )?;
@@ -14118,7 +14146,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         let server_mark = server.offset();
         server.wait(
             &[
-                "RTS_GOLD_TX participant=1 kind=loading",
+                "RTS_HARVEST_TX participant=1 kind=loading",
                 &unit_tag,
                 "source=15 ",
             ],
@@ -14156,7 +14184,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
             move_mark,
         )?;
         let detached = server.wait_line(
-            &["RTS_GOLD_TX participant=1 kind=detached", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=detached", &unit_tag],
             Duration::from_secs(5),
             server_mark,
         )?;
@@ -14172,7 +14200,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         let text = server.text();
         let while_parked: Vec<&str> = text[server_mark.min(text.len())..]
             .lines()
-            .filter(|l| l.contains("RTS_GOLD_TX participant=1"))
+            .filter(|l| l.contains("RTS_HARVEST_TX participant=1"))
             .filter(|l| !matches!(field(l, "kind"), Some("detached") | Some("loading")))
             .collect();
         report.verdict(
@@ -14194,22 +14222,22 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         let server_mark = server.offset();
         order_move(&mut client_a, &mut server, harvester, source_screen)?;
         let resumed = server.wait_line(
-            &["RTS_GOLD_TX participant=1 kind=resumed", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=resumed", &unit_tag],
             Duration::from_secs(30),
             server_mark,
         )?;
         let last = server.wait_line(
-            &["RTS_GOLD_TX participant=1 kind=load ", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=load ", &unit_tag],
             Duration::from_secs(20),
             server_mark,
         )?;
         let last_home = server.wait_line(
-            &["RTS_GOLD_TX participant=1 kind=deliver", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=deliver", &unit_tag],
             Duration::from_secs(30),
             server_mark,
         )?;
         let stopped = server.wait_line(
-            &["RTS_GOLD_TX participant=1 kind=waiting", &unit_tag],
+            &["RTS_HARVEST_TX participant=1 kind=waiting", &unit_tag],
             Duration::from_secs(5),
             server_mark,
         )?;
@@ -14271,7 +14299,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
                 && econ_int(&gold_2, "held") == 0
                 && econ_int(&outcome_2, "gold_sold") == GOLD_LAST_LOAD
                 && field(&nothing, "rejection") == Some("nothing_to_sell")
-                && field(&no_source, "rejection") == Some("no_gold_source"),
+                && field(&no_source, "rejection") == Some("no_resource_source"),
             format!(
                 "{} | {} | {} | {}",
                 money_2.trim(),
@@ -14286,7 +14314,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         let (text_a, text_b) = (client_a.text(), client_b.text());
         let enemy_lines = text
             .lines()
-            .filter(|l| l.contains("RTS_GOLD_TX participant=2"))
+            .filter(|l| l.contains("RTS_HARVEST_TX participant=2"))
             .count();
         let a_leaks = text_a
             .lines()
@@ -14310,7 +14338,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
             enemy_lines == 0 && a_leaks == 0 && b_leaks == 0 && b_gold == 0,
             format!("enemy gold lines {enemy_lines}; A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}, B gold views {b_gold}"),
         );
-        let replay = gold_replay(&text, 1, &generation, GOLD_FIXTURE_SOURCE);
+        let replay = harvest_replay(&text, 1, &generation, "gold", GOLD_FIXTURE_SOURCE);
         report.verdict(
             "GOLD-P11-GOLD-REPLAYS",
             replay == Ok(12),
@@ -14331,7 +14359,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
         // Repeatability: the normalized sequence, without timing or income interleaving.
         let mut trace = String::new();
         for line in text.lines().filter(|l| {
-            l.contains("RTS_GOLD_TX participant=1")
+            l.contains("RTS_HARVEST_TX participant=1")
                 && l.contains(&format!("generation={generation} "))
         }) {
             trace.push_str(&format!(
@@ -14430,7 +14458,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
                 && starts2.len() == 2
                 && econ_int(starts2[0], "source") == GOLD_FIXTURE_SOURCE
                 && econ_int(starts2[1], "source") == GOLD_NORMAL_SOURCE
-                && !tail.lines().any(|l| l.contains("RTS_GOLD_TX")),
+                && !tail.lines().any(|l| l.contains("RTS_HARVEST_TX")),
             format!(
                 "generation {generation} then {generation2}: {} | {}",
                 cleared.trim(),
@@ -14442,6 +14470,512 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
     launch_options_verdict(
         report,
         "GOLD-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
+// `--harvest SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E5) plays the normal start with real
+// input. Each seat has a free harvester and two caches. It hauls gold with no input at all, a trained
+// rifleman's and the harvester's owner-only fields reach their owner, a right-click sends it to the
+// food cache, the food goes into the reserve until seat 1's small cache is empty, and it moves on to
+// the gold by itself. A box over the base takes only soldiers. Then a match end and the next generation.
+const HARVEST_FOOD_FIXTURE: i64 = 60;
+const HARVEST_FOOD_NORMAL: i64 = 600;
+const HARVEST_FOOD_LOAD: i64 = 30;
+const HARVEST_FOOD_AT: (f64, f64) = (-1774.1, 180.5);
+
+fn harvest_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session_with(
+            options,
+            &[
+                STARTING_HARVESTERS.to_owned(),
+                format!("-PolitikaMPEconomySourceFood=1:{HARVEST_FOOD_FIXTURE}"),
+            ],
+            &[format!(
+                "-PolitikaMPGroundProbe={}:{}/{}:{}",
+                GOLD_SOURCE_AT.0, GOLD_SOURCE_AT.1, HARVEST_FOOD_AT.0, HARVEST_FOOD_AT.1
+            )],
+        )?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        let gen_tag = format!("generation={generation}");
+        let text = server.text();
+        let lines_of = |tag: &str| -> Vec<String> {
+            text.lines()
+                .filter(|l| l.contains(tag) && l.contains(&gen_tag))
+                .map(str::to_owned)
+                .collect()
+        };
+        let at = |line: &str, x: f64, y: f64| {
+            (number(line, "x").unwrap_or(f64::MAX) - x).abs() < 1.0
+                && (number(line, "y").unwrap_or(f64::MAX) - y).abs() < 1.0
+        };
+        let (gold, food, free, money) = (
+            lines_of("RTS_GOLD_START"),
+            lines_of("RTS_FOOD_SOURCE_START"),
+            lines_of("RTS_HARVESTER_START"),
+            lines_of("RTS_ECONOMY_START"),
+        );
+        report.verdict(
+            "HARV-P01-CACHES-AND-A-FREE-HARVESTER",
+            gold.len() == 2
+                && food.len() == 2
+                && free.len() == 2
+                && field(&free[0], "participant") == Some("1")
+                && field(&free[1], "participant") == Some("2")
+                && econ_int(&gold[0], "source") == GOLD_NORMAL_SOURCE
+                && econ_int(&food[0], "source") == HARVEST_FOOD_FIXTURE
+                && econ_int(&food[1], "source") == HARVEST_FOOD_NORMAL
+                && at(&gold[0], GOLD_SOURCE_AT.0, GOLD_SOURCE_AT.1)
+                && at(&food[0], HARVEST_FOOD_AT.0, HARVEST_FOOD_AT.1)
+                && at(&food[1], -HARVEST_FOOD_AT.0, -HARVEST_FOOD_AT.1)
+                && money
+                    .iter()
+                    .all(|l| econ_int(l, "available") == ECONOMY_START_CENTS)
+                && !text.contains("kind=train"),
+            format!(
+                "{} | {} | {}",
+                gold.join(" | "),
+                food.join(" | "),
+                free.join(" | ")
+            ),
+        );
+        let harvester = econ_int(&free[0], "entity") as u64;
+        let enemy_harvester = econ_int(&free[1], "entity") as u64;
+        let unit_tag = format!("unit={harvester} ");
+
+        for tag in ["RTS_FOOD_SOURCE_RELEVANT", "RTS_GOLD_SOURCE_RELEVANT"] {
+            client_a.wait(&[tag], Duration::from_secs(10))?;
+            client_b.wait(&[tag], Duration::from_secs(10))?;
+        }
+        let owners = |t: &str, tag: &str| -> Vec<String> {
+            t.lines()
+                .filter(|l| l.contains(tag))
+                .filter_map(|l| field(l, "owner").map(str::to_owned))
+                .collect()
+        };
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        report.verdict(
+            "HARV-P02-CACHES-OWN-TEAM-ONLY",
+            owners(&text_a, "RTS_FOOD_SOURCE_RELEVANT") == ["1"]
+                && owners(&text_b, "RTS_FOOD_SOURCE_RELEVANT") == ["2"]
+                && owners(&text_a, "RTS_GOLD_SOURCE_RELEVANT") == ["1"]
+                && owners(&text_b, "RTS_GOLD_SOURCE_RELEVANT") == ["2"],
+            format!(
+                "client A food {:?}, client B food {:?}",
+                owners(&text_a, "RTS_FOOD_SOURCE_RELEVANT"),
+                owners(&text_b, "RTS_FOOD_SOURCE_RELEVANT")
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Its first trip with no input at all, gold by default.
+        let loaded = server.wait(
+            &["RTS_HARVEST_TX participant=1 kind=load ", &unit_tag],
+            Duration::from_secs(40),
+        )?;
+        let carried_client = client_a.wait(
+            &[
+                "RTS_HARVESTER_CARRY_CLIENT",
+                &format!("entity={harvester} "),
+                "carried=1 ",
+            ],
+            Duration::from_secs(5),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_carrying_png",
+            &client_a.screenshot(&evidence, "02-carrying")?,
+        );
+        let delivered = server.wait(
+            &["RTS_HARVEST_TX participant=1 kind=deliver ", &unit_tag],
+            Duration::from_secs(30),
+        )?;
+        report.verdict(
+            "HARV-P03-IT-WORKS-WITH-NO-INPUT",
+            field(&loaded, "resource") == Some("gold")
+                && econ_int(&loaded, "amount") == GOLD_LOAD
+                && field(&delivered, "resource") == Some("gold")
+                && econ_int(&delivered, "held") == GOLD_LOAD,
+            format!("{} | {}", loaded.trim(), delivered.trim()),
+        );
+
+        // The owner fix: the owner receives a harvester's load and category, and a trained
+        // rifleman's ammunition, none of which reached it before.
+        let (bought, _) = economy_key_outcome(
+            &mut client_a,
+            &mut server,
+            None,
+            &["RTS_ECONOMY_TX participant=1 kind=train"],
+        )?;
+        let spawned = server.wait(
+            &["RTS_PRODUCTION_SPAWN participant=1", "recipe=0"],
+            Duration::from_secs(20),
+        )?;
+        let rifleman = econ_int(&spawned, "entity") as u64;
+        let start = Instant::now();
+        let mut ammo = 0;
+        while start.elapsed() < Duration::from_secs(8) && ammo == 0 {
+            let text = client_a.text();
+            ammo = text
+                .lines()
+                .rev()
+                .filter(|l| l.contains("MP_CLIENT_SAMPLE"))
+                .find(|l| field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(rifleman))
+                .map_or(0, |l| econ_int(l, "ammo"));
+            thread::sleep(Duration::from_millis(250));
+        }
+        let category = carried_client
+            .as_ref()
+            .is_ok_and(|l| field(l, "military") == Some("0"));
+        report.verdict(
+            "HARV-P04-OWNER-FIELDS-REACH-THE-OWNER",
+            carried_client.is_ok() && category && ammo > 0,
+            format!(
+                "harvester {carried_client:?}; trained rifleman {rifleman} ammo {ammo} after {}",
+                bought.trim()
+            ),
+        );
+        let text_b = client_b.text();
+        let enemy_copies = text_b
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_HARVESTER_CARRY_CLIENT")
+                    && field(l, "entity").and_then(|v| v.parse::<u64>().ok())
+                        != Some(enemy_harvester)
+            })
+            .count();
+        report.verdict(
+            "HARV-P05-THE-ENEMY-GETS-NONE-OF-IT",
+            enemy_copies == 0,
+            format!("{enemy_copies} carry updates for units client B does not own"),
+        );
+
+        // A box over everything takes the soldiers, not the harvester.
+        let boxed_mark = client_a.offset();
+        client_a.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_a.release()?;
+        let boxed = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box", "op=replace"],
+            Duration::from_secs(5),
+            boxed_mark,
+        )?;
+        let ids = selection_ids(&boxed);
+        report.verdict(
+            "HARV-P06-A-BOX-TAKES-SOLDIERS",
+            !ids.is_empty() && !ids.contains(&harvester) && ids.contains(&rifleman),
+            boxed.trim().to_owned(),
+        );
+
+        // A right-click on the food cache during its next load: no gold moves, and food is its target.
+        let source_screen = wait_screen(
+            &mut client_a,
+            |t| probe_screen(t, 0),
+            "the gold cache on client A",
+        )?;
+        let food_screen = wait_screen(
+            &mut client_a,
+            |t| probe_screen(t, 1),
+            "the food cache on client A",
+        )?;
+        let server_mark = server.offset();
+        let loading = server.wait_line(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=loading",
+                &unit_tag,
+                "resource=gold",
+            ],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        thread::sleep(Duration::from_millis(700));
+        let mut selected = false;
+        for (dx, dy) in [(0.0, 0.0), (0.0, -8.0), (0.0, -16.0), (4.0, -4.0)] {
+            let mark = client_a.offset();
+            client_a.click(source_screen.0 + dx, source_screen.1 + dy, "1")?;
+            if client_a
+                .wait_line(
+                    &["RTS_SELECTION player=", &format!("unit={harvester}")],
+                    Duration::from_millis(350),
+                    mark,
+                )
+                .is_ok()
+            {
+                selected = true;
+                break;
+            }
+        }
+        if !selected {
+            return Err("could not select the harvester at the gold cache".to_owned());
+        }
+        let move_mark = server.offset();
+        client_a.click(food_screen.0, food_screen.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={harvester}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            move_mark,
+        )?;
+        let detached = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=detached", &unit_tag],
+            Duration::from_secs(5),
+            move_mark,
+        )?;
+        let resumed = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=resumed", &unit_tag],
+            Duration::from_secs(40),
+            move_mark,
+        )?;
+        report.verdict(
+            "HARV-P07-THE-FOOD-CACHE-TAKES-OVER",
+            field(&resumed, "resource") == Some("food")
+                && econ_int(&resumed, "source") == HARVEST_FOOD_FIXTURE
+                && econ_int(&resumed, "carried") == 0
+                && econ_int(&detached, "source") == econ_int(&loading, "source"),
+            format!(
+                "{} | {} | {}",
+                loading.trim(),
+                detached.trim(),
+                resumed.trim()
+            ),
+        );
+
+        // Two food trips, then the small cache is empty and it moves on to the gold by itself.
+        let first_food = server.wait_line(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=deliver ",
+                &unit_tag,
+                "resource=food",
+            ],
+            Duration::from_secs(40),
+            move_mark,
+        )?;
+        let reserve_1 = server.wait_line(
+            &["RTS_FOOD_TX participant=1 kind=harvest"],
+            Duration::from_secs(5),
+            move_mark,
+        )?;
+        client_a.wait(
+            &[
+                "RTS_HARVESTER_CARRY_CLIENT",
+                &format!("entity={harvester} "),
+                "carried=2 ",
+            ],
+            Duration::from_secs(5),
+        )?;
+        report.artifact(
+            "client_a_food_png",
+            &client_a.screenshot(&evidence, "03-food-delivered")?,
+        );
+        let retarget = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=retarget", &unit_tag],
+            Duration::from_secs(60),
+            move_mark,
+        )?;
+        let next_gold = server.wait_line(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=load ",
+                &unit_tag,
+                "resource=gold",
+            ],
+            Duration::from_secs(40),
+            move_mark,
+        )?;
+        let text = server.text();
+        let food_loads = text[move_mark.min(text.len())..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_HARVEST_TX participant=1 kind=deliver")
+                    && l.contains("resource=food")
+            })
+            .count();
+        report.verdict(
+            "HARV-P08-FOOD-REACHES-THE-RESERVE",
+            econ_int(&first_food, "amount") == HARVEST_FOOD_LOAD
+                && econ_int(&reserve_1, "paid") == HARVEST_FOOD_LOAD
+                && field(&reserve_1, "reconciles") == Some("1")
+                && food_loads == 2,
+            format!(
+                "{food_loads} food deliveries | {} | {}",
+                first_food.trim(),
+                reserve_1.trim()
+            ),
+        );
+        report.verdict(
+            "HARV-P09-IT-MOVES-ON-WHEN-THE-CACHE-EMPTIES",
+            field(&retarget, "resource") == Some("gold")
+                && econ_int(&next_gold, "amount") == GOLD_LOAD,
+            format!("{} | {}", retarget.trim(), next_gold.trim()),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_moved_on_png",
+            &client_a.screenshot(&evidence, "04-moved-on")?,
+        );
+
+        // Gold it brought in sells as before.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("l")?;
+        let sale = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1 kind=sale"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=3", "accepted=1"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+
+        // Only each seat's own data reached it, and everything replays.
+        let text = server.text();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let a_leaks = text_a
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=2"))
+            .count();
+        let b_leaks = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .count();
+        report.verdict(
+            "HARV-P10-OWNER-ONLY",
+            a_leaks == 0 && b_leaks == 0,
+            format!("A's copies of B's view {a_leaks}, B's copies of A's view {b_leaks}"),
+        );
+        let replays = [
+            harvest_replay(&text, 1, &generation, "gold", GOLD_NORMAL_SOURCE),
+            harvest_replay(&text, 1, &generation, "food", HARVEST_FOOD_FIXTURE),
+            harvest_replay(&text, 2, &generation, "gold", GOLD_NORMAL_SOURCE),
+            harvest_replay(&text, 2, &generation, "food", HARVEST_FOOD_NORMAL),
+        ];
+        report.verdict(
+            "HARV-P11-BOTH-RESOURCES-REPLAY",
+            replays.iter().all(Result::is_ok),
+            format!("{replays:?}"),
+        );
+        let ration_replay = food_replay(&text, 1, &generation, FOOD_NORMAL_RATIONS);
+        let lines_1 = economy_lines(&text, 1, &generation);
+        let money_replay = economy_replay(&lines_1, ECONOMY_START_CENTS);
+        report.verdict(
+            "HARV-P12-RATIONS-AND-MONEY-REPLAY",
+            ration_replay.is_ok() && money_replay.is_ok() && econ_int(&sale, "amount") == 6_062,
+            format!(
+                "rations {ration_replay:?}; money {money_replay:?}; {}",
+                sale.trim()
+            ),
+        );
+
+        // Repeatability: the normalized sequence for the owner's harvester, from the player's order
+        // on, because the number of gold trips before it depends on how long the inputs took.
+        let mut trace = String::new();
+        let from_step = econ_int(&detached, "step");
+        for line in text.lines().filter(|l| {
+            l.contains("RTS_HARVEST_TX participant=1")
+                && l.contains(&unit_tag)
+                && l.contains(&format!("generation={generation} "))
+                && econ_int(l, "step") >= from_step
+                && econ_int(l, "step") <= econ_int(&next_gold, "step")
+        }) {
+            trace.push_str(&format!(
+                "{} {} amount={}\n",
+                field(line, "kind").unwrap_or("?"),
+                field(line, "resource").unwrap_or("?"),
+                econ_int(line, "amount"),
+            ));
+        }
+        fs::write(evidence.join("harvest-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("harvest_trace", &evidence.join("harvest-trace.txt"));
+
+        // A soldier takes the objective with both harvesters at work, and the next generation has
+        // its own harvesters and full caches.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", rifleman)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        let at_move = server.offset();
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={rifleman}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            at_move,
+        )?;
+        server.wait(
+            &["MATCH_RESULTS outcome=objective_secured", &gen_tag],
+            Duration::from_secs(180),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let free2 = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_HARVESTER_START")
+                    && l.contains(&format!("generation={generation2}"))
+            })
+            .count();
+        report.verdict(
+            "HARV-P13-NEXT-GENERATION-FRESH",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && field(&cleared, "gold_reconciles") == Some("1")
+                && free2 == 2
+                && !tail.lines().any(|l| l.contains("RTS_HARVEST_TX")),
+            format!(
+                "generation {generation} then {generation2}: {free2} harvesters | {}",
+                cleared.trim()
+            ),
+        );
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "HARV-P00-LAUNCH-OPTIONS",
         &[&server, &client_a, &client_b],
     );
     client_a.stop();
@@ -14480,6 +15014,7 @@ fn food_replay(
     {
         match field(line, "kind") {
             Some("purchase") => rations += FOOD_PACK_RATIONS,
+            Some("harvest") => rations += econ_int(line, "paid"),
             Some("upkeep") => {
                 issues += 1;
                 if econ_int(line, "step") != issues * FOOD_INTERVAL_STEPS {
@@ -15141,6 +15676,14 @@ fn main() {
             power_session,
         );
     }
+    if env::args().nth(1).as_deref() == Some("--harvest") {
+        run_dedicated_session(
+            "--harvest",
+            "politika.econ.harvest-evidence.v1",
+            "harvest",
+            harvest_session,
+        );
+    }
     if env::args().nth(1).as_deref() == Some("--gold") {
         run_dedicated_session(
             "--gold",
@@ -15350,7 +15893,7 @@ mod tests {
                   delivered: i64,
                   sold: i64| {
             format!(
-                "RTS_GOLD_TX participant=1 kind={kind} unit=1 amount={amount} gross=6250 fee=188 source={source} carried={carried} held={held} delivered={delivered} sold={sold} lost=0 harvesters=1 reconciles=1 generation=1 step=1"
+                "RTS_HARVEST_TX participant=1 kind={kind} resource=gold unit=1 amount={amount} gross=6250 fee=188 source={source} carried={carried} held={held} delivered={delivered} sold={sold} lost=0 harvesters=1 reconciles=1 generation=1 step=1"
             )
         };
         let good = [
@@ -15361,16 +15904,20 @@ mod tests {
             tx("sale", 25, 35, 0, 0, 25, 25),
         ]
         .join("\n");
-        assert_eq!(super::gold_replay(&good, 1, "1", 60), Ok(5));
-        assert_eq!(super::gold_replay(&good, 2, "1", 60), Ok(0));
+        assert_eq!(super::harvest_replay(&good, 1, "1", "gold", 60), Ok(5));
+        assert_eq!(super::harvest_replay(&good, 2, "1", "gold", 60), Ok(0));
         // A delivery that creates gold, and a line that says it does not reconcile.
         let created = tx("load", 25, 35, 25, 0, 0, 0) + "\n" + &tx("deliver", 40, 35, 0, 40, 40, 0);
-        assert!(super::gold_replay(&created, 1, "1", 60).is_err());
+        assert!(super::harvest_replay(&created, 1, "1", "gold", 60).is_err());
         let unreconciled = tx("load", 25, 35, 25, 0, 0, 0).replace("reconciles=1", "reconciles=0");
-        assert!(super::gold_replay(&unreconciled, 1, "1", 60).is_err());
+        assert!(super::harvest_replay(&unreconciled, 1, "1", "gold", 60).is_err());
         // Selling gold that was never delivered, and a routine line that moves gold.
-        assert!(super::gold_replay(&tx("sale", 25, 60, 0, -25, 0, 25), 1, "1", 60).is_err());
-        assert!(super::gold_replay(&tx("waiting", 5, 60, 0, 0, 0, 0), 1, "1", 60).is_err());
+        assert!(
+            super::harvest_replay(&tx("sale", 25, 60, 0, -25, 0, 25), 1, "1", "gold", 60).is_err()
+        );
+        assert!(
+            super::harvest_replay(&tx("waiting", 5, 60, 0, 0, 0, 0), 1, "1", "gold", 60).is_err()
+        );
     }
 
     use super::{

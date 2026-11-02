@@ -55,6 +55,16 @@ enum class SelectionOp : std::uint8_t {
     return out;
 }
 
+// A box over soldiers and non-combat units takes the soldiers (ECON-E5), so a drag across a base does
+// not pull a harvester off its route. A box over only non-combat units still takes them, and Subtract
+// removes whatever it covers.
+template <typename Unit, typename IsCombat>
+[[nodiscard]] std::vector<Unit> PreferCombat(std::vector<Unit> hits, SelectionOp op, IsCombat isCombat) {
+    if (op == SelectionOp::Subtract || std::none_of(hits.begin(), hits.end(), isCombat)) return hits;
+    hits.erase(std::remove_if(hits.begin(), hits.end(), [&isCombat](const Unit& unit) { return !isCombat(unit); }), hits.end());
+    return hits;
+}
+
 // Screen-space geometry in physical pixels.
 struct ScreenPoint {
     double x = 0.0;
