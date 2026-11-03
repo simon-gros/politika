@@ -1,5 +1,7 @@
 # POLITIKA UI — product overview
 
+> **Product sequencing decision (3 November 2026): UI-first readiness is now an explicit prerequisite for extensive skirmish playtesting.** The current wealth of text-based readouts is valuable diagnostics but insufficient as the primary player-facing interface. Implement a structured, readable tactical HUD over already accepted functionality before broad balance, usability or extended skirmish testing. Narrow packaged functionality/regression tests and bounded opponent-AI engineering may continue concurrently. See [Engine Outline §7.4B](ENGINE_OUTLINE.md#74b-ui-first-integration-gate--required-before-extensive-skirmish-playtesting-decision-3-november-2026) and §22.
+
 > **Current implementation boundary (3 November 2026):** The authoritative, evidence-backed status is [Implementation Status](IMPLEMENTATION_STATUS.md). The UI described below includes both shipped-to-test-fixture interaction and **design proposals**; do not infer that a documented panel or command is implemented. The first UI delivery priority is reliability of selection, economy, order feedback and fog-safe client presentation in a complete skirmish. See §21 for a concrete UE 5.8 implementation and acceptance backlog.
 
 Status: expanded RTS interaction, information-integrity and multi-platform UI design contract (2026-10-27); implementation is narrower and separately evidenced
@@ -181,7 +183,7 @@ This is the proposed POLITIKA presentation/simulation boundary. See [ENGINE_OUTL
 
 **HUD implementation coordination:** The [dedicated HUD contract](RTS_HUD_ARCHITECTURE.md#8-dependency-ordered-hud-roadmap-new-work-packages-not-established-milestone-names) proposes read-only and command-card parity before advanced panels. These are cross-cutting *design work packages*, not new accepted engine milestones or retroactive changes to Stage 4F/4C-G scope.
 
-**Current roadmap:** Stage 3 content/map validation is accepted within its recorded Linux scope. The next product goal is the [First Playable Skirmish](ENGINE_OUTLINE.md#75-stage-4--first-playable-skirmish-repeatable-offline-match); the tactical shell does **not** yet expose an integrated economy, production or AI match. UI implementation must follow the corresponding authoritative gameplay increment and remain a projection/intent layer.
+**Revised roadmap (3 November 2026):** Stage 3 content/map validation and subsequent bounded multiplayer/economy increments have scoped acceptance. **UI-first integration (UI-F0 through UI-F4) now comes before extensive skirmish playtesting**, while small opponent/engine increments and targeted functional qualification may proceed concurrently. Display data from the rules already present; never make the UI authoritative. See §22 and the [status index](IMPLEMENTATION_STATUS.md).
 
 **Minimum First Playable Skirmish controls and feedback:**
 
@@ -596,7 +598,7 @@ For screenshot comparisons, use Epic's tools as a baseline **in addition to** se
 
 **Now (updated 3 November 2026):** preserve the Linux Development shell/HUD and already accepted networked/economic presentation, close the parked-harvester click-selection defect, verify building look-through at real camera scales and target points, and use current server-authorized observation values for resource, income, damage and production. Do not regress the recorded E29/E30 two-rendered-client tests. See §21 and [Implementation Status](IMPLEMENTATION_STATUS.md). No new UI subsystem is a dependency for typed content validation.
 
-**First complete match:** implement only the command-card, mixed selection, minimap, resource/queue, fog, objective and results surfaces required for the concrete match-loop rules. Verify the minimum independently playable offline loop and command/state consistency before expanding the roster.
+**Before extensive skirmish playtests:** complete UI-F0 through UI-F4: visually consolidate currently textual state into structured readable HUD regions, add discoverable contextual commands and truthful resource/production indicators, fix selection overlap, and qualify the interface on actual rendered clients. Continue small gameplay/AI regression tests in parallel. **First complete match:** then use that qualified interface for integrated opponent, objective, result and rematch playtests without bypassing authoritative command/state consistency.
 
 **First campaign/AI mission:** add briefing/debrief, mission log, faction-specific actions and intelligence reporting along with genuine world/claim provenance. Test misleading reports as a designed game phenomenon without misleading the player about what is verified.
 
@@ -691,3 +693,60 @@ Official Unreal Engine 5.8 documentation; these sources inform implementation ch
 - [Designing UI for Accessibility](https://dev.epicgames.com/documentation/en-us/unreal-engine/designing-ui-for-accessibility-in-unreal-engine) — accessible UI tools and screen-reader exploration.
 
 These are development references, not POLITIKA acceptance evidence. Recheck engine version/plugin maturity when integrating.
+
+## 22. UI-first visual consolidation and skirmish playtest entry gate — 3 November 2026
+
+### 22.1 Decision and immediate problem
+
+The present prototype has already accumulated rich information: money, commodity stocks, supply, electricity, queues, unit health/orders, selection/group membership, capture/repair, fog, objective and network state. Much of this reaches the user as **dense text rows or closely clustered indices**, which obscure relationships, take up battlefield space and make it difficult to recognize a resource problem or legal action quickly. The text-based instrumentation remains useful for diagnostics and must remain available in development overlays/logs; **the main player-facing interface must use purpose-built visual structure**.
+
+**Priority:** begin a dedicated UI-first workstream **before extended skirmish playtesting and balance evaluation**. Do not wait for fully autonomous faction AI to build a readable HUD; bind existing source-of-truth fields now. Conversely, do not block small code-level economy/AI/network tests while this visual layer is developed. This is a product gate, not a new simulation authority.
+
+### 22.2 Visual-design specification (original assets; no copied competitor UI)
+
+- **Battlefield-first layout:** keep map center clear; organize a compact top economy/power/food rail, bottom contextual selection+command region, small objective/alert summary and a fog-safe minimap when real observation support is adequate. Reserve enough scene viewport for group movement and targeting.
+- **Replace text indices by visual encoding:** labelled resource pictograms with precise numerical values and units; power/supply capacity indicators, food-upkeep risk, stock/cargo source icons, sale quote with fee tooltip, producer progress bars, health/status bars, capture/repair progress, queue slots and small status badges. Numbers remain available for precision; icons never become the sole channel.
+- **Visual grouping:** display related data together (treasury+income; food reserve+due; power generated+load; worker cargo+source; selection+legal orders; producer+queue); separate layers by spacing and hierarchy rather than concatenating long status lines.
+- **Progressive disclosure:** persistent low-density summaries for normal play; hover/focus tooltips for calculations, causes and historical events; click/expand for per-unit, queue and economic detail; developer diagnostic console/overlay explicitly toggleable and **off by default**.
+- **Consistent state vocabulary:** normal, pending, successful, disabled, blocked, critical, unobserved, last-known, unknown. Use shapes, labels and animation restraint in addition to color. Avoid presenting hidden enemy information or unimplemented mechanics.
+- **POLITIKA identity:** original Cold War-era industrial/institutional visual language, restrained panel textures, clean typographic hierarchy, faction crests and readable strategic iconography; realism must never compromise fast target recognition. Define reusable tokens for spacing, typography, icon size, state, contrast, transparency, animation and responsive breakpoints.
+- **Adaptive density:** explicit 720p, 1080p and 4K checks, including font sizes, safe areas, panel clipping, text scaling, high-DPI pointer placement and localized long labels. Prefer collapsing secondary content to shrinking essential numerals below legibility.
+- **Input discoverability:** icons/tooltips show actual active bindings, mouse-hover and keyboard focus states; contextual commands and selling/training do not depend on memorizing arbitrary letter keys. Resolve game-world and UI pointer hit priority deterministically.
+
+### 22.3 First visual prototype and acceptance order
+
+| Slice | Scope | What must be demonstrated |
+|---|---|---|
+| **UI-F0: audit** | Screenshot and enumerate every current text HUD field and input action; identify duplicate, stale, ambiguous or inaccessible values | Information inventory with data provenance/visibility, screenshots for 720p/1080p/4K and an explicit text-to-widget migration map |
+| **UI-F1: compositional prototype** | Reusable HUD style tokens and basic resource rail, selection inspector, contextual order card, objective/alerts | Side-by-side screenshots of the *same match state*; meaning and selection remain readable with the debug overlay disabled |
+| **UI-F2: data binding and interactive parity** | Owner-only economy stock/quote/power/food, selected unit health and action states, production progress, queue, capture/repair and confirmed/rejected commands | Live two-client packaged state agrees with server-authorized observation, no hidden-information leak, HUD input equals existing typed order |
+| **UI-F3: interaction polish** | Parked harvester, unit/building click-through, zoom-dependent picking, tooltip/focus, queue and notification legibility, safe modal interception | Player can select individual overlapping objects and issue useful orders without harness-only workarounds |
+| **UI-F4: usability signoff** | Short real-user task journey from menu to economy to movement/combat and objective/result where rules permit | Tester not trained on raw debug key bindings can finish tasks; screenshots/video + semantic logs and performance data; no blocker-level information clutter |
+
+UI-F0–F4 **do not imply** a complete 4F skirmish. The gate must be marked **implemented** and then **accepted (scoped)** separately. A visually attractive static mockup, screenshots without command execution, and successfully parsed log rows are not acceptance of playable UI.
+
+### 22.4 First visual inventory and interaction-critical data
+
+| Group | Immediate screen form | Secondary detail |
+|---|---|---|
+| Dollars | Currency amount, income trend and insufficient-funds status | Source of income, fee, last transaction |
+| Gold/crude/food | Recognizable icon + available stock; cargo badge on selected harvester | Accessible deposit remaining, shipment, per-lot sale quote and deduction |
+| Electricity | Generated/used readout with healthy/shortage state | Specific disabled producer and reason; repair state |
+| Production | Unit/worker portrait silhouette, cost and queue/progress | Capacity, prerequisites, blocked spawn, cancellation outcome |
+| Military selection | Unit portrait/silhouette, count, permitted health/status and selected order | Mixed-selection breakdown, subgroup and control-group membership |
+| Buildings and works | Distinct structure type, ownership, capturable/repairable hint, progress | Income, damage, progress timer, denied context |
+| Commands | Icon+label+active key, enabled/disabled/pending feedback | Cost, range, rejection reason, target mode |
+| Fog and objectives | Clear known/current/last-seen signals and objective progress | Authorized incident/event history, freshness and uncertainty |
+| Diagnostics | Compact optional developer overlay only | Exact IDs, traces, protocol, raw observation revisions |
+
+Every data row must identify an authoritative owner and observer-permitted projection; *never invent values to populate an attractive panel*.
+
+### 22.5 Engineering and acceptance guardrails
+
+Existing Canonical C++ server-owned state and typed command admission are immutable UI boundaries. A locally maintained viewmodel can transform **authorized** server observations into display-friendly values, but never decide income, damage, target legality, capture progress or fog discovery. Defer any comprehensive Slate→UMG rewrite until widget profiling and an actual interactive spike prove the benefit. Keep networking, Linux Development client/server evidence and input reproducibility intact.
+
+Inspect two rendered remote clients with different knowledge/ownership; test scaling, long text and unit overlap. Capture frame and widget timing using Unreal Insights/Slate Insights; avoid per-frame binding recalculation for mostly static economy labels. Verify widget layers do not intercept world clicks outside their visible interactive bounds. A UI failure that prevents selection, masks affordability, or obscures urgent alerts blocks UI-F4, even if unit tests and money ledgers pass.
+
+**Playtest entry rule:** after UI-F4 accepted, initiate **extended** first-skirmish playability, AI, pacing and balance sessions. Before that, use bounded smoke tests, short user-interaction proofs and automated gameplay/network regression, not a general playtest campaign. Record what UI tasks were evaluated versus what match rules are still missing; never treat a partial match as full 4F acceptance.
+
+**Documentation links:** [Engine sequencing](ENGINE_OUTLINE.md#74b-ui-first-integration-gate--required-before-extensive-skirmish-playtesting-decision-3-november-2026) · [HUD architecture](RTS_HUD_ARCHITECTURE.md) · [Keymap/settings](RTS_UI_SETTINGS_AND_KEYMAP.md) · [Status](IMPLEMENTATION_STATUS.md) · [Release gates](PERFORMANCE_AND_RELEASE_GATES.md).
