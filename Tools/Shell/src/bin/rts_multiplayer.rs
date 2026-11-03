@@ -15269,7 +15269,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         );
 
         // Your own healthy building is not a refusal: the click is a move to the ground under the
-        // cursor, which on this camera lies about 290 cm past a point on the middle of the roof.
+        // cursor. The cursor is on its roof or side, so that ground can lie past its centre.
         let own_producer = pan_to_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
         let mark = server.offset();
         client_a.click(own_producer.0, own_producer.1, "3")?;
