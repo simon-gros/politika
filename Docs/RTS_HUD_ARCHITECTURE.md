@@ -1,6 +1,6 @@
 # POLITIKA — RTS HUD Ontology, Comparative Design and Implementation Architecture
 
-**Status: CORE HUD DESIGN / PROPOSED — 29 October 2026. Not implemented, tested, or accepted.**
+**Status: CORE HUD DESIGN / UI-FIRST IMPLEMENTATION PRIORITY (3 November 2026).** The full envisioned HUD is proposed, though the earlier prototype Canvas HUD and individual interactions exist; do not mistake the designed widgets for accepted features. **UI-F0–UI-F4 are now required before extensive skirmish playtesting**, with limited engineering smoke/regression tests running in parallel. See [UI Overview §22](POLITIKA_UI_OVERVIEW.md#22-ui-first-visual-consolidation-and-skirmish-playtest-entry-gate--3-november-2026) and [Engine Outline §7.4B](ENGINE_OUTLINE.md#74b-ui-first-integration-gate--required-before-extensive-skirmish-playtesting-decision-3-november-2026).
 **Engine baseline:** Unreal Engine 5.8.3, with the currently verified scoped Linux tactical prototype preserved.
 **Scope:** In-match HUD presentation, interaction composition, information integrity, cross-platform layouts, performance and bounded acceptance. The existing Canvas HUD and Slate shell are the implementation baseline; this document does not assert that UMG, CommonUI, MVVM, minimap, production or formation widgets exist.
 
@@ -179,7 +179,15 @@ Use [Epic UMG optimization guidance](https://dev.epicgames.com/documentation/unr
 | HUD-10 | Compact, handheld/controller, Android touch and accessibility profile | Existing semantic intent, safe-area/focus and target platform evidence |
 | HUD-11 | Larger force aggregation, performance/accessibility and cross-device qualification | Representative battle test scenes and measured thresholds |
 
-**Staging rule:** HUD-01/02 may accompany 4C work, but do not retroactively change First Playable Skirmish 4F or 4C-G acceptance. Later formation, research, commander and intelligence layers are independent feature gates. The [Engine Outline](ENGINE_OUTLINE.md) owns promotion of each actual stage, with exact Git revision, pinned engine, build/package identity, fixtures, logs and visual input proof.
+**Revised staging rule (3 November 2026):** Build the core HUD-01–06 elements that represent *already existing* gameplay as UI-F0–F4 **before extensive 4F skirmish playtests**. This adds a prospective UI usability/visual gate without retroactively changing previously accepted 4C-G or 4F engineering evidence; later specialized HUD work remains independently gated. Later formation, research, commander and intelligence layers are independent feature gates. The [Engine Outline](ENGINE_OUTLINE.md) owns promotion of each actual stage, with exact Git revision, pinned engine, build/package identity, fixtures, logs and visual input proof.
+
+### 8.1 UI-first visual consolidation priority
+
+The immediate problem is **text clustering**: simultaneous raw numeric/text indices for economy, selection, production, power and commands are crowded on screen. Build a modular visual replacement rather than another list of labels. Audit existing Canvas/Slate rows and move routine *player-facing* state to compact grouped readouts: resource icons **with numbers**, power/food capacity indicators, selected-unit portraits or silhouettes, queue slots and progress bars, disabled-action reasons, capture/repair bars, ownership symbols, status colors **plus** shapes, and a contextual command card with visible hotkeys. Keep raw IDs, revision counters and diagnostic traces in an **optional disabled-by-default developer overlay**.
+
+Prioritize HUD-01/02/03/04/05 immediately where the authoritative mechanics already exist, followed by HUD-06 only when fog-safe minimap observation is implemented. For unsupported states, use honest disabled/absent UI, not placeholder transactional outcomes. A designer-facing screenshot must compare the *same live match* with and without raw HUD text; preserve click-through and viewport visibility. Implement the UI with shared typography/spacing/density tokens, observer-scope safe projection, event-driven updates and measured Slate/UMG performance. Read [UI-F0–F4 detailed gate](POLITIKA_UI_OVERVIEW.md#223-first-visual-prototype-and-acceptance-order).
+
+**Dependency:** small OPP-1 and economy tests continue; large manual skirmish/playability/balance exercises wait for UI-F4. Keep existing HUD-01–13 verification and add representative 720p/1080p/4K visual/input evidence plus at least one unfamiliar tester's select→gather→produce→combat task journey. The full Stage 4F game loop remains a separate gate.
 
 ## 9. Bounded verification matrix
 
