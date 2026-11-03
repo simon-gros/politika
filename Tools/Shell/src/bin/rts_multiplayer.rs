@@ -4989,7 +4989,10 @@ fn wait_arrival(
 }
 
 /// Selects `unit`, then right-clicks `target` until the server admits an explicit Attack.
-/// A zoomed-out unit is small, so nearby points on its body are also tried.
+/// A zoomed-out unit is small, so nearby points on its body are also tried. Samples are a second
+/// apart, so the first aim waits for one logged after the call: an older one can place a target
+/// that has just stopped where it was still walking. A click that lands on something else is still
+/// an order the unit carries out, so it is stopped before the next try.
 fn order_attack(
     game: &mut Game,
     server: &mut Game,
@@ -4997,6 +5000,14 @@ fn order_attack(
     target: u64,
 ) -> Result<String, String> {
     select_entity(game, "MP_CLIENT_SAMPLE", unit)?;
+    let unit_tag = format!("unit={unit} ");
+    let target_tag = format!("target={target} ");
+    let sampled = game.offset();
+    let _ = game.wait_line(
+        &["MP_CLIENT_SAMPLE", &format!("entity={target} ")],
+        Duration::from_secs(3),
+        sampled,
+    );
     for (dx, dy) in [
         (0.0, 0.0),
         (0.0, -8.0),
@@ -5013,15 +5024,22 @@ fn order_attack(
         let mark = server.offset();
         game.click(x + dx, y + dy, "3")?;
         if let Ok(line) = server.wait_line(
-            &[
-                "RTS_ORDER_ADMITTED order=Attack ",
-                &format!("unit={unit} "),
-                &format!("target={target} "),
-            ],
+            &["RTS_ORDER_ADMITTED order=", &unit_tag],
             Duration::from_secs(3),
             mark,
         ) {
-            return Ok(line);
+            if line.contains("order=Attack ") && line.contains(&target_tag) {
+                return Ok(line);
+            }
+            let stopping = server.offset();
+            game.key(STOP_KEY)?;
+            server
+                .wait_line(
+                    &["RTS_ORDER_ADMITTED order=Stop ", &unit_tag],
+                    Duration::from_secs(3),
+                    stopping,
+                )
+                .map_err(|e| format!("stopping {unit} after a stray order: {e}"))?;
         }
     }
     Err(format!(
@@ -15610,6 +15628,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             .ok()
             .and_then(|l| number(l, "steps"))
             .unwrap_or(0.0);
+        let kept_b = ended.as_ref().ok().and_then(|l| number(l, "health"));
         let finished_under_fire = appears(
             &mut server,
             &["RTS_BUILDING_REPAIR participant=2"],
@@ -15659,8 +15678,12 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         );
         report.verdict(
             "BLD-P09-ITS-OWNER-REPAIRS-IT",
-            repaired_b.is_ok() && first_steps_b + second_steps_b == 100.0 && b_queued.is_ok(),
-            format!("{repaired_b:?} | steps {first_steps_b} + {second_steps_b} | {b_queued:?}"),
+            repaired_b.is_ok()
+                && kept_b.is_some_and(|kept| second_steps_b == 100.0 - kept)
+                && b_queued.is_ok(),
+            format!(
+                "{repaired_b:?} | kept {kept_b:?} of {first_steps_b} steps, then {second_steps_b} | {b_queued:?}"
+            ),
         );
 
         // A holds next to the generator until it changes hands.
