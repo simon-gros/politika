@@ -44,6 +44,7 @@ namespace
         TEXT("-PolitikaMPStartingHarvesters="),
         TEXT("-PolitikaMPDisciplineRoutSeed="),
         TEXT("-PolitikaMPDisciplineDoctrine="),
+        TEXT("-PolitikaMPOpponentSeat="),
         TEXT("-PolitikaNavigationFailure="),
         TEXT("-PolitikaNavigationSchedule="),
         TEXT("-PolitikaNavigationInterruption="),

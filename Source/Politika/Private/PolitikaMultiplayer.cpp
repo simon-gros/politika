@@ -242,7 +242,7 @@ bool APolitikaPrototypeMatch::ResolveSessionLayout(FName& OutFailure)
         SessionSeatCount = RuntimeParticipants.Num();
         for (int32 Index = 0; Index < RuntimeParticipants.Num(); ++Index)
             RuntimeParticipants[Index].TeamId = static_cast<uint8>(Index + 1);
-        return true;
+        return ResolveOpponentSeatSwitch(OutFailure);
     }
     FString LayoutText = TEXT("1v1");
     if (const UWorld* World = GetWorld(); World && World->URL.HasOption(TEXT("PolitikaLayout")))
@@ -290,13 +290,13 @@ bool APolitikaPrototypeMatch::ResolveSessionLayout(FName& OutFailure)
     UE_LOG(LogPolitikaStartup, Display, TEXT("MP_SESSION_LAYOUT layout=%s seats=%d fog=%d roster=%s hosting=%s remote_seats=%u"),
         UTF8_TO_TCHAR(LayoutName(Layout).data()), Seats, bFogOfWar ? 1 : 0, *Roster,
         UTF8_TO_TCHAR(HostingModeName(Hosting).data()), static_cast<uint32>(RemoteSeatCount(Layout, Hosting)));
-    return true;
+    return ResolveOpponentSeatSwitch(OutFailure);
 }
 
 uint32 APolitikaPrototypeMatch::GetMaxRemoteHumans() const
 {
     return IsNetworkSession() && SessionSeatCount > 1
-        ? static_cast<uint32>(politika::rules::RemoteSeatCount(SessionLayout, GetHostingMode())) : 0;
+        ? static_cast<uint32>(politika::rules::RemoteSeatCount(SessionLayout, GetHostingMode())) - GetOpponentSeatCount() : 0;
 }
 
 uint8 APolitikaPrototypeMatch::GetTeamForParticipant(uint32 PlayerId) const
@@ -494,6 +494,7 @@ void APolitikaPrototypeMatch::EndPlay(const EEndPlayReason::Type EndPlayReason)
 #if !UE_BUILD_SHIPPING
     ReportNetworkMeasurements(TEXT("end_play"));
 #endif
+    RetireOpponentBrain(TEXT("end_play"));
     ClearFormations(TEXT("end_play"));
     ClearEconomy(TEXT("end_play"));
     ParticipantBindings.Reset();
@@ -578,8 +579,9 @@ bool APolitikaPrototypeMatch::CanAdmitRemoteParticipant(FName& OutReason) const
     { OutReason = TEXT("MP.SESSION.IN_PROGRESS"); return false; }
     uint32 RemoteBindings = 0;
     for (const FParticipantBinding& Binding : ParticipantBindings) RemoteBindings += Binding.bRemote ? 1 : 0;
-    const bool bOpenSeat = RuntimeParticipants.ContainsByPredicate([](const FPolitikaPrototypeRuntimeParticipant& Candidate)
-        { return Candidate.ControllerKind == EPolitikaPrototypeControllerKind::AssignedOpponent; });
+    // A seat reserved for a server-run opponent is not open to a connection.
+    const bool bOpenSeat = RuntimeParticipants.ContainsByPredicate([this](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+        { return Candidate.ControllerKind == EPolitikaPrototypeControllerKind::AssignedOpponent && !IsOpponentSeat(Candidate.RuntimePlayerId); });
     if (RemoteBindings >= GetMaxRemoteHumans() || !bOpenSeat) { OutReason = TEXT("MP.SESSION.FULL"); return false; }
     OutReason = NAME_None;
     return true;
@@ -613,8 +615,8 @@ bool APolitikaPrototypeMatch::BindController(APlayerController* Controller, FNam
     {
         if (!CanAdmitRemoteParticipant(OutFailure)) return false;
         // First open seat in session seat order (RuntimeParticipants is seat-ordered).
-        Seat = RuntimeParticipants.FindByPredicate([](const FPolitikaPrototypeRuntimeParticipant& Candidate)
-            { return Candidate.ControllerKind == EPolitikaPrototypeControllerKind::AssignedOpponent; });
+        Seat = RuntimeParticipants.FindByPredicate([this](const FPolitikaPrototypeRuntimeParticipant& Candidate)
+            { return Candidate.ControllerKind == EPolitikaPrototypeControllerKind::AssignedOpponent && !IsOpponentSeat(Candidate.RuntimePlayerId); });
         if (Seat) Seat->ControllerKind = EPolitikaPrototypeControllerKind::RemoteHuman;
     }
     if (!Seat) { OutFailure = TEXT("MP.SESSION.FULL"); return false; }
@@ -658,7 +660,7 @@ void APolitikaPrototypeMatch::TryActivateNetworkMatch()
     for (const FParticipantBinding& Binding : ParticipantBindings)
         (Binding.bRemote ? RemoteBindings : LocalBindings) += Binding.Controller.IsValid() ? 1 : 0;
     const politika::rules::HostingMode Hosting = GetHostingMode();
-    if (!politika::rules::SessionSeatsComplete(SessionLayout, Hosting, LocalBindings, RemoteBindings)) return;
+    if (!politika::rules::SessionSeatsComplete(SessionLayout, Hosting, LocalBindings, RemoteBindings, GetOpponentSeatCount())) return;
     bAwaitingNetworkParticipants = false;
     if (!TransitionLifecycle(politika::rules::MatchPhase::Active)) return;
     LastCommandFeedback = TEXT("All participants connected; the match is active.");
@@ -840,7 +842,8 @@ void APolitikaPrototypeMatch::RejectIntentAtIntake(APlayerController* Source, co
 {
     using namespace politika::rules;
     const uint64 Sequence = NextCommandSequence++;
-    OutcomeRoutes.Add(Sequence, {Source, Intent.ClientSequence, Intent.CorrelationId, MatchGeneration, Intent.OrderKind});
+    OutcomeRoutes.Add(Sequence, {Source, Intent.ClientSequence, Intent.CorrelationId, MatchGeneration, Intent.OrderKind,
+        !Source && IsOpponentSeat(ParticipantId)});
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("MP_COMMAND_REJECTED_AT_INTAKE participant=%u correlation=%u client_sequence=%u order=%u issuer=%llu rejection=%u server_sequence=%llu"),
         ParticipantId, Intent.CorrelationId, Intent.ClientSequence, Intent.OrderKind, Intent.IssuerEntityId,
@@ -876,14 +879,20 @@ bool APolitikaPrototypeMatch::SubmitControllerIntent(APlayerController* Source, 
         }
         return false;
     }
-    const uint32 ParticipantId = Binding->RuntimePlayerId;
+    return SubmitAuthorizedCommandIntent(Source, Binding->Sequence, Binding->RuntimePlayerId, Binding->bRemote, Intent);
+}
+
+bool APolitikaPrototypeMatch::SubmitAuthorizedCommandIntent(APlayerController* Source, politika::rules::ClientSequenceGuard& Sequence,
+    uint32 ParticipantId, bool bRemote, const FPolitikaNetCommandIntent& Intent)
+{
+    using namespace politika::rules;
     // 4-6. Protocol version, freshness (single-use client sequence) and payload shape.
     if (Intent.ProtocolVersion != static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol()))
     {
         RejectIntentAtIntake(Source, Intent, ParticipantId, OrderRejection::MalformedCommand);
         return true;
     }
-    if (const OrderResult Fresh = Binding->Sequence.Consume(Intent.ClientSequence); !Fresh)
+    if (const OrderResult Fresh = Sequence.Consume(Intent.ClientSequence); !Fresh)
     {
         RejectIntentAtIntake(Source, Intent, ParticipantId, Fresh.rejection);
         return true;
@@ -915,11 +924,12 @@ bool APolitikaPrototypeMatch::SubmitControllerIntent(APlayerController* Source, 
     APolitikaPrototypeUnit* Target = FindUnitByStableId(Intent.TargetEntityId);
     APolitikaPrototypeStructure* Structure = Target ? nullptr : FindStructureByStableId(Intent.TargetEntityId);
     const uint64 ExpectedSequence = NextCommandSequence;
-    OutcomeRoutes.Add(ExpectedSequence, {Source, Intent.ClientSequence, Intent.CorrelationId, MatchGeneration, Intent.OrderKind});
+    OutcomeRoutes.Add(ExpectedSequence, {Source, Intent.ClientSequence, Intent.CorrelationId, MatchGeneration, Intent.OrderKind,
+        !Source && IsOpponentSeat(ParticipantId)});
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("MP_COMMAND_RECEIVED participant=%u remote=%d correlation=%u client_sequence=%u order=%u issuer=%llu target=%llu generation_hint=%llu server_sequence=%llu"),
-        ParticipantId, Binding->bRemote ? 1 : 0, Intent.CorrelationId, Intent.ClientSequence, Intent.OrderKind,
+        ParticipantId, bRemote ? 1 : 0, Intent.CorrelationId, Intent.ClientSequence, Intent.OrderKind,
         Intent.IssuerEntityId, Intent.TargetEntityId, Intent.MatchGeneration, ExpectedSequence);
 #endif
     const uint64 AssignedSequence = SubmitCommand(ParticipantId, Issuer, Target, Decoded, Intent.IssuerEntityId,
@@ -932,6 +942,11 @@ void APolitikaPrototypeMatch::RouteCommandOutcome(const politika::rules::Command
 {
     FOutcomeRoute Route;
     if (!OutcomeRoutes.RemoveAndCopyValue(Outcome.sequence, Route)) return;
+    if (Route.bOpponent)
+    {
+        NoteOpponentCommandOutcome(Outcome, Route.ClientSequence);
+        return;
+    }
     APolitikaPrototypePlayerController* Controller = Cast<APolitikaPrototypePlayerController>(Route.Controller.Get());
     if (!Controller) return;
     FPolitikaNetCommandOutcome Message;

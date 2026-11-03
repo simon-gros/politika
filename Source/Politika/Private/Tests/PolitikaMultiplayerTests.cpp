@@ -5639,4 +5639,471 @@ bool FPolitikaMultiplayerWorksAlliesTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerOpponentTest,
+    "Politika.RTS.Multiplayer.Opponent",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// OPP-1: one server-run opponent, with no controller, through the intake a human's request uses.
+bool FPolitikaMultiplayerOpponentTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace po = politika::opponent;
+    const FName Map = TEXT("map.test.multiplayer_skirmish");
+    const auto Seat = [](FPolitikaMultiplayerFixture& F, uint32 Id)
+    {
+        return F.Match->RuntimeParticipants.FindByPredicate(
+            [Id](const FPolitikaPrototypeRuntimeParticipant& Candidate) { return Candidate.RuntimePlayerId == Id; });
+    };
+
+    // AI-01: every refusal is named, and leaves no reservation behind.
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, Map, true)) return false;
+        const uint64 Generation = F.Match->GetMatchGeneration();
+        const auto Refused = [&](uint32 Id, uint64 InGeneration, const TCHAR* Expected)
+        {
+            FName Failure;
+            TestFalse(FString::Printf(TEXT("AI-01 %s is refused"), Expected), F.Match->BindOpponentBrain(Id, InGeneration, Failure));
+            TestEqual(FString::Printf(TEXT("AI-01 %s is named"), Expected), Failure, FName(Expected));
+            TestEqual(FString::Printf(TEXT("AI-01 %s leaves no reservation"), Expected), F.Match->GetOpponentSeatCount(), 0u);
+        };
+        Refused(0, Generation, TEXT("OPP.BIND.PARTICIPANT_ZERO"));
+        Refused(99, Generation, TEXT("OPP.BIND.MISSING_SEAT"));
+        Refused(2, Generation + 1, TEXT("OPP.BIND.STALE_GENERATION"));
+        Refused(2, Generation - 1, TEXT("OPP.BIND.STALE_GENERATION"));
+        Seat(F, 2)->ControllerKind = EPolitikaPrototypeControllerKind::LocalHuman;
+        Refused(2, Generation, TEXT("OPP.BIND.LOCAL_HUMAN"));
+        Seat(F, 2)->ControllerKind = EPolitikaPrototypeControllerKind::RemoteHuman;
+        Refused(2, Generation, TEXT("OPP.BIND.REMOTE_HUMAN"));
+        Seat(F, 2)->ControllerKind = EPolitikaPrototypeControllerKind::AssignedOpponent;
+        const FName Faction = Seat(F, 2)->FactionId;
+        Seat(F, 2)->FactionId = F.Match->UnalignedSystemAuthority.FactionId;
+        Refused(2, Generation, TEXT("OPP.BIND.UNALIGNED"));
+        Seat(F, 2)->FactionId = Faction;
+        // A seat a connection holds, whatever its kind says.
+        APolitikaPrototypePlayerController* Remote = F.AddRemote();
+        FName Failure;
+        TestTrue(TEXT("AI-01 a human takes the first seat"), F.Match->BindController(Remote, Failure));
+        Seat(F, 1)->ControllerKind = EPolitikaPrototypeControllerKind::AssignedOpponent;
+        Refused(1, Generation, TEXT("OPP.BIND.HUMAN_BOUND"));
+        Seat(F, 1)->ControllerKind = EPolitikaPrototypeControllerKind::RemoteHuman;
+        // A client has no authority to ask with. There is no RPC for this at all.
+        F.Match->SetRole(ROLE_SimulatedProxy);
+        Refused(2, Generation, TEXT("OPP.BIND.NOT_AUTHORITY"));
+        F.Match->SetRole(ROLE_Authority);
+        // A valid seat binds once, and a second brain is refused without disturbing the first.
+        TestTrue(TEXT("AI-01 a valid opponent seat binds"), F.Match->BindOpponentBrain(2, Generation, Failure));
+        TestEqual(TEXT("AI-01 one seat is reserved"), F.Match->GetOpponentSeatCount(), 1u);
+        TestFalse(TEXT("AI-01 a duplicate brain is refused"), F.Match->BindOpponentBrain(2, Generation, Failure));
+        TestEqual(TEXT("AI-01 duplicate is named"), Failure, FName(TEXT("OPP.BIND.DUPLICATE")));
+        TestEqual(TEXT("AI-01 binding changes no seat kind"), Seat(F, 2)->ControllerKind, EPolitikaPrototypeControllerKind::AssignedOpponent);
+        TestEqual(TEXT("AI-01 binding changes no faction"), Seat(F, 2)->FactionId, Faction);
+        // The human bound first here, so the next check of the seats is the one that starts it.
+        F.Match->TryActivateNetworkMatch();
+        TestEqual(TEXT("AI-01 the match activates with one human and the brain"), F.Match->GetMatchPhase(), MatchPhase::Active);
+        // Once active there is nothing left to bind to.
+        F.Match->OpponentBrain.Reset();
+        Refused(2, Generation, TEXT("OPP.BIND.PHASE"));
+    }
+    // Only a dedicated server takes one.
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true)) return false;
+        FName Failure;
+        TestFalse(TEXT("AI-01 a listen session is refused"), F.Match->BindOpponentBrain(2, F.Match->GetMatchGeneration(), Failure));
+        TestEqual(TEXT("AI-01 listen is named"), Failure, FName(TEXT("OPP.BIND.NOT_DEDICATED")));
+    }
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), false)) return false;
+        FName Failure;
+        TestFalse(TEXT("AI-01 a standalone match is refused"), F.Match->BindOpponentBrain(2, F.Match->GetMatchGeneration(), Failure));
+        TestEqual(TEXT("AI-01 standalone is named"), Failure, FName(TEXT("OPP.BIND.NOT_DEDICATED")));
+    }
+
+    // The switch fails closed: no other seat is chosen for a bad value.
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, Map, true)) return false;
+        const auto Switch = [&](const TCHAR* Line, const TCHAR* Expected)
+        {
+            F.Match->OpponentSwitchForTest = Line;
+            FName Failure;
+            TestFalse(FString::Printf(TEXT("Switch '%s' is refused"), Line), F.Match->ResolveOpponentSeatSwitch(Failure));
+            TestEqual(FString::Printf(TEXT("Switch '%s' is named"), Line), Failure, FName(Expected));
+            TestEqual(FString::Printf(TEXT("Switch '%s' reserves nothing"), Line), F.Match->GetOpponentSeatCount(), 0u);
+        };
+        for (const TCHAR* Bad : {TEXT("-PolitikaMPOpponentSeat=x"), TEXT("-PolitikaMPOpponentSeat=-1"), TEXT("-PolitikaMPOpponentSeat=0"),
+            TEXT("-PolitikaMPOpponentSeat=2x"), TEXT("-PolitikaMPOpponentSeat=1.5"), TEXT("-PolitikaMPOpponentSeat=99999999999")})
+            Switch(Bad, TEXT("OPP.SEAT.MALFORMED"));
+        Switch(TEXT("-PolitikaMPOpponentSeat=1 -PolitikaMPOpponentSeat=2"), TEXT("OPP.SEAT.CONFLICT"));
+        Switch(TEXT("-PolitikaMPOpponentSeat=9"), TEXT("OPP.BIND.MISSING_SEAT"));
+        // Without the switch nothing happens at all.
+        F.Match->OpponentSwitchForTest = TEXT("-unattended");
+        FName Failure;
+        TestTrue(TEXT("No switch is not a failure"), F.Match->ResolveOpponentSeatSwitch(Failure));
+        TestFalse(TEXT("No switch makes no brain"), F.Match->OpponentBrain.IsSet());
+        TestEqual(TEXT("No switch leaves both seats to humans"), F.Match->GetMaxRemoteHumans(), 2u);
+        F.Match->RunOpponentDecision();
+        TestEqual(TEXT("A session with no brain still waits for a second human"), F.Match->GetMatchPhase(), MatchPhase::Starting);
+        F.Match->OpponentSwitchForTest = TEXT("-PolitikaMPOpponentSeat=2 -PolitikaMPOpponentSeat=2");
+        TestTrue(TEXT("A repeated equal switch binds once"), F.Match->ResolveOpponentSeatSwitch(Failure));
+        TestEqual(TEXT("Which seat"), F.Match->OpponentBrain->ParticipantId, 2u);
+    }
+
+    // The session: a reserved seat is not open, needs no controller and counts for activation.
+    for (const uint32 Reserved : {2u, 1u})
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("1v1"), true, Map, true)) return false;
+        const uint32 Human = Reserved == 2u ? 1u : 2u;
+        FName Failure;
+        TestTrue(TEXT("The seat is reserved"), F.Match->BindOpponentBrain(Reserved, F.Match->GetMatchGeneration(), Failure));
+        TestEqual(TEXT("One human seat remains"), F.Match->GetMaxRemoteHumans(), 1u);
+        TestEqual(TEXT("The brain alone does not start the match"), F.Match->GetMatchPhase(), MatchPhase::Starting);
+        TestEqual(TEXT("No binding exists for the brain"), F.Match->ParticipantBindings.Num(), 0);
+        TestTrue(TEXT("The open seat admits"), F.Match->CanAdmitRemoteParticipant(Failure));
+        APolitikaPrototypePlayerController* Remote = F.AddRemote();
+        TestTrue(TEXT("The human binds"), F.Match->BindController(Remote, Failure));
+        TestEqual(TEXT("The human gets the other seat"), F.Match->GetBoundParticipantId(Remote), Human);
+        TestEqual(TEXT("The match is active with one human and one brain"), F.Match->GetMatchPhase(), MatchPhase::Active);
+        TestEqual(TEXT("The reserved seat stays an opponent"), Seat(F, Reserved)->ControllerKind, EPolitikaPrototypeControllerKind::AssignedOpponent);
+        APolitikaPrototypePlayerController* Late = F.AddRemote();
+        TestFalse(TEXT("A late connection is refused"), F.Match->CanAdmitRemoteParticipant(Failure));
+        TestFalse(TEXT("A late connection cannot take the seat"), F.Match->BindController(Late, Failure));
+        TestEqual(TEXT("The late connection holds nothing"), F.Match->GetBoundParticipantId(Late), 0u);
+    }
+    // While the match is starting a second connection finds the session full, not the brain's seat.
+    {
+        FPolitikaMultiplayerFixture F(*this);
+        if (!F.Create(TEXT("2v2"), true, Map, true)) return false;
+        FName Failure;
+        TestTrue(TEXT("A 2v2 seat is reserved"), F.Match->BindOpponentBrain(2, F.Match->GetMatchGeneration(), Failure));
+        TestEqual(TEXT("Three human seats remain"), F.Match->GetMaxRemoteHumans(), 3u);
+        TArray<uint32> Taken;
+        for (int32 Index = 0; Index < 3; ++Index)
+        {
+            APolitikaPrototypePlayerController* Remote = F.AddRemote();
+            TestTrue(TEXT("A human binds"), F.Match->BindController(Remote, Failure));
+            Taken.Add(F.Match->GetBoundParticipantId(Remote));
+        }
+        TestFalse(TEXT("No human holds the reserved seat"), Taken.Contains(2u));
+        TestEqual(TEXT("All seats filled, it starts"), F.Match->GetMatchPhase(), MatchPhase::Active);
+    }
+
+    // A running match.
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true, Map, true)) return false;
+    FName Failure;
+    const uint64 Generation = F.Match->GetMatchGeneration();
+    if (!TestTrue(TEXT("The brain binds"), F.Match->BindOpponentBrain(2, Generation, Failure))) return false;
+    APolitikaPrototypePlayerController* Human = F.AddRemote();
+    if (!TestTrue(TEXT("The human binds"), F.Match->BindController(Human, Failure))) return false;
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(Map));
+    F.Match->InitializeEconomy();
+    const pe::Account* Account = F.Match->GetEconomy().Find(2);
+    const pe::Account* HumanAccount = F.Match->GetEconomy().Find(1);
+    if (!TestNotNull(TEXT("AI seat has an account"), Account) || !TestNotNull(TEXT("Human has an account"), HumanAccount)) return false;
+    TestTrue(TEXT("The opponent starts as a human does"), Account->available == HumanAccount->available
+        && Account->rations == HumanAccount->rations && Account->hasProducer && Account->producerPowered
+        && Account->goldSource.present == HumanAccount->goldSource.present);
+    APolitikaPrototypeUnit* Own = F.AddUnit(2, FVector2D(600, 600));
+    APolitikaPrototypeUnit* Enemy = F.AddUnit(1, FVector2D(-600, -600));
+    if (!TestNotNull(TEXT("Own unit"), Own) || !TestNotNull(TEXT("Enemy unit"), Enemy)) return false;
+
+    // A human keeps every existing restriction on the opponent's units.
+    TestFalse(TEXT("A human seat cannot select the opponent's unit"), F.Match->IsCommandableUnit(Own, 1));
+    TestFalse(TEXT("The opponent's own seat is still not selectable"), F.Match->IsCommandableUnit(Own, 2));
+    F.Outcomes.Reset();
+    F.Match->SubmitControllerIntent(Human, F.Intent(Human, OrderKind::Stop, Own->GetStableId()));
+    F.Step();
+    TestTrue(TEXT("A human's order on the opponent's unit is refused"), F.Outcomes.Num() == 1 && !F.Outcomes[0].accepted
+        && F.Outcomes[0].rejection == OrderRejection::NotOwned);
+    TestEqual(TEXT("The unit's order is untouched"), Own->GetCurrentOrder(), EPolitikaPrototypeOrder::Idle);
+    // A forged economy request cannot name the seat: the payload has no participant field.
+    {
+        FPolitikaNetEconomyIntent Forged;
+        Forged.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Forged.Op = static_cast<uint8>(pe::EconomyOp::BuyFood);
+        Forged.ClientSequence = F.NextSequence.FindOrAdd(Human, 1)++;
+        Forged.CorrelationId = F.NextCorrelation++;
+        Forged.MatchGeneration = Generation;
+        const int64 Before = Account->available;
+        const int64 HumanBefore = HumanAccount->available;
+        F.Match->SubmitEconomyIntent(Human, Forged);
+        F.Step();
+        TestEqual(TEXT("A human's purchase spends the human's money"), HumanAccount->available, HumanBefore - pe::kFoodPurchaseCents);
+        TestEqual(TEXT("and none of the opponent's"), Account->available, Before);
+    }
+
+    const int32 Protocol = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+    uint32 NextProbeSequence = 1000;
+    const auto Economy = [&](pe::EconomyOp Op, uint64 InGeneration = 0, int32 InProtocol = 0)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = InProtocol != 0 ? InProtocol : Protocol;
+        Intent.Op = static_cast<uint8>(Op);
+        Intent.ClientSequence = NextProbeSequence++;
+        Intent.CorrelationId = Intent.ClientSequence;
+        Intent.MatchGeneration = InGeneration != 0 ? InGeneration : Generation;
+        return Intent;
+    };
+    const auto Command = [&](uint64 Issuer, uint64 InGeneration = 0, uint32 Sequence = 0)
+    {
+        FPolitikaNetCommandIntent Intent;
+        Intent.ProtocolVersion = Protocol;
+        const Order Proposed = AttackMoveOrder{{100.0, 100.0}};
+        Intent.OrderKind = static_cast<uint8>(Proposed.index());
+        Intent.DestinationX = 100.0;
+        Intent.DestinationY = 100.0;
+        Intent.IssuerEntityId = Issuer;
+        Intent.ClientSequence = Sequence != 0 ? Sequence : NextProbeSequence++;
+        Intent.CorrelationId = Intent.ClientSequence;
+        Intent.MatchGeneration = InGeneration != 0 ? InGeneration : Generation;
+        return Intent;
+    };
+
+    // AI-03: a brain's request runs the shared checks. None of these changes anything.
+    struct { int64 Available = 0; int64 Rations = 0; int64 Spent = 0; int32 Queue = 0; } Before;
+    const auto Capture = [&]
+    {
+        Before.Available = Account->available;
+        Before.Rations = Account->rations;
+        Before.Spent = Account->spent;
+        Before.Queue = static_cast<int32>(Account->queue.size());
+    };
+    const auto Unchanged = [&](const TCHAR* What)
+    {
+        TestTrue(What, Before.Available == Account->available && Before.Rations == Account->rations
+            && Before.Spent == Account->spent && Before.Queue == static_cast<int32>(Account->queue.size()));
+    };
+    Capture();
+    const auto EconomyRefusal = [&](const FPolitikaNetEconomyIntent& Intent, const TCHAR* Name, pe::EconomyRejection Expected)
+    {
+        po::Memory& Memory = F.Match->OpponentBrain->Memory;
+        Memory.pendingEconomy = Intent.ClientSequence;
+        F.Match->SubmitOpponentEconomy(Intent);
+        F.Step();
+        TestEqual(FString::Printf(TEXT("AI-03 %s comes back with its reason"), Name), Memory.lastEconomyRejection, Expected);
+        TestEqual(FString::Printf(TEXT("AI-05 %s starts a bounded cooldown"), Name), Memory.pendingEconomy, 0u);
+        Memory.recoverUntil = 0;
+    };
+    EconomyRefusal(Economy(pe::EconomyOp::BuyFood, Generation + 1), TEXT("a stale generation"), pe::EconomyRejection::StaleMatch);
+    EconomyRefusal(Economy(pe::EconomyOp::BuyFood, 0, Protocol + 1), TEXT("a wrong protocol"), pe::EconomyRejection::MalformedCommand);
+    EconomyRefusal(Economy(pe::EconomyOp::SellGold), TEXT("a sale with nothing to sell"), pe::EconomyRejection::NothingToSell);
+    {
+        FPolitikaNetEconomyIntent Replay = Economy(pe::EconomyOp::BuyFood);
+        Replay.ClientSequence = NextProbeSequence - 2;
+        Replay.CorrelationId = Replay.ClientSequence;
+        EconomyRefusal(Replay, TEXT("a repeated sequence"), pe::EconomyRejection::DuplicateCommand);
+    }
+    Unchanged(TEXT("AI-05 refused economy requests change nothing"));
+    // No outcome of the brain's reaches a connection.
+    TestFalse(TEXT("AI-09 no brain outcome reaches a connection"), F.Match->TestEconomyOutcomes.ContainsByPredicate(
+        [](const auto& Entry) { return Entry.Value.ClientSequence >= 1000u; }));
+    // The queue bound is the human's: more than it holds are refused, and the money waits.
+    {
+        F.Match->OpponentBrain->Memory.recoverUntil = 0;
+        const int64 Available = Account->available;
+        for (int32 Index = 0; Index < static_cast<int32>(pe::kMaxPendingRequests) + 2; ++Index)
+            F.Match->SubmitOpponentEconomy(Economy(pe::EconomyOp::SellGold));
+        int32 Waiting = 0;
+        for (const auto& Request : F.Match->PendingEconomyRequests) Waiting += Request.ParticipantId == 2u ? 1 : 0;
+        TestEqual(TEXT("AI-03 the pending economy bound holds"), Waiting, static_cast<int32>(pe::kMaxPendingRequests));
+        F.Step();
+        TestEqual(TEXT("AI-03 no sale happened"), Account->available, Available);
+    }
+
+    F.Outcomes.Reset();
+    F.Match->SubmitOpponentCommand(Command(Enemy->GetStableId()));
+    F.Step();
+    TestTrue(TEXT("AI-03 the brain cannot order another participant's unit"), F.Outcomes.Num() == 1 && !F.Outcomes[0].accepted
+        && F.Outcomes[0].rejection == OrderRejection::NotOwned);
+    TestEqual(TEXT("AI-03 that unit's order is untouched"), Enemy->GetCurrentOrder(), EPolitikaPrototypeOrder::Idle);
+    F.Outcomes.Reset();
+    F.Match->SubmitOpponentCommand(Command(Own->GetStableId(), Generation + 1));
+    F.Step();
+    TestTrue(TEXT("AI-03 a stale generation is refused at admission"), F.Outcomes.Num() == 1 && !F.Outcomes[0].accepted
+        && F.Outcomes[0].rejection == OrderRejection::StaleMatch);
+    F.Outcomes.Reset();
+    const uint32 Repeated = NextProbeSequence - 1;
+    F.Match->SubmitOpponentCommand(Command(Own->GetStableId(), 0, Repeated));
+    F.Step();
+    TestTrue(TEXT("AI-03 a repeated sequence is refused"), F.Outcomes.Num() == 1 && !F.Outcomes[0].accepted
+        && F.Outcomes[0].rejection == OrderRejection::DuplicateCommand);
+    // The fixture world has no navigation, so an admitted move ends as a route failure: the path a
+    // real failure takes, not a successful route, which is proven in the packaged session only.
+    F.Outcomes.Reset();
+    {
+        po::Memory& Memory = F.Match->OpponentBrain->Memory;
+        Memory.advanced[Memory.advancedCount++] = Own->GetStableId();
+        F.Match->SubmitOpponentCommand(Command(Own->GetStableId()));
+        const uint64 Step = F.Match->SimulationStepsExecuted;
+        F.Step();
+        TestTrue(TEXT("AI-03 a valid order passes admission"), F.Outcomes.Num() == 1 && F.Outcomes[0].accepted);
+        TestFalse(TEXT("AI-05 a failed route frees the unit"), Memory.HasAdvanced(Own->GetStableId()));
+        TestTrue(TEXT("AI-05 a failed route starts the longer cooldown"), Memory.recoverUntil > Step + po::kRecoveryCooldownSteps);
+        Memory.recoverUntil = 0;
+    }
+
+    // AI-04: the snapshot holds its own state and the declared start, and moving the enemy changes nothing.
+    {
+        const po::Snapshot First = F.Match->BuildOpponentSnapshot();
+        TestEqual(TEXT("AI-04 only its own units are in it"), First.livingUnits, F.Match->CountLivingUnits(2));
+        for (size_t Index = 0; Index < First.unitCount; ++Index)
+            TestTrue(TEXT("AI-04 no enemy unit is in it"), First.units[Index].id != Enemy->GetStableId());
+        const FPolitikaPrototypePlayerSlot* Slot = F.Match->MapDefinition->PlayerSlots.FindByPredicate(
+            [&](const FPolitikaPrototypePlayerSlot& Candidate) { return Candidate.SlotId == Seat(F, 1)->SlotId; });
+        if (TestNotNull(TEXT("AI-04 the enemy seat has an authored start"), Slot))
+        {
+            TestTrue(TEXT("AI-04 the target is that authored start"), First.hasAdvanceTarget
+                && First.advanceTarget.x == Slot->StartLocation.X - F.Match->PlayableMin.X
+                && First.advanceTarget.y == Slot->StartLocation.Y - F.Match->PlayableMin.Y);
+        }
+        const FVector EnemyAt = Enemy->GetActorLocation();
+        Enemy->SetActorLocation(FVector(1500, 1500, EnemyAt.Z));
+        F.Match->UpdateTeamVisibility();
+        const po::Snapshot Second = F.Match->BuildOpponentSnapshot();
+        TestTrue(TEXT("AI-04 where the enemy stands is not observable"), Second.hasAdvanceTarget == First.hasAdvanceTarget
+            && Second.advanceTarget.x == First.advanceTarget.x && Second.advanceTarget.y == First.advanceTarget.y
+            && Second.unitCount == First.unitCount && Second.available == First.available);
+        Enemy->SetActorLocation(EnemyAt);
+    }
+
+    // The schedule: one evaluation every twenty steps, whatever a Tick's step count.
+    {
+        // Clear the air: the probes above used up sequence numbers, not memory.
+        po::Memory& Memory = F.Match->OpponentBrain->Memory;
+        Memory = po::NewMemory(Generation);
+        Memory.nextSequence = NextProbeSequence;
+        F.Match->OpponentBrain->Sequence.last_seen = NextProbeSequence - 1;
+        while (!po::IsDecisionStep(F.Match->SimulationStepsExecuted + 1)) F.Step();
+        const int64 Money = Account->available;
+        const int64 Spent = Account->spent;
+        const int32 Queued = static_cast<int32>(Account->queue.size());
+        F.Step();
+        TestEqual(TEXT("It decides on the boundary"), Memory.lastDecisionStep, F.Match->SimulationStepsExecuted);
+        TestEqual(TEXT("It wants a rifleman and has asked"), Memory.lastBranch, po::Branch::Produce);
+        TestEqual(TEXT("Asking moves no money"), Account->available, Money);
+        const uint64 Decided = Memory.lastDecisionStep;
+        F.Step();
+        const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
+        TestEqual(TEXT("AI-06 the next step's economy phase charges once"), Account->spent, Spent + Rifleman.cost);
+        TestEqual(TEXT("AI-06 and queues one"), static_cast<int32>(Account->queue.size()), Queued + 1);
+        TestEqual(TEXT("Its outcome came back"), Memory.pendingEconomy, 0u);
+        F.Step(18);
+        TestEqual(TEXT("No evaluation inside the interval"), Memory.lastDecisionStep, Decided);
+        F.Step();
+        TestEqual(TEXT("The next one is twenty steps on"), Memory.lastDecisionStep, Decided + po::kDecisionIntervalSteps);
+        // A long frame runs several steps, and still one evaluation for each boundary.
+        const uint64 Start = F.Match->SimulationStepsExecuted;
+        const uint32 Sequences = Memory.nextSequence;
+        F.Match->Tick(0.25f);
+        TestEqual(TEXT("A long frame runs five steps"), F.Match->SimulationStepsExecuted, Start + 5);
+        TestTrue(TEXT("It proposes at most one request per boundary"), Memory.nextSequence - Sequences <= 1);
+    }
+
+    // AI-05: an unpowered producer is an observed reason, not a retried request.
+    {
+        po::Memory& Memory = F.Match->OpponentBrain->Memory;
+        F.Match->Economy.SetGeneratorOnline(2, false);
+        const uint64 Boundary = (F.Match->SimulationStepsExecuted / po::kDecisionIntervalSteps + 2) * po::kDecisionIntervalSteps;
+        F.Step(static_cast<int32>(Boundary - F.Match->SimulationStepsExecuted));
+        TestFalse(TEXT("AI-05 the producer is down"), Account->producerPowered);
+        const po::Snapshot Now = F.Match->BuildOpponentSnapshot();
+        TestFalse(TEXT("AI-05 the opponent can see its own outage"), Now.producerPowered);
+        const uint32 Sequences = Memory.nextSequence;
+        const int64 Spent = Account->spent;
+        F.Step(static_cast<int32>(po::kDecisionIntervalSteps * 3));
+        TestEqual(TEXT("AI-05 it spends nothing"), Account->spent, Spent);
+        TestEqual(TEXT("AI-05 it asks for nothing"), Memory.nextSequence, Sequences);
+        F.Match->Economy.SetGeneratorOnline(2, true);
+    }
+
+    // AI-07: the match ending retires the brain and its own requests, and nobody else's.
+    {
+        po::Memory& Memory = F.Match->OpponentBrain->Memory;
+        Memory.recoverUntil = 0;
+        const int64 Spent = Account->spent;
+        Memory.pendingEconomy = NextProbeSequence;
+        F.Match->OpponentBrain->Sequence.last_seen = NextProbeSequence - 1;
+        F.Match->SubmitOpponentEconomy(Economy(pe::EconomyOp::BuyFood));
+        F.Match->SubmitOpponentCommand(Command(Own->GetStableId()));
+        const int32 HumanOrders = 1;
+        F.Match->SubmitControllerIntent(Human, F.Intent(Human, OrderKind::Stop, Enemy->GetStableId()));
+        int32 Mine = 0;
+        int32 Theirs = 0;
+        for (const auto& Pending : F.Match->PendingOrders) (Pending.Request.participant_id == 2u ? Mine : Theirs) += 1;
+        TestEqual(TEXT("AI-07 the brain has an order pending"), Mine, 1);
+        TestEqual(TEXT("AI-07 so has the human"), Theirs, HumanOrders);
+        F.Match->RetireOpponentBrain(TEXT("automation"));
+        Mine = 0;
+        Theirs = 0;
+        for (const auto& Pending : F.Match->PendingOrders) (Pending.Request.participant_id == 2u ? Mine : Theirs) += 1;
+        TestEqual(TEXT("AI-07 retiring clears the brain's order"), Mine, 0);
+        TestEqual(TEXT("AI-07 and leaves the human's"), Theirs, HumanOrders);
+        TestFalse(TEXT("AI-07 no economy request of the brain's remains"), F.Match->PendingEconomyRequests.ContainsByPredicate(
+            [](const auto& Request) { return Request.ParticipantId == 2u; }));
+        const uint32 Sequences = F.Match->OpponentBrain->Memory.nextSequence;
+        F.Step(static_cast<int32>(po::kDecisionIntervalSteps * 2));
+        TestEqual(TEXT("AI-07 no decision runs after retirement"), F.Match->OpponentBrain->Memory.nextSequence, Sequences);
+        TestEqual(TEXT("AI-07 no stale request settles"), Account->spent, Spent);
+        FPolitikaNetEconomyIntent Late = Economy(pe::EconomyOp::BuyFood);
+        TestFalse(TEXT("AI-07 a retired brain has no way in"), F.Match->SubmitOpponentEconomy(Late));
+        TestFalse(TEXT("AI-07 for orders either"), F.Match->SubmitOpponentCommand(Command(Own->GetStableId())));
+        // Retiring twice reports once and changes nothing.
+        F.Match->RetireOpponentBrain(TEXT("automation_again"));
+        TestTrue(TEXT("AI-07 the match can still end"), F.Match->TransitionLifecycle(MatchPhase::Terminal));
+    }
+
+    // AI-07 through the real transition, with a request still waiting.
+    {
+        FPolitikaMultiplayerFixture G(*this);
+        if (!G.Create(TEXT("1v1"), true, Map, true)) return false;
+        const uint64 GGeneration = G.Match->GetMatchGeneration();
+        if (!TestTrue(TEXT("A brain binds"), G.Match->BindOpponentBrain(2, GGeneration, Failure))) return false;
+        APolitikaPrototypePlayerController* GHuman = G.AddRemote();
+        TestTrue(TEXT("A human binds"), G.Match->BindController(GHuman, Failure));
+        G.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+        G.Match->ContentCatalog = Catalog;
+        G.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(Map));
+        G.Match->InitializeEconomy();
+        FPolitikaNetEconomyIntent Request;
+        Request.ProtocolVersion = Protocol;
+        Request.Op = static_cast<uint8>(pe::EconomyOp::BuyFood);
+        Request.ClientSequence = 1;
+        Request.CorrelationId = 1;
+        Request.MatchGeneration = GGeneration;
+        G.Match->OpponentBrain->Memory.pendingEconomy = 1;
+        G.Match->SubmitOpponentEconomy(Request);
+        TestTrue(TEXT("AI-07 the request waits"), !G.Match->PendingEconomyRequests.IsEmpty());
+        TestTrue(TEXT("AI-07 Terminal is legal"), G.Match->TransitionLifecycle(MatchPhase::Terminal));
+        TestTrue(TEXT("AI-07 leaving Active retires the brain"), G.Match->OpponentBrain->bRetired);
+        TestTrue(TEXT("AI-07 its request is gone"), G.Match->PendingEconomyRequests.IsEmpty());
+        const uint64 Steps = G.Match->SimulationStepsExecuted;
+        G.Step(40);
+        TestEqual(TEXT("AI-07 the simulation does not advance after Terminal"), G.Match->SimulationStepsExecuted, Steps);
+        G.Match->RunOpponentDecision();
+        TestEqual(TEXT("AI-07 calling the decision directly does nothing"), G.Match->OpponentBrain->Memory.nextSequence, 1u);
+
+        // AI-08: a new coordinator has a new brain: its memory and sequences start over.
+        FPolitikaMultiplayerFixture H(*this);
+        if (!H.Create(TEXT("1v1"), true, Map, true)) return false;
+        H.Match->MatchGeneration = GGeneration + 1;
+        TestFalse(TEXT("AI-08 no brain carries over"), H.Match->OpponentBrain.IsSet());
+        TestFalse(TEXT("AI-08 a previous generation cannot bind"), H.Match->BindOpponentBrain(2, GGeneration, Failure));
+        TestTrue(TEXT("AI-08 the new generation binds"), H.Match->BindOpponentBrain(2, GGeneration + 1, Failure));
+        TestEqual(TEXT("AI-08 it starts at sequence one"), H.Match->OpponentBrain->Memory.nextSequence, 1u);
+        TestEqual(TEXT("AI-08 with an unused guard"), H.Match->OpponentBrain->Sequence.last_seen, 0u);
+        TestFalse(TEXT("AI-08 and not retired"), H.Match->OpponentBrain->bRetired);
+        TestEqual(TEXT("AI-08 with its own generation"), H.Match->OpponentBrain->Generation, GGeneration + 1);
+    }
+    return true;
+}
+
 #endif

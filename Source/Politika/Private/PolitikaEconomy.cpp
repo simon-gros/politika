@@ -1046,6 +1046,7 @@ void APolitikaPrototypeMatch::RejectEconomyIntent(APlayerController* Source, con
     const pe::Account* Account = Economy.Find(ParticipantId);
     SendEconomyOutcome(Source, Intent, Rejection, 0, Account ? Account->available : 0,
         Account ? static_cast<int32>(Account->queue.size()) : 0);
+    NoteOpponentEconomyOutcome(Source, ParticipantId, Intent, Rejection);
 }
 
 bool APolitikaPrototypeMatch::SubmitEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent)
@@ -1062,13 +1063,19 @@ bool APolitikaPrototypeMatch::SubmitEconomyIntent(APlayerController* Source, con
             SendEconomyOutcome(Source, Intent, EconomyRejection::Unauthorized, 0, 0, 0);
         return false;
     }
-    const uint32 ParticipantId = Binding->RuntimePlayerId;
+    return SubmitAuthorizedEconomyIntent(Source, Binding->Sequence, Binding->RuntimePlayerId, Intent);
+}
+
+bool APolitikaPrototypeMatch::SubmitAuthorizedEconomyIntent(APlayerController* Source, politika::rules::ClientSequenceGuard& Sequence,
+    uint32 ParticipantId, const FPolitikaNetEconomyIntent& Intent)
+{
+    using pe::EconomyRejection;
     if (Intent.ProtocolVersion != static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol()))
     {
         RejectEconomyIntent(Source, Intent, ParticipantId, EconomyRejection::MalformedCommand);
         return true;
     }
-    if (const politika::rules::OrderResult Fresh = Binding->Sequence.Consume(Intent.ClientSequence); !Fresh)
+    if (const politika::rules::OrderResult Fresh = Sequence.Consume(Intent.ClientSequence); !Fresh)
     {
         RejectEconomyIntent(Source, Intent, ParticipantId,
             Fresh.rejection == politika::rules::OrderRejection::DuplicateCommand
@@ -1463,6 +1470,7 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
         if (Op == pe::EconomyOp::SellOil) LogHarvest(TEXT("sale"), Request.ParticipantId, 0, pe::Resource::Oil, Result.sale.quantity, Result.sale.gross, Result.sale.fee, Step);
         SendEconomyOutcome(Source, Request.Intent, pe::EconomyRejection::None, Result.amount, Result.available,
             static_cast<int32>(Result.queued), static_cast<int32>(Result.sale.quantity));
+        NoteOpponentEconomyOutcome(Source, Request.ParticipantId, Request.Intent, pe::EconomyRejection::None);
     }
 
     // Harvesters after requests, so gold delivered in this step can be sold from the next one.

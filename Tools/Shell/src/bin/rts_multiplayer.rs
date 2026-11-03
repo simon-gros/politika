@@ -18338,6 +18338,871 @@ fn economy_limits_session(options: &DedicatedOptions, report: &mut Report) -> Re
     result
 }
 
+// OPP-1: the first opponent. One rendered human client and a server-run opponent on seat 2, with real
+// input for the human. The opening reserve is lowered so the opponent has to buy food within the
+// session, and an outage takes its generator 10 steps after its first purchase is admitted.
+const OPP_SEAT_SWITCH: &str = "-PolitikaMPOpponentSeat=2";
+const OPP_FOOD_SWITCH: &str = "-PolitikaMPEconomyStartFood=2:125";
+const OPP_OUTAGE_OFFSET_STEPS: i64 = 10;
+const OPP_OUTAGE_STEPS: i64 = 120;
+const OPP_RIFLEMAN_CENTS: i64 = 36_000;
+const OPP_FOOD_CENTS: i64 = 5_000;
+const OPP_TRAINING_STEPS: i64 = 200;
+// Off the opponent's line from its start to seat 1's, outside rifle range of it, and near the objective.
+const OPP_PARKED: (f64, f64) = (-900.0, 700.0);
+const OPP_OBJECTIVE: (f64, f64) = (0.0, 150.0);
+const OPP_PROBE_PARKED: usize = 0;
+const OPP_PROBE_OBJECTIVE: usize = 1;
+// Everything up to here is compared between runs. It covers the whole cycle and the first combat. The
+// human's timing starts to matter only when the reserve soldier reaches the objective, after this.
+const OPP_TRACE_LAST_STEP: i64 = 900;
+
+fn opp_generation_lines<'a>(text: &'a str, marker: &str, generation: &str) -> Vec<&'a str> {
+    let tag = format!("generation={generation}");
+    text.lines()
+        .filter(|l| l.contains(marker) && l.split_whitespace().any(|token| token == tag.as_str()))
+        .collect()
+}
+
+fn opp_decisions<'a>(text: &'a str, generation: &str) -> Vec<&'a str> {
+    opp_generation_lines(text, "RTS_OPPONENT_DECISION", generation)
+}
+
+/// The marker onward, without the log's timestamps.
+fn opp_body(line: &str, marker: &str) -> String {
+    line.find(marker)
+        .map_or_else(|| line.trim().to_owned(), |at| line[at..].trim().to_owned())
+}
+
+/// The opponent's whole story up to a fixed step, for comparing two runs. server_sequence counts every
+/// participant's commands, so it is the one field removed.
+fn opp_trace(text: &str, generation: &str) -> String {
+    let markers = [
+        "RTS_OPPONENT_DECISION",
+        "RTS_OPPONENT_OUTCOME",
+        "RTS_ECONOMY_TX participant=2",
+        "RTS_FOOD_TX participant=2",
+        "RTS_HARVEST_TX participant=2",
+        "RTS_POWER_STATE participant=2",
+        "RTS_PRODUCTION_SPAWN participant=2",
+    ];
+    let mut trace = String::new();
+    for line in text.lines() {
+        let Some(marker) = markers.iter().find(|m| line.contains(*m)) else {
+            continue;
+        };
+        if field(line, "generation") != Some(generation)
+            || econ_int(line, "step") > OPP_TRACE_LAST_STEP
+        {
+            continue;
+        }
+        let body = opp_body(line, marker);
+        let kept: Vec<&str> = body
+            .split_whitespace()
+            .filter(|token| !token.starts_with("server_sequence="))
+            .collect();
+        trace.push_str(&kept.join(" "));
+        trace.push('\n');
+    }
+    trace
+}
+
+fn opp_invalid_switch(
+    options: &DedicatedOptions,
+    report: &mut Report,
+    id: &str,
+    value: &str,
+    reason: &str,
+    port: u16,
+) -> Result<(), String> {
+    let mut args = server_args(port, "1v1");
+    args.push(format!("-PolitikaMPOpponentSeat={value}"));
+    let label = format!("server-switch-{}", id.to_lowercase());
+    let mut server = Game::launch_server(&options.server, &label, &options.client.evidence, &args)?;
+    let start = Instant::now();
+    let mut status = None;
+    while start.elapsed() < Duration::from_secs(150) {
+        if let Ok(Some(code)) = server.child.try_wait() {
+            status = Some(code);
+            break;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let text = server.text();
+    report.verdict(
+        id,
+        status.and_then(|s| s.code()) == Some(3)
+            && text.contains("MP_DEDICATED_ADMISSION_FAILED")
+            && text.contains(&format!("RTS_OPPONENT_BIND_REFUSED participant={value}"))
+            && text.contains(&format!("reason={reason}"))
+            && !text.contains("RTS_OPPONENT_BOUND")
+            && !text.contains("MP_MATCH_AWAITING_PARTICIPANTS")
+            && !text.contains("\"code\":\"InvalidLaunchOptions\""),
+        format!("value={value} exit={status:?} expected_reason={reason}"),
+    );
+    server.stop();
+    Ok(())
+}
+
+fn opponent_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.retain(|a| a != NO_STARTING_HARVESTERS);
+    args.push(STARTING_HARVESTERS.to_owned());
+    args.push(OPP_SEAT_SWITCH.to_owned());
+    args.push(OPP_FOOD_SWITCH.to_owned());
+    args.push(format!(
+        "-PolitikaMPPowerOutage={OPP_OUTAGE_OFFSET_STEPS}:{OPP_OUTAGE_STEPS}"
+    ));
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    let server_pid = server.pid();
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    report.verdict(
+        "OPP-P02-ONE-BRAIN-BOUND-TO-SEAT-2",
+        count_lines(&server.text(), &["RTS_OPPONENT_BOUND"]) == 1
+            && count_lines(&server.text(), &["RTS_OPPONENT_BOUND participant=2 "]) == 1
+            && count_lines(&server.text(), &["RTS_OPPONENT_BIND_REFUSED"]) == 0
+            && econ_int(&awaiting, "remote_seats") == 1,
+        format!(
+            "{} | {}",
+            server
+                .text()
+                .lines()
+                .find(|l| l.contains("RTS_OPPONENT_BOUND"))
+                .unwrap_or("no RTS_OPPONENT_BOUND")
+                .trim(),
+            awaiting.trim()
+        ),
+    );
+
+    let display = Display::start(evidence, "client-a")?;
+    let probes = format!(
+        "-PolitikaMPGroundProbe={}:{}/{}:{}",
+        OPP_PARKED.0, OPP_PARKED.1, OPP_OBJECTIVE.0, OPP_OBJECTIVE.1
+    );
+    // A hostile client: its sweep sends forged orders for every small id it cannot see, over the real RPC.
+    let mut client_arguments = client_args(client_options, true, true, false);
+    client_arguments.push(probes.clone());
+    let mut client = Game::launch(
+        &client_options.binary,
+        "client-a",
+        evidence,
+        &client_arguments,
+        Some(&display.name()),
+    )?;
+    report.fact("client_a_command", client.command.join(" "));
+    let bound = server.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    )?;
+    let active = server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    report.verdict(
+        "OPP-P03-THE-MATCH-STARTS-WITH-ONE-HUMAN-AND-THE-BRAIN",
+        field(&active, "participants") == Some("1")
+            && field(&active, "remote") == Some("1")
+            && field(&bound, "kind") == Some("RemoteHuman"),
+        format!("{} | {}", bound.trim(), active.trim()),
+    );
+    client.wait(
+        &[
+            "MP_CLIENT_MATCH_OBSERVED",
+            "map=map.test.multiplayer_skirmish",
+        ],
+        Duration::from_secs(60),
+    )?;
+    client.attach_window()?;
+
+    let result = (|| -> Result<(), String> {
+        let text = server.text();
+        let opening = [
+            "RTS_ECONOMY_START participant=2",
+            "RTS_POWER_START participant=2",
+            "RTS_GOLD_START participant=2",
+            "RTS_FOOD_START participant=2",
+            "RTS_HARVESTER_START participant=2",
+        ];
+        let lines: Vec<String> = opening
+            .iter()
+            .filter_map(|m| text.lines().find(|l| l.contains(m)).map(str::to_owned))
+            .collect();
+        let human_start = text
+            .lines()
+            .find(|l| l.contains("RTS_ECONOMY_START participant=1"))
+            .unwrap_or("");
+        report.verdict(
+            "OPP-P04-IT-STARTS-WITH-WHAT-A-HUMAN-HAS",
+            lines.len() == opening.len()
+                && econ_int(&lines[0], "producer") == 1
+                && econ_int(&lines[0], "available") == econ_int(human_start, "available")
+                && field(&lines[1], "producer_powered") == Some("1")
+                && econ_int(&lines[2], "has_source") == 1
+                && econ_int(&lines[3], "rations") == 125,
+            lines.join(" | "),
+        );
+
+        let owners = entity_owners(&text);
+        let human: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        let authored: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 2)
+            .map(|(e, _)| *e)
+            .collect();
+        if human.len() < 2 || authored.is_empty() {
+            return Err(format!("unexpected roster {owners:?}"));
+        }
+        let (target, reserve) = (human[0], human[1]);
+        zoom_out(&client, 5)?;
+        thread::sleep(Duration::from_millis(1500));
+        report.artifact(
+            "client_a_start_png",
+            &client.screenshot(evidence, "01-start")?,
+        );
+
+        // OPP-P19: the hostile sweep reaches every small id, which includes the opponent's units.
+        client.wait(
+            &["MP_PROBE_COMPLETE participant=1"],
+            Duration::from_secs(30),
+        )?;
+        thread::sleep(Duration::from_millis(1500));
+        let text = server.text();
+        // The sweep covers ids up to 12: the opponent's two authored riflemen, not its later harvester.
+        let swept: Vec<&u64> = authored.iter().filter(|e| **e <= 12).collect();
+        let refused: Vec<String> = text
+            .lines()
+            .filter(|l| {
+                l.contains("MP_COMMAND_RECEIVED participant=1 ")
+                    && swept
+                        .iter()
+                        .any(|e| field(l, "issuer") == Some(e.to_string().as_str()))
+            })
+            .filter_map(|received| {
+                let sequence = field(received, "server_sequence")?;
+                let outcome = text.lines().find(|l| {
+                    l.contains("RTS_GAMEPLAY_EVENT kind=CommandOutcome")
+                        && field(l, "sequence") == Some(sequence)
+                })?;
+                (field(outcome, "accepted") == Some("0")
+                    && field(outcome, "rejection") == Some("1"))
+                .then(|| field(received, "issuer").unwrap_or("?").to_owned())
+            })
+            .collect();
+        let admitted = text.lines().any(|l| {
+            l.contains("RTS_ORDER_ADMITTED")
+                && field(l, "participant") == Some("1")
+                && authored
+                    .iter()
+                    .any(|e| field(l, "unit") == Some(e.to_string().as_str()))
+        });
+        report.verdict(
+            "OPP-P19-A-HUMAN-CANNOT-COMMAND-ITS-UNITS",
+            swept.len() >= 2
+                && swept
+                    .iter()
+                    .all(|e| refused.iter().any(|r| *r == e.to_string()))
+                && !admitted,
+            format!(
+                "forged orders refused for issuers {refused:?} of {swept:?}; admitted={admitted}"
+            ),
+        );
+
+        // The reserve soldier waits off the opponent's road; the other stays home to be found.
+        select_entity(&mut client, "MP_CLIENT_SAMPLE", reserve)?;
+        let parked = pan_to_probe(&mut client, OPP_PROBE_PARKED)?;
+        let mark = server.offset();
+        client.click(parked.0, parked.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={reserve}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            mark,
+        )?;
+
+        // The outage hits the opponent first, because it is the first to buy.
+        let off = server.wait(
+            &["RTS_POWER_STATE participant=2", "producer_powered=0"],
+            Duration::from_secs(60),
+        )?;
+        let on = server.wait(
+            &["RTS_POWER_STATE participant=2", "producer_powered=1"],
+            Duration::from_secs(30),
+        )?;
+        let advance = server.wait(
+            &["RTS_OPPONENT_DECISION", "branch=advance"],
+            Duration::from_secs(120),
+        )?;
+
+        // The first shot one of its riflemen lands on the human's side.
+        let deadline = Instant::now() + Duration::from_secs(120);
+        let shot = loop {
+            let text = server.text();
+            let found = text.lines().find(|l| {
+                l.contains("RTS_DISCIPLINE_EFFECT effect=damage_taken")
+                    && field(l, "participant") == Some("1")
+                    && number(l, "shooter").is_some_and(|s| {
+                        let shooter = s as u64;
+                        field(&advance, "candidate").is_some_and(|c| {
+                            c.trim_start_matches("attack_move:")
+                                .split('+')
+                                .any(|id| id == shooter.to_string())
+                        })
+                    })
+            });
+            if let Some(line) = found {
+                break line.to_owned();
+            }
+            if Instant::now() > deadline {
+                return Err("no shot from the opponent's riflemen reached the human's side".into());
+            }
+            thread::sleep(Duration::from_millis(250));
+        };
+        thread::sleep(Duration::from_millis(1500));
+        report.artifact(
+            "client_a_combat_png",
+            &client.screenshot(evidence, "02-combat")?,
+        );
+        let damaged = field(&shot, "unit").unwrap_or("?").to_owned();
+        let text = server.text();
+        let health = text.lines().find(|l| {
+            l.contains("RTS_HEALTH_CHANGED") && field(l, "unit") == Some(damaged.as_str())
+        });
+        report.verdict(
+            "OPP-P10-ITS-RIFLEMAN-FIGHTS",
+            health.is_some()
+                && text.lines().any(|l| {
+                    l.contains("RTS_GAMEPLAY_EVENT kind=UnitDamaged")
+                        && field(l, "entity") == Some(damaged.as_str())
+                }),
+            format!(
+                "target {target}; {} | {}",
+                shot.trim(),
+                health.unwrap_or("no health line").trim()
+            ),
+        );
+
+        // The human ends the match: the reserve soldier takes the objective with real input.
+        let objective = pan_to_probe(&mut client, OPP_PROBE_OBJECTIVE)?;
+        select_entity(&mut client, "MP_CLIENT_SAMPLE", reserve)?;
+        let mark = server.offset();
+        client.click(objective.0, objective.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={reserve}"),
+                "participant=1",
+            ],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        let results = server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                "player=1",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(90),
+        )?;
+        report.verdict(
+            "OPP-P14-THE-HUMAN-ENDS-THE-MATCH-THE-NORMAL-WAY",
+            true,
+            results.trim().to_owned(),
+        );
+        thread::sleep(Duration::from_millis(1000));
+        report.artifact(
+            "client_a_results_png",
+            &client.screenshot(evidence, "03-results")?,
+        );
+        let last_step = econ_int(&results, "step");
+        let retired = server.wait(
+            &[
+                "RTS_OPPONENT_RETIRED participant=2",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(5),
+        )?;
+
+        // OPP-P15: nothing more from it, over many more updates of the server.
+        let at_end = server.offset();
+        thread::sleep(Duration::from_secs(12));
+        let after = server.text()[at_end..].to_owned();
+        let leaked = |marker: &str| count_lines(&after, &[marker]);
+        report.verdict(
+            "OPP-P15-NOTHING-AFTER-THE-MATCH-ENDS",
+            leaked("RTS_OPPONENT_DECISION") == 0
+                && leaked("RTS_OPPONENT_OUTCOME") == 0
+                && leaked("RTS_ECONOMY_TX participant=2") == 0
+                && count_lines(&after, &["RTS_ORDER_ADMITTED", "participant=2"]) == 0
+                && count_lines(&after, &["RTS_PRODUCTION_SPAWN participant=2"]) == 0
+                && field(&retired, "reason").is_some()
+                && econ_int(&retired, "step") == last_step,
+            format!("{} | 12 s of further updates", retired.trim()),
+        );
+
+        // Economy and outage, with every line tied to the decision that caused it.
+        let text = server.text();
+        let decisions = opp_decisions(&text, &generation);
+        let transactions = opp_generation_lines(&text, "RTS_ECONOMY_TX participant=2", &generation);
+        let of_kind = |kind: &str| -> Vec<&str> {
+            transactions
+                .iter()
+                .copied()
+                .filter(|l| field(l, "kind") == Some(kind))
+                .collect()
+        };
+        let accepted = |sequence: &str| {
+            text.lines().any(|l| {
+                l.contains("RTS_OPPONENT_OUTCOME")
+                    && l.contains("kind=economy")
+                    && field(l, "sequence") == Some(sequence)
+                    && field(l, "status") == Some("accepted")
+            })
+        };
+        // Each decision of this branch has exactly one settlement under its own sequence, and each
+        // settlement of this kind has a decision. Unrelated activity cannot satisfy this.
+        let correlated = |branch: &str, kind: &str| -> Result<Vec<String>, String> {
+            let asked: Vec<&str> = decisions
+                .iter()
+                .copied()
+                .filter(|l| field(l, "branch") == Some(branch))
+                .collect();
+            let settled = of_kind(kind);
+            if asked.is_empty() || asked.len() != settled.len() {
+                return Err(format!(
+                    "{} decisions and {} settlements",
+                    asked.len(),
+                    settled.len()
+                ));
+            }
+            let mut out = Vec::new();
+            for (decision, settlement) in asked.iter().zip(settled.iter()) {
+                let sequence = field(decision, "sequence_first").unwrap_or("0");
+                if field(decision, "submission") != Some("submitted")
+                    || field(settlement, "transaction") != Some(sequence)
+                    || !accepted(sequence)
+                    || field(settlement, "reconciles") != Some("1")
+                    || econ_int(settlement, "step") != econ_int(decision, "step") + 1
+                {
+                    return Err(format!("{} | {}", decision.trim(), settlement.trim()));
+                }
+                out.push(format!(
+                    "step={} sequence={sequence} amount={}",
+                    econ_int(settlement, "step"),
+                    econ_int(settlement, "amount")
+                ));
+            }
+            Ok(out)
+        };
+
+        let harvest = opp_generation_lines(&text, "RTS_HARVEST_TX participant=2", &generation);
+        let deliveries: Vec<&str> = harvest
+            .iter()
+            .copied()
+            .filter(|l| field(l, "kind") == Some("deliver") && field(l, "resource") == Some("gold"))
+            .collect();
+        let delivered_ok = !deliveries.is_empty()
+            && deliveries
+                .iter()
+                .all(|l| econ_int(l, "amount") > 0 && field(l, "reconciles") == Some("1"));
+        report.verdict(
+            "OPP-P05-ITS-HARVESTER-DELIVERS-GOLD",
+            delivered_ok,
+            deliveries
+                .first()
+                .map_or("no delivery".to_owned(), |l| opp_body(l, "RTS_HARVEST_TX")),
+        );
+
+        let sold = correlated("sell", "sale");
+        let sales: Vec<&str> = harvest
+            .iter()
+            .copied()
+            .filter(|l| field(l, "kind") == Some("sale"))
+            .collect();
+        let first_sale_after_delivery = match (deliveries.first(), of_kind("sale").first()) {
+            (Some(delivery), Some(sale)) => econ_int(sale, "step") > econ_int(delivery, "step"),
+            _ => false,
+        };
+        report.verdict(
+            "OPP-P06-IT-SELLS-WHAT-WAS-DELIVERED",
+            sold.is_ok()
+                && first_sale_after_delivery
+                && sales.iter().all(|l| {
+                    econ_int(l, "amount") == 25
+                        && econ_int(l, "gross") == 6250
+                        && econ_int(l, "fee") == 188
+                }),
+            format!("{sold:?} | sales={}", sales.len()),
+        );
+
+        let fed = correlated("provision", "food");
+        let purchases = opp_generation_lines(&text, "RTS_FOOD_TX participant=2", &generation)
+            .into_iter()
+            .filter(|l| field(l, "kind") == Some("purchase"))
+            .collect::<Vec<_>>();
+        report.verdict(
+            "OPP-P07-IT-BUYS-FOOD",
+            fed.is_ok()
+                && of_kind("food")
+                    .iter()
+                    .all(|l| econ_int(l, "amount") == OPP_FOOD_CENTS)
+                && !purchases.is_empty()
+                && purchases
+                    .iter()
+                    .all(|l| field(l, "reconciles") == Some("1")),
+            format!(
+                "{fed:?} | {}",
+                purchases.first().map_or("no purchase", |l| l.trim())
+            ),
+        );
+
+        let trained = correlated("produce", "train");
+        let spawned =
+            opp_generation_lines(&text, "RTS_PRODUCTION_SPAWN participant=2", &generation);
+        let charges = of_kind("train");
+        let spawn_matches = spawned.len() == charges.len()
+            && spawned
+                .iter()
+                .zip(charges.iter())
+                .all(|(s, c)| field(s, "transaction") == field(c, "transaction"));
+        report.verdict(
+            "OPP-P08-IT-TRAINS-RIFLEMEN",
+            trained.is_ok()
+                && charges.len() == 2
+                && charges
+                    .iter()
+                    .all(|l| econ_int(l, "amount") == OPP_RIFLEMAN_CENTS)
+                && spawn_matches,
+            format!("{trained:?} | spawned={}", spawned.len()),
+        );
+
+        let orders: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ORDER_ADMITTED order=AttackMove")
+                    && field(l, "participant") == Some("2")
+            })
+            .collect();
+        let issuers: Vec<&str> = field(&advance, "candidate")
+            .unwrap_or("")
+            .trim_start_matches("attack_move:")
+            .split('+')
+            .collect();
+        let command_outcomes: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("RTS_OPPONENT_OUTCOME") && l.contains("kind=command"))
+            .collect();
+        report.verdict(
+            "OPP-P09-ITS-RIFLEMEN-GET-AN-ACCEPTED-ATTACK-MOVE",
+            issuers.len() == 4
+                && issuers.iter().all(|id| {
+                    orders.iter().any(|l| field(l, "unit") == Some(*id))
+                        && command_outcomes.iter().any(|l| {
+                            field(l, "issuer") == Some(*id)
+                                && field(l, "status") == Some("accepted")
+                        })
+                })
+                && field(&advance, "target_source") == Some("declared_prototype_start")
+                && !issuers.iter().any(|id| {
+                    text.lines().any(|l| {
+                        l.contains("RTS_NAVIGATION_FAILED") && field(l, "unit") == Some(*id)
+                    })
+                }),
+            format!(
+                "{} | admitted={} ",
+                opp_body(&advance, "RTS_OPPONENT_DECISION"),
+                orders.len()
+            ),
+        );
+
+        // The outage: its first purchase starts the fixture's clock.
+        let first_train = charges.first().copied().unwrap_or("");
+        let off_step = econ_int(&off, "step");
+        let on_step = econ_int(&on, "step");
+        let outage: Vec<&str> = decisions
+            .iter()
+            .copied()
+            .filter(|l| econ_int(l, "step") > off_step && econ_int(l, "step") < on_step)
+            .collect();
+        report.verdict(
+            "OPP-P11-THE-OUTAGE-STOPS-ITS-TRAINING",
+            off_step == econ_int(first_train, "step") + OPP_OUTAGE_OFFSET_STEPS
+                && econ_int(&off, "supplied_kw") == 0
+                && econ_int(&off, "queued") == 1
+                && !outage.is_empty()
+                && outage.iter().all(|l| {
+                    field(l, "branch") == Some("idle")
+                        && field(l, "reason") == Some("power_unavailable")
+                        && field(l, "powered") == Some("0")
+                })
+                && !spawned
+                    .iter()
+                    .any(|l| econ_int(l, "step") > off_step && econ_int(l, "step") < on_step),
+            format!("{} | {} decisions during it", off.trim(), outage.len()),
+        );
+        let first_spawn = spawned.first().copied().unwrap_or("");
+        report.verdict(
+            "OPP-P12-POWER-RETURNS-AND-TRAINING-RESUMES-WITHOUT-A-SECOND-CHARGE",
+            on_step == off_step + OPP_OUTAGE_STEPS
+                && econ_int(first_spawn, "step")
+                    == econ_int(first_train, "step") + OPP_TRAINING_STEPS + OPP_OUTAGE_STEPS
+                && charges.len() == 2
+                && field(first_spawn, "transaction") == field(first_train, "transaction"),
+            format!("{} | {}", on.trim(), first_spawn.trim()),
+        );
+
+        // The ledger at the end agrees with itself, and the human saw none of it.
+        let cleared = text
+            .lines()
+            .find(|l| {
+                l.contains("RTS_ECONOMY_CLEARED participant=2") && l.contains("reason=match_ended")
+            })
+            .unwrap_or("");
+        report.fact("opponent_ledger", cleared.trim().to_owned());
+        let client_text = client.text();
+        let private_markers = [
+            "RTS_ECONOMY_VIEW participant=2",
+            "RTS_ECONOMY_OUTCOME participant=2",
+            "RTS_OPPONENT_",
+        ];
+        let private_leaks: usize = private_markers
+            .iter()
+            .map(|m| count_lines(&client_text, &[m]))
+            .sum();
+        let bought = decisions
+            .iter()
+            .filter(|l| field(l, "branch") == Some("provision"))
+            .count();
+        report.verdict(
+            "OPP-P13-THE-HUMAN-RECEIVES-NONE-OF-ITS-PRIVATE-STATE",
+            private_leaks == 0
+                && field(cleared, "reconciles") == Some("1")
+                && field(cleared, "gold_reconciles") == Some("1")
+                && bought > 0,
+            format!(
+                "{private_leaks} private lines on the client | {}",
+                cleared.trim()
+            ),
+        );
+
+        let cadence_ok = decisions.iter().all(|l| econ_int(l, "step") % 20 == 0)
+            && decisions
+                .windows(2)
+                .all(|w| econ_int(w[1], "step") - econ_int(w[0], "step") == 20);
+        report.verdict(
+            "OPP-P22-ONE-DECISION-EVERY-TWENTY-STEPS",
+            cadence_ok && !decisions.is_empty() && econ_int(decisions[0], "step") == 20,
+            format!("{} decisions from step 20", decisions.len()),
+        );
+
+        let trace = opp_trace(&text, &generation);
+        fs::write(evidence.join("opponent-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("opponent_trace", &evidence.join("opponent-trace.txt"));
+        report.fact("trace_last_step", OPP_TRACE_LAST_STEP.to_string());
+        report.fact("match_last_step", last_step.to_string());
+        report.verdict(
+            "OPP-P17-THE-TRACE-COVERS-THE-WHOLE-CYCLE",
+            [
+                "branch=produce",
+                "branch=sell",
+                "branch=provision",
+                "branch=advance",
+                "reason=power_unavailable",
+            ]
+            .iter()
+            .all(|m| trace.contains(m))
+                && last_step > OPP_TRACE_LAST_STEP,
+            format!(
+                "{} lines up to step {OPP_TRACE_LAST_STEP}; the match ended at step {last_step}",
+                trace.lines().count()
+            ),
+        );
+
+        // OPP-P16: the same server process, a new match, a new brain, a new connection.
+        let mark = server.offset();
+        client.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET"],
+            Duration::from_secs(90),
+            mark,
+        )?;
+        let rebound = server.wait_line(
+            &["RTS_OPPONENT_BOUND participant=2"],
+            Duration::from_secs(60),
+            mark,
+        )?;
+        let next_generation = field(&rebound, "generation").unwrap_or("0").to_owned();
+        let mut second_arguments = client_args(client_options, false, false, false);
+        second_arguments.push(probes.clone());
+        let mut second = Game::launch(
+            &client_options.binary,
+            "client-a2",
+            evidence,
+            &second_arguments,
+            None,
+        )?;
+        let result = (|| -> Result<(), String> {
+            server.wait_line(
+                &["MP_MATCH_ACTIVE", &format!("generation={next_generation}")],
+                Duration::from_secs(90),
+                mark,
+            )?;
+            server.wait_line(
+                &[
+                    "RTS_OPPONENT_DECISION",
+                    &format!("generation={next_generation}"),
+                    "step=60 ",
+                ],
+                Duration::from_secs(30),
+                mark,
+            )?;
+            let text = server.text();
+            let fresh = opp_decisions(&text, &next_generation);
+            let first = fresh.first().copied().unwrap_or("");
+            let second_train = fresh
+                .iter()
+                .find(|l| field(l, "branch") == Some("produce"))
+                .copied()
+                .unwrap_or("");
+            let money =
+                opp_generation_lines(&text, "RTS_ECONOMY_START participant=2", &next_generation);
+            let food =
+                opp_generation_lines(&text, "RTS_FOOD_START participant=2", &next_generation);
+            let old_settled = text[mark..].lines().any(|l| {
+                (l.contains("RTS_ECONOMY_TX participant=2") || l.contains("RTS_OPPONENT_OUTCOME"))
+                    && field(l, "generation") == Some(generation.as_str())
+            });
+            report.verdict(
+                "OPP-P16-A-REMATCH-IN-THE-SAME-PROCESS-STARTS-OVER",
+                server.pid() == server_pid
+                    && next_generation != generation
+                    && econ_int(&rebound, "next_sequence") == 1
+                    && econ_int(first, "step") == 20
+                    && econ_int(second_train, "sequence_first") == 1
+                    && field(second_train, "available").is_some_and(|v| v == "100000")
+                    && money.len() == 1
+                    && econ_int(money[0], "available") == 100_000
+                    && food.len() == 1
+                    && econ_int(food[0], "rations") == 125
+                    && !old_settled,
+                format!(
+                    "pid={server_pid} {} | {} | {}",
+                    rebound.trim(),
+                    opp_body(second_train, "RTS_OPPONENT_DECISION"),
+                    money.first().map_or("", |l| l.trim())
+                ),
+            );
+            Ok(())
+        })();
+        let at_leave = server.offset();
+        second.stop();
+        let ended = server.wait_line(
+            &[
+                "RTS_OPPONENT_RETIRED participant=2",
+                &format!("generation={next_generation}"),
+            ],
+            Duration::from_secs(30),
+            at_leave,
+        );
+        report.verdict(
+            "OPP-P23-A-DISCONNECT-RETIRES-IT-TOO",
+            ended.is_ok()
+                && server
+                    .wait_line(
+                        &[
+                            "MATCH_RESULTS outcome=participant_disconnected",
+                            &format!("generation={next_generation}"),
+                        ],
+                        Duration::from_secs(5),
+                        at_leave,
+                    )
+                    .is_ok(),
+            format!("{ended:?}"),
+        );
+        result
+    })();
+    launch_options_verdict(report, "OPP-P01-LAUNCH-OPTIONS", &[&server, &client]);
+    report.artifact("server_log", &server.log);
+    report.artifact("client_log", &client.log);
+    client.stop();
+    server.stop();
+    result?;
+
+    // OPP-P18: without the switch the same server waits for a second human, and no brain exists.
+    let mut plain = Game::launch_server(&options.server, "server-no-switch", evidence, &{
+        let mut plain_args = server_args(client_options.port + 1, "1v1");
+        plain_args.retain(|a| a != NO_STARTING_HARVESTERS);
+        plain_args.push(STARTING_HARVESTERS.to_owned());
+        plain_args
+    })?;
+    plain.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let waiting = plain.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let mut only_options = Options {
+        binary: client_options.binary.clone(),
+        layout: client_options.layout.clone(),
+        evidence: client_options.evidence.clone(),
+        port: client_options.port + 1,
+    };
+    only_options.port = client_options.port + 1;
+    let mut lone = Game::launch(
+        &client_options.binary,
+        "client-lone",
+        evidence,
+        &client_args(&only_options, false, false, false),
+        None,
+    )?;
+    let lone_bound = plain.wait(
+        &["MP_PARTICIPANT_BOUND participant=1", "remote=1"],
+        Duration::from_secs(90),
+    );
+    thread::sleep(Duration::from_secs(8));
+    let text = plain.text();
+    report.verdict(
+        "OPP-P18-WITHOUT-THE-SWITCH-THERE-IS-NO-BRAIN",
+        lone_bound.is_ok()
+            && econ_int(&waiting, "remote_seats") == 2
+            && count_lines(&text, &["MP_MATCH_ACTIVE"]) == 0
+            && count_lines(&text, &["RTS_OPPONENT_"]) == 0,
+        format!(
+            "{} | active lines={}",
+            waiting.trim(),
+            count_lines(&text, &["MP_MATCH_ACTIVE"])
+        ),
+    );
+    lone.stop();
+    plain.stop();
+
+    // A bad value fails closed and picks no other seat.
+    opp_invalid_switch(
+        options,
+        report,
+        "OPP-P21-MISSING-SEAT-FAILS-CLOSED",
+        "9",
+        "OPP.BIND.MISSING_SEAT",
+        client_options.port + 2,
+    )?;
+    opp_invalid_switch(
+        options,
+        report,
+        "OPP-P24-MALFORMED-SEAT-FAILS-CLOSED",
+        "x",
+        "OPP.SEAT.MALFORMED",
+        client_options.port + 3,
+    )?;
+    Ok(())
+}
+
 fn run_dedicated_session(
     flag: &str,
     schema: &'static str,
@@ -18479,6 +19344,14 @@ fn main() {
     }
     if env::args().nth(1).as_deref() == Some("--oil") {
         run_dedicated_session("--oil", "politika.econ.oil-evidence.v1", "oil", oil_session);
+    }
+    if env::args().nth(1).as_deref() == Some("--opponent") {
+        run_dedicated_session(
+            "--opponent",
+            "politika.opp1.opponent-evidence.v1",
+            "opponent",
+            opponent_session,
+        );
     }
     if env::args().nth(1).as_deref() == Some("--plant") {
         run_dedicated_session(
@@ -18703,6 +19576,29 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn opponent_trace_keeps_gameplay_and_drops_only_the_shared_counter() {
+        let log = "\
+[1][2]Log: Display: RTS_OPPONENT_DECISION participant=2 generation=1 step=20 branch=produce\n\
+[1][2]Log: Display: RTS_OPPONENT_OUTCOME participant=2 generation=1 step=41 kind=command sequence=6 status=accepted server_sequence=91\n\
+[1][2]Log: Display: RTS_ECONOMY_TX participant=2 kind=train amount=36000 generation=1 step=21\n\
+[1][2]Log: Display: RTS_ECONOMY_TX participant=1 kind=train amount=36000 generation=1 step=21\n\
+[1][2]Log: Display: RTS_OPPONENT_DECISION participant=2 generation=2 step=20 branch=produce\n\
+[1][2]Log: Display: RTS_OPPONENT_DECISION participant=2 generation=1 step=99999 branch=idle\n";
+        let trace = super::opp_trace(log, "1");
+        assert_eq!(
+            trace,
+            "RTS_OPPONENT_DECISION participant=2 generation=1 step=20 branch=produce\n\
+             RTS_OPPONENT_OUTCOME participant=2 generation=1 step=41 kind=command sequence=6 status=accepted\n\
+             RTS_ECONOMY_TX participant=2 kind=train amount=36000 generation=1 step=21\n"
+        );
+        // A difference in what the opponent did is not normalized away.
+        assert_ne!(
+            super::opp_trace(&log.replace("branch=produce", "branch=sell"), "1"),
+            trace
+        );
+    }
+
     #[test]
     fn gold_replay_follows_the_ledger_and_refuses_a_mismatch() {
         let tx = |kind: &str,

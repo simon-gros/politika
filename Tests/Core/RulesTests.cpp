@@ -8,7 +8,9 @@
 #include "Stance.h"
 #include "Discipline.h"
 #include "Economy.h"
+#include "Opponent.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <iterator>
@@ -2804,5 +2806,378 @@ int main() {
                 assert(std::hypot(Offsets[Left].x - Offsets[Right].x, Offsets[Left].y - Offsets[Right].y) > 100.0);
     }
 
+
+    // OPP-1: the first opponent's policy. A pure function of a snapshot and its memory.
+    {
+        namespace po = politika::opponent;
+        namespace pe = politika::economy;
+        using Step = po::Step;
+
+        // A reserved seat is counted apart from remote humans, and one human is still needed.
+        assert(SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 1, 1));
+        assert(!SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 0, 1));
+        assert(!SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 0, 2));
+        assert(!SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 2, 1));
+        assert(!SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Standalone, 0, 1, 1));
+        assert(SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 2, 0) == SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 2));
+        assert(!SessionSeatsComplete(TeamLayout::OneVsOne, HostingMode::Dedicated, 0, 1, 0));
+        assert(SessionSeatsComplete(TeamLayout::TwoVsTwo, HostingMode::Dedicated, 0, 3, 1));
+        const auto Base = [](Step At = 20) {
+            po::Snapshot S;
+            S.participant = 2;
+            S.generation = 7;
+            S.step = At;
+            S.active = true;
+            S.authorityValid = true;
+            S.available = pe::kStartingCents;
+            S.rations = pe::kStartingRations;
+            S.hasProducer = true;
+            S.producerPowered = true;
+            S.livingUnits = 2;
+            S.unitCap = 20;
+            S.units[0] = {10, true, true, true};
+            S.units[1] = {11, false, true, true};
+            S.unitCount = 2;
+            S.hasAdvanceTarget = true;
+            S.advanceTarget = {100.0, 200.0};
+            return S;
+        };
+        // A force of four at rest beside the harvester, and nothing else to do.
+        const auto Ready = [&Base](Step At = 20) {
+            po::Snapshot S = Base(At);
+            S.units[2] = {12, true, true, true};
+            S.units[3] = {13, true, true, true};
+            S.units[4] = {14, true, true, true};
+            S.unitCount = 5;
+            S.livingUnits = 5;
+            return S;
+        };
+        const auto Fresh = [] { return po::NewMemory(7); };
+        const auto AssertNothing = [](const po::Decision& D) { assert(!D.hasEconomy && D.orderCount == 0); };
+
+        // Parsing the switch: digits only, in range, not zero.
+        assert(po::ParseOpponentSeat("2") == 2 && po::ParseOpponentSeat("4294967295") == 4294967295u);
+        for (const char* Bad : {"", "0", "-1", "+2", "2x", "x", " 2", "2 ", "1.5", "4294967296", "99999999999999999999999"})
+            assert(po::ParseOpponentSeat(Bad) == 0);
+
+        // Cadence: every twentieth step, never step zero.
+        assert(po::kDecisionIntervalSteps == 20 && !po::IsDecisionStep(0) && !po::IsDecisionStep(19) && po::IsDecisionStep(20) && !po::IsDecisionStep(21) && po::IsDecisionStep(40));
+
+        // Retired: inactive, stale generation or invalid authority, and it stays retired.
+        {
+            po::Snapshot S = Base();
+            S.active = false;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Retired && D.reason == po::Reason::MatchInactive && M.retired);
+            AssertNothing(D);
+            AssertNothing(po::Decide(Base(40), M));
+            assert(po::Decide(Base(40), M).branch == po::Branch::Retired);
+        }
+        {
+            po::Snapshot S = Base();
+            S.generation = 8;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Retired && D.reason == po::Reason::StaleGeneration);
+            AssertNothing(D);
+        }
+        {
+            po::Snapshot S = Base();
+            S.authorityValid = false;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Retired && D.reason == po::Reason::AuthorityInvalid);
+            AssertNothing(D);
+        }
+
+        // Provision: buys when low and it can pay. It uses the one fixed pack.
+        {
+            po::Snapshot S = Base();
+            S.rations = po::kFoodReserveThreshold - 1;
+            S.goldHeld = 25; // Sell is eligible too, and loses.
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Provision && D.hasEconomy && D.economyOp == pe::EconomyOp::BuyFood && D.economySequence == 1 && D.orderCount == 0);
+            assert(M.pendingEconomy == 1);
+        }
+        // At the threshold it does not buy.
+        {
+            po::Snapshot S = Base();
+            S.rations = po::kFoodReserveThreshold;
+            po::Memory M = Fresh();
+            assert(po::Decide(S, M).branch == po::Branch::Produce);
+        }
+        // Provision it cannot afford falls through to a sale, rather than trapping the policy.
+        {
+            po::Snapshot S = Base();
+            S.rations = 10;
+            S.available = pe::kFoodPurchaseCents - 1;
+            S.goldHeld = 25;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Sell && D.economyOp == pe::EconomyOp::SellGold);
+        }
+        // With nothing else to do, it says why.
+        {
+            po::Snapshot S = Base();
+            S.rations = 10;
+            S.available = 0;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Idle && D.reason == po::Reason::NoAffordableProvision);
+            AssertNothing(D);
+        }
+
+        // Sell: one lot held beats production; less than a lot does not sell.
+        {
+            po::Snapshot S = Base();
+            S.goldHeld = po::kGoldSaleThreshold;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Sell && D.reason == po::Reason::GoldHeld);
+        }
+        {
+            po::Snapshot S = Base();
+            S.goldHeld = po::kGoldSaleThreshold - 1;
+            po::Memory M = Fresh();
+            assert(po::Decide(S, M).branch == po::Branch::Produce);
+        }
+
+        // Produce: below the force, affordable and powered. Advance is held back meanwhile.
+        {
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(Base(), M);
+            assert(D.branch == po::Branch::Produce && D.economyOp == pe::EconomyOp::Train && D.recipe == pe::Recipe::Rifleman && D.orderCount == 0);
+        }
+        // Each thing that stops training is named, and none of them proposes anything.
+        const auto Blocked = [&](auto Change, po::Reason Expected) {
+            po::Snapshot S = Base();
+            Change(S);
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Idle && D.reason == Expected);
+            AssertNothing(D);
+        };
+        Blocked([](po::Snapshot& S) { S.hasProducer = false; }, po::Reason::NoProducer);
+        Blocked([](po::Snapshot& S) { S.producerPowered = false; }, po::Reason::PowerUnavailable);
+        Blocked([](po::Snapshot& S) { S.foodShortage = true; S.rations = po::kFoodReserveThreshold; }, po::Reason::FoodShortage);
+        Blocked([](po::Snapshot& S) { S.queued = pe::kMaxQueue; }, po::Reason::QueueFull);
+        Blocked([](po::Snapshot& S) { S.livingUnits = 20; }, po::Reason::UnitCapReached);
+        Blocked([](po::Snapshot& S) { S.livingUnits = 18; S.queued = 2; }, po::Reason::UnitCapReached);
+        Blocked([](po::Snapshot& S) { S.available = 35'999; }, po::Reason::InsufficientFunds);
+        Blocked([](po::Snapshot& S) { S.queuedRiflemen = 3; S.queued = 3; }, po::Reason::AwaitingProduction);
+        Blocked([](po::Snapshot& S) { S.hasAdvanceTarget = false; S.units[2] = {12, true, true, true}; S.units[3] = {13, true, true, true}; S.units[4] = {14, true, true, true}; S.unitCount = 5; S.livingUnits = 5; }, po::Reason::NoValidTarget);
+        // A force that could not be fed is not trained. Rations above the threshold are always enough
+        // for a small force, so this needs a large one.
+        {
+            static_assert(po::kFoodReserveThreshold < 200);
+            po::Snapshot S = Base();
+            S.unitCap = 300;
+            S.livingUnits = 150;
+            S.rations = po::kFoodReserveThreshold + 1;
+            po::Memory M = Fresh();
+            assert(po::Decide(S, M).reason == po::Reason::CannotProvisionForce);
+        }
+
+        // Advance: the force is complete, so Produce no longer applies. Orders are ascending, bounded
+        // and riflemen only, to the declared target.
+        {
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(Ready(), M);
+            assert(D.branch == po::Branch::Advance && D.reason == po::Reason::ForceReady && !D.hasEconomy);
+            assert(D.orderCount == 4 && D.orders[0].issuer == 10 && D.orders[1].issuer == 12 && D.orders[2].issuer == 13 && D.orders[3].issuer == 14);
+            assert(D.orders[0].sequence == 1 && D.orders[1].sequence == 2 && D.orders[2].sequence == 3 && D.orders[3].sequence == 4);
+            assert(D.target.x == 100.0 && D.target.y == 200.0 && M.pendingOrderCount == 4 && M.advancedCount == 4);
+            // Nothing else while their outcomes are out.
+            const po::Decision Next = po::Decide(Ready(40), M);
+            assert(Next.branch == po::Branch::Idle && Next.reason == po::Reason::AwaitingOutcome);
+            AssertNothing(Next);
+            // Accepted, they are not sent again, even once they have arrived and stand at rest.
+            for (po::Sequence Sequence = 1; Sequence <= 4; ++Sequence) po::NoteOrderOutcome(M, Sequence, OrderRejection::None, 41);
+            assert(M.pendingOrderCount == 0);
+            const po::Decision After = po::Decide(Ready(60), M);
+            assert(After.branch == po::Branch::Idle && After.reason == po::Reason::AlreadyAdvancing);
+            AssertNothing(After);
+        }
+        // Too few, routed or busy units do not make a batch.
+        {
+            po::Snapshot S = Ready();
+            S.units[2].atRest = false;
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Idle && D.reason == po::Reason::InsufficientReadyRiflemen);
+        }
+        {
+            po::Snapshot S = Ready();
+            S.units[3].operational = false;
+            po::Memory M = Fresh();
+            assert(po::Decide(S, M).reason == po::Reason::InsufficientReadyRiflemen);
+        }
+        // A batch is bounded however many stand ready.
+        {
+            po::Snapshot S = Base();
+            S.unitCount = 12;
+            S.livingUnits = 12;
+            for (std::size_t Index = 0; Index < S.unitCount; ++Index) S.units[Index] = {100 + Index, true, true, true};
+            po::Memory M = Fresh();
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Advance && D.orderCount == po::kMaximumOrdersPerDecision && D.orders[7].issuer == 107);
+        }
+        // Reinforcements join a force already out: one is enough once the others have gone.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(), M);
+            for (po::Sequence Sequence = 1; Sequence <= 4; ++Sequence) po::NoteOrderOutcome(M, Sequence, OrderRejection::None, 21);
+            po::Snapshot S = Ready(40);
+            S.units[5] = {15, true, true, true};
+            S.unitCount = 6;
+            S.livingUnits = 6;
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Advance && D.orderCount == 1 && D.orders[0].issuer == 15);
+        }
+        // A loss brings production back, and it outranks a further advance.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(), M);
+            for (po::Sequence Sequence = 1; Sequence <= 4; ++Sequence) po::NoteOrderOutcome(M, Sequence, OrderRejection::None, 21);
+            po::Snapshot S = Base(40);
+            S.units[0] = {14, true, true, true};
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Produce);
+        }
+
+        // Recover: a refusal starts a bounded cooldown that outranks every economy action, and the
+        // policy resumes by itself afterwards. No retry happens on any decision inside it.
+        {
+            for (const pe::EconomyRejection Refused : {pe::EconomyRejection::InsufficientFunds, pe::EconomyRejection::ProducerUnpowered, pe::EconomyRejection::QueueFull, pe::EconomyRejection::UnitCap, pe::EconomyRejection::FoodShortage, pe::EconomyRejection::NothingToSell, pe::EconomyRejection::RateLimited, pe::EconomyRejection::StaleMatch}) {
+                po::Memory M = Fresh();
+                const po::Decision First = po::Decide(Base(20), M);
+                assert(First.hasEconomy);
+                po::NoteEconomyOutcome(M, First.economySequence, Refused, 21);
+                assert(M.pendingEconomy == 0 && M.lastEconomyRejection == Refused && M.recoverUntil == 21 + po::kRecoveryCooldownSteps);
+                std::size_t Proposals = 0;
+                for (Step At = 40; At < 21 + po::kRecoveryCooldownSteps; At += po::kDecisionIntervalSteps) {
+                    po::Snapshot S = Base(At);
+                    S.goldHeld = 25;
+                    S.rations = 10;
+                    const po::Decision D = po::Decide(S, M);
+                    assert(D.branch == po::Branch::Recover && D.reason == po::Reason::RejectionCooldown);
+                    Proposals += D.hasEconomy || D.orderCount != 0 ? 1 : 0;
+                }
+                assert(Proposals == 0);
+                assert(po::Decide(Base(21 + po::kRecoveryCooldownSteps + 19), M).branch == po::Branch::Produce);
+            }
+        }
+        // An outcome for another request changes nothing; a repeated outcome does not extend a cooldown.
+        {
+            po::Memory M = Fresh();
+            const po::Decision First = po::Decide(Base(20), M);
+            po::NoteEconomyOutcome(M, First.economySequence + 1, pe::EconomyRejection::QueueFull, 21);
+            assert(M.pendingEconomy == First.economySequence && M.recoverUntil == 0);
+            po::NoteEconomyOutcome(M, First.economySequence, pe::EconomyRejection::QueueFull, 21);
+            const Step Until = M.recoverUntil;
+            po::NoteEconomyOutcome(M, First.economySequence, pe::EconomyRejection::QueueFull, 500);
+            assert(M.recoverUntil == Until);
+        }
+        // A refused order frees that unit for later and starts the cooldown; the others stay out.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(), M);
+            po::NoteOrderOutcome(M, 1, OrderRejection::None, 21);
+            po::NoteOrderOutcome(M, 2, OrderRejection::NotOwned, 21);
+            po::NoteOrderOutcome(M, 3, OrderRejection::None, 21);
+            po::NoteOrderOutcome(M, 4, OrderRejection::None, 21);
+            assert(!M.HasAdvanced(12) && M.HasAdvanced(10) && M.HasAdvanced(13) && M.HasAdvanced(14) && M.lastOrderRejection == OrderRejection::None);
+            assert(po::Decide(Ready(40), M).branch == po::Branch::Recover);
+            const po::Decision D = po::Decide(Ready(21 + po::kRecoveryCooldownSteps + 19), M);
+            assert(D.branch == po::Branch::Advance && D.orderCount == 1 && D.orders[0].issuer == 12);
+        }
+        // A failed route has its own longer cooldown, and only for a unit on the advance.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(), M);
+            for (po::Sequence Sequence = 1; Sequence <= 4; ++Sequence) po::NoteOrderOutcome(M, Sequence, OrderRejection::None, 21);
+            po::NoteRouteFailure(M, 11, 30); // The harvester is not on the advance.
+            assert(M.recoverUntil == 0);
+            po::NoteRouteFailure(M, 12, 30);
+            assert(M.recoverUntil == 30 + po::kNavigationFailureCooldownSteps && M.recoverReason == po::Reason::NavigationCooldown && !M.HasAdvanced(12));
+            assert(po::Decide(Ready(40), M).reason == po::Reason::NavigationCooldown);
+        }
+        // An outcome that never comes counts as a failure, so it cannot hold the policy forever.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Base(20), M);
+            assert(po::Decide(Base(40), M).reason == po::Reason::AwaitingOutcome);
+            const po::Decision Late = po::Decide(Base(60), M);
+            assert(Late.branch == po::Branch::Recover && M.pendingEconomy == 0);
+            AssertNothing(Late);
+        }
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(20), M);
+            assert(M.pendingOrderCount == 4);
+            assert(po::Decide(Ready(60), M).branch == po::Branch::Recover && M.pendingOrderCount == 0 && M.advancedCount == 0);
+        }
+        // A second evaluation of one step proposes nothing and uses no sequence.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Base(20), M);
+            const po::Sequence Next = M.nextSequence;
+            AssertNothing(po::Decide(Base(20), M));
+            assert(M.nextSequence == Next);
+        }
+        // A dead unit leaves the set, so the set stays bounded by the living.
+        {
+            po::Memory M = Fresh();
+            (void)po::Decide(Ready(), M);
+            for (po::Sequence Sequence = 1; Sequence <= 4; ++Sequence) po::NoteOrderOutcome(M, Sequence, OrderRejection::None, 21);
+            po::Snapshot S = Ready(40);
+            S.units[0] = {15, true, true, true}; // 10 has died; 15 is new.
+            const po::Decision D = po::Decide(S, M);
+            assert(D.branch == po::Branch::Advance && D.orders[0].issuer == 15 && !M.HasAdvanced(10) && M.advancedCount == 4);
+        }
+
+        // AI-02: identical snapshot and outcome streams give identical decisions, sequences and memory.
+        {
+            const auto Run = [&] {
+                std::vector<int> Trace;
+                po::Memory M = Fresh();
+                for (Step At = 20; At <= 2000; At += po::kDecisionIntervalSteps) {
+                    po::Snapshot S = At < 400 ? Base(At) : Ready(At);
+                    S.rations = static_cast<pe::Rations>(240 - At / 10);
+                    S.goldHeld = At % 200 == 0 ? 25 : 0;
+                    S.producerPowered = At < 600 || At > 800;
+                    const po::Decision D = po::Decide(S, M);
+                    Trace.insert(Trace.end(), {static_cast<int>(D.branch), static_cast<int>(D.reason), static_cast<int>(D.economySequence), static_cast<int>(D.orderCount), static_cast<int>(D.recoverUntil), static_cast<int>(D.nextDecisionStep)});
+                    for (std::size_t Index = 0; Index < D.orderCount; ++Index) {
+                        Trace.push_back(static_cast<int>(D.orders[Index].issuer));
+                        Trace.push_back(static_cast<int>(D.orders[Index].sequence));
+                        po::NoteOrderOutcome(M, D.orders[Index].sequence, OrderRejection::None, At + 1);
+                    }
+                    // Every third purchase is refused, so the trace covers recovery.
+                    if (D.hasEconomy) po::NoteEconomyOutcome(M, D.economySequence, D.economySequence % 3 == 0 ? pe::EconomyRejection::QueueFull : pe::EconomyRejection::None, At + 1);
+                }
+                Trace.push_back(static_cast<int>(M.nextSequence));
+                return Trace;
+            };
+            const std::vector<int> First = Run();
+            assert(First == Run());
+            // The trace is not trivially Idle.
+            std::array<bool, 7> Seen{};
+            for (std::size_t Index = 0; Index + 5 < First.size(); ) {
+                Seen[static_cast<std::size_t>(First[Index])] = true;
+                Index += 6 + 2 * static_cast<std::size_t>(First[Index + 3]);
+            }
+            assert(Seen[static_cast<std::size_t>(po::Branch::Provision)] && Seen[static_cast<std::size_t>(po::Branch::Sell)] && Seen[static_cast<std::size_t>(po::Branch::Produce)]
+                && Seen[static_cast<std::size_t>(po::Branch::Advance)] && Seen[static_cast<std::size_t>(po::Branch::Recover)] && Seen[static_cast<std::size_t>(po::Branch::Idle)]);
+        }
+
+        // A lawful full cycle fits the opening economy: two riflemen and a pack of food are affordable
+        // from the start without a single sale, so the thresholds cannot strand the policy.
+        static_assert(pe::kStartingCents >= 2 * 36'000 + pe::kFoodPurchaseCents);
+        static_assert(po::kDesiredRiflemanForce < 20 && po::kMinimumAdvanceForce <= po::kDesiredRiflemanForce);
+        static_assert(po::kFoodReserveThreshold + pe::kFoodPurchaseRations <= pe::kFoodCapacityRations && po::kFoodReserveThreshold < pe::kStartingRations);
+    }
     return 0;
 }

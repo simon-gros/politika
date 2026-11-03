@@ -15,6 +15,7 @@
 #include "Stance.h"
 #include "Discipline.h"
 #include "Economy.h"
+#include "Opponent.h"
 #include "Modifiers.h"
 #include "PolitikaPrototypeContent.h"
 #include "PolitikaPrototypeGameplay.generated.h"
@@ -1039,6 +1040,8 @@ private:
         uint32 CorrelationId = 0;
         uint64 Generation = 0;
         uint8 RawOrderKind = 0;
+        // A server-run opponent's request: its outcome goes to the brain, never to a connection.
+        bool bOpponent = false;
     };
     TMap<uint64, FOutcomeRoute> OutcomeRoutes;
     FParticipantBinding* FindBinding(const APlayerController* Controller);
@@ -1059,6 +1062,37 @@ private:
     void RouteCommandOutcome(const politika::rules::CommandOutcomeEvent& Outcome);
     void RejectIntentAtIntake(APlayerController* Source, const FPolitikaNetCommandIntent& Intent,
         uint32 ParticipantId, politika::rules::OrderRejection Rejection);
+    // What every command runs once its participant's authority is established: a controller's binding
+    // for a human, the server-only brain record for an opponent. Source is null for an opponent.
+    bool SubmitAuthorizedCommandIntent(APlayerController* Source, politika::rules::ClientSequenceGuard& Sequence,
+        uint32 ParticipantId, bool bRemote, const FPolitikaNetCommandIntent& Intent);
+    // The same for an economy request.
+    bool SubmitAuthorizedEconomyIntent(APlayerController* Source, politika::rules::ClientSequenceGuard& Sequence,
+        uint32 ParticipantId, const FPolitikaNetEconomyIntent& Intent);
+    // OPP-1: one server-run opponent (PolitikaOpponent.cpp). The record exists only on the authority,
+    // is never replicated and is made once per match generation, so a new match has a new one.
+    struct FOpponentBrain
+    {
+        uint32 ParticipantId = 0;
+        uint64 Generation = 0;
+        politika::rules::ClientSequenceGuard Sequence;
+        politika::opponent::Memory Memory;
+        bool bRetired = false;
+    };
+    TOptional<FOpponentBrain> OpponentBrain;
+    bool ResolveOpponentSeatSwitch(FName& OutFailure);
+    bool BindOpponentBrain(uint32 ParticipantId, uint64 Generation, FName& OutFailure);
+    bool IsOpponentSeat(uint32 ParticipantId) const { return OpponentBrain.IsSet() && OpponentBrain->ParticipantId == ParticipantId; }
+    uint32 GetOpponentSeatCount() const { return OpponentBrain.IsSet() ? 1u : 0u; }
+    politika::opponent::Snapshot BuildOpponentSnapshot() const;
+    void RunOpponentDecision();
+    bool SubmitOpponentCommand(const FPolitikaNetCommandIntent& Intent);
+    bool SubmitOpponentEconomy(const FPolitikaNetEconomyIntent& Intent);
+    void RetireOpponentBrain(const TCHAR* Reason);
+    void NoteOpponentCommandOutcome(const politika::rules::CommandOutcomeEvent& Outcome, uint32 Sequence);
+    void NoteOpponentEconomyOutcome(const APlayerController* Source, uint32 ParticipantId, const FPolitikaNetEconomyIntent& Intent,
+        politika::economy::EconomyRejection Rejection);
+    void NoteOpponentOrderChanged(const politika::rules::OrderChangedEvent& Changed);
     void ApplyMapPresentation();
     bool ResolveSessionLayout(FName& OutFailure);
     void UpdateTeamVisibility();
@@ -1312,6 +1346,9 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
     // Automation fixtures place their own forces, so a starting harvester is opt-in there.
     bool StartingHarvestersForTest = false;
+    // Stands in for the command line in the opponent seat switch's Automation.
+    FString OpponentSwitchForTest;
+    friend class FPolitikaMultiplayerOpponentTest;
 #endif
     void ClearEconomy(const TCHAR* Reason);
     void SyncEconomyReplication();

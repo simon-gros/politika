@@ -175,6 +175,16 @@ enum class HostingMode : std::uint8_t { Standalone, Listen, Dedicated };
         && local_bindings == LocalSeatCount(mode) && remote_bindings == RemoteSeatCount(layout, mode);
 }
 
+// The same with seats reserved for server-run opponents, which hold a seat with no connection and
+// are counted apart from remote humans. A session still needs one human bound to start.
+[[nodiscard]] constexpr bool SessionSeatsComplete(TeamLayout layout, HostingMode mode,
+    std::uint32_t local_bindings, std::uint32_t remote_bindings, std::uint32_t reserved_seats) noexcept {
+    if (reserved_seats == 0) return SessionSeatsComplete(layout, mode, local_bindings, remote_bindings);
+    return mode != HostingMode::Standalone && SeatCount(layout) != 0 && remote_bindings >= 1
+        && local_bindings == LocalSeatCount(mode)
+        && remote_bindings + reserved_seats == RemoteSeatCount(layout, mode);
+}
+
 [[nodiscard]] constexpr std::string_view HostingModeName(HostingMode mode) noexcept {
     switch (mode) {
         case HostingMode::Standalone: return "standalone";

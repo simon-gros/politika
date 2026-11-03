@@ -1324,6 +1324,10 @@ bool APolitikaPrototypeMatch::TransitionLifecycle(politika::rules::MatchPhase Ne
     }
     if (NextPhase != politika::rules::MatchPhase::Active)
     {
+        // Before the queues below are emptied, so its own pending requests are counted as it leaves.
+        if (Previous == politika::rules::MatchPhase::Active || NextPhase == politika::rules::MatchPhase::Returning
+            || NextPhase == politika::rules::MatchPhase::AdmissionRejected)
+            RetireOpponentBrain(TEXT("match_left_active"));
         // A queued request belongs to the phase in which it was submitted. Never
         // let terminal handling, teardown, or recovery carry it into later work.
         PendingOrders.Reset();
@@ -1707,6 +1711,8 @@ void APolitikaPrototypeMatch::Tick(float DeltaSeconds)
         RunSimulationStep(SimulationStepSeconds);
         // Regroups submit ordinary member commands, admitted at the start of the next step.
         if (Lifecycle.IsActive()) ProcessFormationRegroups();
+        // The opponent reads this completed step; what it asks for is admitted in the next one.
+        if (Lifecycle.IsActive()) RunOpponentDecision();
         StepAccumulator -= SimulationStepSeconds;
         ++Steps;
 #if !UE_BUILD_SHIPPING
@@ -2579,6 +2585,8 @@ void APolitikaPrototypeMatch::PublishGameplayEvent(politika::rules::GameplayEven
         const politika::rules::CommandOutcomeEvent Routed = *Outcome;
         RouteCommandOutcome(Routed);
     }
+    if (const auto* Changed = std::get_if<politika::rules::OrderChangedEvent>(&PublishedEvents.Last()))
+        NoteOpponentOrderChanged(*Changed);
     GameplayEventPublished.Broadcast(PublishedEvents.Last());
 }
 
@@ -3023,6 +3031,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
                 static_cast<uint16>(FMath::Clamp(CurrentProgressMilli, 0, 1000))});
         if (!bWasComplete && Objective->IsComplete())
         {
+            RetireOpponentBrain(TEXT("objective_complete"));
             PendingOrders.Reset();
             if (TransitionLifecycle(politika::rules::MatchPhase::Terminal)
                 && TransitionLifecycle(politika::rules::MatchPhase::Results)
