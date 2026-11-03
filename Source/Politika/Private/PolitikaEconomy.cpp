@@ -521,6 +521,24 @@ APolitikaPrototypeStructure* APolitikaPrototypeMatch::TraceStructureThroughUnits
     return Cast<APolitikaPrototypeStructure>(Hit.GetActor());
 }
 
+APolitikaPrototypeUnit* APolitikaPrototypeMatch::TraceUnitThroughStructures(const FVector& Origin, const FVector& Direction) const
+{
+    const UWorld* World = GetWorld();
+    if (!World) return nullptr;
+    // The same channel and complexity as the click that found a building first. A client's list of
+    // buildings is not complete, so each one is passed as the ray meets it.
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaUnitThroughBuildings), true);
+    for (int32 Passed = 0; Passed < 8; ++Passed)
+    {
+        FHitResult Hit;
+        if (!World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params)) return nullptr;
+        if (APolitikaPrototypeUnit* Unit = Cast<APolitikaPrototypeUnit>(Hit.GetActor())) return Unit;
+        if (!Cast<APolitikaPrototypeStructure>(Hit.GetActor())) return nullptr;
+        Params.AddIgnoredActor(Hit.GetActor());
+    }
+    return nullptr;
+}
+
 FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
 {
     if (!Structure || !Structure->IsCapturable() || ViewerId == 0) return FString();

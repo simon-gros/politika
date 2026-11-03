@@ -896,6 +896,8 @@ public:
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
     // ECON-E29: what a ray meets first with every unit ignored, if that is a structure.
     APolitikaPrototypeStructure* TraceStructureThroughUnits(const FVector& Origin, const FVector& Direction) const;
+    // The first unit along the ray, passing through buildings, for a click (ECON-E31).
+    APolitikaPrototypeUnit* TraceUnitThroughStructures(const FVector& Origin, const FVector& Direction) const;
     // "25 on the way", "25 holding", "25 unloading", or a mix. Zeros are left out.
     static FString CargoPhrase(int32 Carried, int32 Holding, int32 Unloading = 0, int32 StoreFull = 0);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on

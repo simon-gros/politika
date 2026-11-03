@@ -16890,26 +16890,69 @@ fn oil_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), St
         // Sent there, it loads crude and brings it home to its own stock.
         pan_to_probe(&mut client_a, OIL_PROBE_DEPOT)?;
         thread::sleep(Duration::from_millis(1200));
+        // It parks at the producer's centre, inside the building. A click on the building away from
+        // it takes nothing, and a click where it stands takes the harvester.
         let (x, y) = wait_screen(
             &mut client_a,
             |t| entity_screen(t, "MP_CLIENT_SAMPLE", harvester),
             "the harvester on client A",
         )?;
-        // It parks at the producer's centre, where a click finds the building. A small box finds it.
-        let mark = client_a.offset();
-        client_a.drag_hold((x - 30.0, y - 40.0), (x + 30.0, y + 20.0))?;
-        client_a.release()?;
-        let boxed = client_a.wait_line(
-            &["RTS_SELECTION_SET", "source=box"],
-            Duration::from_secs(5),
-            mark,
-        )?;
-        if selection_ids(&boxed) != [harvester] {
-            return Err(format!(
-                "the box did not take only the harvester: {}",
-                boxed.trim()
-            ));
+        let mut bare_roof = None;
+        for (dx, dy) in [
+            (-14.0, -14.0),
+            (14.0, -14.0),
+            (-14.0, 8.0),
+            (14.0, 8.0),
+            (-22.0, -22.0),
+            (22.0, -22.0),
+        ] {
+            client_a.hover(640.0, 40.0)?;
+            thread::sleep(Duration::from_millis(300));
+            let hover_mark = client_a.offset();
+            client_a.hover(x + dx, y + dy)?;
+            let on_roof = client_a.wait_line(
+                &["RTS_BUILDING_CURSOR text=", "Your producer"],
+                Duration::from_millis(600),
+                hover_mark,
+            );
+            if on_roof.is_err() {
+                continue;
+            }
+            let click_mark = client_a.offset();
+            client_a.click(x + dx, y + dy, "1")?;
+            let set = client_a.wait_line(
+                &["RTS_SELECTION_SET", "source=click"],
+                Duration::from_secs(2),
+                click_mark,
+            )?;
+            if selection_ids(&set).is_empty() {
+                let through = client_a.text()[click_mark.min(client_a.text().len())..]
+                    .contains("RTS_SELECTION_THROUGH_BUILDING");
+                bare_roof = Some((dx, dy, set, through));
+                break;
+            }
         }
+        let bare = bare_roof.ok_or("no point on the producer's roof missed the harvester")?;
+        report.verdict(
+            "OIL-P10-A-CLICK-ON-THE-BUILDING-ALONE-TAKES-NOTHING",
+            !bare.3,
+            format!("at offset ({}, {}): {}", bare.0, bare.1, bare.2.trim()),
+        );
+        let mark = client_a.offset();
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", harvester)?;
+        let through = client_a.wait_line(
+            &[
+                "RTS_SELECTION_THROUGH_BUILDING player=1",
+                &format!("unit={harvester}"),
+            ],
+            Duration::from_secs(2),
+            mark,
+        );
+        report.verdict(
+            "OIL-P11-A-CLICK-TAKES-THE-HARVESTER-PARKED-IN-THE-BUILDING",
+            through.is_ok(),
+            format!("{through:?}"),
+        );
         let at = pan_to_probe(&mut client_a, OIL_PROBE_FIELD)?;
         let mark = server.offset();
         client_a.click(at.0, at.1, "3")?;

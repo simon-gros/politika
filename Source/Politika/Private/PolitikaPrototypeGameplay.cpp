@@ -3370,8 +3370,20 @@ void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::
     if (!ActiveMatch) return;
     FHitResult Hit;
     // The unit where the button went down, which a long frame may have left behind the cursor.
-    APolitikaPrototypeUnit* Unit = GetHitResultAtScreenPosition(SelectPressPosition, UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)
-        ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
+    const bool bHit = GetHitResultAtScreenPosition(SelectPressPosition, UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit);
+    APolitikaPrototypeUnit* Unit = bHit ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
+    // ECON-E31: a click prefers the unit. A building only selects what stands in it or behind it, and
+    // C, Z and right-clicks still find the building.
+    FVector Origin, Direction;
+    if (bHit && !Unit && Cast<APolitikaPrototypeStructure>(Hit.GetActor())
+        && DeprojectScreenPositionToWorld(SelectPressPosition.X, SelectPressPosition.Y, Origin, Direction))
+    {
+        Unit = ActiveMatch->TraceUnitThroughStructures(Origin, Direction);
+#if !UE_BUILD_SHIPPING
+        if (Unit)
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_SELECTION_THROUGH_BUILDING player=%u unit=%llu"), GetCommandPlayerId(), Unit->GetStableId());
+#endif
+    }
     const bool bOwnUnit = IsValid(Unit) && Unit->IsAlive() && Unit->GetOwnerPlayer() == GetCommandPlayerId();
     const bool bCtrl = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
     if (Op == politika::selection::SelectionOp::Replace)
