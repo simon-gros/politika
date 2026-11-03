@@ -2397,7 +2397,7 @@ int main() {
         assert(A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw && A.allocation.suppliedKw == 0);
         const pe::RequestResult Refused = Ledger.Train(1, 2, Rifleman, 0, 20);
         assert(Refused.rejection == EconomyRejection::ProducerUnpowered && A.spent == Spent && A.queue.size() == 1);
-        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding));
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, pw::kGeneratorHealth) > 0);
         assert(A.grid.Find(pe::kGeneratorBuilding)->health == pw::kGeneratorHealth);
         const pe::StepResult On = Ledger.Advance(1, ++Step);
         assert(On.powerChanged && A.producerPowered && A.queue.front().transaction == 1
@@ -2423,14 +2423,37 @@ int main() {
         const pe::StepResult Dark = Ledger.Advance(1, ++Step);
         assert(Dark.powerChanged && A.allocation.requiredKw == 0 && A.allocation.suppliedKw == 0
             && !A.grid.Find(pe::kGeneratorBuilding)->powered);
-        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding));
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, pw::kGeneratorHealth) > 0);
         const pe::StepResult Back = Ledger.Advance(1, ++Step);
         assert(Back.powerChanged && A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw
             && A.allocation.suppliedKw == pw::kGeneratorCapacityKw && A.grid.Find(pe::kGeneratorBuilding)->powered);
 
         // A source, or any id that is not a building, does not join the grid.
         const auto Miss = Ledger.DamageBuilding(1, 99, 50);
-        assert(Miss.applied == 0 && A.grid.Count() == Buildings && !Ledger.RepairBuilding(1, pe::kProducerBuilding));
+        assert(Miss.applied == 0 && A.grid.Count() == Buildings && Ledger.RepairBuilding(1, pe::kProducerBuilding, pw::kProducerHealth) == 0);
+
+        // ECON-E27: repair restores health a little at a time, and the plant supplies only at full.
+        assert(Ledger.DamageBuilding(1, pe::kGeneratorBuilding, pw::kGeneratorHealth).applied == pw::kGeneratorHealth);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, 0) == 0 && Ledger.RepairBuilding(1, pe::kGeneratorBuilding, -5) == 0);
+        const pw::Building* Plant = A.grid.Find(pe::kGeneratorBuilding);
+        assert(Plant->health == 0 && !Plant->generating);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, pw::kRepairPointsPerStep) == pw::kRepairPointsPerStep);
+        assert(Plant->health == pw::kRepairPointsPerStep && !Plant->generating);
+        assert(!Ledger.SetGeneratorOnline(1, true));
+        const pe::StepResult Partly = Ledger.Advance(1, ++Step);
+        // Alive again, so its load is back, and it still supplies nothing.
+        assert(Partly.powerChanged && A.allocation.requiredKw == pw::kGeneratorAuxiliaryKw && A.allocation.suppliedKw == 0);
+        // A hit during the work takes back only what it hits.
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, 40) == 40 && Plant->health == 41);
+        assert(Ledger.DamageBuilding(1, pe::kGeneratorBuilding, 8).applied == 8 && Plant->health == 33 && !Plant->generating);
+        // The amount is capped at what is missing, the plant comes back, and full health restores nothing.
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, 500) == pw::kGeneratorHealth - 33);
+        assert(Plant->health == pw::kGeneratorHealth && Plant->generating);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, 1) == 0);
+        // A switched-off plant at full health is not repaired back on.
+        assert(Ledger.SetGeneratorOnline(1, false) && !Plant->generating);
+        assert(Ledger.RepairBuilding(1, pe::kGeneratorBuilding, 1) == 0 && !Plant->generating);
+        assert(Ledger.SetGeneratorOnline(1, true) && Plant->generating);
     }
 
     // ECON-E9: a captured producer refunds once; a second living producer is refused; a generator moves.

@@ -264,7 +264,7 @@ void APolitikaPrototypeUnit::SetMoveOrder(EPolitikaPrototypeOrder Kind, const FV
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
     OrderStructure.Reset();
-    ClearCapture();
+    ClearBuildingWork();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -286,7 +286,7 @@ void APolitikaPrototypeUnit::SetAttackOrder(APolitikaPrototypeUnit* Target)
     ResetAutonomy();
     OrderTarget = Target;
     OrderStructure.Reset();
-    ClearCapture();
+    ClearBuildingWork();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -307,7 +307,7 @@ void APolitikaPrototypeUnit::SetAttackStructure(APolitikaPrototypeStructure* Str
     CurrentOrder = EPolitikaPrototypeOrder::Attack;
     ResetAutonomy();
     OrderTarget.Reset();
-    ClearCapture();
+    ClearBuildingWork();
     OrderStructure = Structure && Structure->IsBuilding() ? Structure : nullptr;
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
@@ -329,7 +329,7 @@ void APolitikaPrototypeUnit::SetGuardOrder()
     ResetAutonomy();
     OrderTarget.Reset();
     OrderStructure.Reset();
-    ClearCapture();
+    ClearBuildingWork();
 #if !UE_BUILD_SHIPPING
     bAcceptanceMovementLogged = false;
 #endif
@@ -347,10 +347,34 @@ void APolitikaPrototypeUnit::ClearCapture()
     CaptureSteps = 0;
 }
 
+void APolitikaPrototypeUnit::HoldForRepair(APolitikaPrototypeStructure* Structure)
+{
+    RepairTarget = Structure && Structure->IsGenerator() ? Structure : nullptr;
+    RepairSteps = 0;
+}
+
+void APolitikaPrototypeUnit::ClearRepair()
+{
+#if !UE_BUILD_SHIPPING
+    if (const APolitikaPrototypeStructure* Structure = RepairTarget.Get())
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR phase=end unit=%llu steps=%d health=%d"),
+            StableId, RepairSteps, Structure->GetHealth());
+#endif
+    RepairTarget = nullptr;
+    RepairSteps = 0;
+}
+
+void APolitikaPrototypeUnit::ClearBuildingWork()
+{
+    ClearCapture();
+    ClearRepair();
+}
+
 FString APolitikaPrototypeUnit::GetOrderLabel() const
 {
     if (IsRouted()) return TEXT("ROUTED");
     if (GetCaptureTarget()) return TEXT("Capturing");
+    if (GetRepairTarget()) return TEXT("Repairing");
     if (CargoPose == CargoPoseStoreFull && IsCarryingFood()) return TEXT("Store full");
     if (CargoPose == CargoPoseUnloading)
     {
@@ -393,7 +417,7 @@ void APolitikaPrototypeUnit::StopOrder()
     NavigationReplanAttempts = 0;
     OrderTarget.Reset();
     OrderStructure.Reset();
-    ClearCapture();
+    ClearBuildingWork();
     OrderDestination = GetActorLocation();
 }
 
@@ -402,6 +426,40 @@ void APolitikaPrototypeUnit::SetSelectedVisual(bool bSelected)
     InfantryPresentation->SetSelected(bSelected);
     if (bSelected) InfantryPresentation->Acknowledge(TEXT("select"));
     SelectionIndicator->SetVisibility(bSelected, true);
+}
+
+politika::rules::OrderEndReason APolitikaPrototypeUnit::ApproachBuilding(const APolitikaPrototypeStructure& Structure, float RangeCm, float DeltaSeconds)
+{
+    FVector Destination = Structure.GetActorLocation();
+    const FVector ToTarget = Destination - GetActorLocation();
+    // Stop inside the ring. Navigation may shift a goal, so do not aim at the edge.
+    Destination -= ToTarget.GetSafeNormal2D() * FMath::Max(0.0f, RangeCm - 50.0f);
+    if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
+    {
+        TArray<FVector> Supplied;
+        if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+            Match && Match->SupplyCaptureApproachRoute(*this, Destination, Supplied) && !Supplied.IsEmpty())
+        {
+            NavigationWaypoints = MoveTemp(Supplied);
+            NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
+            ResolvedNavigationDestination = Destination;
+        }
+    }
+    switch (EnsureRouteTo(Destination, DeltaSeconds))
+    {
+        case ERouteStatus::Waiting: return politika::rules::OrderEndReason::None;
+        case ERouteStatus::Failed:
+            StopOrder();
+            return politika::rules::OrderEndReason::NavigationFailed;
+        case ERouteStatus::Ready: break;
+    }
+    if (const politika::rules::OrderEndReason Stepped = AdvanceAlongRoute(DeltaSeconds);
+        Stepped != politika::rules::OrderEndReason::None)
+    {
+        StopOrder();
+        return Stepped;
+    }
+    return politika::rules::OrderEndReason::None;
 }
 
 politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float DeltaSeconds)
@@ -421,36 +479,19 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
             ClearCapture();
             return politika::rules::OrderEndReason::None;
         }
-        FVector Destination = Structure->GetActorLocation();
-        const FVector ToTarget = Destination - GetActorLocation();
-        // Stop inside the ring. Navigation may shift a goal, so do not aim at the edge.
-        Destination -= ToTarget.GetSafeNormal2D() * FMath::Max(0.0f, politika::power::kCaptureRangeCm - 50.0f);
-        if (NavigationWaypoints.IsEmpty() || NavigationWaypointIndex >= NavigationWaypoints.Num())
+        return ApproachBuilding(*Structure, politika::power::kCaptureRangeCm, DeltaSeconds);
+    }
+    if (APolitikaPrototypeStructure* Structure = RepairTarget.Get())
+    {
+        if (!IsAlive() || !CanMove() || bRouted || !Structure->IsGenerator() || Structure->GetOwnerPlayer() != OwnerPlayer
+            || Structure->GetHealth() >= politika::power::kGeneratorHealth)
         {
-            TArray<FVector> Supplied;
-            if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
-                Match && Match->SupplyCaptureApproachRoute(*this, Destination, Supplied) && !Supplied.IsEmpty())
-            {
-                NavigationWaypoints = MoveTemp(Supplied);
-                NavigationWaypointIndex = NavigationWaypoints.Num() > 1 ? 1 : 0;
-                ResolvedNavigationDestination = Destination;
-            }
+            ClearRepair();
+            return politika::rules::OrderEndReason::None;
         }
-        switch (EnsureRouteTo(Destination, DeltaSeconds))
-        {
-            case ERouteStatus::Waiting: return politika::rules::OrderEndReason::None;
-            case ERouteStatus::Failed:
-                StopOrder();
-                return politika::rules::OrderEndReason::NavigationFailed;
-            case ERouteStatus::Ready: break;
-        }
-        if (const politika::rules::OrderEndReason Stepped = AdvanceAlongRoute(DeltaSeconds);
-            Stepped != politika::rules::OrderEndReason::None)
-        {
-            StopOrder();
-            return Stepped;
-        }
-        return politika::rules::OrderEndReason::None;
+        if (FlatDistance(GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kRepairRangeCm)
+            return politika::rules::OrderEndReason::None;
+        return ApproachBuilding(*Structure, politika::power::kRepairRangeCm, DeltaSeconds);
     }
     if (!IsAlive() || MoveSpeed <= 0.0f) return politika::rules::OrderEndReason::None;
     // An idle unit moves only on its own, under its combat stance (FORM-F4): it never ends an
@@ -1058,6 +1099,14 @@ int32 APolitikaPrototypeUnit::ApplyPendingDamage()
             StableId, Health);
 #endif
         ClearCapture();
+    }
+    if (AppliedDamage > 0 && RepairTarget)
+    {
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR phase=hit unit=%llu health=%d"),
+            StableId, Health);
+#endif
+        ClearRepair();
     }
     if (Health == 0) { bBlastDeath = bPendingBlastDamage; StopOrder(); }
     bPendingBlastDamage = false;
@@ -2895,6 +2944,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
 #endif
     }
     AdvanceCaptures();
+    AdvanceRepairs();
     // Team vision follows movement so acquisition, firing and target loss use current
     // positions; offline (no fog) this marks every unit observed and changes nothing.
     UpdateTeamVisibility();
@@ -4035,13 +4085,59 @@ void APolitikaPrototypePlayerController::ServerDemolishBuilding_Implementation(u
     ActiveMatch->DemolishOwnedBuilding(ActiveMatch->FindStructureByStableId(StructureId), ActiveMatch->GetBoundParticipantId(this));
 }
 
-void APolitikaPrototypePlayerController::ServerRepairBuilding_Implementation(uint64 StructureId)
+void APolitikaPrototypePlayerController::ServerBeginRepair_Implementation(uint64 IssuerId, uint64 StructureId)
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
+    APolitikaPrototypeUnit* Unit = ActiveMatch->FindUnitByStableId(IssuerId);
     APolitikaPrototypeStructure* Structure = ActiveMatch->FindStructureByStableId(StructureId);
-    if (!Structure || Structure->GetOwnerPlayer() != ActiveMatch->GetBoundParticipantId(this)) return;
-    ActiveMatch->RepairOwnedBuilding(Structure);
+    if (!Unit || Unit->GetOwnerPlayer() != ActiveMatch->GetBoundParticipantId(this)) return;
+    ActiveMatch->BeginRepair(Unit, Structure);
+}
+
+void APolitikaPrototypePlayerController::RepairWithSelected(APolitikaPrototypeMatch* ActiveMatch,
+    TConstArrayView<APolitikaPrototypeUnit*> Selected, APolitikaPrototypeStructure* Structure)
+{
+    // The unit already on it stays on it. Otherwise the nearest one goes.
+    APolitikaPrototypeUnit* Repairer = nullptr;
+    float ClosestDistance = TNumericLimits<float>::Max();
+    for (APolitikaPrototypeUnit* Unit : Selected)
+    {
+        if (!Unit || !Unit->IsAlive() || Unit->IsRouted() || !Unit->CanMove()) continue;
+        if (Unit->GetRepairTarget() == Structure)
+        {
+            Repairer = Unit;
+            break;
+        }
+        const float Distance = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation());
+        if (Distance < ClosestDistance)
+        {
+            ClosestDistance = Distance;
+            Repairer = Unit;
+        }
+    }
+    if (!Repairer)
+    {
+        ShowLocalFeedback(TEXT("No selected unit can repair that generator."));
+        return;
+    }
+    const APolitikaPrototypeUnit* Busy = ActiveMatch->FindRepairer(Structure);
+    if (Busy && Busy != Repairer)
+    {
+        ShowLocalFeedback(TEXT("Another unit is already repairing that generator."));
+        return;
+    }
+    const bool bInRange = FVector::Dist2D(Repairer->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kRepairRangeCm;
+    if (HasAuthority())
+    {
+        if (!ActiveMatch->BeginRepair(Repairer, Structure))
+        {
+            ShowLocalFeedback(TEXT("That generator cannot be repaired."));
+            return;
+        }
+    }
+    else ServerBeginRepair(Repairer->GetStableId(), Structure->GetStableId());
+    ShowLocalFeedback(bInRange ? TEXT("Repairing the generator.") : TEXT("Moving to repair the generator."));
 }
 
 void APolitikaPrototypePlayerController::OrderUnderCursor()
@@ -4096,9 +4192,7 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
         }
         if (Structure->IsGenerator() && Structure->GetHealth() < politika::power::kGeneratorHealth)
         {
-            if (HasAuthority()) ActiveMatch->RepairOwnedBuilding(Structure);
-            else ServerRepairBuilding(Structure->GetStableId());
-            ShowLocalFeedback(TEXT("Generator repaired."));
+            RepairWithSelected(ActiveMatch, Selected, Structure);
             return;
         }
         // Nothing to do to it, so this is a move to the ground under it, not to the point on its roof.

@@ -185,18 +185,20 @@ int32 APolitikaPrototypeMatch::DamageOwnedBuilding(APolitikaPrototypeStructure* 
     return Hit.applied;
 }
 
-bool APolitikaPrototypeMatch::RepairOwnedBuilding(APolitikaPrototypeStructure* Structure)
+int32 APolitikaPrototypeMatch::RepairOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount)
 {
-    if (!HasAuthority() || !Structure || !Structure->IsGenerator()) return false;
-    if (!Economy.RepairBuilding(Structure->GetOwnerPlayer(), Structure->GetBuildingId())) return false;
+    if (!HasAuthority() || !Structure || !Structure->IsGenerator()) return 0;
+    const int32 Restored = Economy.RepairBuilding(Structure->GetOwnerPlayer(), Structure->GetBuildingId(), Amount);
+    if (Restored <= 0) return 0;
     if (const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer()))
         if (const politika::power::Building* Building = Account->grid.Find(Structure->GetBuildingId()))
             Structure->SetHealth(Building->health);
 #if !UE_BUILD_SHIPPING
-    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR participant=%u kind=generator health=%d"),
-        Structure->GetOwnerPlayer(), Structure->GetHealth());
+    if (Structure->GetHealth() >= politika::power::kGeneratorHealth)
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR participant=%u kind=generator health=%d"),
+            Structure->GetOwnerPlayer(), Structure->GetHealth());
 #endif
-    return true;
+    return Restored;
 }
 
 void APolitikaPrototypeStructure::ConfigureSource(APolitikaPrototypeMatch* InMatch, pe::Resource InResource, uint32 InOwner, uint8 InTeam, bool bHiddenLocally)
@@ -376,6 +378,72 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
     }
 }
 
+const APolitikaPrototypeUnit* APolitikaPrototypeMatch::FindRepairer(const APolitikaPrototypeStructure* Structure) const
+{
+    if (!Structure) return nullptr;
+    for (const APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit) && Unit->IsAlive() && Unit->GetRepairTarget() == Structure) return Unit;
+    return nullptr;
+}
+
+bool APolitikaPrototypeMatch::BeginRepair(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure)
+{
+    if (!HasAuthority() || GetMatchPhase() != politika::rules::MatchPhase::Active) return false;
+    if (!Unit || !Unit->IsAlive() || Unit->IsRouted() || !Unit->CanMove() || !Structure || !Structure->IsGenerator()) return false;
+    if (Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer() || Structure->GetHealth() >= politika::power::kGeneratorHealth) return false;
+    if (Unit->GetRepairTarget() == Structure) return true;
+    if (FindRepairer(Structure)) return false;
+    // A harvester leaves its routine as it does for any player's order. Its next trip would be a move
+    // order, and that ends the repair, so a trip it has queued already goes too.
+    PendingOrders.RemoveAll([this, Unit](const FPendingOrder& Pending)
+    {
+        return Pending.Unit == Unit && HarvesterOrderSequences.Remove(Pending.Request.sequence) > 0;
+    });
+    if (Economy.DetachHarvester(Unit->GetOwnerPlayer(), Unit->GetStableId()))
+        LogHarvest(TEXT("detached"), Unit->GetOwnerPlayer(), Unit->GetStableId(),
+            Economy.FindHarvester(Unit->GetOwnerPlayer(), Unit->GetStableId())->target, 0, 0, 0, SimulationStepsExecuted);
+    Unit->StopOrder();
+    Unit->HoldForRepair(Structure);
+#if !UE_BUILD_SHIPPING
+    const float Distance = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation());
+    UE_LOG(LogPolitikaStartup, Display,
+        TEXT("RTS_BUILDING_REPAIR phase=%s unit=%llu structure=%llu distance=%.1f health=%d"),
+        Distance <= politika::power::kRepairRangeCm ? TEXT("hold") : TEXT("approach"),
+        Unit->GetStableId(), Structure->GetStableId(), Distance, Structure->GetHealth());
+#endif
+    return true;
+}
+
+void APolitikaPrototypeMatch::AdvanceRepairs()
+{
+    if (!HasAuthority()) return;
+    for (APolitikaPrototypeUnit* Unit : Units)
+    {
+        if (!IsValid(Unit)) continue;
+        APolitikaPrototypeStructure* Structure = Unit->GetRepairTarget();
+        if (!Structure) continue;
+        const bool bCanWork = Unit->IsAlive() && !Unit->IsRouted() && Structure->IsGenerator()
+            && Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer() && Structure->GetHealth() < politika::power::kGeneratorHealth;
+        const bool bInRange = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kRepairRangeCm;
+        // Out of range with no steps yet is the walk in. Leaving after work has started ends it,
+        // and the health restored so far stays.
+        if (!bCanWork || (Unit->GetRepairSteps() > 0 && !bInRange))
+        {
+            Unit->ClearRepair();
+            continue;
+        }
+        if (!bInRange) continue;
+#if !UE_BUILD_SHIPPING
+        if (Unit->GetRepairSteps() == 0)
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_REPAIR phase=work unit=%llu health=%d"),
+                Unit->GetStableId(), Structure->GetHealth());
+#endif
+        Unit->SetRepairSteps(Unit->GetRepairSteps() + 1);
+        RepairOwnedBuilding(Structure, politika::power::kRepairPointsPerStep);
+        if (Structure->GetHealth() >= politika::power::kGeneratorHealth) Unit->ClearRepair();
+    }
+}
+
 FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32 Unloading, int32 StoreFull)
 {
     const int32 Total = FMath::Max(0, Carried);
@@ -405,13 +473,19 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
     if (!Structure->IsAlive() && !Structure->IsGenerator()) return FString::Printf(TEXT("%s %s  destroyed"), Who, Kind);
     const int32 MaxHealth = Structure->IsProducer() ? politika::power::kProducerHealth : politika::power::kGeneratorHealth;
     FString State;
+    const APolitikaPrototypeUnit* Repairer = FindRepairer(Structure);
     if (Structure->IsGenerator())
     {
         const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer());
         const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
         const bool bOnline = HasAuthority() ? (Plant && Plant->generating) : Structure->IsGeneratingPower();
         State = bOnline ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
-        if (bOurs && !bOnline) State += TEXT("  \u00b7  select a unit and right-click to repair");
+        if (Repairer)
+        {
+            const bool bInRange = FVector::Dist2D(Repairer->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kRepairRangeCm;
+            State += !bInRange && Repairer->GetRepairSteps() == 0 ? TEXT("  \u00b7  moving to repair") : TEXT("  \u00b7  repairing");
+        }
+        else if (bOurs && !bOnline) State += TEXT("  \u00b7  select a unit and right-click to repair");
     }
     const APolitikaPrototypeUnit* Captor = nullptr;
     for (const APolitikaPrototypeUnit* Unit : Units)

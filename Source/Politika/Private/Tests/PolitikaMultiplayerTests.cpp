@@ -4521,7 +4521,7 @@ bool FPolitikaMultiplayerBuildingDamageTest::RunTest(const FString& Parameters)
     Account = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("BD-05 the refusal charges nothing"), Account->spent, Spent);
 
-    TestTrue(TEXT("BD-06 repair restores the generator"), F.Match->RepairOwnedBuilding(Generator));
+    TestTrue(TEXT("BD-06 repair restores the generator"), F.Match->RepairOwnedBuilding(Generator, pw::kGeneratorHealth) > 0);
     TestEqual(TEXT("BD-06 health is full"), Generator->GetHealth(), pw::kGeneratorHealth);
     F.Step();
     Account = F.Match->GetEconomy().Find(HostId);
@@ -4851,6 +4851,206 @@ bool FPolitikaMultiplayerBuildingCaptureTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingRepairTest,
+    "Politika.RTS.Multiplayer.BuildingRepair",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E27: a unit walks to its own damaged generator and restores it one point a step. The plant
+// stays offline until it is full. An order, leaving or a hit ends the work and keeps the health. One
+// unit works at a time, and a harvester can do it, so a side with no soldiers can restore its power.
+bool FPolitikaMultiplayerBuildingRepairTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    // This world has no navmesh. The probe is what lets the seat's sources stand, as in the gold test.
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->InitializeEconomy();
+
+    APolitikaPrototypeStructure* EnemyGenerator = nullptr;
+    APolitikaPrototypeStructure* OwnProducer = nullptr;
+    APolitikaPrototypeStructure* OwnGenerator = nullptr;
+    APolitikaPrototypeStructure* Source = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure) continue;
+        if (Structure->IsSource()) Source = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId && Structure->IsGenerator()) EnemyGenerator = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsProducer()) OwnProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == HostId && Structure->IsGenerator()) OwnGenerator = Structure;
+    }
+    if (!TestNotNull(TEXT("The enemy has a generator"), EnemyGenerator)
+        || !TestNotNull(TEXT("The host has a producer"), OwnProducer)
+        || !TestNotNull(TEXT("The host has a generator"), OwnGenerator)) return false;
+    const FVector2D PlantAt(OwnGenerator->GetActorLocation().X, OwnGenerator->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Worker = F.AddUnit(HostId, PlantAt + FVector2D(80.0, 0.0));
+    APolitikaPrototypeUnit* Second = F.AddUnit(HostId, PlantAt + FVector2D(-80.0, 0.0));
+    if (!TestNotNull(TEXT("The worker spawns"), Worker) || !TestNotNull(TEXT("The second unit spawns"), Second)) return false;
+    const auto Plant = [&F, HostId, OwnGenerator]() { return F.Match->GetEconomy().Find(HostId)->grid.Find(OwnGenerator->GetBuildingId()); };
+    const auto PlaceWorker = [Worker](const FVector2D& At) { Worker->SetActorLocation(FVector(At.X, At.Y, Worker->GetActorLocation().Z)); };
+
+    // What it refuses.
+    TestFalse(TEXT("BR-01 a healthy plant needs no repair"), F.Match->BeginRepair(Worker, OwnGenerator));
+    TestTrue(TEXT("BR-01 the plant goes down"), F.Match->DemolishOwnedBuilding(OwnGenerator, HostId));
+    F.Match->DamageOwnedBuilding(EnemyGenerator, 1);
+    TestFalse(TEXT("BR-01 an enemy generator is refused"), F.Match->BeginRepair(Worker, EnemyGenerator));
+    F.Match->DamageOwnedBuilding(OwnProducer, 1);
+    TestFalse(TEXT("BR-01 a producer is refused"), F.Match->BeginRepair(Worker, OwnProducer));
+    if (Source) TestFalse(TEXT("BR-01 a resource is refused"), F.Match->BeginRepair(Worker, Source));
+    TestFalse(TEXT("BR-01 no unit is refused"), F.Match->BeginRepair(nullptr, OwnGenerator));
+    TestNull(TEXT("BR-01 none of that started anything"), Worker->GetRepairTarget());
+    TestEqual(TEXT("BR-01 the husk is still at zero"), OwnGenerator->GetHealth(), 0);
+
+    // The work takes time, and the plant stays down until it is finished.
+    TestTrue(TEXT("BR-02 the repair starts"), F.Match->BeginRepair(Worker, OwnGenerator));
+    TestEqual(TEXT("BR-02 nothing is restored by the order itself"), OwnGenerator->GetHealth(), 0);
+    TestEqual(TEXT("BR-02 the unit reads as repairing"), Worker->GetOrderLabel(), FString(TEXT("Repairing")));
+    F.Step();
+    TestEqual(TEXT("BR-02 one step restores one point"), OwnGenerator->GetHealth(), pw::kRepairPointsPerStep);
+    TestFalse(TEXT("BR-02 the plant is still offline"), Plant()->generating);
+    TestEqual(TEXT("BR-02 the cursor names the work"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString::Printf(TEXT("Your generator  1 / %d  \u00b7  offline  \u00b7  repairing"), pw::kGeneratorHealth));
+
+    // One unit at a time, and asking again loses nothing.
+    TestFalse(TEXT("BR-03 a second unit is refused"), F.Match->BeginRepair(Second, OwnGenerator));
+    TestNull(TEXT("BR-03 the second unit has no target"), Second->GetRepairTarget());
+    F.Step(2);
+    const int32 StepsSoFar = Worker->GetRepairSteps();
+    TestEqual(TEXT("BR-03 the steps count"), StepsSoFar, 3);
+    TestTrue(TEXT("BR-03 asking the same unit again is accepted"), F.Match->BeginRepair(Worker, OwnGenerator));
+    TestEqual(TEXT("BR-03 asking again keeps its progress"), Worker->GetRepairSteps(), StepsSoFar);
+
+    // An order ends the work and keeps the health.
+    int32 Kept = OwnGenerator->GetHealth();
+    TestEqual(TEXT("BR-04 three points so far"), Kept, 3);
+    Worker->StopOrder();
+    TestNull(TEXT("BR-04 an order ends the repair"), Worker->GetRepairTarget());
+    TestEqual(TEXT("BR-04 the count clears"), Worker->GetRepairSteps(), 0);
+    F.Step();
+    TestEqual(TEXT("BR-04 the health is kept"), OwnGenerator->GetHealth(), Kept);
+    TestEqual(TEXT("BR-04 the hint comes back"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString::Printf(TEXT("Your generator  %d / %d  \u00b7  offline  \u00b7  select a unit and right-click to repair"), Kept, pw::kGeneratorHealth));
+
+    // Leaving ends it too.
+    TestTrue(TEXT("BR-05 the repair starts again"), F.Match->BeginRepair(Worker, OwnGenerator));
+    F.Step();
+    Kept = OwnGenerator->GetHealth();
+    PlaceWorker(PlantAt + FVector2D(900.0, 0.0));
+    F.Step();
+    TestNull(TEXT("BR-05 leaving range ends the repair"), Worker->GetRepairTarget());
+    TestEqual(TEXT("BR-05 the health is kept"), OwnGenerator->GetHealth(), Kept);
+    PlaceWorker(PlantAt + FVector2D(80.0, 0.0));
+
+    // So does a hit on the unit.
+    TestTrue(TEXT("BR-06 the repair starts again"), F.Match->BeginRepair(Worker, OwnGenerator));
+    F.Step();
+    Kept = OwnGenerator->GetHealth();
+    Worker->PendingDamage = 1.0f;
+    TestEqual(TEXT("BR-06 the hit lands"), Worker->ApplyPendingDamage(), 1);
+    TestNull(TEXT("BR-06 a hit ends the repair"), Worker->GetRepairTarget());
+    F.Step();
+    TestEqual(TEXT("BR-06 the health is kept"), OwnGenerator->GetHealth(), Kept);
+
+    // Damage during the work is not undone, and the same work carries on from there.
+    TestTrue(TEXT("BR-07 the repair starts again"), F.Match->BeginRepair(Worker, OwnGenerator));
+    F.Match->DamageOwnedBuilding(OwnGenerator, 2);
+    TestEqual(TEXT("BR-07 the shot takes its points"), OwnGenerator->GetHealth(), Kept - 2);
+    TestEqual(TEXT("BR-07 the unit is still on it"), Worker->GetRepairTarget(), OwnGenerator);
+
+    // Finishing it brings the plant back on the next step, and only then.
+    const int32 Missing = pw::kGeneratorHealth - OwnGenerator->GetHealth();
+    F.Step(Missing - 1);
+    TestEqual(TEXT("BR-08 one point short"), OwnGenerator->GetHealth(), pw::kGeneratorHealth - 1);
+    TestFalse(TEXT("BR-08 still offline one point short"), Plant()->generating);
+    TestFalse(TEXT("BR-08 the producer has no power yet"), F.Match->GetEconomy().Find(HostId)->producerPowered);
+    F.Step();
+    TestEqual(TEXT("BR-08 full"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
+    TestTrue(TEXT("BR-08 the plant supplies again"), Plant()->generating);
+    TestNull(TEXT("BR-08 the unit is done"), Worker->GetRepairTarget());
+    F.Step();
+    TestTrue(TEXT("BR-08 the producer is powered"), F.Match->GetEconomy().Find(HostId)->producerPowered);
+    TestEqual(TEXT("BR-08 the plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString(TEXT("Your generator  100 / 100  \u00b7  online")));
+
+    // A scratch is a moment's work.
+    F.Match->DamageOwnedBuilding(OwnGenerator, 1);
+    TestTrue(TEXT("BR-09 a scratch can be repaired"), F.Match->BeginRepair(Worker, OwnGenerator));
+    F.Step();
+    TestEqual(TEXT("BR-09 one step mends it"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
+    TestTrue(TEXT("BR-09 and the plant is back"), Plant()->generating);
+
+    // From farther away the unit has to walk. With no route it stops.
+    TestTrue(TEXT("BR-10 the plant goes down again"), F.Match->DemolishOwnedBuilding(OwnGenerator, HostId));
+    PlaceWorker(PlantAt + FVector2D(900.0, 0.0));
+    TestTrue(TEXT("BR-10 an approach is accepted"), F.Match->BeginRepair(Worker, OwnGenerator));
+    TestEqual(TEXT("BR-10 the cursor says it is on the way"), F.Match->BuildingCursorText(OwnGenerator, HostId),
+        FString::Printf(TEXT("Your generator  0 / %d  \u00b7  offline  \u00b7  moving to repair"), pw::kGeneratorHealth));
+    F.Step();
+    TestNull(TEXT("BR-10 without a route the approach stops"), Worker->GetRepairTarget());
+    TestEqual(TEXT("BR-10 nothing is restored from a distance"), OwnGenerator->GetHealth(), 0);
+    const FVector ApproachGoal(PlantAt.X + pw::kRepairRangeCm - 50.0, PlantAt.Y, Worker->GetActorLocation().Z);
+    F.Match->CaptureRouteForTest = [ApproachGoal](const APolitikaPrototypeUnit& Unit, const FVector&, TArray<FVector>& Route)
+    {
+        Route = {Unit.GetActorLocation(), ApproachGoal};
+        return true;
+    };
+    TestTrue(TEXT("BR-11 the approach starts"), F.Match->BeginRepair(Worker, OwnGenerator));
+    int32 ApproachSteps = 0;
+    while (FVector::Dist2D(Worker->GetActorLocation(), OwnGenerator->GetActorLocation()) > pw::kRepairRangeCm && ApproachSteps < 80)
+    {
+        TestEqual(TEXT("BR-11 no health is restored on the walk"), OwnGenerator->GetHealth(), 0);
+        F.Step();
+        ++ApproachSteps;
+    }
+    TestTrue(TEXT("BR-11 the walker reaches the plant"), ApproachSteps > 0 && ApproachSteps < 80);
+    TestEqual(TEXT("BR-11 the unit is still on it"), Worker->GetRepairTarget(), OwnGenerator);
+    F.Step(2);
+    TestTrue(TEXT("BR-11 the work has begun"), OwnGenerator->GetHealth() > 0);
+    Worker->StopOrder();
+    F.Match->CaptureRouteForTest = nullptr;
+    PlaceWorker(PlantAt + FVector2D(4000.0, 0.0));
+
+    // A harvester can do it, and its routine does not pull it away.
+    APolitikaPrototypeUnit* Harvester = F.Match->SpawnHarvester(HostId, FVector(PlantAt.X + 80.0, PlantAt.Y, 42.0), FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("BR-12 the harvester spawns"), Harvester)) return false;
+    TestTrue(TEXT("BR-12 it joins the account"), F.Match->Economy.AddHarvester(HostId, Harvester->GetStableId()));
+    TestFalse(TEXT("BR-12 it is unarmed"), Harvester->CanAttack());
+    F.Step();
+    TestTrue(TEXT("BR-12 it can repair"), F.Match->BeginRepair(Harvester, OwnGenerator));
+    TestTrue(TEXT("BR-12 it leaves its routine"), F.Match->GetEconomy().FindHarvester(HostId, Harvester->GetStableId())->released);
+    F.Step(pw::kGeneratorHealth - OwnGenerator->GetHealth() - 1);
+    TestEqual(TEXT("BR-12 its routine does not pull it away"), Harvester->GetRepairTarget(), OwnGenerator);
+    F.Step();
+    TestEqual(TEXT("BR-12 it finishes the job"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
+    TestTrue(TEXT("BR-12 the plant is back"), Plant()->generating);
+
+    // The building changing hands ends the work.
+    TestTrue(TEXT("BR-13 the plant goes down once more"), F.Match->DemolishOwnedBuilding(OwnGenerator, HostId));
+    PlaceWorker(PlantAt + FVector2D(80.0, 0.0));
+    TestTrue(TEXT("BR-13 the repair starts"), F.Match->BeginRepair(Worker, OwnGenerator));
+    F.Step();
+    const pe::Ledger::CaptureResult Moved = F.Match->Economy.CaptureBuilding(HostId, EnemyId, OwnGenerator->GetBuildingId());
+    TestTrue(TEXT("BR-13 the plant is taken"), Moved.captured);
+    OwnGenerator->Adopt(EnemyId, F.Match->GetTeamForParticipant(EnemyId), Moved.newId, OwnGenerator->GetHealth(), OwnGenerator->GetTint());
+    F.Step();
+    TestNull(TEXT("BR-13 the unit stops working on it"), Worker->GetRepairTarget());
+    TestFalse(TEXT("BR-13 a plant you no longer own is refused"), F.Match->BeginRepair(Worker, OwnGenerator));
+
+    const FProperty* TargetProp = APolitikaPrototypeUnit::StaticClass()->FindPropertyByName(TEXT("RepairTarget"));
+    const FProperty* StepsProp = APolitikaPrototypeUnit::StaticClass()->FindPropertyByName(TEXT("RepairSteps"));
+    TestTrue(TEXT("BR-14 the repair target replicates"), TargetProp && TargetProp->HasAnyPropertyFlags(CPF_Net));
+    TestTrue(TEXT("BR-14 the repair count replicates"), StepsProp && StepsProp->HasAnyPropertyFlags(CPF_Net));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerBuildingDemolishTest,
     "Politika.RTS.Multiplayer.BuildingDemolish",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -4895,7 +5095,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestEqual(TEXT("BD-08 one hit takes the plant offline"), F.Match->DamageOwnedBuilding(OwnGenerator, 1), 1);
     TestEqual(TEXT("BD-08 a damaged plant reads as offline"), F.Match->BuildingCursorText(OwnGenerator, HostId),
         FString(TEXT("Your generator  99 / 100  \u00b7  offline  \u00b7  select a unit and right-click to repair")));
-    TestTrue(TEXT("BD-08 repair brings the plant back"), F.Match->RepairOwnedBuilding(OwnGenerator));
+    TestTrue(TEXT("BD-08 repair brings the plant back"), F.Match->RepairOwnedBuilding(OwnGenerator, pw::kGeneratorHealth) > 0);
     TestEqual(TEXT("BD-08 a repaired plant reads as online"), F.Match->BuildingCursorText(OwnGenerator, HostId),
         FString(TEXT("Your generator  100 / 100  \u00b7  online")));
     TestTrue(TEXT("BD-08 an unseen enemy building is not described"), F.Match->BuildingCursorText(EnemyProducer, HostId).IsEmpty());
@@ -5043,7 +5243,7 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
     TestEqual(TEXT("BD-07 a dead plant draws no load"), Host->allocation.requiredKw, static_cast<int64>(pw::kProducerLoadKw));
     TestEqual(TEXT("BD-07 a dead plant supplies nothing"), Host->allocation.suppliedKw, static_cast<int64>(0));
     TestFalse(TEXT("BD-07 the producer is unpowered"), Host->producerPowered);
-    TestTrue(TEXT("BD-06 the generator can be repaired"), F.Match->RepairOwnedBuilding(OwnGenerator));
+    TestTrue(TEXT("BD-06 the generator can be repaired"), F.Match->RepairOwnedBuilding(OwnGenerator, pw::kGeneratorHealth) > 0);
     TestEqual(TEXT("BD-06 repair restores its health"), OwnGenerator->GetHealth(), pw::kGeneratorHealth);
     TestTrue(TEXT("BD-06 repair restores its color"), OwnGenerator->GetPresentedTint().Equals(GeneratorTint));
     Plant = F.Match->GetEconomy().Find(HostId)->grid.Find(pe::kGeneratorBuilding);

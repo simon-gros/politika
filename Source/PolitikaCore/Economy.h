@@ -688,11 +688,12 @@ public:
         return result;
     }
 
-    // Repairs the generator to full health so the next Advance can power the same queue entry.
-    // A producer, a source and a missing building are not repaired.
-    bool RepairBuilding(ParticipantId participant, power::BuildingId id) noexcept {
+    // Restores up to `amount` health to the generator and returns what it restored. At full health
+    // the next Advance can power the same queue entry. A producer, a source and a missing building
+    // are not repaired.
+    std::int32_t RepairBuilding(ParticipantId participant, power::BuildingId id, std::int32_t amount) noexcept {
         Account* account = FindMutable(participant);
-        return account && account->grid.Repair(id);
+        return account ? account->grid.Repair(id, amount) : 0;
     }
 
     struct CaptureResult {

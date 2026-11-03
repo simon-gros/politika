@@ -31,6 +31,9 @@ inline constexpr std::int32_t kProducerHealth = 200;
 // Fixture, not balance. Three seconds at 20 Hz, long enough to walk away or be hit.
 inline constexpr float kCaptureRangeCm = 200.0f;
 inline constexpr std::int32_t kCaptureSteps = 60;
+// Fixture, not balance. One point per step at 20 Hz: a husk takes 5 seconds and a scratch far less.
+inline constexpr float kRepairRangeCm = 200.0f;
+inline constexpr std::int32_t kRepairPointsPerStep = 1;
 
 struct Building {
     BuildingId id = 0;
@@ -127,14 +130,16 @@ public:
         return result;
     }
 
-    // Restores a generator to full health and lets it supply again. A producer is not repaired here.
-    bool Repair(BuildingId id) noexcept {
+    // Restores up to `amount` health to a generator and returns what it restored. The plant supplies
+    // again only once it is back at full health. A producer is not repaired here.
+    std::int32_t Repair(BuildingId id, std::int32_t amount) noexcept {
         const auto found = std::find_if(buildings.begin(), buildings.end(),
             [id](Building& candidate) { return candidate.id == id && candidate.kind == BuildingKind::Generator; });
-        if (found == buildings.end() || (found->health == found->maxHealth && found->generating)) return false;
-        found->health = found->maxHealth;
-        found->generating = true;
-        return true;
+        if (found == buildings.end() || amount <= 0 || found->health >= found->maxHealth) return 0;
+        const std::int32_t restored = std::min(found->maxHealth - found->health, amount);
+        found->health += restored;
+        if (found->health == found->maxHealth) found->generating = true;
+        return restored;
     }
 
     // Generators first, so a plant can start from its own output, then every other building, each

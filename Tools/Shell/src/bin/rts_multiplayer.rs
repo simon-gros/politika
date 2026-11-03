@@ -15245,13 +15245,104 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             format!("{demolished:?} | {unpowered:?}"),
         );
 
-        // A right-click on your own husk repairs it, and training works again.
+        // A right-click on your own husk sends the selected unit. It walks over and works, and the
+        // plant stays down until the work is finished.
         select_entity(&mut client_a, "MP_CLIENT_SAMPLE", reserve)?;
+        let reserve_tag = format!("unit={reserve} ");
+        let mark = server.offset();
+        let mark_cursor = client_a.offset();
+        client_a.click(own_generator.0, own_generator.1, "3")?;
+        let begun = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=", &reserve_tag],
+            Duration::from_secs(5),
+            mark,
+        );
+        let working = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=work", &reserve_tag],
+            Duration::from_secs(60),
+            mark,
+        );
+        let reading = wait_cursor(
+            &mut client_a,
+            &["Your generator", "offline", "repairing"],
+            mark_cursor,
+        );
+        let mark_reject = server.offset();
+        client_a.key("b")?;
+        let still_down = server.wait_line(
+            &[
+                "RTS_ECONOMY_REJECT participant=1",
+                "rejection=producer_unpowered",
+            ],
+            Duration::from_secs(3),
+            mark_reject,
+        );
+        report.artifact(
+            "client_a_repair_under_way_png",
+            &client_a.screenshot(evidence, "01b-repair-under-way")?,
+        );
+
+        // X ends the work, and the health restored so far stays.
+        let mark = server.offset();
+        client_a.key("x")?;
+        let stopped = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=end", &reserve_tag],
+            Duration::from_secs(3),
+            mark,
+        );
+        let first_steps = stopped
+            .as_ref()
+            .ok()
+            .and_then(|l| number(l, "steps"))
+            .unwrap_or(0.0);
+        let kept = stopped
+            .as_ref()
+            .ok()
+            .and_then(|l| number(l, "health"))
+            .unwrap_or(-1.0);
+        let mark_cursor = client_a.offset();
+        client_a.hover(640.0, 40.0)?;
+        thread::sleep(Duration::from_millis(300));
+        client_a.hover(own_generator.0, own_generator.1)?;
+        let health_text = format!("{kept:.0} / 100");
+        let stopped_reading = wait_cursor(
+            &mut client_a,
+            &["Your generator", &health_text, "right-click to repair"],
+            mark_cursor,
+        );
+        let finished_early = appears(
+            &mut server,
+            &["RTS_BUILDING_REPAIR participant=1"],
+            Duration::from_secs(1),
+            mark,
+        );
+        report.verdict(
+            "BLD-P18-AN-ORDER-STOPS-THE-REPAIR-AND-KEEPS-THE-HEALTH",
+            stopped.is_ok()
+                && first_steps >= 1.0
+                && first_steps < 100.0
+                && kept == first_steps
+                && stopped_reading.is_ok()
+                && !finished_early,
+            format!("{stopped:?} | {stopped_reading:?} | finished anyway: {finished_early}"),
+        );
+
+        // A second right-click finishes the job from there, and training works again.
         let mark = server.offset();
         client_a.click(own_generator.0, own_generator.1, "3")?;
+        let finished = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=end", &reserve_tag],
+            Duration::from_secs(30),
+            mark,
+        );
+        let second_steps = finished
+            .as_ref()
+            .ok()
+            .and_then(|l| number(l, "steps"))
+            .unwrap_or(0.0);
         let repaired = server.wait_line(
             &["RTS_BUILDING_REPAIR participant=1", "health=100"],
-            Duration::from_secs(5),
+            Duration::from_secs(2),
             mark,
         );
         thread::sleep(Duration::from_millis(400));
@@ -15264,8 +15355,16 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         );
         report.verdict(
             "BLD-P04-A-RIGHT-CLICK-REPAIRS-YOUR-GENERATOR",
-            repaired.is_ok() && trained.is_ok(),
-            format!("{repaired:?} | {trained:?}"),
+            begun.is_ok()
+                && working.is_ok()
+                && reading.is_ok()
+                && still_down.is_ok()
+                && repaired.is_ok()
+                && first_steps + second_steps == 100.0
+                && trained.is_ok(),
+            format!(
+                "{begun:?} | {working:?} | {reading:?} | {still_down:?} | {repaired:?} | steps {first_steps} + {second_steps} | {trained:?}"
+            ),
         );
 
         // Your own healthy building is not a refusal: the click is a move to the ground under the
@@ -15480,14 +15579,72 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             ),
         );
 
-        // Its owner repairs it, and queues two units on the restored power.
+        // Its owner sends a soldier, and the attacker still standing there shoots it off the job. One
+        // hit ends the work and the health restored so far stays.
         select_entity(&mut client_b, "MP_CLIENT_SAMPLE", defender)?;
+        let defender_tag = format!("unit={defender} ");
         let husk = pan_to_probe(&mut client_b, BLD_PROBE_ENEMY_GENERATOR)?;
         let mark = server.offset();
         client_b.click(husk.0, husk.1, "3")?;
+        server
+            .wait_line(
+                &["RTS_BUILDING_REPAIR phase=work", &defender_tag],
+                Duration::from_secs(60),
+                mark,
+            )
+            .map_err(|e| format!("the walk to the husk: {e}"))?;
+        let attacked = order_attack(&mut client_a, &mut server, attacker, defender);
+        let hit = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=hit", &defender_tag],
+            Duration::from_secs(5),
+            mark,
+        );
+        client_a.key("x")?;
+        let ended = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=end", &defender_tag],
+            Duration::from_secs(3),
+            mark,
+        );
+        let first_steps_b = ended
+            .as_ref()
+            .ok()
+            .and_then(|l| number(l, "steps"))
+            .unwrap_or(0.0);
+        let finished_under_fire = appears(
+            &mut server,
+            &["RTS_BUILDING_REPAIR participant=2"],
+            Duration::from_secs(1),
+            mark,
+        );
+        report.verdict(
+            "BLD-P19-A-HIT-ON-THE-UNIT-STOPS-THE-REPAIR",
+            attacked.is_ok()
+                && hit.is_ok()
+                && ended.is_ok()
+                && first_steps_b >= 1.0
+                && first_steps_b < 100.0
+                && !finished_under_fire,
+            format!("{attacked:?} | {hit:?} | {ended:?} | finished anyway: {finished_under_fire}"),
+        );
+        thread::sleep(Duration::from_millis(500));
+
+        // Left alone it finishes, and its owner queues two units on the restored power.
+        let husk = pan_to_probe(&mut client_b, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_b.click(husk.0, husk.1, "3")?;
+        let finished_b = server.wait_line(
+            &["RTS_BUILDING_REPAIR phase=end", &defender_tag],
+            Duration::from_secs(30),
+            mark,
+        );
+        let second_steps_b = finished_b
+            .as_ref()
+            .ok()
+            .and_then(|l| number(l, "steps"))
+            .unwrap_or(0.0);
         let repaired_b = server.wait_line(
             &["RTS_BUILDING_REPAIR participant=2", "health=100"],
-            Duration::from_secs(5),
+            Duration::from_secs(2),
             mark,
         );
         thread::sleep(Duration::from_millis(400));
@@ -15502,8 +15659,8 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         );
         report.verdict(
             "BLD-P09-ITS-OWNER-REPAIRS-IT",
-            repaired_b.is_ok() && b_queued.is_ok(),
-            format!("{repaired_b:?} | {b_queued:?}"),
+            repaired_b.is_ok() && first_steps_b + second_steps_b == 100.0 && b_queued.is_ok(),
+            format!("{repaired_b:?} | steps {first_steps_b} + {second_steps_b} | {b_queued:?}"),
         );
 
         // A holds next to the generator until it changes hands.
@@ -15806,7 +15963,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
                 .collect();
             let tag = [
                 "RTS_BUILDING_DEMOLISH",
-                "RTS_BUILDING_REPAIR",
+                "RTS_BUILDING_REPAIR participant=",
                 "RTS_BUILDING_CAPTURE unit=",
             ]
             .iter()

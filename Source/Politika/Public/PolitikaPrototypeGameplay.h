@@ -364,6 +364,11 @@ public:
     APolitikaPrototypeStructure* GetCaptureTarget() const { return CaptureTarget.Get(); }
     int32 GetCaptureSteps() const { return CaptureSteps; }
     void SetCaptureSteps(int32 Steps) { CaptureSteps = Steps; }
+    void HoldForRepair(APolitikaPrototypeStructure* Structure);
+    void ClearRepair();
+    APolitikaPrototypeStructure* GetRepairTarget() const { return RepairTarget.Get(); }
+    int32 GetRepairSteps() const { return RepairSteps; }
+    void SetRepairSteps(int32 Steps) { RepairSteps = Steps; }
     void SetGuardOrder();
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
@@ -497,6 +502,7 @@ private:
     friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerBuildingRepairTest;
     friend class FPolitikaMultiplayerHarvestTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
@@ -603,6 +609,14 @@ private:
     TObjectPtr<APolitikaPrototypeStructure> CaptureTarget;
     UPROPERTY(Replicated)
     int32 CaptureSteps = 0;
+    // Public for the same reason. The count is steps worked; the building's health is the progress.
+    UPROPERTY(Replicated)
+    TObjectPtr<APolitikaPrototypeStructure> RepairTarget;
+    UPROPERTY(Replicated)
+    int32 RepairSteps = 0;
+    // Walks towards a building on the route an attack uses, stopping inside the given ring.
+    politika::rules::OrderEndReason ApproachBuilding(const APolitikaPrototypeStructure& Structure, float RangeCm, float DeltaSeconds);
+    void ClearBuildingWork();
 #if !UE_BUILD_SHIPPING
     bool bAcceptanceMovementLogged = false;
 #endif
@@ -847,9 +861,11 @@ public:
     // the money to the next simulation step. Returns false only when the source has no binding.
     bool SubmitEconomyIntent(APlayerController* Source, const FPolitikaNetEconomyIntent& Intent);
     const politika::economy::Ledger& GetEconomy() const { return Economy; }
-    // Applies weapon damage to one building on its owner's grid, or repairs the caller's own generator.
+    // Applies weapon damage to one building on its owner's grid.
     int32 DamageOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
-    bool RepairOwnedBuilding(APolitikaPrototypeStructure* Structure);
+    // Restores health to one generator and returns what it restored. Only a working unit calls this
+    // in play; BeginRepair is how a player gets there.
+    int32 RepairOwnedBuilding(APolitikaPrototypeStructure* Structure, int32 Amount);
     // Destroys one living building that belongs to this participant, through the same damage rules.
     bool DemolishOwnedBuilding(APolitikaPrototypeStructure* Structure, uint32 ParticipantId);
     // What the viewer may read about a building under the cursor. Empty when fog hides it, so health
@@ -860,12 +876,19 @@ public:
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    // Starts a repair of the unit's owner's damaged generator, walking in first as a capture does.
+    // Any unit that can move may do it, harvesters included, so a side with no soldiers left can still
+    // restore its power. One unit works on a generator at a time. Asking the unit already on it again
+    // changes nothing.
+    bool BeginRepair(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    const APolitikaPrototypeUnit* FindRepairer(const APolitikaPrototypeStructure* Structure) const;
     // The faction color of a participant's producer, or that color darkened for a generator.
     FLinearColor BuildingTintFor(uint32 ParticipantId, bool bGenerator) const;
     // Automation worlds have no navigation mesh. A set hook supplies the approach route; shipping
     // and an unset hook return false and the approach uses the navigation mesh or stops.
     bool SupplyCaptureApproachRoute(const APolitikaPrototypeUnit& Unit, const FVector& Destination, TArray<FVector>& OutRoute) const;
     void AdvanceCaptures();
+    void AdvanceRepairs();
     bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
     // Advisory slot check shared by the client planner and the server's formation planner:
@@ -1285,6 +1308,7 @@ private:
     friend class FPolitikaMultiplayerBuildingAttackTest;
     friend class FPolitikaMultiplayerBuildingSightTest;
     friend class FPolitikaMultiplayerBuildingCaptureTest;
+    friend class FPolitikaMultiplayerBuildingRepairTest;
     friend class FPolitikaMultiplayerBuildingDemolishTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
@@ -1558,7 +1582,8 @@ public:
     UFUNCTION(Server, Reliable) void ServerBeginCapture(uint64 IssuerId, uint64 StructureId);
     void CaptureUnderCursor();
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(uint64 StructureId);
-    UFUNCTION(Server, Reliable) void ServerRepairBuilding(uint64 StructureId);
+    UFUNCTION(Server, Reliable) void ServerBeginRepair(uint64 IssuerId, uint64 StructureId);
+    void RepairWithSelected(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Selected, APolitikaPrototypeStructure* Structure);
     void DemolishUnderCursor();
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
