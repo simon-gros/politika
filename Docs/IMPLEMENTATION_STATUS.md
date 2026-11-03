@@ -36,14 +36,20 @@ Every promotion records an exact revision, protocol/schema compatibility, comman
 5. **Faction/Unaligned content:** networked participants and a system authority record exist; full canonical faction rosters, autonomous Yugoslav-world AI, diplomacy, intelligence deception, nuclear gameplay and campaign remain design/integration work.
 6. **Platform/release:** Linux Development is the dominant evidence baseline. Windows, SteamOS/Deck, Android, public dedicated hosting, remapping/accessibility and release security require their own qualification.
 
+## UI-first playtest readiness (decision 3 November 2026)
+
+**Priority change, not an acceptance claim:** The current prototype has many dense, concurrent text/index readouts. Before **extensive skirmish playtesting, prolonged balance exercises or user-facing demos**, implement and scope-qualify **UI-F0–UI-F4**: on-screen data audit; reusable design system and visual HUD; authorized economy, selection, queue and order binding; robust picking and focus; and tested human-readable interaction. Keep raw diagnostic IDs in an optional developer overlay rather than the default HUD. See [UI Overview §22](POLITIKA_UI_OVERVIEW.md#22-ui-first-visual-consolidation-and-skirmish-playtest-entry-gate--3-november-2026), [HUD Architecture](RTS_HUD_ARCHITECTURE.md) and [Engine Outline §7.4B](ENGINE_OUTLINE.md#74b-ui-first-integration-gate--required-before-extensive-skirmish-playtesting-decision-3-november-2026).
+
+**Allowed concurrently:** focused economy/network/command/AI Automation, packaged two-client regression and short interaction smoke tests. UI-F4 is a **product usability gate**, not a blocker to writing or narrow-testing OPP-1. This decision does not claim UI-F0–F4 implemented, and does not retroactively disqualify already accepted sub-slices.
+
 ## Near-term order
 
-1. Confirm and accept ECON-E31/E32 against explicit dependencies and evidence before beginning dependent work.
-2. Fix player-visible selection/targeting issues and strengthen UI/input acceptance on packaged rendered clients; track these as product defects rather than modifying tests to hide them.
-3. Implement a minimal deterministic **server-owned opponent** through the identical typed command admission used by humans; no AI-side world-state privileges, no fake orders.
-4. Complete one repeatable human-versus-AI skirmish with economy, recruitment, combat, objectives, victory/defeat, results and rematch.
-5. Measure simultaneous-group admission cost, UI invalidations and network replication under stress; expand canonical faction/content implementation only with corresponding evidence.
-6. Qualify each planned device/platform independently. Keep historic milestone records immutable.
+1. Confirm dependency and qualification state for ECON-E31/E32 before editing or building any checkout with an active qualification job; preserve accepted existing economy/network evidence.
+2. **Begin UI-F0 immediately:** inventory textual HUD data, screenshot overlap/legibility at 720p, 1080p and 4K, map each field to permitted observer data and sketch the new information hierarchy.
+3. **Build UI-F1 and UI-F2:** a visually structured, original HUD with grouped resource/power/food indicators, selection and producer inspectors, queue/progress and contextual action card, with real server-authorized values and typed command parity.
+4. **Complete UI-F3 and UI-F4:** fix parked harvester and world/UI click priority, clarify denied actions, implement focus/help cues and qualify readable tasks on real rendered clients. Only then begin **extended human-versus-AI skirmish and balance playtesting**.
+5. Continue narrow server-owned OPP-1 development and economy/network regression alongside UI work; then integrate into a complete repeatable skirmish with normal victory/defeat, results and rematch.
+6. Measure large selections, widget invalidation, mass command cost and replication; integrate canonical faction content incrementally. Qualify each platform independently.
 
 ## Documentation change policy
 
