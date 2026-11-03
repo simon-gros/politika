@@ -15132,38 +15132,43 @@ fn press_on_building(
     Ok(())
 }
 
-/// Moves the cursor onto a unit until the client reports looking through it at a building.
-fn hover_through_unit(game: &mut Game, unit: u64) -> Result<(f64, f64), String> {
-    for (dx, dy) in [
-        (0.0, 0.0),
-        (0.0, -8.0),
-        (0.0, -16.0),
-        (0.0, -24.0),
-        (0.0, -32.0),
-        (0.0, 8.0),
-    ] {
-        let sampled = game.offset();
-        let _ = game.wait_line(
-            &["MP_CLIENT_SAMPLE", &format!("entity={unit} ")],
-            Duration::from_secs(3),
-            sampled,
-        );
-        let (x, y) = wait_screen(
-            game,
-            |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit),
-            &format!("unit {unit}"),
-        )?;
-        let mark = game.offset();
-        game.hover(x + dx, y + dy)?;
-        if game
-            .wait_line(
-                &["RTS_BUILDING_CURSOR_THROUGH through_unit=1"],
-                Duration::from_secs(1),
-                mark,
-            )
-            .is_ok()
-        {
-            return Ok((x + dx, y + dy));
+/// Zooms in on a unit and moves the cursor over it until the client reports looking through it at a
+/// building. Zoomed out, a unit is a few pixels tall, and the ones low on its body see the ground.
+fn hover_through_unit(game: &mut Game, unit: u64, probe: usize) -> Result<(f64, f64), String> {
+    game.hover(640.0, 360.0)?;
+    let display = game.display.clone().ok_or("no display")?;
+    for _ in 0..8 {
+        xdo(&display, &["click", "4"])?;
+        thread::sleep(Duration::from_millis(80));
+    }
+    thread::sleep(Duration::from_millis(600));
+    pan_to_probe(game, probe)?;
+    let sampled = game.offset();
+    game.wait_line(
+        &["MP_CLIENT_SAMPLE", &format!("entity={unit} ")],
+        Duration::from_secs(5),
+        sampled,
+    )?;
+    let (x, y) = wait_screen(
+        game,
+        |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit),
+        &format!("unit {unit}"),
+    )?;
+    for dy in (-60..=8).rev().step_by(4) {
+        for dx in [0.0, -4.0, 4.0] {
+            let at = (x + dx, y + f64::from(dy));
+            let mark = game.offset();
+            game.hover(at.0, at.1)?;
+            if game
+                .wait_line(
+                    &["RTS_BUILDING_CURSOR_THROUGH through_unit=1"],
+                    Duration::from_millis(300),
+                    mark,
+                )
+                .is_ok()
+            {
+                return Ok(at);
+            }
         }
     }
     Err(format!(
@@ -16535,7 +16540,7 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
         .map_err(|e| format!("seat 2's step in front of the works: {e}"))?;
         thread::sleep(Duration::from_millis(500));
         let mark_through = client_b.offset();
-        let aimed = hover_through_unit(&mut client_b, walker_b);
+        let aimed = hover_through_unit(&mut client_b, walker_b, WRK_PROBE_FRONT);
         let named_through = wait_cursor(&mut client_b, &["Enemy works"], mark_through);
         report.artifact(
             "client_b_through_unit_png",
@@ -16883,8 +16888,28 @@ fn oil_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), St
         );
 
         // Sent there, it loads crude and brings it home to its own stock.
-        select_entity_near_probe(&mut client_a, harvester, OIL_PROBE_DEPOT)?;
-        thread::sleep(Duration::from_millis(300));
+        pan_to_probe(&mut client_a, OIL_PROBE_DEPOT)?;
+        thread::sleep(Duration::from_millis(1200));
+        let (x, y) = wait_screen(
+            &mut client_a,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", harvester),
+            "the harvester on client A",
+        )?;
+        // It parks at the producer's centre, where a click finds the building. A small box finds it.
+        let mark = client_a.offset();
+        client_a.drag_hold((x - 30.0, y - 40.0), (x + 30.0, y + 20.0))?;
+        client_a.release()?;
+        let boxed = client_a.wait_line(
+            &["RTS_SELECTION_SET", "source=box"],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        if selection_ids(&boxed) != [harvester] {
+            return Err(format!(
+                "the box did not take only the harvester: {}",
+                boxed.trim()
+            ));
+        }
         let at = pan_to_probe(&mut client_a, OIL_PROBE_FIELD)?;
         let mark = server.offset();
         client_a.click(at.0, at.1, "3")?;
