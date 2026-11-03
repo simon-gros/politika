@@ -3787,11 +3787,11 @@ bool FPolitikaMultiplayerGoldTest::RunTest(const FString& Parameters)
     const pe::Cents Before = Account->available;
     const FPolitikaNetEconomyIntent Sale = Request(Host, pe::EconomyOp::SellGold, 0);
     TestEqual(TEXT("G-A10 a sale is admitted"), Send(Host, Sale), None);
-    const pe::GoldQuote Lot = *pe::QuoteGoldLot(pe::kLoadGold);
+    const pe::SaleQuote Lot = *pe::QuoteGoldLot(pe::kLoadGold);
     TestEqual(TEXT("G-A10 the net amount arrives once"), Account->available, Before + Lot.net);
     TestEqual(TEXT("G-A10 the lot leaves the stock"), Account->goldHeld, static_cast<int64>(0));
     TestEqual(TEXT("G-A10 the outcome reports the amount"), OutcomeOf(Sale)->AmountCents, Lot.net);
-    TestEqual(TEXT("G-A10 the outcome reports the gold"), OutcomeOf(Sale)->GoldSold, static_cast<int32>(pe::kSaleLotGold));
+    TestEqual(TEXT("G-A10 the outcome reports the gold"), OutcomeOf(Sale)->SoldQuantity, static_cast<int32>(pe::kSaleLotGold));
     TestEqual(TEXT("G-A10 the view reports the money"), Host->GetOwnEconomy().AvailableCents, Account->available);
     TestTrue(TEXT("G-A10 both ledgers reconcile"), Account->Reconciles() && Account->GoldReconciles());
     TestEqual(TEXT("G-A10 the other seat's treasury is untouched"), Other->saleCredited, static_cast<int64>(0));
@@ -3865,8 +3865,8 @@ bool FPolitikaMultiplayerGoldTest::RunTest(const FString& Parameters)
     F.Match->SubmitEconomyIntent(Host, SaleB);
     F.Match->SubmitEconomyIntent(Host, SaleC);
     F.Step();
-    TestEqual(TEXT("G-A17 the first sale takes a lot"), OutcomeOf(SaleA)->GoldSold, static_cast<int32>(pe::kSaleLotGold));
-    TestEqual(TEXT("G-A17 the second takes what is left"), OutcomeOf(SaleB)->GoldSold, static_cast<int32>(Stock - pe::kSaleLotGold));
+    TestEqual(TEXT("G-A17 the first sale takes a lot"), OutcomeOf(SaleA)->SoldQuantity, static_cast<int32>(pe::kSaleLotGold));
+    TestEqual(TEXT("G-A17 the second takes what is left"), OutcomeOf(SaleB)->SoldQuantity, static_cast<int32>(Stock - pe::kSaleLotGold));
     TestEqual(TEXT("G-A17 the third finds nothing"), static_cast<int32>(OutcomeOf(SaleC)->Rejection), NothingToSell);
     TestEqual(TEXT("G-A17 the stock is empty"), Account->goldHeld, static_cast<int64>(0));
     TestTrue(TEXT("G-A17 both ledgers reconcile"), Account->Reconciles() && Account->GoldReconciles());
@@ -3892,6 +3892,7 @@ bool FPolitikaMultiplayerGoldTest::RunTest(const FString& Parameters)
     F.Match->Economy.Clear();
     F.Match->Economy.AddParticipant(HostId, pe::kStartingCents, true, F.Match->SimulationStepsExecuted + 1);
     F.Match->Economy.SetSource(HostId, pe::Resource::Gold, 0);
+    F.Match->Economy.SetSource(HostId, pe::Resource::Oil, 0);
     Account = F.Match->GetEconomy().Find(HostId);
     TestEqual(TEXT("G-A19 an empty source refuses one"), Send(Host, Request(Host, pe::EconomyOp::Train, HarvesterRecipe)),
         static_cast<int32>(pe::EconomyRejection::NoResourceSource));
@@ -5376,6 +5377,97 @@ bool FPolitikaMultiplayerWorksTest::RunTest(const FString& Parameters)
     if (!TestEqual(TEXT("WK-08 one works stands again"), FindWorks().Num(), 1)) return false;
     TestEqual(TEXT("WK-08 it is neutral again"), FindWorks()[0]->GetOwnerPlayer(), 0u);
     TestEqual(TEXT("WK-08 nobody holds it"), Held(HostId) + Held(EnemyId), 0u);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerOilTest,
+    "Politika.RTS.Multiplayer.Oil",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E30: a field behind each base, its own stock, and a sale through the same request path as gold.
+bool FPolitikaMultiplayerOilTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    const pe::Account* Other = F.Match->GetEconomy().Find(EnemyId);
+    const APolitikaPrototypeStructure* Field = F.Match->FindSourceOf(HostId, pe::Resource::Oil);
+    const APolitikaPrototypeStructure* Depot = F.Match->FindStructureOf(HostId);
+    const APolitikaPrototypeStructure* Gold = F.Match->FindSourceOf(HostId, pe::Resource::Gold);
+    if (!TestNotNull(TEXT("The host has an account"), Account) || !TestNotNull(TEXT("The enemy has an account"), Other)
+        || !TestNotNull(TEXT("OL-01 the host has a field"), Field) || !TestNotNull(TEXT("OL-01 the enemy has a field"), F.Match->FindSourceOf(EnemyId, pe::Resource::Oil))
+        || !TestNotNull(TEXT("The host has a base"), Depot) || !TestNotNull(TEXT("The host has gold"), Gold)) return false;
+    TestTrue(TEXT("OL-01 each field holds the fixture amount"), Account->oilSource.remaining == pe::kSourceOil && Other->oilSource.remaining == pe::kSourceOil);
+    TestTrue(TEXT("OL-01 it is a source, not a building"), Field->IsSource() && !Field->IsBuilding() && !Field->IsCapturable());
+    TestTrue(TEXT("OL-01 it stands apart from the gold"), FVector::Dist2D(Field->GetActorLocation(), Gold->GetActorLocation()) > 600.0);
+    TestTrue(TEXT("OL-01 it is further from the middle than its base"),
+        FVector2D(Field->GetActorLocation()).Size() > FVector2D(Depot->GetActorLocation()).Size());
+    TestTrue(TEXT("OL-01 its owner receives it"), Field->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("OL-01 the enemy does not"), Field->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+
+    const auto Sell = [&F, Host](pe::EconomyOp Op)
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(Op);
+        uint32& Sequence = F.NextSequence.FindOrAdd(Host, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        F.Match->SubmitEconomyIntent(Host, Intent);
+        F.Step();
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [&Intent](const auto& Entry) { return Entry.Value.CorrelationId == Intent.CorrelationId; });
+        return Found ? &Found->Value : nullptr;
+    };
+    const FPolitikaNetEconomyOutcome* Refused = Sell(pe::EconomyOp::SellOil);
+    if (!TestNotNull(TEXT("OL-02 the refusal comes back"), Refused)) return false;
+    TestEqual(TEXT("OL-02 nothing to sell"), static_cast<int32>(Refused->Rejection), static_cast<int32>(pe::EconomyRejection::NoOilToSell));
+
+    // A load through the ledger, as a harvester sent to the field brings it home.
+    constexpr pe::UnitId Hauler = 900000;
+    F.Match->Economy.AddHarvester(HostId, Hauler);
+    F.Match->Economy.DetachHarvester(HostId, Hauler);
+    pe::HarvesterSituation AtField;
+    AtField.atSource = pe::Resource::Oil;
+    for (uint32 Index = 0; Index < pe::kHarvesterLoadSteps + 1; ++Index) F.Match->Economy.StepHarvester(HostId, Hauler, AtField);
+    pe::HarvesterSituation AtBase;
+    AtBase.atBase = true;
+    AtBase.moving = true;
+    for (uint32 Index = 0; Index < pe::kHarvesterUnloadSteps + 1; ++Index) F.Match->Economy.StepHarvester(HostId, Hauler, AtBase);
+    TestEqual(TEXT("OL-03 it reaches the crude stock"), Account->oilHeld, pe::kLoadOil);
+    TestEqual(TEXT("OL-03 the gold stock does not change"), Account->goldHeld, pe::Gold(0));
+    TestTrue(TEXT("OL-03 it reconciles"), Account->OilReconciles());
+    const pe::Cents Before = Account->available;
+
+    const FPolitikaNetEconomyOutcome* WrongKey = Sell(pe::EconomyOp::SellGold);
+    if (!TestNotNull(TEXT("OL-04 the gold refusal comes back"), WrongKey)) return false;
+    TestEqual(TEXT("OL-04 L does not sell crude"), static_cast<int32>(WrongKey->Rejection), static_cast<int32>(pe::EconomyRejection::NothingToSell));
+    TestEqual(TEXT("OL-04 the crude stays"), Account->oilHeld, pe::kLoadOil);
+
+    const FPolitikaNetEconomyOutcome* Sold = Sell(pe::EconomyOp::SellOil);
+    if (!TestNotNull(TEXT("OL-05 the sale comes back"), Sold)) return false;
+    const pe::SaleQuote Lot = *pe::QuoteOilLot(pe::kLoadOil);
+    TestEqual(TEXT("OL-05 it is accepted"), static_cast<int32>(Sold->Rejection), static_cast<int32>(pe::EconomyRejection::None));
+    TestEqual(TEXT("OL-05 the outcome reports the crude"), Sold->SoldQuantity, static_cast<int32>(pe::kLoadOil));
+    TestEqual(TEXT("OL-05 the outcome reports the net"), Sold->AmountCents, Lot.net);
+    TestEqual(TEXT("OL-05 the stock is debited"), Account->oilHeld, pe::Gold(0));
+    TestTrue(TEXT("OL-05 the net is credited"), Account->available >= Before + Lot.net);
+    TestTrue(TEXT("OL-05 the money reconciles"), Account->Reconciles());
+    TestTrue(TEXT("OL-05 the crude reconciles"), Account->OilReconciles());
     return true;
 }
 

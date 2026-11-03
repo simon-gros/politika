@@ -2142,6 +2142,69 @@ int main() {
         assert(FoodOnly.AddHarvester(1, 1));
         Step = FoodOnly.StepHarvester(1, 1, Stopped);
         assert(Step.goToSource == FoodKind && Step.retargeted);
+        // ECON-E30: crude oil has its own stock and a lower quote, and a harvester goes to the field only
+        // when it is sent there. The fee rounds up as gold's does: 67.50 is 68 on the last lot.
+        static_assert(pe::ResourceName(pe::Resource::Oil) == "oil" && pe::LoadSize(pe::Resource::Oil) == pe::kLoadOil);
+        static_assert(pe::QuoteOilLot(pe::kSaleLotOil)->gross == 3'000 && pe::QuoteOilLot(pe::kSaleLotOil)->fee == 90 && pe::QuoteOilLot(pe::kSaleLotOil)->net == 2'910);
+        static_assert(pe::QuoteOilLot(15)->net == 2'182 && pe::QuoteOilLot(pe::kSaleLotOil + 1)->quantity == pe::kSaleLotOil && !pe::QuoteOilLot(0));
+        assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::SellOil), 0) == EconomyRejection::None);
+        assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::SellOil), 1) == EconomyRejection::MalformedCommand);
+        constexpr pe::Resource OilKind = pe::Resource::Oil;
+        const pe::HarvesterSituation ArrivedAtOil{OilKind, false, false};
+        pe::Ledger Crude;
+        assert(Crude.AddParticipant(1, pe::kStartingCents, true, 200) && Crude.SetSource(1, GoldKind, pe::kLoadGold) && Crude.SetSource(1, OilKind, pe::kLoadOil + 15));
+        const pe::Account& O = *Crude.Find(1);
+        assert(Crude.SellOil(1, 1).rejection == EconomyRejection::NoOilToSell && O.lastTransaction == 0);
+        assert(Crude.SellOil(9, 1).rejection == EconomyRejection::Unauthorized);
+        // It hauls its gold, then stops rather than moving on to the field.
+        assert(Crude.AddHarvester(1, 1));
+        Step = Crude.StepHarvester(1, 1, Driving);
+        assert(Step.goToSource == GoldKind);
+        Crude.StepHarvester(1, 1, ArrivedAtSource);
+        Run(Crude, 1, 1, ArrivedAtSource, pe::kHarvesterLoadSteps);
+        Crude.StepHarvester(1, 1, AtBase);
+        Step = Run(Crude, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == pe::kLoadGold && !Step.goToSource && Crude.FindHarvester(1, 1)->phase == HarvesterPhase::Waiting);
+        assert(O.goldHeld == pe::kLoadGold && O.oilSource.remaining == pe::kLoadOil + 15 && O.oilHeld == 0);
+        // Sent there, it loads crude and brings it to the crude stock, then goes back to the same field.
+        Crude.StepHarvester(1, 1, ArrivedAtOil);
+        assert(Crude.FindHarvester(1, 1)->phase == HarvesterPhase::Loading && Crude.FindHarvester(1, 1)->target == OilKind);
+        Run(Crude, 1, 1, ArrivedAtOil, pe::kHarvesterLoadSteps);
+        assert(O.OilCarried() == pe::kLoadOil && O.GoldCarried() == 0 && O.oilSource.remaining == 15 && O.OilReconciles());
+        Crude.StepHarvester(1, 1, AtBase);
+        Step = Run(Crude, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.resource == OilKind && Step.delivered == pe::kLoadOil && Step.goToSource == OilKind);
+        assert(O.oilHeld == pe::kLoadOil && O.goldHeld == pe::kLoadGold && O.OilReconciles() && O.GoldReconciles());
+        // Each key sells its own stock, once.
+        assert(Crude.SellGold(1, 1) && O.goldHeld == 0 && O.oilHeld == pe::kLoadOil);
+        assert(Crude.SellOil(1, 1).rejection == EconomyRejection::DuplicateCommand && O.oilHeld == pe::kLoadOil);
+        const pe::RequestResult OilSale = Crude.SellOil(1, 2);
+        assert(OilSale && OilSale.amount == 2'910 && OilSale.sale.quantity == pe::kLoadOil && O.oilHeld == 0 && O.oilSold == pe::kLoadOil);
+        assert(O.goldSold == pe::kLoadGold && O.Reconciles() && O.OilReconciles());
+        // The field runs out, what is left is a smaller load, and it stops.
+        Crude.StepHarvester(1, 1, ArrivedAtOil);
+        Run(Crude, 1, 1, ArrivedAtOil, pe::kHarvesterLoadSteps);
+        Crude.StepHarvester(1, 1, AtBase);
+        Step = Run(Crude, 1, 1, AtBase, pe::kHarvesterUnloadSteps);
+        assert(Step.delivered == 15 && !Step.goToSource && Crude.FindHarvester(1, 1)->phase == HarvesterPhase::Waiting);
+        const pe::RequestResult LastOil = Crude.SellOil(1, 3);
+        assert(LastOil && LastOil.amount == 2'182 && O.oilSold == pe::kLoadOil + 15 && O.oilSource.remaining == 0);
+        assert(Crude.SellOil(1, 4).rejection == EconomyRejection::NoOilToSell && O.lastTransaction == 3);
+        assert(O.Reconciles() && O.OilReconciles());
+        // A harvester lost with a load takes it with it, and the field still adds up.
+        pe::Ledger Spill;
+        assert(Spill.AddParticipant(1, pe::kStartingCents, true, 200) && Spill.SetSource(1, OilKind, pe::kLoadOil));
+        assert(Spill.AddHarvester(1, 1) && Spill.FindHarvester(1, 1)->phase == HarvesterPhase::Waiting);
+        Spill.StepHarvester(1, 1, ArrivedAtOil);
+        Run(Spill, 1, 1, ArrivedAtOil, pe::kHarvesterLoadSteps);
+        assert(Spill.LoseHarvester(1, 1) == pe::kLoadOil && Spill.Find(1)->oilSource.lost == pe::kLoadOil && Spill.Find(1)->OilReconciles());
+        // Crude alone is enough to train a harvester. It waits to be sent, and an empty field is not enough.
+        pe::Ledger OilOnly;
+        assert(OilOnly.AddParticipant(1, pe::kStartingCents, true, 200) && OilOnly.SetSource(1, OilKind, pe::kLoadOil));
+        assert(OilOnly.Train(1, 1, HarvesterRecipe, 2, 20));
+        pe::Ledger DryField;
+        assert(DryField.AddParticipant(1, pe::kStartingCents, true, 200) && DryField.SetSource(1, OilKind, 0));
+        assert(DryField.Train(1, 1, HarvesterRecipe, 2, 20).rejection == EconomyRejection::NoResourceSource);
         // A full store takes what fits. The rest stays on the harvester until there is room.
         pe::Ledger FullStore;
         assert(FullStore.AddParticipant(1, pe::kStartingCents, true, 200) && FullStore.SetSource(1, FoodKind, pe::kLoadFood));

@@ -380,12 +380,14 @@ FString APolitikaPrototypeUnit::GetOrderLabel() const
     {
         if (IsCarryingGold()) return TEXT("Unloading gold");
         if (IsCarryingFood()) return TEXT("Unloading food");
+        if (IsCarryingOil()) return TEXT("Unloading crude oil");
     }
     // A carried load that is not currently driving reads as held, not as a stop.
     if (GetCurrentOrder() != EPolitikaPrototypeOrder::Move)
     {
         if (IsCarryingGold()) return TEXT("Holding gold");
         if (IsCarryingFood()) return TEXT("Holding food");
+        if (IsCarryingOil()) return TEXT("Holding crude oil");
     }
     switch (GetCurrentOrder())
     {
@@ -3203,6 +3205,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeTrainUnit"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainOrCancelAtProducer);
     InputComponent->BindAction(TEXT("PrototypeBuyFood"), IE_Pressed, this, &APolitikaPrototypePlayerController::BuyFood);
     InputComponent->BindAction(TEXT("PrototypeSellGold"), IE_Pressed, this, &APolitikaPrototypePlayerController::SellGold);
+    InputComponent->BindAction(TEXT("PrototypeSellOil"), IE_Pressed, this, &APolitikaPrototypePlayerController::SellOil);
     InputComponent->BindAction(TEXT("PrototypeTrainHarvester"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainHarvester);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
@@ -4920,16 +4923,28 @@ void APolitikaPrototypeHUD::DrawHUD()
         // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.
         if (Economy.bHasGoldSource)
         {
-            const std::optional<pe::GoldQuote> Lot = pe::QuoteGoldLot(Economy.GoldHeld);
+            const std::optional<pe::SaleQuote> Lot = pe::QuoteGoldLot(Economy.GoldHeld);
             const pe::RecipeDefinition Harvester = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Harvester));
             const FString SaleText = Lot
                 ? FString::Printf(TEXT("L sell %lld for %s"), Lot->quantity, UTF8_TO_TCHAR(pe::FormatUsd(Lot->net).c_str()))
                 : FString(TEXT("nothing to sell yet"));
-            const FString HarvesterText = Economy.GoldAtSource > 0 || Economy.FoodAtSource > 0
+            const FString HarvesterText = Economy.GoldAtSource > 0 || Economy.FoodAtSource > 0 || Economy.OilAtSource > 0
                 ? FString::Printf(TEXT("K harvester %s"), UTF8_TO_TCHAR(pe::FormatUsd(Harvester.cost).c_str())) : FString(TEXT("caches empty"));
             DrawText(FString::Printf(TEXT("GOLD %d  ·  %d in the cache, %s  ·  %s  ·  %d %s  ·  %s"), Economy.GoldHeld, Economy.GoldAtSource,
                 *APolitikaPrototypeMatch::CargoPhrase(Economy.GoldCarried, Economy.GoldHolding, Economy.GoldUnloading), *SaleText,
                 Economy.Harvesters, Economy.Harvesters == 1 ? TEXT("harvester") : TEXT("harvesters"), *HarvesterText),
+                FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+            Y += 26.0f * UiScale;
+        }
+        // ECON-E30: crude oil, in its own stock. It goes to the field only when sent there.
+        if (Economy.bHasOilSource)
+        {
+            const std::optional<pe::SaleQuote> OilLot = pe::QuoteOilLot(Economy.OilHeld);
+            const FString OilSaleText = OilLot
+                ? FString::Printf(TEXT("O sell %lld for %s"), OilLot->quantity, UTF8_TO_TCHAR(pe::FormatUsd(OilLot->net).c_str()))
+                : FString(TEXT("nothing to sell yet"));
+            DrawText(FString::Printf(TEXT("CRUDE OIL %d  ·  %d in the field, %s  ·  %s"), Economy.OilHeld, Economy.OilAtSource,
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.OilCarried, Economy.OilHolding, Economy.OilUnloading), *OilSaleText),
                 FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
             Y += 26.0f * UiScale;
         }

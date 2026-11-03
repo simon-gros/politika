@@ -13936,6 +13936,7 @@ fn gold_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), S
             &[
                 format!("-PolitikaMPEconomySourceGold=1:{GOLD_FIXTURE_SOURCE}"),
                 "-PolitikaMPEconomySourceFood=1:0".to_owned(),
+                "-PolitikaMPEconomySourceOil=1:0".to_owned(),
             ],
             &[format!(
                 "-PolitikaMPGroundProbe={}:{}/{}:{}/{}:{}",
@@ -14514,6 +14515,7 @@ fn harvest_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
             &[
                 STARTING_HARVESTERS.to_owned(),
                 format!("-PolitikaMPEconomySourceFood=1:{HARVEST_FOOD_FIXTURE}"),
+                "-PolitikaMPEconomySourceOil=1:0".to_owned(),
             ],
             &[format!(
                 "-PolitikaMPGroundProbe={}:{}/{}:{}",
@@ -16740,6 +16742,466 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
     result
 }
 
+// `--oil SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E30) plays crude oil with real input on two
+// rendered clients: a field per base that a harvester ignores until it is sent there, a separate
+// stock, O selling a lot at the quote, an exhausted field, and a next generation owing nothing.
+const OIL_FIELD_AT: (f64, f64) = (-1644.8, -1849.4);
+const OIL_FIXTURE_SOURCE: i64 = 35;
+const OIL_NORMAL_SOURCE: i64 = 400;
+const OIL_LOAD: i64 = 20;
+const OIL_LAST_LOAD: i64 = 15;
+const OIL_GROSS_CENTS: i64 = 3_000;
+const OIL_FEE_CENTS: i64 = 90;
+const OIL_NET_CENTS: i64 = 2_910;
+const OIL_LAST_NET_CENTS: i64 = 2_182;
+const OIL_FIXTURE_GOLD: i64 = 25;
+const OIL_PROBE_FIELD: usize = 0;
+const OIL_PROBE_DEPOT: usize = 1;
+
+fn oil_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let evidence = options.client.evidence.clone();
+    let (mut server, mut client_a, mut client_b, _display, generation) =
+        economy_start_session_with(
+            options,
+            &[
+                format!("-PolitikaMPEconomySourceGold=1:{OIL_FIXTURE_GOLD}"),
+                "-PolitikaMPEconomySourceFood=1:0".to_owned(),
+                format!("-PolitikaMPEconomySourceOil=1:{OIL_FIXTURE_SOURCE}"),
+            ],
+            &[format!(
+                "-PolitikaMPGroundProbe={}:{}/{}:{}",
+                OIL_FIELD_AT.0, OIL_FIELD_AT.1, GOLD_DEPOT_AT.0, GOLD_DEPOT_AT.1
+            )],
+        )?;
+    report.fact("server_command", server.command.join(" "));
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+
+    let result = (|| -> Result<(), String> {
+        // Each base has a field, and only its own side receives it.
+        let text = server.text();
+        let starts: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_OIL_START") && l.contains(&format!("generation={generation}"))
+            })
+            .collect();
+        let owners = |t: &str| -> Vec<String> {
+            t.lines()
+                .filter(|l| l.contains("RTS_OIL_SOURCE_RELEVANT"))
+                .filter_map(|l| field(l, "owner").map(str::to_owned))
+                .collect()
+        };
+        client_a.wait(&["RTS_OIL_SOURCE_RELEVANT"], Duration::from_secs(10))?;
+        client_b.wait(&["RTS_OIL_SOURCE_RELEVANT"], Duration::from_secs(10))?;
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        report.verdict(
+            "OIL-P01-A-FIELD-FOR-EACH-BASE-OWN-SIDE-ONLY",
+            starts.len() == 2
+                && field(starts[0], "participant") == Some("1")
+                && econ_int(starts[0], "source") == OIL_FIXTURE_SOURCE
+                && field(starts[0], "has_source") == Some("1")
+                && (number(starts[0], "x").unwrap_or(f64::MAX) - OIL_FIELD_AT.0).abs() < 1.0
+                && (number(starts[0], "y").unwrap_or(f64::MAX) - OIL_FIELD_AT.1).abs() < 1.0
+                && field(starts[1], "participant") == Some("2")
+                && econ_int(starts[1], "source") == OIL_NORMAL_SOURCE
+                && field(starts[1], "has_source") == Some("1")
+                && owners(&text_a) == ["1"]
+                && owners(&text_b) == ["2"],
+            format!(
+                "{} | client A received {:?}, client B received {:?}",
+                starts.join(" | "),
+                owners(&text_a),
+                owners(&text_b)
+            ),
+        );
+        zoom_out(&client_a, 5)?;
+        thread::sleep(Duration::from_millis(800));
+        report.artifact(
+            "client_a_start_png",
+            &client_a.screenshot(&evidence, "01-start")?,
+        );
+
+        // Nothing to sell yet.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("o")?;
+        let refused = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "op=4"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let refused_client = client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=4"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        report.verdict(
+            "OIL-P02-O-REFUSES-WITH-NOTHING-AT-THE-BASE",
+            field(&refused, "rejection") == Some("no_oil_to_sell")
+                && field(&refused_client, "accepted") == Some("0")
+                && econ_int(&refused_client, "amount") == 0,
+            format!("{} | client {}", refused.trim(), refused_client.trim()),
+        );
+
+        // A harvester hauls its gold and stops. Nothing sends it to the field but the player.
+        client_a.key("k")?;
+        let spawned = server.wait(
+            &["RTS_PRODUCTION_SPAWN participant=1", "recipe=1"],
+            Duration::from_secs(30),
+        )?;
+        let harvester = econ_int(&spawned, "entity") as u64;
+        let unit_tag = format!("unit={harvester} ");
+        let gold_home = server.wait(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=deliver",
+                "resource=gold",
+                &unit_tag,
+            ],
+            Duration::from_secs(60),
+        )?;
+        let waiting = server.wait(
+            &["RTS_HARVEST_TX participant=1 kind=waiting", &unit_tag],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_secs(3));
+        let oil_lines = |t: &str| -> usize {
+            t.lines()
+                .filter(|l| {
+                    l.contains("RTS_HARVEST_TX participant=1") && l.contains("resource=oil")
+                })
+                .count()
+        };
+        report.verdict(
+            "OIL-P03-A-HARVESTER-DOES-NOT-GO-THERE-BY-ITSELF",
+            econ_int(&gold_home, "held") == OIL_FIXTURE_GOLD && oil_lines(&server.text()) == 0,
+            format!(
+                "{} | {} | {} oil lines",
+                gold_home.trim(),
+                waiting.trim(),
+                oil_lines(&server.text())
+            ),
+        );
+
+        // Sent there, it loads crude and brings it home to its own stock.
+        select_entity_near_probe(&mut client_a, harvester, OIL_PROBE_DEPOT)?;
+        thread::sleep(Duration::from_millis(300));
+        let at = pan_to_probe(&mut client_a, OIL_PROBE_FIELD)?;
+        let mark = server.offset();
+        client_a.click(at.0, at.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Move",
+                    &format!("unit={harvester} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("the trip to the field: {e}"))?;
+        let loaded = server.wait_line(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=load",
+                "resource=oil",
+                &unit_tag,
+            ],
+            Duration::from_secs(60),
+            mark,
+        )?;
+        let carrying = client_a.wait(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                &format!("oil_carried={OIL_LOAD} "),
+            ],
+            Duration::from_secs(5),
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_a_carrying_png",
+            &client_a.screenshot(&evidence, "02-carrying-crude")?,
+        );
+        let delivered = server.wait_line(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=deliver",
+                "resource=oil",
+                &unit_tag,
+            ],
+            Duration::from_secs(60),
+            mark,
+        )?;
+        let stocked = client_a.wait(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                &format!("gold_held={OIL_FIXTURE_GOLD} "),
+                &format!("oil_held={OIL_LOAD} "),
+            ],
+            Duration::from_secs(5),
+        );
+        report.verdict(
+            "OIL-P04-SENT-THERE-IT-HAULS-CRUDE-TO-ITS-OWN-STOCK",
+            econ_int(&loaded, "amount") == OIL_LOAD
+                && econ_int(&loaded, "source") == OIL_FIXTURE_SOURCE - OIL_LOAD
+                && econ_int(&delivered, "amount") == OIL_LOAD
+                && econ_int(&delivered, "held") == OIL_LOAD
+                && field(&delivered, "reconciles") == Some("1")
+                && carrying.is_ok()
+                && stocked.is_ok(),
+            format!(
+                "{} | {} | {carrying:?} | {stocked:?}",
+                loaded.trim(),
+                delivered.trim()
+            ),
+        );
+
+        // O sells a lot at the quote, and the gold stays where it is.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("o")?;
+        let money = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1 kind=sale"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let sale = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=sale", "resource=oil"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let told = client_a.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=1", "op=4", "accepted=1"],
+            Duration::from_secs(5),
+            client_mark,
+        )?;
+        let after_sale = client_a.wait_line(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                &format!("gold_held={OIL_FIXTURE_GOLD} "),
+                "oil_held=0 ",
+            ],
+            Duration::from_secs(5),
+            client_mark,
+        );
+        report.verdict(
+            "OIL-P05-O-SELLS-A-LOT-AT-THE-QUOTE",
+            econ_int(&money, "amount") == OIL_NET_CENTS
+                && field(&money, "reconciles") == Some("1")
+                && econ_int(&sale, "amount") == OIL_LOAD
+                && econ_int(&sale, "gross") == OIL_GROSS_CENTS
+                && econ_int(&sale, "fee") == OIL_FEE_CENTS
+                && econ_int(&sale, "held") == 0
+                && econ_int(&sale, "sold") == OIL_LOAD
+                && econ_int(&told, "oil_sold") == OIL_LOAD
+                && econ_int(&told, "gold_sold") == 0
+                && after_sale.is_ok(),
+            format!(
+                "{} | {} | {} | {after_sale:?}",
+                money.trim(),
+                sale.trim(),
+                told.trim()
+            ),
+        );
+        report.artifact(
+            "client_a_sold_png",
+            &client_a.screenshot(&evidence, "03-crude-sold")?,
+        );
+
+        // It keeps going to the field it was sent to, until the field is empty, and then it stops.
+        let last = server.wait(
+            &[
+                "RTS_HARVEST_TX participant=1 kind=deliver",
+                "resource=oil",
+                &format!("amount={OIL_LAST_LOAD} "),
+            ],
+            Duration::from_secs(90),
+        )?;
+        let stopped = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=waiting", &unit_tag],
+            Duration::from_secs(10),
+            mark,
+        );
+        report.verdict(
+            "OIL-P06-THE-FIELD-RUNS-OUT-AND-IT-STOPS",
+            econ_int(&last, "source") == 0
+                && econ_int(&last, "held") == OIL_LAST_LOAD
+                && econ_int(&last, "delivered") == OIL_FIXTURE_SOURCE
+                && field(&last, "reconciles") == Some("1")
+                && stopped.is_ok(),
+            format!("{} | {stopped:?}", last.trim()),
+        );
+
+        // L sells gold and O sells crude. Neither touches the other's stock.
+        let (client_mark, server_mark) = (client_a.offset(), server.offset());
+        client_a.key("l")?;
+        let gold_sale = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=sale", "resource=gold"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let after_gold = client_a.wait_line(
+            &[
+                "RTS_ECONOMY_VIEW participant=1",
+                "gold_held=0 ",
+                &format!("oil_held={OIL_LAST_LOAD} "),
+            ],
+            Duration::from_secs(5),
+            client_mark,
+        );
+        let server_mark = server.offset();
+        client_a.key("o")?;
+        let last_money = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1 kind=sale"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let server_mark = server.offset();
+        client_a.key("o")?;
+        let none_left = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "op=4"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        report.verdict(
+            "OIL-P07-THE-STOCKS-STAY-APART",
+            econ_int(&gold_sale, "amount") == OIL_FIXTURE_GOLD
+                && after_gold.is_ok()
+                && econ_int(&last_money, "amount") == OIL_LAST_NET_CENTS
+                && field(&none_left, "rejection") == Some("no_oil_to_sell"),
+            format!(
+                "{} | {after_gold:?} | {} | {}",
+                gold_sale.trim(),
+                last_money.trim(),
+                none_left.trim()
+            ),
+        );
+
+        // Only seat 1 moved, and neither client saw the other's stock.
+        let text = server.text();
+        let (text_a, text_b) = (client_a.text(), client_b.text());
+        let enemy_oil = text
+            .lines()
+            .filter(|l| l.contains("RTS_HARVEST_TX participant=2") && l.contains("resource=oil"))
+            .count();
+        let a_leaks = text_a
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=2"))
+            .count();
+        let b_leaks = text_b
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_VIEW participant=1"))
+            .count();
+        let b_touched = text_b
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ECONOMY_VIEW")
+                    && (econ_int(l, "oil_held") != 0
+                        || econ_int(l, "oil_carried") != 0
+                        || econ_int(l, "oil_source") != OIL_NORMAL_SOURCE)
+            })
+            .count();
+        report.verdict(
+            "OIL-P08-OWNER-ONLY",
+            enemy_oil == 0 && a_leaks == 0 && b_leaks == 0 && b_touched == 0,
+            format!("enemy oil lines {enemy_oil}; A's copies of B's view {a_leaks}, B's copies of A's {b_leaks}; B's oil changed {b_touched} times"),
+        );
+
+        // Repeatability: the normalized sequence for the crude, without timing.
+        let mut trace = String::new();
+        for line in text.lines().filter(|l| {
+            l.contains("RTS_HARVEST_TX participant=1")
+                && l.contains("resource=oil")
+                && l.contains(&format!("generation={generation} "))
+        }) {
+            trace.push_str(&format!(
+                "oil {} amount={} gross={} fee={} source={} carried={} held={} delivered={} sold={}\n",
+                field(line, "kind").unwrap_or("?"),
+                econ_int(line, "amount"),
+                econ_int(line, "gross"),
+                econ_int(line, "fee"),
+                econ_int(line, "source"),
+                econ_int(line, "carried"),
+                econ_int(line, "held"),
+                econ_int(line, "delivered"),
+                econ_int(line, "sold"),
+            ));
+        }
+        fs::write(evidence.join("oil-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("oil_trace", &evidence.join("oil-trace.txt"));
+
+        // The match ends with the ledger whole, and the next one owes nothing to this one.
+        let owned: Vec<u64> = entity_owners(&server.text())
+            .iter()
+            .filter(|(id, owner)| *owner == 1 && *id != harvester)
+            .map(|(id, _)| *id)
+            .collect();
+        let unit = *owned.first().ok_or("no authored unit for participant 1")?;
+        select_entity_near_probe(&mut client_a, unit, OIL_PROBE_DEPOT)?;
+        thread::sleep(Duration::from_millis(600));
+        let objective = wait_screen(
+            &mut client_a,
+            |t| objective_screen(t, "MP_CLIENT_OBJECTIVE"),
+            "objective on client A",
+        )?;
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait(
+            &[
+                "MATCH_RESULTS outcome=objective_secured",
+                &format!("generation={generation}"),
+            ],
+            Duration::from_secs(240),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let fresh = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_OIL_START")
+                    && l.contains("has_source=1")
+                    && l.contains(&format!("generation={generation2}"))
+            })
+            .count();
+        report.verdict(
+            "OIL-P09-LEDGER-WHOLE-AND-THE-NEXT-MATCH-FRESH",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && field(&cleared, "oil_reconciles") == Some("1")
+                && econ_int(&cleared, "oil_held") == 0
+                && fresh == 2
+                && !tail.lines().any(|l| l.contains("RTS_HARVEST_TX")),
+            format!(
+                "generation {generation} then {generation2}: {fresh} fresh fields | {}",
+                cleared.trim()
+            ),
+        );
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "OIL-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 // `--food SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E3) plays one food shortage with real
 // input. Seat 1 starts with two rations, so step 200 empties the reserve and step 400 cannot be
 // paid. Seat 2 keeps the normal reserve. Two purchases, the shortage, a refused purchase, N during
@@ -17439,6 +17901,9 @@ fn main() {
             "buildings",
             buildings_session,
         );
+    }
+    if env::args().nth(1).as_deref() == Some("--oil") {
+        run_dedicated_session("--oil", "politika.econ.oil-evidence.v1", "oil", oil_session);
     }
     if env::args().nth(1).as_deref() == Some("--works") {
         run_dedicated_session(

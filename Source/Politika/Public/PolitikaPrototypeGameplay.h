@@ -239,10 +239,10 @@ struct POLITIKA_API FPolitikaNetEconomyOutcome
     UPROPERTY() uint8 Rejection = 0;
     UPROPERTY() bool bAccepted = false;
     // The price debited by a Train or BuyFood, the amount refunded by a Cancel or the net amount
-    // credited by a SellGold.
+    // credited by a sale.
     UPROPERTY() int64 AmountCents = 0;
-    // The gold a SellGold took from the stock.
-    UPROPERTY() int32 GoldSold = 0;
+    // What a sale took from the stock.
+    UPROPERTY() int32 SoldQuantity = 0;
     UPROPERTY() int64 AvailableCents = 0;
     UPROPERTY() int32 Queued = 0;
     UPROPERTY() uint64 MatchGeneration = 0;
@@ -290,6 +290,13 @@ struct POLITIKA_API FPolitikaNetEconomyView
     // Of FoodCarried, the part the store cannot take yet.
     UPROPERTY() int32 FoodStoreFull = 0;
     UPROPERTY() int32 FoodAtSource = 0;
+    // ECON-E30: the same for crude oil, in its own stock.
+    UPROPERTY() bool bHasOilSource = false;
+    UPROPERTY() int32 OilHeld = 0;
+    UPROPERTY() int32 OilCarried = 0;
+    UPROPERTY() int32 OilHolding = 0;
+    UPROPERTY() int32 OilUnloading = 0;
+    UPROPERTY() int32 OilAtSource = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
     UPROPERTY() uint8 HeadRecipe = 0;
@@ -307,7 +314,9 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried
             && FoodHolding == Other.FoodHolding && FoodUnloading == Other.FoodUnloading
             && FoodStoreFull == Other.FoodStoreFull
-            && FoodAtSource == Other.FoodAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
+            && FoodAtSource == Other.FoodAtSource && bHasOilSource == Other.bHasOilSource && OilHeld == Other.OilHeld
+            && OilCarried == Other.OilCarried && OilHolding == Other.OilHolding && OilUnloading == Other.OilUnloading
+            && OilAtSource == Other.OilAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
 
@@ -456,6 +465,7 @@ public:
     // HUD, and only the authority's economy phase changes it. Zero is none, then Resource + 1.
     bool IsCarryingGold() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Gold) + 1; }
     bool IsCarryingFood() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Food) + 1; }
+    bool IsCarryingOil() const { return CarriedResource == static_cast<uint8>(politika::economy::Resource::Oil) + 1; }
     // What the selected-unit line calls this order. A load at the depot reads as unloading.
     FString GetOrderLabel() const;
     static constexpr uint8 CargoPoseNone = 0;
@@ -504,6 +514,7 @@ private:
     friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerOilTest;
     friend class FPolitikaMultiplayerBuildingRepairTest;
     friend class FPolitikaMultiplayerWorksTest;
     friend class FPolitikaMultiplayerWorksAlliesTest;
@@ -801,7 +812,8 @@ public:
     FLinearColor GetPresentedTint() const;
     bool IsGoldSource() const { return Kind == GoldSourceKind; }
     bool IsFoodSource() const { return Kind == FoodSourceKind; }
-    bool IsSource() const { return IsGoldSource() || IsFoodSource(); }
+    bool IsOilSource() const { return Kind == OilSourceKind; }
+    bool IsSource() const { return IsGoldSource() || IsFoodSource() || IsOilSource(); }
     uint32 GetOwnerPlayer() const { return OwnerPlayer; }
     uint8 GetTeamId() const { return TeamId; }
     void SetLocalFogHidden(bool bHidden);
@@ -812,6 +824,7 @@ private:
     static constexpr uint8 GoldSourceKind = 2;
     static constexpr uint8 FoodSourceKind = 3;
     static constexpr uint8 WorksKind = 4;
+    static constexpr uint8 OilSourceKind = 5;
     UFUNCTION() void ApplyTint();
     UFUNCTION() void ApplyPresence();
     void EnableCursorHits();
@@ -1280,6 +1293,7 @@ private:
     UPROPERTY(Transient) TObjectPtr<UPolitikaUnitArchetypeDefinition> HarvesterDefinition;
     void PlaceSources(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
     void PlaceWorks(const FVector2D& Centre, const FVector2D& Start, float GroundZ, bool bHiddenLocally);
+    void PlaceOilField(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Away, float GroundZ, bool bHiddenLocally);
     void LogHarvest(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, politika::economy::Resource Resource, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
     const APolitikaPrototypeStructure* FindSourceOf(uint32 ParticipantId, politika::economy::Resource Resource) const;
     void AssignNetOwner(APolitikaPrototypeUnit* Unit) const;
@@ -1329,6 +1343,7 @@ private:
     friend class FPolitikaMultiplayerBuildingDemolishTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerOilTest;
     friend class FPolitikaMultiplayerHarvestTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
@@ -1583,6 +1598,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerBuildingDamageTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
+    friend class FPolitikaMultiplayerOilTest;
     friend class FPolitikaMultiplayerHarvestTest;
 #endif
 public:
@@ -1791,6 +1807,8 @@ private:
     void TrainHarvester();
     // L sells one lot of gold (ECON-E4).
     void SellGold();
+    // O sells one lot of crude oil (ECON-E30).
+    void SellOil();
     bool SubmitEconomyRequest(politika::economy::EconomyOp Op, uint8 Recipe);
     // Advisory check of one candidate slot on this process: inside the playable area, on
     // ground level with the clicked point and not too steep, and on the local navmesh when

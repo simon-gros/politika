@@ -76,6 +76,12 @@ inline constexpr std::uint32_t kHarvesterUnloadSteps = 40; // 2 s at the base
 inline constexpr Gold kSaleLotGold = 25;
 inline constexpr Cents kGoldRateCents = 250;             // $2.50 per unit of gold
 inline constexpr std::int64_t kGoldFeeBasisPoints = 300; // 3%
+// ECON-E30: crude oil. Fixture figures, worth less a unit than gold, not balance decisions.
+inline constexpr Gold kSourceOil = 400;
+inline constexpr Gold kLoadOil = 20;
+inline constexpr Gold kSaleLotOil = 20;
+inline constexpr Cents kOilRateCents = 150;             // $1.50 per unit of crude
+inline constexpr std::int64_t kOilFeeBasisPoints = 300; // 3%
 
 // Wire values are stable.
 enum class Recipe : std::uint8_t { Rifleman, Harvester };
@@ -93,8 +99,8 @@ struct RecipeDefinition {
 }
 
 // Wire values are stable: Train is the default of a zeroed request.
-enum class EconomyOp : std::uint8_t { Train, Cancel, BuyFood, SellGold };
-inline constexpr std::uint8_t kEconomyOpCount = 4;
+enum class EconomyOp : std::uint8_t { Train, Cancel, BuyFood, SellGold, SellOil };
+inline constexpr std::uint8_t kEconomyOpCount = 5;
 
 enum class EconomyRejection : std::uint8_t {
     None,
@@ -116,6 +122,7 @@ enum class EconomyRejection : std::uint8_t {
     FoodStoreFull,
     NothingToSell,
     NoResourceSource,
+    NoOilToSell,
 };
 
 [[nodiscard]] constexpr std::string_view RejectionName(EconomyRejection rejection) noexcept {
@@ -139,6 +146,7 @@ enum class EconomyRejection : std::uint8_t {
         case EconomyRejection::FoodStoreFull: return "food_store_full";
         case EconomyRejection::NothingToSell: return "nothing_to_sell";
         case EconomyRejection::NoResourceSource: return "no_resource_source";
+        case EconomyRejection::NoOilToSell: return "no_oil_to_sell";
     }
     return "unknown";
 }
@@ -157,7 +165,7 @@ enum class EconomyRejection : std::uint8_t {
     return true;
 }
 
-struct GoldQuote {
+struct SaleQuote {
     Gold quantity = 0;
     Cents gross = 0;
     Cents fee = 0;
@@ -167,17 +175,21 @@ struct GoldQuote {
 // What selling quantity at this rate and fee pays. The fee rounds up to a whole cent, against the
 // seller, so splitting a sale can never earn more than selling it whole. Empty for a quantity or
 // rate that is not positive, a fee outside 0-100% and a gross that does not fit.
-[[nodiscard]] constexpr std::optional<GoldQuote> QuoteSale(Gold quantity, Cents rate, std::int64_t feeBasisPoints) noexcept {
+[[nodiscard]] constexpr std::optional<SaleQuote> QuoteSale(Gold quantity, Cents rate, std::int64_t feeBasisPoints) noexcept {
     if (quantity <= 0 || rate <= 0 || feeBasisPoints < 0 || feeBasisPoints > 10'000) return std::nullopt;
     if (quantity > std::numeric_limits<Cents>::max() / rate) return std::nullopt;
     const Cents gross = quantity * rate;
     const Cents fee = gross / 10'000 * feeBasisPoints + (gross % 10'000 * feeBasisPoints + 9'999) / 10'000;
-    return GoldQuote{quantity, gross, fee, gross - fee};
+    return SaleQuote{quantity, gross, fee, gross - fee};
 }
 
 // The next sale from a holding: one lot, or all that is left if that is less.
-[[nodiscard]] constexpr std::optional<GoldQuote> QuoteGoldLot(Gold held) noexcept {
+[[nodiscard]] constexpr std::optional<SaleQuote> QuoteGoldLot(Gold held) noexcept {
     return QuoteSale(std::min(held, kSaleLotGold), kGoldRateCents, kGoldFeeBasisPoints);
+}
+
+[[nodiscard]] constexpr std::optional<SaleQuote> QuoteOilLot(Gold held) noexcept {
+    return QuoteSale(std::min(held, kSaleLotOil), kOilRateCents, kOilFeeBasisPoints);
 }
 
 // "$1,234.50" for the HUD and logs; never used for arithmetic.
@@ -208,15 +220,15 @@ struct QueueItem {
 };
 
 // Wire values are stable.
-enum class Resource : std::uint8_t { Gold, Food };
-inline constexpr std::uint8_t kResourceCount = 2;
+enum class Resource : std::uint8_t { Gold, Food, Oil };
+inline constexpr std::uint8_t kResourceCount = 3;
 
 [[nodiscard]] constexpr std::string_view ResourceName(Resource resource) noexcept {
-    return resource == Resource::Gold ? "gold" : "food";
+    return resource == Resource::Gold ? "gold" : resource == Resource::Food ? "food" : "oil";
 }
 
 [[nodiscard]] constexpr Gold LoadSize(Resource resource) noexcept {
-    return resource == Resource::Gold ? kLoadGold : kLoadFood;
+    return resource == Resource::Gold ? kLoadGold : resource == Resource::Food ? kLoadFood : kLoadOil;
 }
 
 // One seat's source of one resource. Everything taken from it is on a harvester, delivered or lost.
@@ -316,14 +328,18 @@ struct Account {
     ResourceSource foodSource;
     Gold goldHeld = 0;
     Gold goldSold = 0;
+    // ECON-E30: crude oil has its own stock. It is not gold and not fuel, and only a sale turns it into anything.
+    ResourceSource oilSource;
+    Gold oilHeld = 0;
+    Gold oilSold = 0;
     Cents saleCredited = 0;
     std::vector<Harvester> harvesters; // ascending unit
 
     [[nodiscard]] const ResourceSource& Source(Resource resource) const noexcept {
-        return resource == Resource::Gold ? goldSource : foodSource;
+        return resource == Resource::Gold ? goldSource : resource == Resource::Food ? foodSource : oilSource;
     }
     [[nodiscard]] ResourceSource& Source(Resource resource) noexcept {
-        return resource == Resource::Gold ? goldSource : foodSource;
+        return resource == Resource::Gold ? goldSource : resource == Resource::Food ? foodSource : oilSource;
     }
 
     [[nodiscard]] Gold Carried(Resource resource) const noexcept {
@@ -334,13 +350,21 @@ struct Account {
     }
     [[nodiscard]] Gold GoldCarried() const noexcept { return Carried(Resource::Gold); }
     [[nodiscard]] Gold FoodCarried() const noexcept { return Carried(Resource::Food); }
+    [[nodiscard]] Gold OilCarried() const noexcept { return Carried(Resource::Oil); }
 
-    // The target if it has anything left, otherwise the other source if that has.
+    // The target if it has anything left, otherwise gold or food if that has. Nothing moves on to oil
+    // by itself: a harvester goes to the field when it is sent there, and stays until it runs out.
     [[nodiscard]] std::optional<Resource> NextSource(Resource preferred) const noexcept {
-        const Resource other = preferred == Resource::Gold ? Resource::Food : Resource::Gold;
         if (Source(preferred).remaining > 0) return preferred;
+        const Resource other = preferred == Resource::Gold ? Resource::Food : Resource::Gold;
         if (Source(other).remaining > 0) return other;
+        if (preferred == Resource::Oil && foodSource.remaining > 0) return Resource::Food;
         return std::nullopt;
+    }
+
+    // Whether a harvester would have anything to haul, if only by being sent to the field.
+    [[nodiscard]] bool HasAnythingToHaul() const noexcept {
+        return NextSource(Resource::Gold).has_value() || oilSource.remaining > 0;
     }
 
     // Every cent has one explanation: nothing is created or lost outside the ledger.
@@ -363,6 +387,13 @@ struct Account {
             && goldSource.delivered == goldHeld + goldSold;
     }
 
+    // The same for the oil field.
+    [[nodiscard]] bool OilReconciles() const noexcept {
+        return oilSource.remaining >= 0 && oilHeld >= 0
+            && oilSource.start == oilSource.remaining + OilCarried() + oilSource.delivered + oilSource.lost
+            && oilSource.delivered == oilHeld + oilSold;
+    }
+
     // The same for the food source. Delivered food is in the ration reserve's own reconciliation.
     [[nodiscard]] bool FoodSourceReconciles() const noexcept {
         return foodSource.remaining >= 0
@@ -376,7 +407,7 @@ struct RequestResult {
     Cents available = 0;
     std::size_t queued = 0;
     // A sale: what left the stock and how the net amount above was reached.
-    GoldQuote sale;
+    SaleQuote sale;
     [[nodiscard]] explicit operator bool() const noexcept { return rejection == EconomyRejection::None; }
 };
 
@@ -478,7 +509,7 @@ public:
     // seat with no source. It waits if there is nothing left to collect.
     bool AddHarvester(ParticipantId participant, UnitId unit) {
         Account* account = FindMutable(participant);
-        if (!account || unit == 0 || (!account->goldSource.present && !account->foodSource.present) || FindHarvester(participant, unit)) return false;
+        if (!account || unit == 0 || (!account->goldSource.present && !account->foodSource.present && !account->oilSource.present) || FindHarvester(participant, unit)) return false;
         const auto position = std::lower_bound(account->harvesters.begin(), account->harvesters.end(), unit,
             [](const Harvester& candidate, UnitId id) { return candidate.unit < id; });
         Harvester harvester;
@@ -605,6 +636,8 @@ public:
                 Gold credited = harvester->load;
                 if (harvester->loadKind == Resource::Gold) {
                     account->goldHeld += credited;
+                } else if (harvester->loadKind == Resource::Oil) {
+                    account->oilHeld += credited;
                 } else {
                     credited = std::min(credited, kFoodCapacityRations - account->rations);
                     account->rations += credited;
@@ -790,7 +823,7 @@ public:
         if (!definition) return Reject(EconomyRejection::UnknownRecipe, account);
         if (!account->hasProducer) return Reject(EconomyRejection::NoProducer, account);
         // A harvester with nothing to haul would only eat.
-        if (static_cast<Recipe>(recipe) == Recipe::Harvester && !account->NextSource(Resource::Gold))
+        if (static_cast<Recipe>(recipe) == Recipe::Harvester && !account->HasAnythingToHaul())
             return Reject(EconomyRejection::NoResourceSource, account);
         if (!account->producerPowered) return Reject(EconomyRejection::ProducerUnpowered, account);
         if (account->foodShortage) return Reject(EconomyRejection::FoodShortage, account);
@@ -847,24 +880,13 @@ public:
         return {EconomyRejection::None, kFoodPurchaseCents, account->available, account->queue.size(), {}};
     }
 
-    // Sells one lot at the fixed quote: debits the gold and credits the net dollars once, or changes
+    // Sells one lot at the fixed quote: debits the stock and credits the net dollars once, or changes
     // nothing. Always open during an outage or a shortage, because it can pay the way out of one.
     RequestResult SellGold(ParticipantId participant, TransactionId transaction) {
-        Account* account = FindMutable(participant);
-        if (!account) return Reject(EconomyRejection::Unauthorized, nullptr);
-        if (transaction <= account->lastTransaction) return Reject(EconomyRejection::DuplicateCommand, account);
-        const std::optional<GoldQuote> quote = QuoteGoldLot(account->goldHeld);
-        if (!quote) return Reject(EconomyRejection::NothingToSell, account);
-        Cents available = 0;
-        Cents saleCredited = 0;
-        if (!CheckedAdd(account->available, quote->net, available) || !CheckedAdd(account->saleCredited, quote->net, saleCredited))
-            return Reject(EconomyRejection::Overflow, account);
-        account->available = available;
-        account->saleCredited = saleCredited;
-        account->goldHeld -= quote->quantity;
-        account->goldSold += quote->quantity;
-        account->lastTransaction = transaction;
-        return {EconomyRejection::None, quote->net, account->available, account->queue.size(), *quote};
+        return Sell(participant, transaction, Resource::Gold);
+    }
+    RequestResult SellOil(ParticipantId participant, TransactionId transaction) {
+        return Sell(participant, transaction, Resource::Oil);
     }
 
     // One authoritative step for one account: pays income that is due, allocates power, charges
@@ -970,6 +992,27 @@ private:
         const auto found = std::find_if(account->harvesters.begin(), account->harvesters.end(),
             [unit](const Harvester& harvester) { return harvester.unit == unit; });
         return found == account->harvesters.end() ? nullptr : &*found;
+    }
+
+    RequestResult Sell(ParticipantId participant, TransactionId transaction, Resource resource) {
+        Account* account = FindMutable(participant);
+        if (!account) return Reject(EconomyRejection::Unauthorized, nullptr);
+        if (transaction <= account->lastTransaction) return Reject(EconomyRejection::DuplicateCommand, account);
+        const bool oil = resource == Resource::Oil;
+        Gold& held = oil ? account->oilHeld : account->goldHeld;
+        Gold& sold = oil ? account->oilSold : account->goldSold;
+        const std::optional<SaleQuote> quote = oil ? QuoteOilLot(held) : QuoteGoldLot(held);
+        if (!quote) return Reject(oil ? EconomyRejection::NoOilToSell : EconomyRejection::NothingToSell, account);
+        Cents available = 0;
+        Cents saleCredited = 0;
+        if (!CheckedAdd(account->available, quote->net, available) || !CheckedAdd(account->saleCredited, quote->net, saleCredited))
+            return Reject(EconomyRejection::Overflow, account);
+        account->available = available;
+        account->saleCredited = saleCredited;
+        held -= quote->quantity;
+        sold += quote->quantity;
+        account->lastTransaction = transaction;
+        return {EconomyRejection::None, quote->net, account->available, account->queue.size(), *quote};
     }
 
     [[nodiscard]] static RequestResult Reject(EconomyRejection rejection, const Account* account) noexcept {

@@ -40,6 +40,7 @@ namespace
         TEXT("-PolitikaMPEconomyStartFood="),
         TEXT("-PolitikaMPEconomySourceGold="),
         TEXT("-PolitikaMPEconomySourceFood="),
+        TEXT("-PolitikaMPEconomySourceOil="),
         TEXT("-PolitikaMPStartingHarvesters="),
         TEXT("-PolitikaMPDisciplineRoutSeed="),
         TEXT("-PolitikaMPDisciplineDoctrine="),
