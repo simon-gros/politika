@@ -1504,7 +1504,7 @@ void APolitikaPrototypeMatch::SampleGroundProbes(const APlayerController& Viewer
         }
     }
     // The point on the ground a click would hit: the same visibility channel the controller
-    // traces under the cursor, falling back to the objective's height.
+    // traces under the cursor, skipping buildings, falling back to the objective's height.
     const double FallbackZ = Objective ? Objective->GetActorLocation().Z : 0.0;
     for (int32 Index = 0; Index < GroundProbePoints.Num(); ++Index)
     {
@@ -1512,8 +1512,15 @@ void APolitikaPrototypeMatch::SampleGroundProbes(const APlayerController& Viewer
         FHitResult Hit;
         FCollisionQueryParams Params(TEXT("PolitikaGroundProbe"), false);
         for (const APolitikaPrototypeUnit* Unit : Units) if (IsValid(Unit)) Params.AddIgnoredActor(Unit);
-        const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, FVector(Point.X, Point.Y, FallbackZ + 5000.0),
-            FVector(Point.X, Point.Y, FallbackZ - 5000.0), ECC_Visibility, Params);
+        const FVector TraceFrom(Point.X, Point.Y, FallbackZ + 5000.0);
+        const FVector TraceTo(Point.X, Point.Y, FallbackZ - 5000.0);
+        bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, TraceFrom, TraceTo, ECC_Visibility, Params);
+        // A probe reports the ground. A click at that screen point still meets a building standing there.
+        for (int32 Skipped = 0; bHit && Skipped < 8 && Cast<APolitikaPrototypeStructure>(Hit.GetActor()); ++Skipped)
+        {
+            Params.AddIgnoredActor(Hit.GetActor());
+            bHit = GetWorld()->LineTraceSingleByChannel(Hit, TraceFrom, TraceTo, ECC_Visibility, Params);
+        }
         const FVector Ground(Point.X, Point.Y, bHit ? Hit.ImpactPoint.Z : FallbackZ);
         FVector2D Screen(-1.0, -1.0);
         const bool bOnScreen = Viewer.ProjectWorldLocationToScreen(Ground, Screen, true);
