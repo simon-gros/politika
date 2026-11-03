@@ -15103,6 +15103,33 @@ fn wait_cursor(game: &mut Game, fragments: &[&str], mark: usize) -> Result<Strin
     game.wait_line(&wanted, Duration::from_secs(5), mark)
 }
 
+/// Presses `key` with the cursor on a building until the server logs `started`, and records the
+/// presses it took. A unit crossing the cursor takes the press, and the client refuses it without
+/// telling the server. A failure here is left for the caller's own wait to report.
+fn press_on_building(
+    game: &Game,
+    server: &mut Game,
+    report: &mut Report,
+    action: &str,
+    key: &str,
+    started: &[&str],
+) -> Result<(), String> {
+    let mut presses = 0;
+    while presses < 5 {
+        presses += 1;
+        let mark = server.offset();
+        game.key(key)?;
+        if server
+            .wait_line(started, Duration::from_millis(1500), mark)
+            .is_ok()
+        {
+            break;
+        }
+    }
+    report.fact(&format!("{action}_presses"), presses.to_string());
+    Ok(())
+}
+
 /// Whether a fragment set appears on the server within `window`, starting from `mark`.
 fn appears(server: &mut Game, fragments: &[&str], window: Duration, mark: usize) -> bool {
     server.wait_line(fragments, window, mark).is_ok()
@@ -15236,7 +15263,14 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             format!("{named:?}"),
         );
         let mark = server.offset();
-        client_a.key("z")?;
+        press_on_building(
+            &client_a,
+            &mut server,
+            report,
+            "demolish_generator",
+            "z",
+            &["RTS_BUILDING_DEMOLISH participant=1", "kind=generator"],
+        )?;
         let demolished = server.wait_line(
             &["RTS_BUILDING_DEMOLISH participant=1", "kind=generator"],
             Duration::from_secs(5),
@@ -15691,7 +15725,14 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         let mark_cursor = client_a.offset();
         point_at_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
         let mark = server.offset();
-        client_a.key("c")?;
+        press_on_building(
+            &client_a,
+            &mut server,
+            report,
+            "capture_generator",
+            "c",
+            &["RTS_BUILDING_CAPTURE phase="],
+        )?;
         let captured = server.wait_line(
             &[
                 "RTS_BUILDING_CAPTURE unit=",
@@ -15735,7 +15776,14 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         point_at_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
         let mark = server.offset();
         let mark_a = client_a.offset();
-        client_a.key("z")?;
+        press_on_building(
+            &client_a,
+            &mut server,
+            report,
+            "demolish_producer",
+            "z",
+            &["RTS_BUILDING_DEMOLISH participant=1", "kind=producer"],
+        )?;
         let lost = server.wait_line(
             &["RTS_BUILDING_DEMOLISH participant=1", "kind=producer"],
             Duration::from_secs(5),
@@ -15780,7 +15828,14 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         select_entity_near_probe(&mut client_a, attacker, BLD_PROBE_ENEMY_PRODUCER)?;
         point_at_probe(&mut client_a, BLD_PROBE_ENEMY_PRODUCER)?;
         let mark = server.offset();
-        client_a.key("c")?;
+        press_on_building(
+            &client_a,
+            &mut server,
+            report,
+            "capture_producer",
+            "c",
+            &["RTS_BUILDING_CAPTURE phase="],
+        )?;
         let producer_taken = server.wait_line(
             &[
                 "RTS_BUILDING_CAPTURE unit=",
