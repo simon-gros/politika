@@ -4066,6 +4066,38 @@ bool FPolitikaMultiplayerHarvestTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("H-A07 and no gold"), Account->goldSource.lost, static_cast<int64>(0));
     TestTrue(TEXT("H-A07 every ledger reconciles"), Account->RationsReconcile() && Account->FoodSourceReconciles() && Account->GoldReconciles());
 
+    // A food load the store cannot take stays aboard and reads as store full, not as unloading.
+    {
+        APolitikaPrototypeUnit* Fuller = F.AddUnit(HostId, FVector2D(FoodActor->GetActorLocation().X, FoodActor->GetActorLocation().Y));
+        if (!TestNotNull(TEXT("H-A09 a second hauler spawns"), Fuller)
+            || !TestTrue(TEXT("H-A09 it joins the account"), F.Match->Economy.AddHarvester(HostId, Fuller->GetStableId()))) return false;
+        // No route on this level: let its first order be admitted and fail before moving it, or that
+        // order ends in Stop after the move and leaves it waiting instead of loading.
+        F.Step(3);
+        TestEqual(TEXT("H-A09 its first order has failed"), static_cast<int32>(F.Match->GetEconomy().FindHarvester(HostId, Fuller->GetStableId())->phase), static_cast<int32>(HarvesterPhase::Waiting));
+        Place(Fuller, FoodActor);
+        F.Step();
+        F.Step(pe::kHarvesterLoadSteps);
+        TestTrue(TEXT("H-A09 it is carrying food"), Fuller->IsCarryingFood());
+        // The checks below must not straddle a ration issue, which would make room in the store.
+        const uint64 UntilUpkeep = pe::kFoodUpkeepIntervalSteps - (F.Match->SimulationStepsExecuted % pe::kFoodUpkeepIntervalSteps);
+        if (UntilUpkeep < pe::kHarvesterUnloadSteps + 10) F.Step(static_cast<int32>(UntilUpkeep + 1));
+        TestTrue(TEXT("H-A09 the store is filled"), F.Match->Economy.FillFoodStore(HostId));
+        Place(Fuller, Depot);
+        F.Step();
+        F.Step(pe::kHarvesterUnloadSteps);
+        const pe::Harvester* FullState = F.Match->GetEconomy().FindHarvester(HostId, Fuller->GetStableId());
+        TestTrue(TEXT("H-A09 the food stays aboard"), FullState && FullState->load == pe::kLoadFood && Fuller->IsCarryingFood());
+        TestEqual(TEXT("H-A09 the reserve is still full"), F.Match->GetEconomy().Find(HostId)->rations, pe::kFoodCapacityRations);
+        TestEqual(TEXT("H-A09 the harvester reads store full"), Fuller->GetOrderLabel(), FString(TEXT("Store full")));
+        TestEqual(TEXT("H-A09 the line counts it as store full"), F.Host->GetOwnEconomy().FoodStoreFull, static_cast<int32>(pe::kLoadFood));
+        TestEqual(TEXT("H-A09 and not as unloading"), F.Host->GetOwnEconomy().FoodUnloading, 0);
+        TestEqual(TEXT("H-A09 the phrase"), APolitikaPrototypeMatch::CargoPhrase(
+            F.Host->GetOwnEconomy().FoodCarried, F.Host->GetOwnEconomy().FoodHolding, F.Host->GetOwnEconomy().FoodUnloading, F.Host->GetOwnEconomy().FoodStoreFull),
+            FString(TEXT("30 store full")));
+        TestTrue(TEXT("H-A09 the reserve still reconciles"), F.Match->GetEconomy().Find(HostId)->RationsReconcile());
+    }
+
     // The next match has its own harvester and full sources.
     F.Match->ClearEconomy(TEXT("automation"));
     F.Match->InitializeEconomy();

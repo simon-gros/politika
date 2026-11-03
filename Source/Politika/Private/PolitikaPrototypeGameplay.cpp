@@ -351,6 +351,7 @@ FString APolitikaPrototypeUnit::GetOrderLabel() const
 {
     if (IsRouted()) return TEXT("ROUTED");
     if (GetCaptureTarget()) return TEXT("Capturing");
+    if (CargoPose == CargoPoseStoreFull && IsCarryingFood()) return TEXT("Store full");
     if (CargoPose == CargoPoseUnloading)
     {
         if (IsCarryingGold()) return TEXT("Unloading gold");
@@ -4738,7 +4739,7 @@ void APolitikaPrototypeHUD::DrawHUD()
         // ECON-E5: what is left in the food cache and on the way from it.
         const FString FoodCacheText = Economy.bHasFoodSource
             ? FString::Printf(TEXT("%d in the cache, %s  ·  "), Economy.FoodAtSource,
-                *APolitikaPrototypeMatch::CargoPhrase(Economy.FoodCarried, Economy.FoodHolding, Economy.FoodUnloading)) : FString();
+                *APolitikaPrototypeMatch::CargoPhrase(Economy.FoodCarried, Economy.FoodHolding, Economy.FoodUnloading, Economy.FoodStoreFull)) : FString();
         const FString FoodText = Economy.bFoodShortage
             ? FString::Printf(TEXT("FOOD %d  ·  SHORTAGE: no new training until the next full ration issue  ·  %s%s"), Economy.Rations, *FoodCacheText, *PurchaseText)
             : FString::Printf(TEXT("FOOD %d  -%d / %d s  ·  about %d min  ·  %s%s"), Economy.Rations, Economy.UpkeepRations, UpkeepSeconds,

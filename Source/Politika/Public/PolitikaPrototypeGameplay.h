@@ -285,6 +285,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() int32 FoodCarried = 0;
     UPROPERTY() int32 FoodHolding = 0;
     UPROPERTY() int32 FoodUnloading = 0;
+    // Of FoodCarried, the part the store cannot take yet.
+    UPROPERTY() int32 FoodStoreFull = 0;
     UPROPERTY() int32 FoodAtSource = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
@@ -302,6 +304,7 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && GoldHolding == Other.GoldHolding && GoldUnloading == Other.GoldUnloading && GoldAtSource == Other.GoldAtSource
             && bHasFoodSource == Other.bHasFoodSource && FoodCarried == Other.FoodCarried
             && FoodHolding == Other.FoodHolding && FoodUnloading == Other.FoodUnloading
+            && FoodStoreFull == Other.FoodStoreFull
             && FoodAtSource == Other.FoodAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
@@ -451,6 +454,7 @@ public:
     static constexpr uint8 CargoPoseNone = 0;
     static constexpr uint8 CargoPoseHolding = 1;
     static constexpr uint8 CargoPoseUnloading = 2;
+    static constexpr uint8 CargoPoseStoreFull = 3;
     uint8 GetCargoPose() const { return CargoPose; }
     void SetCargoPose(uint8 Pose) { if (CargoPose != Pose) CargoPose = Pose; }
     uint8 GetCarriedResourceByte() const { return CarriedResource; }
@@ -846,7 +850,7 @@ public:
     // is not an oracle. A source is not a building. A capture in progress names the approach or the hold.
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
     // "25 on the way", "25 holding", "25 unloading", or a mix. Zeros are left out.
-    static FString CargoPhrase(int32 Carried, int32 Holding, int32 Unloading = 0);
+    static FString CargoPhrase(int32 Carried, int32 Holding, int32 Unloading = 0, int32 StoreFull = 0);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);

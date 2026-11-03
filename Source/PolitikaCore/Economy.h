@@ -440,6 +440,17 @@ public:
         return true;
     }
 
+    // Fills the reserve to capacity. The fill is recorded as bought so the ledger still reconciles.
+    // A delivery into a full store stays on the harvester.
+    bool FillFoodStore(ParticipantId participant) noexcept {
+        Account* account = FindMutable(participant);
+        if (!account || account->rations > kFoodCapacityRations) return false;
+        const Rations room = kFoodCapacityRations - account->rations;
+        account->rations += room;
+        account->rationsBought += room;
+        return true;
+    }
+
     // Gives a participant a source, before anything has been taken from it. Refuses a negative amount.
     bool SetSource(ParticipantId participant, Resource resource, Gold amount) noexcept {
         Account* account = FindMutable(participant);

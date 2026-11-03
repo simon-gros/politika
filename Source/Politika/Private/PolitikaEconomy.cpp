@@ -362,15 +362,17 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
     }
 }
 
-FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32 Unloading)
+FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32 Unloading, int32 StoreFull)
 {
     const int32 Total = FMath::Max(0, Carried);
-    const int32 Unload = FMath::Clamp(Unloading, 0, Total);
-    const int32 Held = FMath::Clamp(Holding, 0, Total - Unload);
-    const int32 OnTheWay = Total - Held - Unload;
+    const int32 Full = FMath::Clamp(StoreFull, 0, Total);
+    const int32 Unload = FMath::Clamp(Unloading, 0, Total - Full);
+    const int32 Held = FMath::Clamp(Holding, 0, Total - Full - Unload);
+    const int32 OnTheWay = Total - Held - Unload - Full;
     TArray<FString> Parts;
     if (OnTheWay > 0) Parts.Add(FString::Printf(TEXT("%d on the way"), OnTheWay));
     if (Unload > 0) Parts.Add(FString::Printf(TEXT("%d unloading"), Unload));
+    if (Full > 0) Parts.Add(FString::Printf(TEXT("%d store full"), Full));
     if (Held > 0) Parts.Add(FString::Printf(TEXT("%d holding"), Held));
     return Parts.IsEmpty() ? FString(TEXT("0 on the way")) : FString::Join(Parts, TEXT(", "));
 }
@@ -1051,7 +1053,11 @@ void APolitikaPrototypeMatch::RunHarvesters(uint64 Step)
                         static_cast<int32>(Account->queue.size()), Account->RationsReconcile() ? 1 : 0, MatchGeneration, Step);
 #endif
             Unit->SetCarriedResource(State->load > 0 ? std::optional<pe::Resource>(State->loadKind) : std::nullopt);
+            const pe::Account* PoseAccount = Economy.Find(ParticipantId);
+            const bool bStoreFull = State->load > 0 && State->phase == pe::HarvesterPhase::Unloading
+                && State->loadKind == pe::Resource::Food && PoseAccount && PoseAccount->rations >= pe::kFoodCapacityRations;
             const uint8 Pose = State->load <= 0 ? APolitikaPrototypeUnit::CargoPoseNone
+                : bStoreFull ? APolitikaPrototypeUnit::CargoPoseStoreFull
                 : State->phase == pe::HarvesterPhase::Unloading ? APolitikaPrototypeUnit::CargoPoseUnloading
                 : APolitikaPrototypeUnit::CargoPoseHolding;
             Unit->SetCargoPose(Pose);
@@ -1231,19 +1237,23 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             int32 FoodHolding = 0;
             int32 GoldUnloading = 0;
             int32 FoodUnloading = 0;
+            int32 FoodStoreFull = 0;
             for (const pe::Harvester& Harvester : Account->harvesters)
             {
                 if (Harvester.load <= 0) continue;
+                const bool bStoreFull = Harvester.phase == pe::HarvesterPhase::Unloading
+                    && Harvester.loadKind == pe::Resource::Food && Account->rations >= pe::kFoodCapacityRations;
+                const bool bUnloading = Harvester.phase == pe::HarvesterPhase::Unloading && !bStoreFull;
                 const TObjectPtr<APolitikaPrototypeUnit>* Found = Units.FindByPredicate(
                     [&Harvester, &Binding](const APolitikaPrototypeUnit* Unit)
                     {
                         return IsValid(Unit) && Unit->GetStableId() == Harvester.unit && Unit->GetOwnerPlayer() == Binding.RuntimePlayerId;
                     });
-                const bool bUnloading = Harvester.phase == pe::HarvesterPhase::Unloading;
-                const bool bDriving = !bUnloading && Found && (*Found)->IsAlive()
+                const bool bDriving = !bUnloading && !bStoreFull && Found && (*Found)->IsAlive()
                     && (*Found)->GetCurrentOrder() == EPolitikaPrototypeOrder::Move;
                 if (bDriving) continue;
-                int32& Bucket = Harvester.loadKind == pe::Resource::Gold
+                int32& Bucket = bStoreFull ? FoodStoreFull
+                    : Harvester.loadKind == pe::Resource::Gold
                     ? (bUnloading ? GoldUnloading : GoldHolding)
                     : (bUnloading ? FoodUnloading : FoodHolding);
                 Bucket += static_cast<int32>(Harvester.load);
@@ -1252,6 +1262,7 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.FoodHolding = FoodHolding;
             View.GoldUnloading = GoldUnloading;
             View.FoodUnloading = FoodUnloading;
+            View.FoodStoreFull = FoodStoreFull;
             View.Harvesters = static_cast<int32>(Account->harvesters.size());
             if (!Account->queue.empty())
             {
@@ -1285,14 +1296,14 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_source=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_store_full=%d food_source=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
         OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0, OwnEconomy.Rations, OwnEconomy.UpkeepRations,
         OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldHolding, OwnEconomy.GoldUnloading,
         OwnEconomy.GoldAtSource, OwnEconomy.Harvesters, OwnEconomy.FoodCarried, OwnEconomy.FoodHolding, OwnEconomy.FoodUnloading,
-        OwnEconomy.FoodAtSource);
+        OwnEconomy.FoodStoreFull, OwnEconomy.FoodAtSource);
 #else
     (void)Source;
 #endif
