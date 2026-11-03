@@ -16753,7 +16753,7 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
 const PLT_PRICE_CENTS: i64 = 40_000;
 const PLT_BUILD_STEPS: i64 = 400;
 // Seat 2's site, opposite its first plant across the producer.
-const PLT_SITE: (f64, f64) = (1906.1, 628.8);
+const PLT_SITE: (f64, f64) = (1906.2, 628.9);
 const PLT_NEAR: (f64, f64) = (1450.0, 620.0);
 const PLT_PROBE_SITE: usize = 8;
 const PLT_PROBE_NEAR: usize = 9;
