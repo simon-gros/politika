@@ -1,5 +1,7 @@
 # POLITIKA UI — product overview
 
+> **Current implementation boundary (3 November 2026):** The authoritative, evidence-backed status is [Implementation Status](IMPLEMENTATION_STATUS.md). The UI described below includes both shipped-to-test-fixture interaction and **design proposals**; do not infer that a documented panel or command is implemented. The first UI delivery priority is reliability of selection, economy, order feedback and fog-safe client presentation in a complete skirmish. See §21 for a concrete UE 5.8 implementation and acceptance backlog.
+
 Status: expanded RTS interaction, information-integrity and multi-platform UI design contract (2026-10-27); implementation is narrower and separately evidenced
 Engine target: Unreal Engine 5.8.3
 Design emphasis: readable RTS commands, map awareness and fast tactical interaction
@@ -592,7 +594,7 @@ For screenshot comparisons, use Epic's tools as a baseline **in addition to** se
 
 ### 20.3 Acceptance sequencing and explicit exclusions
 
-**Now:** preserve the accepted Linux Development vertical-slice HUD and shell, fix any incorrect presentation of currently simulated data, and bind display values to Stage 3 validated unit/weapon definitions when they exist. No new UI subsystem is a dependency for typed content validation.
+**Now (updated 3 November 2026):** preserve the Linux Development shell/HUD and already accepted networked/economic presentation, close the parked-harvester click-selection defect, verify building look-through at real camera scales and target points, and use current server-authorized observation values for resource, income, damage and production. Do not regress the recorded E29/E30 two-rendered-client tests. See §21 and [Implementation Status](IMPLEMENTATION_STATUS.md). No new UI subsystem is a dependency for typed content validation.
 
 **First complete match:** implement only the command-card, mixed selection, minimap, resource/queue, fog, objective and results surfaces required for the concrete match-loop rules. Verify the minimum independently playable offline loop and command/state consistency before expanding the roster.
 
@@ -601,3 +603,91 @@ For screenshot comparisons, use Epic's tools as a baseline **in addition to** se
 **Later platforms/release:** qualify remapping, controller/touch tactical command parity, accessibility settings, localization, safe areas, performance and recoverable package behavior on each target device. Multiplayer/replay, full economy, all rosters, production art, screenshots-as-proof and console certification remain outside near-term Stage 3 scope.
 
 **Document governance:** this file owns the *player-facing semantic contract and interface presentation*. It does not supersede mechanics in [Concepts](CONCEPTS_OUTLINE.md), world truth in [Engine](ENGINE_OUTLINE.md), faction rules in specialist documents, evidence in the [Archive](../Archive/README.md), or release qualification in [Performance and Release Gates](PERFORMANCE_AND_RELEASE_GATES.md). When an underlying mechanic changes, update its owner and the corresponding UI acceptance row together. Preserve status distinctions: **design proposal ≠ source implementation ≠ packaged acceptance ≠ platform qualification**.
+
+## 21. Immediate RTS UI delivery contract — 3 November 2026 (engineering priority)
+
+This section **refines**, rather than replaces, §§1–20. It takes the accepted remote-client RTS/economy prototype as the implementation baseline and defines the smallest usable, testable UI for the **first complete skirmish**. It does not authorize implementation of espionage, nuclear controls or elaborate political dashboards ahead of proven basic selection, issuing orders, production and state feedback.
+
+### 21.1 The player task loop and priority order
+
+The essential loop is: **find own forces → select reliably → inspect available/legal commands → issue an order → receive admission/result feedback → read consequences → repeat**. A user must also be able to find economic sources, dispatch/recall workers, see stock and income, train forces, navigate camera/minimap, identify fog-limited threats, and recognize a completed/failed match. Prioritize in this order:
+
+| Tier | UI capability and behavior | Minimum acceptance |
+|---|---|---|
+| P0 — selection | Direct-click, box-select, additive select, building/worker overlap, mixed ownership, death/respawn invalidation | A parked harvester and its producer are independently targetable without harness-only gestures; clicking an entity never silently selects another; packaged pointer tests at near/mid/far zoom |
+| P0 — contextual commands | Move, attack, interact/capture, repair, gather and sell, recruit; valid/invalid cursor hints | The input target is resolved **once** into a typed candidate, then previewed and submitted; client does not silently swallow valid orders; rejection reason shown without revealing secret data |
+| P0 — truthful economy | Own stock, carried loads, source remainder if observable, income step, sell quote/fee, supply/power and train eligibility when implemented | Numbers agree with server-authorized observation and are updated on event/revision; no client-side speculative money/price calculations presented as truth |
+| P0 — combat/objectives | Own/enemy permitted health, objective progress, unit deaths, terminal result, rematch controls | Fog filters all widgets and alerts; results reflect the terminal authoritative state; no ghost commands after match end |
+| P1 — tactical navigation | Minimap, camera jump, control groups, multi-unit summary, persistent production queue | Minimap uses the same permission-filtered observer model; all controls work through one command contract |
+| P1 — accessibility and onboarding | Remappable bindings, tooltips, scalable typography, keyboard focus, contrast/colorblind-independent status, full keymap and input-mode hints | Tested with keyboard-only and mouse; platform-specific gamepad/touch tests when those builds actually exist |
+| P2 — advanced identity | Espionage, propaganda, misinformation, diplomatic and faction-unique views | Defer until rules exist and have observation-permission tests; no fake data or decorative affordances implying a working command |
+
+An automated green run is necessary but **not sufficient**: require at least one manual-play walkthrough by a tester unfamiliar with the binding map, plus a documented result on the same packaged revision.
+
+### 21.2 Picking, occlusion and command admission
+
+**Known open bug (E29/E30):** the idle harvester parks at the producer's centre and cannot reliably be directly clicked; automated `--oil` selects it by a small box instead. Resolve this in the game geometry/picking semantics, **not** by retrying clicks in a harness. Acceptable fixes to evaluate include a dedicated selectable silhouette/selection proxy, offset parking with pathing clearance, or an explicit overlap cycle. Choose based on world alignment, occlusion and ownership; do not globally give invisible units larger attack hit boxes. Test the producer and the harvester independently from several camera angles, zoom levels and cursor coordinates.
+
+Unify pointer processing into **hit collection → eligible entity priority → contextual semantic target → local preview → authoritative typed admission → confirmed/rejected feedback**. Selection hit boxes, action target areas, navigation/collision bounds and projectile collision must be separate concepts. World-space UI should not intercept a tactical press accidentally. When an input hits overlapping entities, display the intended target in cursor text, preserve intentional modifiers (e.g. selection versus building capture/repair) and make an ambiguity resolvable without guessing.
+
+E29's C/Z look-through is only packaged-proven for body hits at tested zoom/points; its proposed Automation case did not execute in a world with a physics scene and was removed. Add a world-backed integration case with positive/negative controls, test feet/head/edge pixels across zoom, and never label this independently Automation-qualified until one exists.
+
+**Admitted vs. applied:** the UI may immediately show a pending intent, but must only mark production, payment, repair, capture or resource sale successful after a server response or an authorized observation. If a command is rejected, display a short neutral reason (e.g. out of range, unavailable resource, illegal target, stale selection) that does not disclose hidden enemy state. Maintain a per-command correlation ID for diagnostics; handle duplicate inputs without duplicate mutations.
+
+### 21.3 Desktop layout and information hierarchy
+
+Use a **world-first** frame rather than covering the battlefield with permanently expanded panels. A recommended baseline is a narrow top strip for *own* resources/power/income and high-priority match state; a lower selection/command region for current selection, legal actions, queue and costs; a minimap lower-corner zone; and compact transient alerts near the relevant screen edge. Placement is a proposal, not an already built screen.
+
+At a glance (under one second), the player should distinguish: *who is selected, what it can do, whether a command will work, whether a resource is constrained, and where immediate threats are*. An inspector or tooltip may carry secondary details, historical provenance, espionage uncertainty and verbose explanatory text. Avoid making a tooltip the **only** way to understand affordability or selection.
+
+A large mixed selection needs a count and aggregate state, with the common legal actions presented first; preserve selection after a failed order, avoid surprising camera jumps and display an expired/dead selected-unit transition explicitly. Resource values and icons must include textual labels and units; a red/green-only distinction is insufficient. Pending/denied commands must be visibly distinguishable from completed orders.
+
+### 21.4 Minimap and the information-security boundary
+
+The minimap is a **projection of the authorized observer's knowledge**, never a shortcut to `GameState` truth. Use the same visibility policy for world silhouettes, minimap dots, selected-unit inspectors, alerts, event history and any intended last-known contact. Distinguish visible enemies, last-known stale contacts and unverified intelligence by shape/label/status, as well as color. A contact outside sight must not expose real-time position, health, order, precise attack target or production state.
+
+Test split observers with deliberately different fog, a unit moving from visible into hidden, a concealed action with observable muzzle-only cues, neutral ownership changes and false intel (once implemented). Compare allowed field sets—not just screenshots. Camera movement/minimap click must not reveal otherwise hidden targets via selection or error messages.
+
+### 21.5 UE 5.8 technical strategy (candidates, not mandates)
+
+- **Data boundary:** create a local-per-player **read-only, observation-derived presentation model** with immutable snapshots or revisioned deltas. UI widgets and viewmodels cannot query privileged server-owned actors directly on clients. Command buttons emit semantic intents through the existing typed server admission; widgets never implement resource, combat, eligibility or fog rules.
+- **UMG/Slate:** prefer small independent widgets and event/delegate-based updates for resources, health, queue and selection instead of per-frame UMG bound getters. Consider UE 5.8 **UMG Viewmodel/MVVM** when it demonstrably reduces glue code, but Epic labels it **Beta**; prove plugin availability and package/runtime behavior before making it a repository-wide dependency.
+- **Invalidation:** profile UMG invalidation before adding caching. Use Invalidation Boxes for relatively static panels; evaluate Global Invalidation at the window level; use Retainer Panels selectively only where their texture/memory cost and update delay are measured. High-frequency moving target indicators may need volatile painting. Do not indiscriminately wrap the entire HUD in retainers.
+- **Input:** define semantic `Select`, `Command`, `Cancel`, `Camera`, `ControlGroup`, `FocusUI`, `OpenMenu` actions once; apply UE **Enhanced Input Mapping Contexts** for mutually exclusive battlefield, targeting, chat, modal and menu contexts. Test that an open menu consumes combat clicks and that closing it restores the correct mapping and focus.
+- **Common UI:** evaluate for menus and cross-device focus/controller navigation, where its activatable-widget input routing and controller data assets are relevant; do **not** assume it automatically solves world-space RTS selection, drag-box, minimap commands or tactical gamepad parity.
+- **Instrumentation:** use **Slate Insights/Unreal Insights** to capture widget painting, invalidations and UI cost during rapid selection, dense combat alerts, long resource histories and 100s of units. Set explicit per-device budgets from measurements rather than inventing a fixed target in this specification.
+
+### 21.6 Screen-size and device gates
+
+Desktop 1920×1080 should remain a first-class legibility check **alongside 3840×2160**, not merely a 4K screenshot downscaled. Check 16:9 and narrower aspect ratios, windowed resize, HUD safe areas, long localized strings, zoom/text scaling and pointer hit fidelity. Adaptive handheld layouts should prioritize a compact tactical command region and gamepad focus/action hints; Android touch should use a gesture grammar that disambiguates pan, drag-select, tap and long-press with visible feedback. Do not label either device supported until tested on real target hardware.
+
+Key accessibility acceptance: no essential state encoded by color alone; tested text scaling and contrast; consistent keyboard focus order; reduced/optional UI animations; captions for critical audio-only alerts; reversible command defaults where rules permit; remapping and focus navigation tests. Investigate Unreal accessibility and screen-reader support on each target platform, rather than promising uniform native screen-reader behavior.
+
+### 21.7 Acceptance scenarios and evidence
+
+| ID | Fixture / action | Required evidence |
+|---|---|---|
+| UI-P00 | Parked harvester overlaps production building; select each directly, also via box | Screen/input trace, target ID, selection result at near/mid/far zoom |
+| UI-P01 | C/Z on building occluded by moving soldier; body/edge/ground controls | Distinct legal and illegal press traces; zero silent swallowed intents |
+| UI-P02 | Open menu while selecting/dragging/issuing orders; cancel and return | Exactly one responsible input context; no accidental command; restored focus |
+| UI-P03 | Sell oil, capture works, repair generator, train unit with two clients | Identical authorized totals and visible response after server decision; fee and timing verified |
+| UI-P04 | Move enemy through sight into fog; observe minimap, inspector and alert | No hidden fields, stale contact clearly marked; different observers receive different permitted information |
+| UI-P05 | 50–400+ units, repetitive selections, many notifications and queue updates | Slate/CPU/memory trace, documented baselines, no uncontrolled per-widget polling or allocation spikes |
+| UI-P06 | One complete skirmish: menu → map → gather → recruit → fight → result → rematch | Completed human walkthrough + packaged automated assertions; no dead controls |
+| UI-P07 | Alternate resolutions, keyboard-only, and future hardware-specific inputs | Screenshots **plus** semantic tests on real devices where applicable |
+
+For each acceptance, record package SHA, `network_protocol`, test topology, viewport sizes, device/input mode, initial seed/fixture, logs, screenshot/video pointers, pass/fail and exclusions. **Avoid upgrading the README status before evidence**. Owner: UI implementation and test plan; mechanics acceptance remains with economy/multiplayer/match owners.
+
+### 21.8 Reference research (consulted 3 November 2026)
+
+Official Unreal Engine 5.8 documentation; these sources inform implementation choices, **not** claims that POLITIKA has implemented them:
+
+- [Optimization Guidelines for UMG](https://dev.epicgames.com/documentation/en-us/unreal-engine/optimization-guidelines-for-umg-in-unreal-engine) — event-driven updates, tick/attribute-binding costs, caching and widget construction.
+- [Invalidation in Slate and UMG](https://dev.epicgames.com/documentation/en-us/unreal-engine/invalidation-in-slate-and-umg-for-unreal-engine) — invalidation boxes, global invalidation and retainer tradeoffs.
+- [UMG Viewmodel](https://dev.epicgames.com/documentation/en-us/unreal-engine/umg-viewmodel-for-unreal-engine) — FieldNotify-driven MVVM; flagged **Beta**.
+- [Common UI Quickstart](https://dev.epicgames.com/documentation/en-us/unreal-engine/common-ui-quickstart-guide-for-unreal-engine) and [Common UI Input Technical Guide](https://dev.epicgames.com/documentation/unreal-engine/commonui-input-technical-guide-for-unreal-engine) — modal/menu input routing, navigation and controller adaptation.
+- [Enhanced Input Mapping Context](https://dev.epicgames.com/documentation/unreal-engine/BlueprintAPI/Input/AddMappingContext) — explicit context priorities and consumption.
+- [Slate Insights](https://dev.epicgames.com/documentation/en-us/unreal-engine/slate-insights-in-unreal-engine) — profile widget paint/updates.
+- [Designing UI for Accessibility](https://dev.epicgames.com/documentation/en-us/unreal-engine/designing-ui-for-accessibility-in-unreal-engine) — accessible UI tools and screen-reader exploration.
+
+These are development references, not POLITIKA acceptance evidence. Recheck engine version/plugin maturity when integrating.
