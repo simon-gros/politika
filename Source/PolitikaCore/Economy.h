@@ -82,6 +82,9 @@ inline constexpr Gold kLoadOil = 20;
 inline constexpr Gold kSaleLotOil = 20;
 inline constexpr Cents kOilRateCents = 150;             // $1.50 per unit of crude
 inline constexpr std::int64_t kOilFeeBasisPoints = 300; // 3%
+// ECON-E32: one conventional plant a seat can buy. Prototype figures, not balance decisions.
+inline constexpr Cents kPlantCents = 40'000;              // $400.00
+inline constexpr std::uint32_t kPlantBuildSteps = 400;    // 20 s at 20 Hz
 
 // Wire values are stable.
 enum class Recipe : std::uint8_t { Rifleman, Harvester };
@@ -99,8 +102,8 @@ struct RecipeDefinition {
 }
 
 // Wire values are stable: Train is the default of a zeroed request.
-enum class EconomyOp : std::uint8_t { Train, Cancel, BuyFood, SellGold, SellOil };
-inline constexpr std::uint8_t kEconomyOpCount = 5;
+enum class EconomyOp : std::uint8_t { Train, Cancel, BuyFood, SellGold, SellOil, BuildPlant };
+inline constexpr std::uint8_t kEconomyOpCount = 6;
 
 enum class EconomyRejection : std::uint8_t {
     None,
@@ -123,6 +126,8 @@ enum class EconomyRejection : std::uint8_t {
     NothingToSell,
     NoResourceSource,
     NoOilToSell,
+    PlantUnderway,
+    PlantAlreadyBought,
 };
 
 [[nodiscard]] constexpr std::string_view RejectionName(EconomyRejection rejection) noexcept {
@@ -147,6 +152,8 @@ enum class EconomyRejection : std::uint8_t {
         case EconomyRejection::NothingToSell: return "nothing_to_sell";
         case EconomyRejection::NoResourceSource: return "no_resource_source";
         case EconomyRejection::NoOilToSell: return "no_oil_to_sell";
+        case EconomyRejection::PlantUnderway: return "plant_underway";
+        case EconomyRejection::PlantAlreadyBought: return "plant_already_bought";
     }
     return "unknown";
 }
@@ -333,6 +340,9 @@ struct Account {
     Gold oilHeld = 0;
     Gold oilSold = 0;
     Cents saleCredited = 0;
+    // ECON-E32: the step the bought plant stands, zero when none is being built.
+    Step plantDueStep = 0;
+    bool plantBought = false;
     std::vector<Harvester> harvesters; // ascending unit
 
     [[nodiscard]] const ResourceSource& Source(Resource resource) const noexcept {
@@ -428,6 +438,8 @@ struct StepResult {
     bool upkeepDue = false;
     Rations upkeepOwed = 0;
     Rations upkeepPaid = 0;
+    // The bought plant is finished and wants to stand; see CompletePlant.
+    bool plantDue = false;
 };
 
 class Ledger {
@@ -880,6 +892,40 @@ public:
         return {EconomyRejection::None, kFoodPurchaseCents, account->available, account->queue.size(), {}};
     }
 
+    // Buys the seat's one conventional plant (ECON-E32): debits the price once and starts the build,
+    // which finishes on the same step however the base fares meanwhile. It needs a living producer to
+    // start but no power, so it can pay the way out of an outage. There is no cancel and no refund.
+    RequestResult BuildPlant(ParticipantId participant, TransactionId transaction, Step step) {
+        Account* account = FindMutable(participant);
+        if (!account) return Reject(EconomyRejection::Unauthorized, nullptr);
+        if (transaction <= account->lastTransaction) return Reject(EconomyRejection::DuplicateCommand, account);
+        if (!account->hasProducer) return Reject(EconomyRejection::NoProducer, account);
+        if (account->plantDueStep != 0) return Reject(EconomyRejection::PlantUnderway, account);
+        if (account->plantBought) return Reject(EconomyRejection::PlantAlreadyBought, account);
+        if (account->available < kPlantCents) return Reject(EconomyRejection::InsufficientFunds, account);
+        Cents available = 0;
+        Cents spent = 0;
+        if (!CheckedSub(account->available, kPlantCents, available) || !CheckedAdd(account->spent, kPlantCents, spent))
+            return Reject(EconomyRejection::Overflow, account);
+        account->available = available;
+        account->spent = spent;
+        account->plantBought = true;
+        account->plantDueStep = step + kPlantBuildSteps;
+        account->lastTransaction = transaction;
+        return {EconomyRejection::None, kPlantCents, account->available, account->queue.size(), {}};
+    }
+
+    // Puts the finished plant on the grid under a free id, supplying from the next allocation.
+    // Zero if no plant is due. It is a generator like any other: damage, repair and capture all apply.
+    power::BuildingId CompletePlant(ParticipantId participant) {
+        Account* account = FindMutable(participant);
+        if (!account || account->plantDueStep == 0) return 0;
+        const power::BuildingId id = account->grid.NextId();
+        if (!account->grid.Add({id, power::BuildingKind::Generator, power::kGeneratorAuxiliaryKw, power::kGeneratorCapacityKw})) return 0;
+        account->plantDueStep = 0;
+        return id;
+    }
+
     // Sells one lot at the fixed quote: debits the stock and credits the net dollars once, or changes
     // nothing. Always open during an outage or a shortage, because it can pay the way out of one.
     RequestResult SellGold(ParticipantId participant, TransactionId transaction) {
@@ -932,6 +978,7 @@ public:
             account->allocation = allocation;
             account->producerPowered = powered;
         }
+        result.plantDue = account->plantDueStep != 0 && step >= account->plantDueStep;
         if (step >= account->nextUpkeepStep) {
             result.upkeepDue = true;
             result.upkeepOwed = std::max<std::int64_t>(staffedUnits, 0) * kRationsPerUnit;

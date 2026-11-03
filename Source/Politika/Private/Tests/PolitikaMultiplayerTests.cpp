@@ -5471,6 +5471,117 @@ bool FPolitikaMultiplayerOilTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerPlantTest,
+    "Politika.RTS.Multiplayer.Plant",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E32: one plant a seat can buy, through the same request path as a sale.
+bool FPolitikaMultiplayerPlantTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    APolitikaPrototypePlayerController* Host = F.Host;
+    APolitikaPrototypePlayerController* Enemy = F.Remotes[0];
+    const uint32 HostId = F.Match->GetBoundParticipantId(Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(Enemy);
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->InitializeEconomy();
+    const pe::Account* Account = F.Match->GetEconomy().Find(HostId);
+    if (!TestNotNull(TEXT("The host has an account"), Account)) return false;
+
+    const auto Press = [&F, Host]()
+    {
+        FPolitikaNetEconomyIntent Intent;
+        Intent.ProtocolVersion = static_cast<int32>(FPolitikaBootstrap::Get().NetworkProtocol());
+        Intent.Op = static_cast<uint8>(pe::EconomyOp::BuildPlant);
+        uint32& Sequence = F.NextSequence.FindOrAdd(Host, 1);
+        Intent.ClientSequence = Sequence++;
+        Intent.CorrelationId = F.NextCorrelation++;
+        Intent.MatchGeneration = F.Match->GetMatchGeneration();
+        F.Match->SubmitEconomyIntent(Host, Intent);
+        F.Step();
+        const auto* Found = F.Match->TestEconomyOutcomes.FindByPredicate(
+            [&Intent](const auto& Entry) { return Entry.Value.CorrelationId == Intent.CorrelationId; });
+        return Found ? &Found->Value : nullptr;
+    };
+    const auto Generators = [&F](uint32 Owner)
+    {
+        TArray<APolitikaPrototypeStructure*> Found;
+        for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+            if (Structure && Structure->IsGenerator() && Structure->GetOwnerPlayer() == Owner) Found.Add(Structure);
+        return Found;
+    };
+
+    TestEqual(TEXT("PL-01 a seat starts with one plant"), Generators(HostId).Num(), 1);
+    const FPolitikaNetEconomyOutcome* Bought = Press();
+    if (!TestNotNull(TEXT("PL-02 the purchase comes back"), Bought)) return false;
+    TestEqual(TEXT("PL-02 it is accepted"), static_cast<int32>(Bought->Rejection), static_cast<int32>(pe::EconomyRejection::None));
+    TestEqual(TEXT("PL-02 the outcome reports the price"), Bought->AmountCents, pe::kPlantCents);
+    TestEqual(TEXT("PL-02 the price is debited once"), Account->spent, pe::kPlantCents);
+    TestTrue(TEXT("PL-02 the money reconciles"), Account->Reconciles());
+    TestEqual(TEXT("PL-02 nothing stands yet"), Generators(HostId).Num(), 1);
+    const FPolitikaNetEconomyOutcome* Underway = Press();
+    if (!TestNotNull(TEXT("PL-03 the second press comes back"), Underway)) return false;
+    TestEqual(TEXT("PL-03 it is refused"), static_cast<int32>(Underway->Rejection), static_cast<int32>(pe::EconomyRejection::PlantUnderway));
+    TestEqual(TEXT("PL-03 nothing more is charged"), Account->spent, pe::kPlantCents);
+
+    F.Step(pe::kPlantBuildSteps - 3);
+    TestEqual(TEXT("PL-04 it is not up early"), Generators(HostId).Num(), 1);
+    TestEqual(TEXT("PL-04 the supply has not moved"), Account->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
+    F.Step(3);
+    const TArray<APolitikaPrototypeStructure*> Plants = Generators(HostId);
+    if (!TestEqual(TEXT("PL-05 it stands"), Plants.Num(), 2)) return false;
+    F.Step();
+    APolitikaPrototypeStructure* First = Plants[0];
+    APolitikaPrototypeStructure* Second = Plants[1];
+    TestEqual(TEXT("PL-05 it has the next id"), Second->GetBuildingId(), static_cast<uint32>(3));
+    TestEqual(TEXT("PL-05 at full health"), Second->GetHealth(), pw::kGeneratorHealth);
+    TestEqual(TEXT("PL-05 the supply doubles"), Account->allocation.suppliedKw, static_cast<int64>(2 * pw::kGeneratorCapacityKw));
+    TestEqual(TEXT("PL-05 it has its own load"), Account->allocation.requiredKw, static_cast<int64>(2 * pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw));
+    TestTrue(TEXT("PL-05 it stands apart from the base"), FVector::Dist2D(First->GetActorLocation(), Second->GetActorLocation()) > 300.0
+        && FVector::Dist2D(F.Match->FindStructureOf(HostId)->GetActorLocation(), Second->GetActorLocation()) > 150.0);
+    TestTrue(TEXT("PL-05 its owner receives it"), Second->IsNetRelevantFor(Host, Host, FVector::ZeroVector));
+    TestFalse(TEXT("PL-05 the enemy does not, unseen"), Second->IsNetRelevantFor(Enemy, Enemy, FVector::ZeroVector));
+
+    const FPolitikaNetEconomyOutcome* Spent = Press();
+    if (!TestNotNull(TEXT("PL-06 the third press comes back"), Spent)) return false;
+    TestEqual(TEXT("PL-06 one a match"), static_cast<int32>(Spent->Rejection), static_cast<int32>(pe::EconomyRejection::PlantAlreadyBought));
+
+    // Either plant carries the base, and it takes both going down to stop the producer.
+    TestTrue(TEXT("PL-07 the first plant takes damage"), F.Match->DamageOwnedBuilding(First, pw::kGeneratorHealth) > 0);
+    F.Step();
+    TestTrue(TEXT("PL-07 the producer stays powered"), Account->producerPowered);
+    TestEqual(TEXT("PL-07 one plant supplies"), Account->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
+    TestTrue(TEXT("PL-08 the plant takes damage"), F.Match->DamageOwnedBuilding(Second, 1) > 0);
+    F.Step();
+    TestFalse(TEXT("PL-08 with both down the producer stops"), Account->producerPowered);
+    TestEqual(TEXT("PL-09 it is repaired like any other"), F.Match->RepairOwnedBuilding(Second, 1), 1);
+    F.Step();
+    TestTrue(TEXT("PL-09 and the producer runs again"), Account->producerPowered);
+
+    // Capture moves it, and the seat that lost it does not get another.
+    const pe::Ledger::CaptureResult Taken = F.Match->Economy.CaptureBuilding(HostId, EnemyId, Second->GetBuildingId());
+    TestTrue(TEXT("PL-10 it can be captured"), Taken.captured);
+    TestTrue(TEXT("PL-10 the winner has it"), F.Match->GetEconomy().Find(EnemyId)->grid.Find(Taken.newId) != nullptr);
+    const FPolitikaNetEconomyOutcome* Lost = Press();
+    if (!TestNotNull(TEXT("PL-10 the press after losing it comes back"), Lost)) return false;
+    TestEqual(TEXT("PL-10 it is still one a match"), static_cast<int32>(Lost->Rejection), static_cast<int32>(pe::EconomyRejection::PlantAlreadyBought));
+
+    F.Match->ClearEconomy(TEXT("test"));
+    F.Match->InitializeEconomy();
+    const pe::Account* Fresh = F.Match->GetEconomy().Find(HostId);
+    if (!TestNotNull(TEXT("PL-11 the next match has an account"), Fresh)) return false;
+    TestFalse(TEXT("PL-11 the next match owes nothing to this one"), Fresh->plantBought || Fresh->plantDueStep != 0);
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerWorksAlliesTest,
     "Politika.RTS.Multiplayer.WorksAllies",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

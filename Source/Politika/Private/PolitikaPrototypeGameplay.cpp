@@ -3206,6 +3206,7 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("PrototypeBuyFood"), IE_Pressed, this, &APolitikaPrototypePlayerController::BuyFood);
     InputComponent->BindAction(TEXT("PrototypeSellGold"), IE_Pressed, this, &APolitikaPrototypePlayerController::SellGold);
     InputComponent->BindAction(TEXT("PrototypeSellOil"), IE_Pressed, this, &APolitikaPrototypePlayerController::SellOil);
+    InputComponent->BindAction(TEXT("PrototypeBuildPlant"), IE_Pressed, this, &APolitikaPrototypePlayerController::BuildPlant);
     InputComponent->BindAction(TEXT("PrototypeTrainHarvester"), IE_Pressed, this, &APolitikaPrototypePlayerController::TrainHarvester);
     InputComponent->BindAction(TEXT("PrototypeFormFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::FormSelected);
     InputComponent->BindAction(TEXT("PrototypeReleaseFormation"), IE_Pressed, this, &APolitikaPrototypePlayerController::ReleaseSelected);
@@ -4884,9 +4885,13 @@ void APolitikaPrototypeHUD::DrawHUD()
         else if (Economy.bFoodShortage) Training = Economy.Queued > 0 ? Training + TEXT(" PAUSED: food shortage") : FString(TEXT("food shortage"));
         if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
         const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
-        DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  POWER %d / %d kW  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
+        // ECON-E32: the plant a seat can buy, then its build. Once it stands the kW figures say it all.
+        const FString PlantText = Economy.PlantRemainingSteps > 0
+            ? FString::Printf(TEXT("  ·  plant up in %.0f s"), Economy.PlantRemainingSteps * SimulationStepSecondsForHud)
+            : Economy.bPlantBought ? FString() : FString::Printf(TEXT("  ·  P plant %s"), UTF8_TO_TCHAR(pe::FormatUsd(pe::kPlantCents).c_str()));
+        DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  POWER %d / %d kW%s  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
             UTF8_TO_TCHAR(pe::FormatUsd(Economy.AvailableCents).c_str()), UTF8_TO_TCHAR(pe::FormatUsd(pe::kIncomeCents + Economy.WorksHeld * pe::kWorksIncomeCents).c_str()),
-            static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), Economy.SuppliedKw, Economy.RequiredKw, *Training,
+            static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), Economy.SuppliedKw, Economy.RequiredKw, *PlantText, *Training,
             UTF8_TO_TCHAR(pe::FormatUsd(Rifleman.cost).c_str())),
             Economy.bProducerPowered || !Economy.bHasProducer ? FLinearColor(0.95f, 0.86f, 0.45f) : FLinearColor(1.0f, 0.42f, 0.32f),
             Left, Y, nullptr, UiScale);

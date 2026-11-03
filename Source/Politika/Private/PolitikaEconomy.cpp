@@ -86,6 +86,8 @@ FString EconomyRejectionText(pe::EconomyRejection Rejection)
         case pe::EconomyRejection::NothingToSell: return TEXT("no gold has reached your base");
         case pe::EconomyRejection::NoResourceSource: return TEXT("your caches are empty");
         case pe::EconomyRejection::NoOilToSell: return TEXT("no crude oil has reached your base");
+        case pe::EconomyRejection::PlantUnderway: return TEXT("your plant is already being built");
+        case pe::EconomyRejection::PlantAlreadyBought: return TEXT("you have already bought your plant");
         case pe::EconomyRejection::MatchInactive: return TEXT("the match is not active");
         case pe::EconomyRejection::StaleMatch: return TEXT("that request was for an earlier match");
         case pe::EconomyRejection::RateLimited: return TEXT("too many requests at once");
@@ -614,6 +616,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
 {
     if (!HasAuthority()) return;
     Economy.Clear();
+    PlantSites.Reset();
     PendingEconomyRequests.Reset();
 #if !UE_BUILD_SHIPPING
     // Development fixture "offset:duration" in steps; see ApplyPowerOutageFixture.
@@ -754,6 +757,9 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                         Definition->FactionTint * kGeneratorTintScale, bHiddenLocally);
                     Generator->SetBuildingIdentity(NextStableId++, politika::economy::kGeneratorBuilding, politika::power::kGeneratorHealth);
                     Structures.Add(Generator);
+                    const FVector2D PlantPoint = FVector2D(Location.X, Location.Y) - Side * kGeneratorOffsetFromProducerCm;
+                    PlantSites.Add(Participant.RuntimePlayerId, FVector(FMath::Clamp(PlantPoint.X, PlayableMin.X, PlayableMax.X),
+                        FMath::Clamp(PlantPoint.Y, PlayableMin.Y, PlayableMax.Y), Location.Z));
                 }
                 else
                 {
@@ -874,6 +880,33 @@ void APolitikaPrototypeMatch::PlaceOilField(uint32 ParticipantId, uint8 InTeamId
     }
 }
 
+bool APolitikaPrototypeMatch::PlaceBoughtPlant(uint32 ParticipantId, uint64 Step)
+{
+    const FVector* Site = PlantSites.Find(ParticipantId);
+    if (!Site) return false;
+    APolitikaPrototypeStructure* Plant = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(*Site, FRotator::ZeroRotator);
+    if (!Plant) return false;
+    const uint32 BuildingId = Economy.CompletePlant(ParticipantId);
+    if (BuildingId == 0)
+    {
+        Plant->Destroy();
+        return false;
+    }
+    const uint8 Team = GetTeamForParticipant(ParticipantId);
+    const uint8 LocalTeam = LocalRuntimePlayerId != 0 ? GetTeamForParticipant(LocalRuntimePlayerId) : politika::rules::kNoTeam;
+    Plant->Configure(this, politika::power::BuildingKind::Generator, ParticipantId, Team, BuildingTintFor(ParticipantId, true),
+        bFogOfWar && LocalTeam != politika::rules::kNoTeam && LocalTeam != Team);
+    Plant->SetBuildingIdentity(NextStableId++, BuildingId, politika::power::kGeneratorHealth);
+    Structures.Add(Plant);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_PLANT_BUILT participant=%u structure=%llu building=%u x=%.1f y=%.1f generation=%llu step=%llu"),
+        ParticipantId, Plant->GetStableId(), BuildingId, Site->X, Site->Y, MatchGeneration, Step);
+#else
+    (void)Step;
+#endif
+    return true;
+}
+
 void APolitikaPrototypeMatch::PlaceWorks(const FVector2D& Centre, const FVector2D& Start, float GroundZ, bool bHiddenLocally)
 {
     FVector2D Across = Start - Centre;
@@ -964,6 +997,7 @@ void APolitikaPrototypeMatch::ClearEconomy(const TCHAR* Reason)
 #endif
     // Money, queues and loads belong to the active match; the next generation starts from its own start.
     Economy.Clear();
+    PlantSites.Reset();
     HarvesterOrderSequences.Reset();
     for (APolitikaPrototypeUnit* Unit : Units)
         if (IsValid(Unit))
@@ -1412,6 +1446,7 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
             : Op == pe::EconomyOp::BuyFood ? Economy.BuyFood(Request.ParticipantId, Request.Intent.ClientSequence)
             : Op == pe::EconomyOp::SellGold ? Economy.SellGold(Request.ParticipantId, Request.Intent.ClientSequence)
             : Op == pe::EconomyOp::SellOil ? Economy.SellOil(Request.ParticipantId, Request.Intent.ClientSequence)
+            : Op == pe::EconomyOp::BuildPlant ? Economy.BuildPlant(Request.ParticipantId, Request.Intent.ClientSequence, Step)
             : Economy.CancelLast(Request.ParticipantId, Request.Intent.ClientSequence);
         if (!Result)
         {
@@ -1420,7 +1455,8 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
         }
         if (Op == pe::EconomyOp::Train) FirstAdmitted.FindOrAdd(Request.ParticipantId, Request.Intent.ClientSequence);
         LogMoney(Op == pe::EconomyOp::Train ? TEXT("train") : Op == pe::EconomyOp::BuyFood ? TEXT("food")
-            : Op == pe::EconomyOp::SellGold || Op == pe::EconomyOp::SellOil ? TEXT("sale") : TEXT("refund"),
+            : Op == pe::EconomyOp::SellGold || Op == pe::EconomyOp::SellOil ? TEXT("sale")
+            : Op == pe::EconomyOp::BuildPlant ? TEXT("plant") : TEXT("refund"),
             Request.ParticipantId, Request.Intent.ClientSequence, Result.amount);
         if (Op == pe::EconomyOp::BuyFood) LogFood(TEXT("purchase"), Request.ParticipantId, 0, 0, 0u);
         if (Op == pe::EconomyOp::SellGold) LogHarvest(TEXT("sale"), Request.ParticipantId, 0, pe::Resource::Gold, Result.sale.quantity, Result.sale.gross, Result.sale.fee, Step);
@@ -1464,6 +1500,8 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
                     ParticipantId, Account->allocation.suppliedKw, Account->allocation.requiredKw, Account->producerPowered ? 1 : 0,
                     static_cast<int32>(Account->queue.size()), Result.headRemainingSteps, Account->available, MatchGeneration, Step);
 #endif
+        // Not bSpawned: a building changes no team vision, and relevancy asks the structure itself.
+        if (Result.plantDue) PlaceBoughtPlant(ParticipantId, Step);
         if (!Result.spawnDue) continue;
         FVector Location = FVector::ZeroVector;
         FRotator Rotation = FRotator::ZeroRotator;
@@ -1543,6 +1581,12 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.OilHeld = static_cast<int32>(Account->oilHeld);
             View.OilCarried = static_cast<int32>(Account->OilCarried());
             View.OilAtSource = static_cast<int32>(Account->oilSource.remaining);
+            View.bPlantBought = Account->plantBought;
+            if (Account->plantDueStep != 0)
+            {
+                const int32 Remaining = static_cast<int32>(Account->plantDueStep > SimulationStepsExecuted ? Account->plantDueStep - SimulationStepsExecuted : 0);
+                View.PlantRemainingSteps = FMath::Max(FMath::DivideAndRoundUp(Remaining, kViewRemainingGranularity), 1) * kViewRemainingGranularity;
+            }
             int32 GoldHolding = 0;
             int32 FoodHolding = 0;
             int32 GoldUnloading = 0;
@@ -1612,7 +1656,7 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_store_full=%d food_source=%d works=%d oil_held=%d oil_carried=%d oil_holding=%d oil_unloading=%d oil_source=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_store_full=%d food_source=%d works=%d oil_held=%d oil_carried=%d oil_holding=%d oil_unloading=%d oil_source=%d plant_bought=%d plant_remaining=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
@@ -1620,7 +1664,7 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
         OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldHolding, OwnEconomy.GoldUnloading,
         OwnEconomy.GoldAtSource, OwnEconomy.Harvesters, OwnEconomy.FoodCarried, OwnEconomy.FoodHolding, OwnEconomy.FoodUnloading,
         OwnEconomy.FoodStoreFull, OwnEconomy.FoodAtSource, OwnEconomy.WorksHeld, OwnEconomy.OilHeld, OwnEconomy.OilCarried,
-        OwnEconomy.OilHolding, OwnEconomy.OilUnloading, OwnEconomy.OilAtSource);
+        OwnEconomy.OilHolding, OwnEconomy.OilUnloading, OwnEconomy.OilAtSource, OwnEconomy.bPlantBought ? 1 : 0, OwnEconomy.PlantRemainingSteps);
 #else
     (void)Source;
 #endif
@@ -1641,6 +1685,11 @@ void APolitikaPrototypePlayerController::BuyFood()
 void APolitikaPrototypePlayerController::TrainHarvester()
 {
     SubmitEconomyRequest(pe::EconomyOp::Train, static_cast<uint8>(pe::Recipe::Harvester));
+}
+
+void APolitikaPrototypePlayerController::BuildPlant()
+{
+    SubmitEconomyRequest(pe::EconomyOp::BuildPlant, 0);
 }
 
 void APolitikaPrototypePlayerController::SellOil()
@@ -1684,6 +1733,7 @@ void APolitikaPrototypePlayerController::ClientReceiveEconomyOutcome_Implementat
 {
     const bool bSale = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::SellGold;
     const bool bOilSale = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::SellOil;
+    const bool bPlant = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::BuildPlant;
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
         TEXT("RTS_ECONOMY_OUTCOME participant=%u op=%u correlation=%u client_sequence=%u accepted=%d rejection=%u amount=%lld available=%lld queued=%d generation=%llu authority=%d gold_sold=%d oil_sold=%d"),
@@ -1693,13 +1743,18 @@ void APolitikaPrototypePlayerController::ClientReceiveEconomyOutcome_Implementat
     const bool bFood = static_cast<pe::EconomyOp>(Outcome.Op) == pe::EconomyOp::BuyFood;
     if (!Outcome.bAccepted)
     {
-        ShowLocalFeedback(FString::Printf(TEXT("%s refused: %s"), bFood ? TEXT("Food purchase") : bSale ? TEXT("Gold sale") : bOilSale ? TEXT("Oil sale") : TEXT("Training"),
+        ShowLocalFeedback(FString::Printf(TEXT("%s refused: %s"), bFood ? TEXT("Food purchase") : bSale ? TEXT("Gold sale") : bOilSale ? TEXT("Oil sale") : bPlant ? TEXT("Plant") : TEXT("Training"),
             *EconomyRejectionText(static_cast<pe::EconomyRejection>(Outcome.Rejection))));
         return;
     }
     if (bFood)
     {
         ShowLocalFeedback(FString::Printf(TEXT("%lld rations bought for %s"), pe::kFoodPurchaseRations, *UsdText(Outcome.AmountCents)));
+        return;
+    }
+    if (bPlant)
+    {
+        ShowLocalFeedback(FString::Printf(TEXT("Plant ordered for %s"), *UsdText(Outcome.AmountCents)));
         return;
     }
     if (bSale || bOilSale)

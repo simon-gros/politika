@@ -297,6 +297,9 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() int32 OilHolding = 0;
     UPROPERTY() int32 OilUnloading = 0;
     UPROPERTY() int32 OilAtSource = 0;
+    // ECON-E32: the bought plant, and the steps until it stands.
+    UPROPERTY() bool bPlantBought = false;
+    UPROPERTY() int32 PlantRemainingSteps = 0;
     UPROPERTY() int32 Harvesters = 0;
     // politika::economy::Recipe of the item in training.
     UPROPERTY() uint8 HeadRecipe = 0;
@@ -316,7 +319,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
             && FoodStoreFull == Other.FoodStoreFull
             && FoodAtSource == Other.FoodAtSource && bHasOilSource == Other.bHasOilSource && OilHeld == Other.OilHeld
             && OilCarried == Other.OilCarried && OilHolding == Other.OilHolding && OilUnloading == Other.OilUnloading
-            && OilAtSource == Other.OilAtSource && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
+            && OilAtSource == Other.OilAtSource && bPlantBought == Other.bPlantBought && PlantRemainingSteps == Other.PlantRemainingSteps
+            && Harvesters == Other.Harvesters && HeadRecipe == Other.HeadRecipe;
     }
 };
 
@@ -515,6 +519,7 @@ private:
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerOilTest;
+    friend class FPolitikaMultiplayerPlantTest;
     friend class FPolitikaMultiplayerBuildingRepairTest;
     friend class FPolitikaMultiplayerWorksTest;
     friend class FPolitikaMultiplayerWorksAlliesTest;
@@ -1296,6 +1301,10 @@ private:
     void PlaceSources(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
     void PlaceWorks(const FVector2D& Centre, const FVector2D& Start, float GroundZ, bool bHiddenLocally);
     void PlaceOilField(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Away, float GroundZ, bool bHiddenLocally);
+    // ECON-E32: stands the seat's bought plant at its fixed site. False leaves it due for the next step.
+    bool PlaceBoughtPlant(uint32 ParticipantId, uint64 Step);
+    // Where each seat's bought plant goes: opposite its first plant, across the producer.
+    TMap<uint32, FVector> PlantSites;
     void LogHarvest(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, politika::economy::Resource Resource, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
     const APolitikaPrototypeStructure* FindSourceOf(uint32 ParticipantId, politika::economy::Resource Resource) const;
     void AssignNetOwner(APolitikaPrototypeUnit* Unit) const;
@@ -1346,6 +1355,7 @@ private:
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerOilTest;
+    friend class FPolitikaMultiplayerPlantTest;
     friend class FPolitikaMultiplayerHarvestTest;
     // The flight route of a breaking unit (the Automation world has no navigation mesh).
     TFunction<bool(const APolitikaPrototypeUnit&, const FVector&, TArray<FVector>&)> RoutRouteForTest;
@@ -1601,6 +1611,7 @@ class POLITIKA_API APolitikaPrototypePlayerController final : public APlayerCont
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerOilTest;
+    friend class FPolitikaMultiplayerPlantTest;
     friend class FPolitikaMultiplayerHarvestTest;
 #endif
 public:
@@ -1811,6 +1822,8 @@ private:
     void SellGold();
     // O sells one lot of crude oil (ECON-E30).
     void SellOil();
+    // P buys the seat's one conventional plant (ECON-E32).
+    void BuildPlant();
     bool SubmitEconomyRequest(politika::economy::EconomyOp Op, uint8 Recipe);
     // Advisory check of one candidate slot on this process: inside the playable area, on
     // ground level with the clicked point and not too steep, and on the local navmesh when

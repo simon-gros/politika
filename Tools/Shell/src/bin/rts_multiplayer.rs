@@ -16747,6 +16747,513 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
     result
 }
 
+// `--plant SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E32) buys a conventional plant with real
+// input on two rendered clients: P charges once and builds for 20 s, one a match, the owner alone sees
+// it, it carries the base when the first plant dies, and the producer stops only when both are down.
+const PLT_PRICE_CENTS: i64 = 40_000;
+const PLT_BUILD_STEPS: i64 = 400;
+// Seat 2's site, opposite its first plant across the producer.
+const PLT_SITE: (f64, f64) = (1906.1, 628.8);
+const PLT_NEAR: (f64, f64) = (1450.0, 620.0);
+const PLT_PROBE_SITE: usize = 8;
+const PLT_PROBE_NEAR: usize = 9;
+
+fn plant_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.retain(|a| a != NO_STARTING_HARVESTERS);
+    args.push(STARTING_HARVESTERS.to_owned());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let probes = format!(
+        "{}/{}:{}/{}:{}",
+        building_probes(),
+        PLT_SITE.0,
+        PLT_SITE.1,
+        PLT_NEAR.0,
+        PLT_NEAR.1
+    );
+    let launch = |label: &str, participant: u32, server: &mut Game| {
+        let display = Display::start(evidence, label)?;
+        let mut args = client_args(client_options, true, false, false);
+        args.push(probes.clone());
+        let game = Game::launch(
+            &client_options.binary,
+            label,
+            evidence,
+            &args,
+            Some(&display.name()),
+        )?;
+        server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={participant}"),
+                "remote=1",
+            ],
+            Duration::from_secs(90),
+        )?;
+        Ok::<(Game, Display), String>((game, display))
+    };
+    let (mut client_a, _display_a) = launch("client-a", 1, &mut server)?;
+    let (mut client_b, _display_b) = launch("client-b", 2, &mut server)?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(60),
+        )?;
+        client.attach_window()?;
+    }
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let gen_tag = format!("generation={generation}");
+        let owners = entity_owners(&server.text());
+        let team_a: Vec<u64> = owners
+            .iter()
+            .filter(|(_, o)| *o == 1)
+            .map(|(e, _)| *e)
+            .collect();
+        if team_a.len() < 3 {
+            return Err(format!("unexpected 1v1 roster {owners:?}"));
+        }
+        // The two authored soldiers come first; the free harvester has a later id.
+        let (attacker, reserve) = (team_a[0], team_a[1]);
+        zoom_out(&client_a, 5)?;
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(1500));
+        let last_view = |text: &str, participant: u32| -> String {
+            text.lines()
+                .rev()
+                .find(|l| l.contains(&format!("RTS_ECONOMY_VIEW participant={participant} ")))
+                .unwrap_or("")
+                .to_owned()
+        };
+        let enemy_structures = |text: &str| -> usize {
+            text.lines()
+                .filter(|l| l.contains("RTS_STRUCTURE_RELEVANT") && l.contains("owner=2 "))
+                .count()
+        };
+        let reject = |server: &mut Game, game: &mut Game, why: &str| {
+            let mark = server.offset();
+            game.key("p")?;
+            server.wait_line(
+                &["RTS_ECONOMY_REJECT participant=2", "op=5", why],
+                Duration::from_secs(5),
+                mark,
+            )
+        };
+
+        // A base starts on one plant and P is on offer.
+        let start = last_view(&client_b.text(), 2);
+        report.verdict(
+            "PLT-P01-A-BASE-STARTS-ON-ONE-PLANT",
+            econ_int(&start, "supplied_kw") == 100
+                && econ_int(&start, "required_kw") == 50
+                && field(&start, "plant_bought") == Some("0")
+                && econ_int(&start, "plant_remaining") == 0,
+            start.trim().to_owned(),
+        );
+        report.artifact(
+            "client_b_start_png",
+            &client_b.screenshot(evidence, "01-start")?,
+        );
+
+        // Team B holds its fire, so the attacker is not in a soldier's fight.
+        client_b.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_b.release()?;
+        thread::sleep(Duration::from_millis(500));
+        let held_b = set_hold_fire(&mut client_b, &mut server, 2)?;
+        report.fact("team_b_stance", held_b.trim().to_owned());
+
+        // P charges once and starts the build, and a second press is refused.
+        let (client_mark, server_mark) = (client_b.offset(), server.offset());
+        client_b.key("p")?;
+        let charged = server.wait_line(
+            &["RTS_ECONOMY_TX participant=2", "kind=plant"],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let accepted = client_b.wait_line(
+            &["RTS_ECONOMY_OUTCOME participant=2", "op=5", "accepted=1"],
+            Duration::from_secs(5),
+            client_mark,
+        );
+        let underway = reject(&mut server, &mut client_b, "rejection=plant_underway");
+        let counting = client_b.wait_line(
+            &["RTS_ECONOMY_VIEW participant=2", "plant_bought=1"],
+            Duration::from_secs(5),
+            client_mark,
+        );
+        thread::sleep(Duration::from_millis(500));
+        report.artifact(
+            "client_b_building_png",
+            &client_b.screenshot(evidence, "02-building")?,
+        );
+        report.verdict(
+            "PLT-P02-P-CHARGES-ONCE-AND-STARTS-THE-BUILD",
+            econ_int(&charged, "amount") == PLT_PRICE_CENTS
+                && field(&charged, "reconciles") == Some("1")
+                && accepted.is_ok()
+                && underway.is_ok()
+                && counting
+                    .as_ref()
+                    .is_ok_and(|l| econ_int(l, "plant_remaining") > 0),
+            format!(
+                "{} | {accepted:?} | {underway:?} | {counting:?}",
+                charged.trim()
+            ),
+        );
+
+        // It stands 20 s later on its owner's side, and the supply doubles.
+        let built = server.wait_line(
+            &["RTS_PLANT_BUILT participant=2"],
+            Duration::from_secs(30),
+            server_mark,
+        )?;
+        let doubled = server.wait_line(
+            &[
+                "RTS_POWER_STATE participant=2",
+                "supplied_kw=200",
+                "required_kw=60",
+                "producer_powered=1",
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        );
+        let arrived = client_b.wait_line(
+            &[
+                "RTS_STRUCTURE_RELEVANT",
+                "kind=generator",
+                "owner=2",
+                &format!("x={:.1}", PLT_SITE.0),
+            ],
+            Duration::from_secs(10),
+            client_mark,
+        );
+        let steps = econ_int(&built, "step") - econ_int(&charged, "step");
+        let at = pan_to_probe(&mut client_b, PLT_PROBE_SITE)?;
+        client_b.hover(at.0, at.1)?;
+        thread::sleep(Duration::from_millis(600));
+        report.artifact(
+            "client_b_plant_png",
+            &client_b.screenshot(evidence, "03-plant")?,
+        );
+        report.verdict(
+            "PLT-P03-IT-STANDS-AFTER-ITS-BUILD-AND-THE-SUPPLY-DOUBLES",
+            steps == PLT_BUILD_STEPS
+                && field(&built, "building") == Some("3")
+                && (number(&built, "x").unwrap_or(f64::MAX) - PLT_SITE.0).abs() < 1.0
+                && (number(&built, "y").unwrap_or(f64::MAX) - PLT_SITE.1).abs() < 1.0
+                && doubled.is_ok()
+                && arrived.is_ok(),
+            format!(
+                "{steps} steps | {} | {doubled:?} | {arrived:?}",
+                built.trim()
+            ),
+        );
+
+        // One a match.
+        let spent = reject(&mut server, &mut client_b, "rejection=plant_already_bought");
+        let charges = server
+            .text()
+            .lines()
+            .filter(|l| l.contains("RTS_ECONOMY_TX participant=2") && l.contains("kind=plant"))
+            .count();
+        report.verdict(
+            "PLT-P04-ONE-A-MATCH",
+            spent.is_ok() && charges == 1,
+            format!("{spent:?} | {charges} charges"),
+        );
+
+        // The other side is told nothing about it.
+        let text_a = client_a.text();
+        let a_saw = text_a
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_ECONOMY_VIEW")
+                    && (l.contains("participant=2 ") || l.contains("plant_bought=1"))
+            })
+            .count();
+        report.verdict(
+            "PLT-P05-OWNER-ONLY",
+            a_saw == 0 && enemy_structures(&text_a) == 0,
+            format!(
+                "A's views of it {a_saw}; enemy structures A received {}",
+                enemy_structures(&text_a)
+            ),
+        );
+
+        // The walk: past the objective and the militia, into sight of the enemy base.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
+        thread::sleep(Duration::from_millis(300));
+        let held_a = set_hold_fire(&mut client_a, &mut server, 1)?;
+        report.fact("team_a_stance", held_a.trim().to_owned());
+        for (index, point, name) in [
+            (BLD_PROBE_CORRIDOR, BLD_CORRIDOR, "corridor"),
+            (BLD_PROBE_POST, BLD_POST, "post"),
+        ] {
+            let at = pan_to_probe(&mut client_a, index)?;
+            let mark = server.offset();
+            client_a.click(at.0, at.1, "3")?;
+            server
+                .wait_line(
+                    &[
+                        "RTS_ORDER_ADMITTED order=Move",
+                        &format!("unit={attacker} "),
+                    ],
+                    Duration::from_secs(5),
+                    mark,
+                )
+                .map_err(|e| format!("the move to the {name}: {e}"))?;
+            wait_arrival(
+                &mut server,
+                attacker,
+                point,
+                150.0,
+                Duration::from_secs(120),
+            )
+            .map_err(|e| format!("the walk to the {name}: {e}"))?;
+        }
+        client_a.wait(
+            &["RTS_STRUCTURE_RELEVANT", "kind=generator", "owner=2"],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_millis(1500));
+
+        // The first plant dies and the producer never loses power: the same press BLD-P08 sees refused.
+        let generator = pan_to_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_a.click(generator.0, generator.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Attack",
+                    &format!("unit={attacker} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("the attack on the first plant: {e}"))?;
+        let killed = server.wait_line(
+            &[
+                "RTS_BUILDING_DAMAGE participant=2",
+                "kind=generator",
+                "health=0 ",
+            ],
+            Duration::from_secs(120),
+            mark,
+        )?;
+        let carrying = server.wait_line(
+            &[
+                "RTS_POWER_STATE participant=2",
+                "supplied_kw=100",
+                "required_kw=50",
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let tail_power = server.text();
+        let dark = tail_power[mark.min(tail_power.len())..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_POWER_STATE participant=2") && l.contains("producer_powered=0")
+            })
+            .count();
+        let train_mark = server.offset();
+        client_b.key("b")?;
+        let trained = server.wait_line(
+            &["RTS_ECONOMY_TX participant=2", "kind=train"],
+            Duration::from_secs(5),
+            train_mark,
+        );
+        report.verdict(
+            "PLT-P06-THE-FIRST-PLANT-DIES-AND-THE-PRODUCER-KEEPS-RUNNING",
+            carrying.is_ok() && dark == 0 && trained.is_ok(),
+            format!(
+                "{} | {carrying:?} | {dark} dark states | {trained:?}",
+                killed.trim()
+            ),
+        );
+
+        // It is a generator like any other: one hit takes it offline, and now the producer stops.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
+        let at = pan_to_probe(&mut client_a, PLT_PROBE_NEAR)?;
+        let mark = server.offset();
+        client_a.click(at.0, at.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Move",
+                    &format!("unit={attacker} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("the move to the plant: {e}"))?;
+        wait_arrival(
+            &mut server,
+            attacker,
+            PLT_NEAR,
+            150.0,
+            Duration::from_secs(60),
+        )
+        .map_err(|e| format!("the walk to the plant: {e}"))?;
+        client_a.wait(
+            &[
+                "RTS_STRUCTURE_RELEVANT",
+                "kind=generator",
+                "owner=2",
+                &format!("x={:.1}", PLT_SITE.0),
+            ],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_millis(1500));
+        let plant = pan_to_probe(&mut client_a, PLT_PROBE_SITE)?;
+        let mark = server.offset();
+        client_a.click(plant.0, plant.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Attack",
+                    &format!("unit={attacker} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("the attack on the plant: {e}"))?;
+        let dark_state = server.wait_line(
+            &[
+                "RTS_POWER_STATE participant=2",
+                "supplied_kw=0",
+                "producer_powered=0",
+            ],
+            Duration::from_secs(60),
+            mark,
+        );
+        let refuse_mark = server.offset();
+        client_b.key("b")?;
+        let refused = server.wait_line(
+            &[
+                "RTS_ECONOMY_REJECT participant=2",
+                "rejection=producer_unpowered",
+            ],
+            Duration::from_secs(5),
+            refuse_mark,
+        );
+        report.verdict(
+            "PLT-P07-WITH-BOTH-DOWN-THE-PRODUCER-STOPS",
+            dark_state.is_ok() && refused.is_ok(),
+            format!("{dark_state:?} | {refused:?}"),
+        );
+
+        // The match ends with every ledger whole, and the next one has no plant.
+        select_entity_near_probe(&mut client_a, reserve, BLD_PROBE_OWN_GENERATOR)?;
+        let objective = pan_to_probe(&mut client_a, BLD_PROBE_OBJECTIVE)?;
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait(
+            &["MATCH_RESULTS outcome=objective_secured", &gen_tag],
+            Duration::from_secs(240),
+        )?;
+        let cleared = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=2", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let one_plant = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_POWER_START")
+                    && l.contains(&format!("generation={generation2}"))
+                    && field(l, "producer_powered") == Some("1")
+            })
+            .count();
+        report.verdict(
+            "PLT-P08-LEDGERS-WHOLE-AND-THE-NEXT-MATCH-HAS-NO-PLANT",
+            generation2 != generation
+                && field(&cleared, "reconciles") == Some("1")
+                && one_plant == 2
+                && !tail.lines().any(|l| l.contains("RTS_PLANT_BUILT")),
+            format!(
+                "generation {generation} then {generation2}: {one_plant} powered seats | {}",
+                cleared.trim()
+            ),
+        );
+
+        // Repeatability: the charge, the refusals, the plant and the power states, without timing.
+        let mut trace = String::new();
+        for line in text.lines().filter(|l| {
+            l.contains(&format!("generation={generation} "))
+                || l.contains(&format!("generation={generation}\n"))
+        }) {
+            if line.contains("RTS_ECONOMY_TX participant=2") && line.contains("kind=plant") {
+                trace.push_str(&format!("charge amount={}\n", econ_int(line, "amount")));
+            } else if line.contains("RTS_ECONOMY_REJECT participant=2") && line.contains("op=5 ") {
+                trace.push_str(&format!(
+                    "refused {}\n",
+                    field(line, "rejection").unwrap_or("?")
+                ));
+            } else if line.contains("RTS_PLANT_BUILT participant=2") {
+                trace.push_str(&format!(
+                    "built building={} x={} y={}\n",
+                    field(line, "building").unwrap_or("?"),
+                    field(line, "x").unwrap_or("?"),
+                    field(line, "y").unwrap_or("?")
+                ));
+            } else if line.contains("RTS_POWER_STATE participant=2") {
+                trace.push_str(&format!(
+                    "power supplied={} required={} powered={}\n",
+                    econ_int(line, "supplied_kw"),
+                    econ_int(line, "required_kw"),
+                    field(line, "producer_powered").unwrap_or("?")
+                ));
+            }
+        }
+        fs::write(evidence.join("plant-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("plant_trace", &evidence.join("plant-trace.txt"));
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "PLT-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 // `--oil SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E30) plays crude oil with real input on two
 // rendered clients: a field per base that a harvester ignores until it is sent there, a separate
 // stock, O selling a lot at the quote, an exhausted field, and a next generation owing nothing.
@@ -17972,6 +18479,14 @@ fn main() {
     }
     if env::args().nth(1).as_deref() == Some("--oil") {
         run_dedicated_session("--oil", "politika.econ.oil-evidence.v1", "oil", oil_session);
+    }
+    if env::args().nth(1).as_deref() == Some("--plant") {
+        run_dedicated_session(
+            "--plant",
+            "politika.econ.plant-evidence.v1",
+            "plant",
+            plant_session,
+        );
     }
     if env::args().nth(1).as_deref() == Some("--works") {
         run_dedicated_session(

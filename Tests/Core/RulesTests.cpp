@@ -2142,6 +2142,60 @@ int main() {
         assert(FoodOnly.AddHarvester(1, 1));
         Step = FoodOnly.StepHarvester(1, 1, Stopped);
         assert(Step.goToSource == FoodKind && Step.retargeted);
+        // ECON-E32: one plant a seat can buy. It charges once, stands on its due step whatever happens to
+        // the base meanwhile, supplies from the next allocation and is a generator like any other.
+        {
+            namespace power = politika::power;
+            assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::BuildPlant), 0) == EconomyRejection::None);
+            assert(pe::CheckIntentShape(static_cast<std::uint8_t>(pe::EconomyOp::BuildPlant), 1) == EconomyRejection::MalformedCommand);
+            pe::Ledger Plants;
+            assert(Plants.AddParticipant(1, pe::kStartingCents, true, 100000) && Plants.AddParticipant(2, pe::kPlantCents - 1, true, 100000));
+            const pe::Account& Buyer = *Plants.Find(1);
+            assert(Plants.BuildPlant(9, 1, 10).rejection == EconomyRejection::Unauthorized);
+            assert(Plants.BuildPlant(2, 1, 10).rejection == EconomyRejection::InsufficientFunds && !Plants.Find(2)->plantBought);
+            assert(Plants.CompletePlant(1) == 0);
+            const pe::RequestResult Bought = Plants.BuildPlant(1, 1, 10);
+            assert(Bought && Bought.amount == pe::kPlantCents && Buyer.available == pe::kStartingCents - pe::kPlantCents && Buyer.spent == pe::kPlantCents);
+            assert(Buyer.plantDueStep == 10 + pe::kPlantBuildSteps && Buyer.Reconciles());
+            assert(Plants.BuildPlant(1, 1, 11).rejection == EconomyRejection::DuplicateCommand);
+            assert(Plants.BuildPlant(1, 2, 11).rejection == EconomyRejection::PlantUnderway && Buyer.spent == pe::kPlantCents);
+            Plants.Advance(1, 10);
+            assert(!Plants.Advance(1, 10 + pe::kPlantBuildSteps - 1).plantDue);
+            assert(Buyer.allocation.suppliedKw == power::kGeneratorCapacityKw && Buyer.allocation.requiredKw == power::kGeneratorAuxiliaryKw + power::kProducerLoadKw);
+            // Losing the producer stops neither the build nor the plant.
+            assert(Plants.DamageBuilding(1, pe::kProducerBuilding, power::kProducerHealth).producerLost);
+            assert(Plants.Advance(1, 10 + pe::kPlantBuildSteps).plantDue);
+            const power::BuildingId PlantId = Plants.CompletePlant(1);
+            assert(PlantId == 3 && Buyer.plantDueStep == 0 && Plants.CompletePlant(1) == 0);
+            const pe::StepResult Standing = Plants.Advance(1, 10 + pe::kPlantBuildSteps + 1);
+            assert(!Standing.plantDue && Standing.powerChanged && Buyer.allocation.suppliedKw == 2 * power::kGeneratorCapacityKw);
+            assert(Buyer.allocation.requiredKw == 2 * power::kGeneratorAuxiliaryKw);
+            // Bought once, whatever became of it. A seat with no producer cannot start one.
+            assert(Plants.BuildPlant(1, 3, 500).rejection == EconomyRejection::NoProducer);
+            pe::Ledger Again;
+            assert(Again.AddParticipant(1, pe::kStartingCents, true, 100000) && Again.BuildPlant(1, 1, 0));
+            Again.Advance(1, pe::kPlantBuildSteps);
+            assert(Again.CompletePlant(1) == 3 && Again.BuildPlant(1, 2, 500).rejection == EconomyRejection::PlantAlreadyBought);
+            assert(Again.Find(1)->spent == pe::kPlantCents && Again.Find(1)->Reconciles());
+            // One plant down leaves the other carrying the base; both down leaves the producer dark.
+            Again.Advance(1, pe::kPlantBuildSteps + 1);
+            assert(Again.Find(1)->producerPowered && Again.Find(1)->allocation.suppliedKw == 2 * power::kGeneratorCapacityKw);
+            assert(Again.DamageBuilding(1, pe::kGeneratorBuilding, power::kGeneratorHealth).generatorOffline);
+            Again.Advance(1, pe::kPlantBuildSteps + 2);
+            assert(Again.Find(1)->producerPowered && Again.Find(1)->allocation.suppliedKw == power::kGeneratorCapacityKw);
+            assert(Again.Find(1)->allocation.requiredKw == power::kGeneratorAuxiliaryKw + power::kProducerLoadKw);
+            assert(Again.DamageBuilding(1, 3, 1).generatorOffline);
+            Again.Advance(1, pe::kPlantBuildSteps + 3);
+            assert(!Again.Find(1)->producerPowered && Again.Find(1)->allocation.suppliedKw == 0);
+            assert(Again.RepairBuilding(1, 3, 1) == 1);
+            Again.Advance(1, pe::kPlantBuildSteps + 4);
+            assert(Again.Find(1)->producerPowered);
+            // The other seat can take it, and it goes on the winner's grid under a free id.
+            assert(Again.AddParticipant(2, pe::kStartingCents, true, 100000));
+            const pe::Ledger::CaptureResult Taken = Again.CaptureBuilding(1, 2, 3);
+            assert(Taken.captured && !Taken.producer && Taken.newId == 3 && Again.Find(2)->grid.Find(3) && !Again.Find(1)->grid.Find(3));
+            assert(!Again.Find(2)->plantBought);
+        }
         // ECON-E30: crude oil has its own stock and a lower quote, and a harvester goes to the field only
         // when it is sent there. The fee rounds up as gold's does: 67.50 is 68 on the last lot.
         static_assert(pe::ResourceName(pe::Resource::Oil) == "oil" && pe::LoadSize(pe::Resource::Oil) == pe::kLoadOil);
