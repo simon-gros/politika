@@ -881,6 +881,8 @@ public:
     // What the viewer may read about a building under the cursor. Empty when fog hides it, so health
     // is not an oracle. A source is not a building. A capture in progress names the approach or the hold.
     FString BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const;
+    // ECON-E29: what a ray meets first with every unit ignored, if that is a structure.
+    APolitikaPrototypeStructure* TraceStructureThroughUnits(const FVector& Origin, const FVector& Direction) const;
     // "25 on the way", "25 holding", "25 unloading", or a mix. Zeros are left out.
     static FString CargoPhrase(int32 Carried, int32 Holding, int32 Unloading = 0, int32 StoreFull = 0);
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
@@ -1595,6 +1597,9 @@ public:
     // The only network command ingress. Host-local calls execute directly on authority.
     UFUNCTION(Server, Reliable) void ServerSubmitCommandIntent(const FPolitikaNetCommandIntent& Intent);
     UFUNCTION(Server, Reliable) void ServerBeginCapture(uint64 IssuerId, uint64 StructureId);
+    // ECON-E29: the structure under the cursor, seen through any unit crossing it, so a passing unit
+    // neither takes a C or Z press nor blanks the cursor text.
+    APolitikaPrototypeStructure* StructureUnderCursor(const APolitikaPrototypeMatch& ActiveMatch, bool* bOutThroughUnit = nullptr) const;
     void CaptureUnderCursor();
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(uint64 StructureId);
     UFUNCTION(Server, Reliable) void ServerBeginRepair(uint64 IssuerId, uint64 StructureId);
@@ -1920,6 +1925,7 @@ private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     FString CommandFeedback;
     FString LoggedBuildingLine;
+    bool bLoggedBuildingThroughUnit = false;
     void DrawLocalFog(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch);
     void DrawLastKnownContacts(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch, float UiScale);
 };

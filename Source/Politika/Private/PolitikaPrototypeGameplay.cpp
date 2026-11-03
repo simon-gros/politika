@@ -4002,15 +4002,33 @@ bool APolitikaPrototypePlayerController::RecordBatchOutcome(const FPolitikaNetCo
     return true;
 }
 
+APolitikaPrototypeStructure* APolitikaPrototypePlayerController::StructureUnderCursor(const APolitikaPrototypeMatch& ActiveMatch,
+    bool* bOutThroughUnit) const
+{
+    if (bOutThroughUnit) *bOutThroughUnit = false;
+    FHitResult Hit;
+    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return nullptr;
+    if (!Cast<APolitikaPrototypeUnit>(Hit.GetActor())) return Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+    FVector2D Cursor;
+    FVector Origin, Direction;
+    if (!GetOrderCursor(Cursor) || !DeprojectScreenPositionToWorld(Cursor.X, Cursor.Y, Origin, Direction)) return nullptr;
+    APolitikaPrototypeStructure* Structure = ActiveMatch.TraceStructureThroughUnits(Origin, Direction);
+    if (bOutThroughUnit) *bOutThroughUnit = Structure != nullptr;
+    return Structure;
+}
+
 void APolitikaPrototypePlayerController::CaptureUnderCursor()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
     const TArray<APolitikaPrototypeUnit*> Selected = GetCommandableSelectedUnits(ActiveMatch);
     if (Selected.IsEmpty()) return;
-    FHitResult Hit;
-    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return;
-    APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+    bool bThroughUnit = false;
+    APolitikaPrototypeStructure* Structure = StructureUnderCursor(*ActiveMatch, &bThroughUnit);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_PRESS action=capture structure=%llu through_unit=%d"),
+        Structure ? Structure->GetStableId() : 0ull, bThroughUnit ? 1 : 0);
+#endif
     if (!Structure || !Structure->IsCapturable())
     {
         ShowLocalFeedback(TEXT("Point at a hostile building to capture it."));
@@ -4060,9 +4078,12 @@ void APolitikaPrototypePlayerController::DemolishUnderCursor()
 {
     APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
     if (!ActiveMatch) return;
-    FHitResult Hit;
-    if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return;
-    APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+    bool bThroughUnit = false;
+    APolitikaPrototypeStructure* Structure = StructureUnderCursor(*ActiveMatch, &bThroughUnit);
+#if !UE_BUILD_SHIPPING
+    UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_PRESS action=demolish structure=%llu through_unit=%d"),
+        Structure ? Structure->GetStableId() : 0ull, bThroughUnit ? 1 : 0);
+#endif
     if (!Structure || !Structure->IsBuilding())
     {
         ShowLocalFeedback(TEXT("Point at your own building to demolish it."));
@@ -4869,21 +4890,18 @@ void APolitikaPrototypeHUD::DrawHUD()
         DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
         FString BuildingLine;
+        bool bBuildingThroughUnit = false;
         if (APolitikaPrototypePlayerController* CursorOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
         {
-            FHitResult BuildingHit;
-            if (CursorOwner->GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, BuildingHit))
+            if (const APolitikaPrototypeStructure* Structure = CursorOwner->StructureUnderCursor(*ActiveMatch, &bBuildingThroughUnit))
             {
-                if (const APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(BuildingHit.GetActor()))
+                const uint32 ViewerId = ActiveMatch->HasAuthority()
+                    ? ActiveMatch->GetBoundParticipantId(CursorOwner) : CursorOwner->GetAssignedRuntimePlayerId();
+                BuildingLine = ActiveMatch->BuildingCursorText(Structure, ViewerId);
+                if (!BuildingLine.IsEmpty())
                 {
-                    const uint32 ViewerId = ActiveMatch->HasAuthority()
-                        ? ActiveMatch->GetBoundParticipantId(CursorOwner) : CursorOwner->GetAssignedRuntimePlayerId();
-                    BuildingLine = ActiveMatch->BuildingCursorText(Structure, ViewerId);
-                    if (!BuildingLine.IsEmpty())
-                    {
-                        DrawText(BuildingLine, FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
-                        Y += 26.0f * UiScale;
-                    }
+                    DrawText(BuildingLine, FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+                    Y += 26.0f * UiScale;
                 }
             }
         }
@@ -4892,6 +4910,11 @@ void APolitikaPrototypeHUD::DrawHUD()
         {
             LoggedBuildingLine = BuildingLine;
             UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_CURSOR text=\"%s\""), *BuildingLine);
+        }
+        if (bBuildingThroughUnit != bLoggedBuildingThroughUnit)
+        {
+            bLoggedBuildingThroughUnit = bBuildingThroughUnit;
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_CURSOR_THROUGH through_unit=%d text=\"%s\""), bBuildingThroughUnit ? 1 : 0, *BuildingLine);
         }
 #endif
         // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.

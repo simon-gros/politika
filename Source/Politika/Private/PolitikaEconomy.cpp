@@ -505,6 +505,19 @@ FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32
     return Parts.IsEmpty() ? FString(TEXT("0 on the way")) : FString::Join(Parts, TEXT(", "));
 }
 
+APolitikaPrototypeStructure* APolitikaPrototypeMatch::TraceStructureThroughUnits(const FVector& Origin, const FVector& Direction) const
+{
+    const UWorld* World = GetWorld();
+    if (!World) return nullptr;
+    // The same channel and complexity as the click that found a unit first.
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaBuildingThroughUnits), true);
+    for (const APolitikaPrototypeUnit* Unit : Units)
+        if (IsValid(Unit)) Params.AddIgnoredActor(Unit);
+    FHitResult Hit;
+    if (!World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params)) return nullptr;
+    return Cast<APolitikaPrototypeStructure>(Hit.GetActor());
+}
+
 FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
 {
     if (!Structure || !Structure->IsCapturable() || ViewerId == 0) return FString();

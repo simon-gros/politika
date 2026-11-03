@@ -15103,31 +15103,71 @@ fn wait_cursor(game: &mut Game, fragments: &[&str], mark: usize) -> Result<Strin
     game.wait_line(&wanted, Duration::from_secs(5), mark)
 }
 
-/// Presses `key` with the cursor on a building until the server logs `started`, and records the
-/// presses it took. A unit crossing the cursor takes the press, and the client refuses it without
-/// telling the server. A failure here is left for the caller's own wait to report.
+/// Presses `key` once with the cursor on a building and records whether a unit stood in the way.
+/// A unit crossing the cursor no longer takes the press, so one that starts nothing is a failure
+/// for the caller's own wait to report.
 fn press_on_building(
-    game: &Game,
+    game: &mut Game,
     server: &mut Game,
     report: &mut Report,
     action: &str,
     key: &str,
     started: &[&str],
 ) -> Result<(), String> {
-    let mut presses = 0;
-    while presses < 5 {
-        presses += 1;
-        let mark = server.offset();
-        game.key(key)?;
-        if server
-            .wait_line(started, Duration::from_millis(1500), mark)
+    let mark = server.offset();
+    let client_mark = game.offset();
+    game.key(key)?;
+    let press = game
+        .wait_line(&["RTS_BUILDING_PRESS"], Duration::from_secs(2), client_mark)
+        .map_err(|e| format!("{action}: the client logged no press: {e}"))?;
+    report.fact(
+        &format!("{action}_through_unit"),
+        field(&press, "through_unit")
+            .unwrap_or("unknown")
+            .to_owned(),
+    );
+    let _ = server.wait_line(started, Duration::from_millis(1500), mark);
+    Ok(())
+}
+
+/// Moves the cursor onto a unit until the client reports looking through it at a building.
+fn hover_through_unit(game: &mut Game, unit: u64) -> Result<(f64, f64), String> {
+    for (dx, dy) in [
+        (0.0, 0.0),
+        (0.0, -8.0),
+        (0.0, -16.0),
+        (0.0, -24.0),
+        (0.0, -32.0),
+        (0.0, 8.0),
+    ] {
+        let sampled = game.offset();
+        let _ = game.wait_line(
+            &["MP_CLIENT_SAMPLE", &format!("entity={unit} ")],
+            Duration::from_secs(3),
+            sampled,
+        );
+        let (x, y) = wait_screen(
+            game,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", unit),
+            &format!("unit {unit}"),
+        )?;
+        let mark = game.offset();
+        game.hover(x + dx, y + dy)?;
+        if game
+            .wait_line(
+                &["RTS_BUILDING_CURSOR_THROUGH through_unit=1"],
+                Duration::from_secs(1),
+                mark,
+            )
             .is_ok()
         {
-            break;
+            return Ok((x + dx, y + dy));
         }
     }
-    report.fact(&format!("{action}_presses"), presses.to_string());
-    Ok(())
+    Err(format!(
+        "{}: the cursor never looked through unit {unit} at a building",
+        game.label
+    ))
 }
 
 /// Whether a fragment set appears on the server within `window`, starting from `mark`.
@@ -15264,7 +15304,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         );
         let mark = server.offset();
         press_on_building(
-            &client_a,
+            &mut client_a,
             &mut server,
             report,
             "demolish_generator",
@@ -15726,7 +15766,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         point_at_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
         let mark = server.offset();
         press_on_building(
-            &client_a,
+            &mut client_a,
             &mut server,
             report,
             "capture_generator",
@@ -15777,7 +15817,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         let mark = server.offset();
         let mark_a = client_a.offset();
         press_on_building(
-            &client_a,
+            &mut client_a,
             &mut server,
             report,
             "demolish_producer",
@@ -15829,7 +15869,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
         point_at_probe(&mut client_a, BLD_PROBE_ENEMY_PRODUCER)?;
         let mark = server.offset();
         press_on_building(
-            &client_a,
+            &mut client_a,
             &mut server,
             report,
             "capture_producer",
@@ -16078,6 +16118,8 @@ fn select_entity_near_probe(game: &mut Game, unit: u64, probe: usize) -> Result<
 const WRK_WORKS: (f64, f64) = (-853.4, 1584.8);
 const WRK_NEAR_A: (f64, f64) = (-1230.0, 1320.0);
 const WRK_NEAR_B: (f64, f64) = (-430.0, 1720.0);
+// On the camera side of the works and inside the capture range, so a unit here stands over it on screen.
+const WRK_FRONT: (f64, f64) = (-853.4, 1414.8);
 const WRK_PAY_CENTS: i64 = 1_000;
 const WRK_INCOME_CENTS: i64 = 2_000;
 const WRK_INTERVAL_STEPS: i64 = 200;
@@ -16086,6 +16128,7 @@ const WRK_PROBE_NEAR_A: usize = 1;
 const WRK_PROBE_NEAR_B: usize = 2;
 const WRK_PROBE_OBJECTIVE: usize = 3;
 const WRK_PROBE_BASE_A: usize = 4;
+const WRK_PROBE_FRONT: usize = 5;
 
 fn works_probes() -> String {
     let points = [
@@ -16094,6 +16137,7 @@ fn works_probes() -> String {
         WRK_NEAR_B,
         BLD_OBJECTIVE,
         BLD_OWN_GENERATOR,
+        WRK_FRONT,
     ];
     let joined: Vec<String> = points.iter().map(|p| format!("{}:{}", p.0, p.1)).collect();
     format!("-PolitikaMPGroundProbe={}", joined.join("/"))
@@ -16259,6 +16303,43 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
             format!("{seen:?} | client B unseen {}", unseen(&client_b)),
         );
 
+        // The control for WRK-P10: C on a unit with only ground behind it finds no building.
+        let sampled = client_a.offset();
+        let _ = client_a.wait_line(
+            &["MP_CLIENT_SAMPLE", &format!("entity={walker_a} ")],
+            Duration::from_secs(3),
+            sampled,
+        );
+        let on_unit = wait_screen(
+            &mut client_a,
+            |t| entity_screen(t, "MP_CLIENT_SAMPLE", walker_a),
+            &format!("unit {walker_a}"),
+        )?;
+        client_a.hover(on_unit.0, on_unit.1)?;
+        thread::sleep(Duration::from_millis(350));
+        let (client_mark, mark) = (client_a.offset(), server.offset());
+        client_a.key("c")?;
+        let empty_press = client_a.wait_line(
+            &[
+                "RTS_BUILDING_PRESS action=capture",
+                "structure=0 ",
+                "through_unit=0",
+            ],
+            Duration::from_secs(2),
+            client_mark,
+        );
+        let started_anyway = appears(
+            &mut server,
+            &["RTS_BUILDING_CAPTURE phase="],
+            Duration::from_millis(1000),
+            mark,
+        );
+        report.verdict(
+            "WRK-P11-A-UNIT-OVER-THE-GROUND-FINDS-NO-BUILDING",
+            empty_press.is_ok() && !started_anyway,
+            format!("{empty_press:?} | capture logged {started_anyway}"),
+        );
+
         // The cursor names it, Z leaves it alone, and C walks the unit in and holds.
         let mark_cursor = client_a.offset();
         point_at_probe(&mut client_a, WRK_PROBE_WORKS)?;
@@ -16288,7 +16369,7 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
         let mark_view = client_a.offset();
         let mark_cursor = client_a.offset();
         press_on_building(
-            &client_a,
+            &mut client_a,
             &mut server,
             report,
             "capture_neutral",
@@ -16428,7 +16509,38 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
             format!("{enemy:?} | {moved:?} | attack logged {attacked} | {arrived:?}"),
         );
 
-        // C from beside it goes straight to the hold, and it changes hands.
+        // Seat 2 stands in front of the works on screen. C aimed at the unit's body goes through it.
+        let at = pan_to_probe(&mut client_b, WRK_PROBE_FRONT)?;
+        let mark = server.offset();
+        client_b.click(at.0, at.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Move",
+                    &format!("unit={walker_b} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("seat 2's step in front of the works: {e}"))?;
+        wait_arrival(
+            &mut server,
+            walker_b,
+            WRK_FRONT,
+            40.0,
+            Duration::from_secs(30),
+        )
+        .map_err(|e| format!("seat 2's step in front of the works: {e}"))?;
+        thread::sleep(Duration::from_millis(500));
+        let mark_through = client_b.offset();
+        let aimed = hover_through_unit(&mut client_b, walker_b);
+        let named_through = wait_cursor(&mut client_b, &["Enemy works"], mark_through);
+        report.artifact(
+            "client_b_through_unit_png",
+            &client_b.screenshot(evidence, "03-unit-over-the-works")?,
+        );
+
+        // C goes to the hold, and it changes hands.
         let credit_before = works_money(&server.text(), 1, "income", 0)
             .last()
             .map_or(0, |l| econ_int(l, "available"));
@@ -16436,7 +16548,7 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
         let mark_view = client_b.offset();
         let mark_cursor = client_b.offset();
         press_on_building(
-            &client_b,
+            &mut client_b,
             &mut server,
             report,
             "capture_enemy",
@@ -16463,6 +16575,16 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
             mark,
         );
         let mark_retaken = server.offset();
+        let press_through = client_b.wait_line(
+            &["RTS_BUILDING_PRESS action=capture", "through_unit=1"],
+            Duration::from_secs(2),
+            mark_through,
+        );
+        report.verdict(
+            "WRK-P10-A-UNIT-OVER-IT-DOES-NOT-TAKE-THE-PRESS",
+            aimed.is_ok() && named_through.is_ok() && press_through.is_ok() && hold.is_ok(),
+            format!("{aimed:?} | {named_through:?} | {press_through:?} | {hold:?}"),
+        );
         let theirs = wait_cursor(&mut client_b, &["Your works"], mark_cursor);
         let view_b = client_b.wait_line(
             &["RTS_ECONOMY_VIEW participant=2", "works=1"],
