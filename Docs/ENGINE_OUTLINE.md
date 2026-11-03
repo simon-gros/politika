@@ -7,6 +7,8 @@ Display requirement: 4K (3840×2160) desktop capability plus adaptive handheld/m
 
 Planned primary target platforms: Linux, Windows, SteamOS/Steam Deck, and Android; consoles and Apple platforms may follow later. See [Platform Support and Portability Plan](PLATFORM_SUPPORT.md).
 
+> **Evidence and sequencing note (3 November 2026):** This is the **normative architecture/roadmap**, not the live milestone ledger. Read [Implementation Status](IMPLEMENTATION_STATUS.md) for the accepted baseline, protocol and known defects. MP-0/MP-1, early MP-3 dedicated hosting, MP-2 multiclient/lag/fog/unit-scale increments, and economy slices through E30 have recorded scoped acceptance; any older phrase below saying dedicated servers or economic systems are wholly unimplemented belongs to its original dated planning context and must not be read as current fact. ECON-E31/E32 and OPP-1 are **not accepted by the reviewed snapshot**. Immediate sequencing remains qualification of dependencies → server-owned AI through typed admission → integrated First Playable Skirmish → faction and broader UI/platform qualification. Preserve existing tests and avoid builds/edits in a checkout while another qualification job is active.
+
 ## 1. Goal and boundary
 
 **Primary contemporary RTS reference:** [Tempest Rising — Engine Architecture Reference](TEMPEST_RISING_ENGINE_REFERENCE.md) records source-verified public Unreal Editor/API patterns, their limitations and optional POLITIKA translations. It is research guidance, **not** an alternative implementation roadmap or evidence that POLITIKA has implemented those systems. Follow this outline and the owning acceptance contracts when developing features.
