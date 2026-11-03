@@ -78,7 +78,7 @@ Screenshots in each run's directory show the husk with its hint and the refusal 
 
 ## D. Decisions for the owner
 
-- **Repair is free, instant and works from anywhere.** One right-click undoes any damage while the generator's owner has a unit selected, so an attack on a generator stops training only until its owner notices. Real play can now cause an outage, but it is a short one. A cost, a time or a repairing unit would each make it matter more.
+- **Repair is free, instant and works from anywhere.** One right-click undoes any damage while the generator's owner has a unit selected, so an attack on a generator stops training only until its owner notices. Real play can now cause an outage, but it is a short one. A cost, a time or a repairing unit would each make it matter more. ECON-E27 has since added the unit and the time ([record](RTS_ECONOMY_E27_ACCEPTANCE.md)); it is still free.
 - **One soldier destroys a building quickly.** At 8 damage every 0.2 s, a generator lasts about 2.5 s and a producer about 5 s. These are prototype figures, not balance decisions.
 - **You cannot capture a producer while you have one.** That rule came with E9. In the session, team A had to demolish its own producer first.
 - **Z has no confirmation.** It destroys your building on the first press.
