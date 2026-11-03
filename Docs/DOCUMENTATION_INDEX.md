@@ -1,5 +1,7 @@
 # POLITIKA — Documentation Index and Ownership
 
+> **Sequencing decision (3 November 2026):** [UI-first workstream UI-F0–F4](POLITIKA_UI_OVERVIEW.md#22-ui-first-visual-consolidation-and-skirmish-playtest-entry-gate--3-november-2026) is now a prerequisite for extensive skirmish playtesting. Dense raw text/index HUD fields are to become grouped visual indicators and contextual commands, backed by existing authorized observations; focused regression and AI coding remain allowed concurrently. [Engine Outline §7.4B](ENGINE_OUTLINE.md#74b-ui-first-integration-gate--required-before-extensive-skirmish-playtesting-decision-3-november-2026) owns implementation order, and [HUD Architecture](RTS_HUD_ARCHITECTURE.md) owns widget contracts.
+
 > **Current development baseline:** [Implementation Status and Evidence Index](IMPLEMENTATION_STATUS.md) is the concise status authority as of its stated revision. Architecture and gameplay documents specify intended behavior; acceptance records establish only their observed, scoped results. The [UI Overview](POLITIKA_UI_OVERVIEW.md#21-immediate-rts-ui-delivery-contract--3-november-2026-engineering-priority) now includes a prioritized tactical-UX and UE 5.8 acceptance contract.
 
 **Authority:** This file is for navigation and maintenance; it is not an additional game design, technical specification or release plan. Source files and committed assets alone do not prove runtime behavior; consult the scoped acceptance records for historically verified Linux Development builds and packages.
