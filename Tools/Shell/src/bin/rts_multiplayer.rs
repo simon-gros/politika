@@ -14984,6 +14984,836 @@ fn harvest_session(options: &DedicatedOptions, report: &mut Report) -> Result<()
     result
 }
 
+// `--buildings SERVER CLIENT [--evidence DIR] [--port N]` plays building damage, capture, demolition
+// and repair with real input from two rendered remote clients on a dedicated 1v1, from the normal
+// start. Team B holds its fire so the attacker reaches its base; every later shot at a building is
+// an explicit order. Team A's soldier walks a corridor south of the objective and clear of both
+// militia, so the match does not end on the way and nothing else damages it.
+const BLD_OWN_PRODUCER: (f64, f64) = (-1740.2, -937.0);
+const BLD_OWN_GENERATOR: (f64, f64) = (-1574.3, -1245.2);
+const BLD_CORRIDOR: (f64, f64) = (200.0, -290.0);
+const BLD_POST: (f64, f64) = (1250.0, 1000.0);
+const BLD_RETREAT: (f64, f64) = (950.0, 1000.0);
+const BLD_OBJECTIVE: (f64, f64) = (0.0, 150.0);
+const BLD_PROBE_OWN_PRODUCER: usize = 0;
+const BLD_PROBE_OWN_GENERATOR: usize = 1;
+const BLD_PROBE_ENEMY_PRODUCER: usize = 2;
+const BLD_PROBE_ENEMY_GENERATOR: usize = 3;
+const BLD_PROBE_CORRIDOR: usize = 4;
+const BLD_PROBE_POST: usize = 5;
+const BLD_PROBE_RETREAT: usize = 6;
+const BLD_PROBE_OBJECTIVE: usize = 7;
+
+fn building_probes() -> String {
+    let points = [
+        BLD_OWN_PRODUCER,
+        BLD_OWN_GENERATOR,
+        (-BLD_OWN_PRODUCER.0, -BLD_OWN_PRODUCER.1),
+        (-BLD_OWN_GENERATOR.0, -BLD_OWN_GENERATOR.1),
+        BLD_CORRIDOR,
+        BLD_POST,
+        BLD_RETREAT,
+        BLD_OBJECTIVE,
+    ];
+    let joined: Vec<String> = points.iter().map(|p| format!("{}:{}", p.0, p.1)).collect();
+    format!("-PolitikaMPGroundProbe={}", joined.join("/"))
+}
+
+/// Where a ground probe projects to now, on the screen or not.
+fn probe_projection(text: &str, index: usize) -> Option<(f64, f64)> {
+    let index = index.to_string();
+    text.lines()
+        .rev()
+        .find(|l| l.contains("MP_CLIENT_GROUND_PROBE") && field(l, "index") == Some(&index))
+        .filter(|l| field(l, "on_screen") == Some("1"))
+        .and_then(|l| Some((number(l, "screen_x")?, number(l, "screen_y")?)))
+}
+
+/// Pans with the real keys until a world point is well inside the view, and returns its latest
+/// projection. Samples arrive about once a second, so each tap waits for a fresh one.
+fn pan_to_probe(game: &mut Game, index: usize) -> Result<(f64, f64), String> {
+    let (width, height) = (f64::from(WIDTH), f64::from(HEIGHT));
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(90) {
+        let mark = game.offset();
+        game.wait_line(
+            &["MP_CLIENT_GROUND_PROBE", &format!("index={index} ")],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        let (x, y) = probe_projection(&game.text(), index)
+            .ok_or_else(|| format!("{}: probe {index} is behind the camera", game.label))?;
+        let horizontal = if x < 240.0 {
+            Some(("a", 240.0 - x))
+        } else if x > width - 240.0 {
+            Some(("d", x - (width - 240.0)))
+        } else {
+            None
+        };
+        let vertical = if y < 160.0 {
+            Some(("w", 160.0 - y))
+        } else if y > height - 160.0 {
+            Some(("s", y - (height - 160.0)))
+        } else {
+            None
+        };
+        if horizontal.is_none() && vertical.is_none() {
+            return Ok((x, y));
+        }
+        for (key, off_by) in [horizontal, vertical].into_iter().flatten() {
+            let hold = (off_by * 1.2).clamp(150.0, 900.0) as u64;
+            game.xdo_here(&["keydown", key])?;
+            thread::sleep(Duration::from_millis(hold));
+            game.xdo_here(&["keyup", key])?;
+        }
+    }
+    Err(format!("{}: could not pan to probe {index}", game.label))
+}
+
+/// Puts the real cursor on a building and returns where. The cursor line reads it from there.
+fn point_at_probe(game: &mut Game, index: usize) -> Result<(f64, f64), String> {
+    let at = pan_to_probe(game, index)?;
+    game.hover(at.0, at.1)?;
+    thread::sleep(Duration::from_millis(350));
+    Ok(at)
+}
+
+/// The next cursor line naming a building, after `mark`, containing every fragment.
+fn wait_cursor(game: &mut Game, fragments: &[&str], mark: usize) -> Result<String, String> {
+    let mut wanted = vec!["RTS_BUILDING_CURSOR"];
+    wanted.extend_from_slice(fragments);
+    game.wait_line(&wanted, Duration::from_secs(5), mark)
+}
+
+/// Whether a fragment set appears on the server within `window`, starting from `mark`.
+fn appears(server: &mut Game, fragments: &[&str], window: Duration, mark: usize) -> bool {
+    server.wait_line(fragments, window, mark).is_ok()
+}
+
+/// Presses H until the selection holds its fire.
+fn set_hold_fire(game: &mut Game, server: &mut Game, participant: u32) -> Result<String, String> {
+    let tag = format!("RTS_STANCE_SET participant={participant} ");
+    for _ in 0..4 {
+        let mark = server.offset();
+        game.key("h")?;
+        let set = server.wait_line(&[&tag], Duration::from_secs(5), mark)?;
+        if field(&set, "stance") == Some("hold_fire") {
+            return Ok(set);
+        }
+    }
+    Err(format!("{}: never reached hold_fire", game.label))
+}
+
+fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.retain(|a| a != NO_STARTING_HARVESTERS);
+    args.push(STARTING_HARVESTERS.to_owned());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let launch = |label: &str, participant: u32, server: &mut Game| {
+        let display = Display::start(evidence, label)?;
+        let mut args = client_args(client_options, true, false, false);
+        args.push(building_probes());
+        let game = Game::launch(
+            &client_options.binary,
+            label,
+            evidence,
+            &args,
+            Some(&display.name()),
+        )?;
+        server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={participant}"),
+                "remote=1",
+            ],
+            Duration::from_secs(90),
+        )?;
+        Ok::<(Game, Display), String>((game, display))
+    };
+    let (mut client_a, _display_a) = launch("client-a", 1, &mut server)?;
+    let (mut client_b, _display_b) = launch("client-b", 2, &mut server)?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(60),
+        )?;
+        client.attach_window()?;
+    }
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let gen_tag = format!("generation={generation}");
+        let owners = entity_owners(&server.text());
+        let soldiers = |owner: u32| -> Vec<u64> {
+            owners
+                .iter()
+                .filter(|(_, o)| *o == owner)
+                .map(|(e, _)| *e)
+                .collect()
+        };
+        let (team_a, team_b) = (soldiers(1), soldiers(2));
+        if team_a.len() < 3 || team_b.len() < 3 {
+            return Err(format!("unexpected 1v1 roster {owners:?}"));
+        }
+        // The two authored soldiers come first; the free harvester has a later id.
+        let (attacker, reserve) = (team_a[0], team_a[1]);
+        let defender = team_b[0];
+        report.fact("team_a", format!("{team_a:?}"));
+        report.fact("team_b", format!("{team_b:?}"));
+        zoom_out(&client_a, 5)?;
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(1500));
+
+        // Under fog each client starts with its own two buildings only.
+        let kinds = |text: &str| -> Vec<String> {
+            let mut seen: Vec<String> = text
+                .lines()
+                .filter(|l| l.contains("RTS_STRUCTURE_RELEVANT"))
+                .filter_map(|l| Some(format!("{}:{}", field(l, "kind")?, field(l, "owner")?)))
+                .collect();
+            seen.sort();
+            seen
+        };
+        let (start_a, start_b) = (kinds(&client_a.text()), kinds(&client_b.text()));
+        report.verdict(
+            "BLD-P01-EACH-CLIENT-HAS-ITS-OWN-BUILDINGS",
+            start_a == ["generator:1", "producer:1"] && start_b == ["generator:2", "producer:2"],
+            format!("client A {start_a:?}, client B {start_b:?}"),
+        );
+
+        // Team B holds its fire, so the attacker is not in a soldier's fight.
+        client_b.drag_hold(
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        )?;
+        client_b.release()?;
+        thread::sleep(Duration::from_millis(500));
+        let held_b = set_hold_fire(&mut client_b, &mut server, 2)?;
+        report.fact("team_b_stance", held_b.trim().to_owned());
+
+        // The cursor names your own building, and Z takes it down: a remote client's real input.
+        let mark_cursor = client_a.offset();
+        let own_generator = point_at_probe(&mut client_a, BLD_PROBE_OWN_GENERATOR)?;
+        let named = wait_cursor(
+            &mut client_a,
+            &["Your generator", "100 / 100", "online"],
+            mark_cursor,
+        );
+        report.verdict(
+            "BLD-P02-THE-CURSOR-NAMES-A-BUILDING",
+            named.is_ok(),
+            format!("{named:?}"),
+        );
+        let mark = server.offset();
+        client_a.key("z")?;
+        let demolished = server.wait_line(
+            &["RTS_BUILDING_DEMOLISH participant=1", "kind=generator"],
+            Duration::from_secs(5),
+            mark,
+        );
+        thread::sleep(Duration::from_millis(400));
+        let mark_reject = server.offset();
+        client_a.key("b")?;
+        let unpowered = server.wait_line(
+            &[
+                "RTS_ECONOMY_REJECT participant=1",
+                "rejection=producer_unpowered",
+            ],
+            Duration::from_secs(5),
+            mark_reject,
+        );
+        report.artifact(
+            "client_a_generator_demolished_png",
+            &client_a.screenshot(evidence, "01-generator-demolished")?,
+        );
+        report.verdict(
+            "BLD-P03-Z-DEMOLISHES-YOUR-GENERATOR",
+            demolished.is_ok() && unpowered.is_ok(),
+            format!("{demolished:?} | {unpowered:?}"),
+        );
+
+        // A right-click on your own husk repairs it, and training works again.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", reserve)?;
+        let mark = server.offset();
+        client_a.click(own_generator.0, own_generator.1, "3")?;
+        let repaired = server.wait_line(
+            &["RTS_BUILDING_REPAIR participant=1", "health=100"],
+            Duration::from_secs(5),
+            mark,
+        );
+        thread::sleep(Duration::from_millis(400));
+        let mark_train = server.offset();
+        client_a.key("b")?;
+        let trained = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=train"],
+            Duration::from_secs(5),
+            mark_train,
+        );
+        report.verdict(
+            "BLD-P04-A-RIGHT-CLICK-REPAIRS-YOUR-GENERATOR",
+            repaired.is_ok() && trained.is_ok(),
+            format!("{repaired:?} | {trained:?}"),
+        );
+
+        // The walk: past the objective and the militia, into sight of the enemy base.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
+        thread::sleep(Duration::from_millis(300));
+        let held_a = set_hold_fire(&mut client_a, &mut server, 1)?;
+        report.fact("team_a_stance", held_a.trim().to_owned());
+        for (index, point, name) in [
+            (BLD_PROBE_CORRIDOR, BLD_CORRIDOR, "corridor"),
+            (BLD_PROBE_POST, BLD_POST, "post"),
+        ] {
+            let at = pan_to_probe(&mut client_a, index)?;
+            let mark = server.offset();
+            client_a.click(at.0, at.1, "3")?;
+            server
+                .wait_line(
+                    &[
+                        "RTS_ORDER_ADMITTED order=Move",
+                        &format!("unit={attacker} "),
+                    ],
+                    Duration::from_secs(5),
+                    mark,
+                )
+                .map_err(|e| format!("the move to the {name}: {e}"))?;
+            wait_arrival(
+                &mut server,
+                attacker,
+                point,
+                150.0,
+                Duration::from_secs(120),
+            )
+            .map_err(|e| format!("the walk to the {name}: {e}"))?;
+        }
+        client_a.wait(
+            &["RTS_STRUCTURE_RELEVANT", "kind=generator", "owner=2"],
+            Duration::from_secs(10),
+        )?;
+        client_a.wait(
+            &["RTS_STRUCTURE_RELEVANT", "kind=producer", "owner=2"],
+            Duration::from_secs(10),
+        )?;
+        thread::sleep(Duration::from_millis(1500));
+        report.verdict(
+            "BLD-P05-A-SEEN-ENEMY-BUILDING-ARRIVES",
+            !start_a.iter().any(|k| k.ends_with(":2")),
+            format!("client A now {:?}", kinds(&client_a.text())),
+        );
+        report.artifact(
+            "client_a_enemy_base_png",
+            &client_a.screenshot(evidence, "02-enemy-base")?,
+        );
+
+        // Z is yours alone, and C is refused on a producer while you still have a living one.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
+        point_at_probe(&mut client_a, BLD_PROBE_ENEMY_PRODUCER)?;
+        let mark = server.offset();
+        client_a.key("z")?;
+        let enemy_demolish = appears(
+            &mut server,
+            &["RTS_BUILDING_DEMOLISH"],
+            Duration::from_secs(2),
+            mark,
+        );
+        let mark = server.offset();
+        client_a.key("c")?;
+        let early_capture = appears(
+            &mut server,
+            &["RTS_BUILDING_CAPTURE"],
+            Duration::from_secs(2),
+            mark,
+        );
+
+        // C on the generator walks in and holds; a move order during the hold cancels it.
+        point_at_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_a.key("c")?;
+        let begun = server.wait_line(
+            &["RTS_BUILDING_CAPTURE phase=", &format!("unit={attacker} ")],
+            Duration::from_secs(5),
+            mark,
+        );
+        if begun.is_ok() {
+            wait_arrival(
+                &mut server,
+                attacker,
+                (-BLD_OWN_GENERATOR.0, -BLD_OWN_GENERATOR.1),
+                200.0,
+                Duration::from_secs(20),
+            )?;
+            thread::sleep(Duration::from_millis(600));
+        }
+        let retreat = pan_to_probe(&mut client_a, BLD_PROBE_RETREAT)?;
+        let mark = server.offset();
+        client_a.click(retreat.0, retreat.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={attacker} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        let cancelled = !appears(
+            &mut server,
+            &["RTS_BUILDING_CAPTURE unit=", "captured=1"],
+            Duration::from_secs(6),
+            mark,
+        );
+        report.verdict(
+            "BLD-P06-CAPTURE-RULES-HOLD-ON-THE-SERVER",
+            begun.is_ok() && !enemy_demolish && !early_capture && cancelled,
+            format!(
+                "Z on the enemy producer logged {enemy_demolish}; C on it with a living producer logged {early_capture}; {begun:?}; a move during the hold cancelled it: {cancelled}"
+            ),
+        );
+
+        // A right-click on the enemy generator is an attack: one hit takes it offline, the next
+        // shots finish it, and its owner's client sees all of it.
+        let generator = pan_to_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_a.click(generator.0, generator.1, "3")?;
+        let attack = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Attack",
+                &format!("unit={attacker} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        report.verdict(
+            "BLD-P07-A-RIGHT-CLICK-ATTACKS-A-BUILDING",
+            attack.is_ok(),
+            format!("{attack:?}"),
+        );
+        attack?;
+        let first_hit = server.wait_line(
+            &[
+                "RTS_BUILDING_DAMAGE participant=2",
+                "kind=generator",
+                "offline=1",
+            ],
+            Duration::from_secs(30),
+            mark,
+        )?;
+        let mark_b = client_b.offset();
+        point_at_probe(&mut client_b, BLD_PROBE_ENEMY_GENERATOR)?;
+        let offline_b = wait_cursor(&mut client_b, &["Your generator", "offline"], mark_b);
+        let killed = server.wait_line(
+            &[
+                "RTS_BUILDING_DAMAGE participant=2",
+                "kind=generator",
+                "health=0 ",
+            ],
+            Duration::from_secs(120),
+            mark,
+        )?;
+        thread::sleep(Duration::from_millis(500));
+        let mark_cursor = client_b.offset();
+        client_b.hover(640.0, 40.0)?;
+        thread::sleep(Duration::from_millis(300));
+        let own_husk = pan_to_probe(&mut client_b, BLD_PROBE_ENEMY_GENERATOR)?;
+        client_b.hover(own_husk.0, own_husk.1)?;
+        let husk_line = wait_cursor(
+            &mut client_b,
+            &["Your generator", "0 / 100", "right-click to repair"],
+            mark_cursor,
+        );
+        let mark_reject = server.offset();
+        client_b.key("b")?;
+        let b_unpowered = server.wait_line(
+            &[
+                "RTS_ECONOMY_REJECT participant=2",
+                "rejection=producer_unpowered",
+            ],
+            Duration::from_secs(5),
+            mark_reject,
+        );
+        report.artifact(
+            "client_b_generator_destroyed_png",
+            &client_b.screenshot(evidence, "03-husk-as-its-owner-sees-it")?,
+        );
+        report.verdict(
+            "BLD-P08-THE-GENERATOR-GOES-DOWN-FOR-ITS-OWNER",
+            offline_b.is_ok() && husk_line.is_ok() && b_unpowered.is_ok(),
+            format!(
+                "{} | {} | {offline_b:?} | {husk_line:?} | {b_unpowered:?}",
+                first_hit.trim(),
+                killed.trim()
+            ),
+        );
+
+        // Its owner repairs it, and queues two units on the restored power.
+        select_entity(&mut client_b, "MP_CLIENT_SAMPLE", defender)?;
+        let husk = pan_to_probe(&mut client_b, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_b.click(husk.0, husk.1, "3")?;
+        let repaired_b = server.wait_line(
+            &["RTS_BUILDING_REPAIR participant=2", "health=100"],
+            Duration::from_secs(5),
+            mark,
+        );
+        thread::sleep(Duration::from_millis(400));
+        let mark = server.offset();
+        client_b.key("b")?;
+        thread::sleep(Duration::from_millis(300));
+        client_b.key("b")?;
+        let b_queued = server.wait_line(
+            &["RTS_ECONOMY_TX participant=2", "kind=train", "queued=2"],
+            Duration::from_secs(5),
+            mark,
+        );
+        report.verdict(
+            "BLD-P09-ITS-OWNER-REPAIRS-IT",
+            repaired_b.is_ok() && b_queued.is_ok(),
+            format!("{repaired_b:?} | {b_queued:?}"),
+        );
+
+        // A holds next to the generator until it changes hands.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
+        let mark_cursor = client_a.offset();
+        point_at_probe(&mut client_a, BLD_PROBE_ENEMY_GENERATOR)?;
+        let mark = server.offset();
+        client_a.key("c")?;
+        let captured = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE unit=",
+                "from=2",
+                "to=1",
+                "kind=generator",
+                "captured=1",
+            ],
+            Duration::from_secs(40),
+            mark,
+        );
+        thread::sleep(Duration::from_millis(800));
+        let ours = wait_cursor(&mut client_a, &["Your generator", "online"], mark_cursor);
+        let powerless = server.wait_line(
+            &["RTS_POWER_STATE participant=2", "producer_powered=0"],
+            Duration::from_secs(5),
+            mark,
+        );
+        report.artifact(
+            "client_a_generator_captured_png",
+            &client_a.screenshot(evidence, "04-generator-captured")?,
+        );
+        report.verdict(
+            "BLD-P10-C-CAPTURES-THE-GENERATOR",
+            captured.is_ok() && ours.is_ok() && powerless.is_ok(),
+            format!("{captured:?} | {ours:?} | {powerless:?}"),
+        );
+
+        // Z on your own producer refunds its queue once and takes it off the map.
+        let mark = server.offset();
+        pan_to_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
+        client_a.key("b")?;
+        thread::sleep(Duration::from_millis(300));
+        client_a.key("b")?;
+        let a_queued = server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=train", "queued="],
+            Duration::from_secs(5),
+            mark,
+        )?;
+        thread::sleep(Duration::from_millis(400));
+        point_at_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
+        let mark = server.offset();
+        let mark_a = client_a.offset();
+        client_a.key("z")?;
+        let lost = server.wait_line(
+            &["RTS_BUILDING_DEMOLISH participant=1", "kind=producer"],
+            Duration::from_secs(5),
+            mark,
+        );
+        let refunded = lost.as_ref().map_or(0, |l| econ_int(l, "refunded"));
+        let withdrawn = client_a.wait_line(
+            &["RTS_STRUCTURE_WITHDRAWN", "kind=producer", "owner=1"],
+            Duration::from_secs(5),
+            mark_a,
+        );
+        thread::sleep(Duration::from_millis(500));
+        let mark_again = server.offset();
+        client_a.key("z")?;
+        let second = appears(
+            &mut server,
+            &["RTS_BUILDING_DEMOLISH"],
+            Duration::from_secs(2),
+            mark_again,
+        );
+        let mark_reject = server.offset();
+        client_a.key("b")?;
+        let no_producer = server.wait_line(
+            &["RTS_ECONOMY_REJECT participant=1", "rejection=no_producer"],
+            Duration::from_secs(5),
+            mark_reject,
+        );
+        report.artifact(
+            "client_a_producer_gone_png",
+            &client_a.screenshot(evidence, "05-producer-gone")?,
+        );
+        report.verdict(
+            "BLD-P11-Z-TAKES-YOUR-PRODUCER-OFF-THE-MAP",
+            refunded > 0 && withdrawn.is_ok() && !second && no_producer.is_ok(),
+            format!(
+                "{} | {lost:?} | {withdrawn:?} | second press logged {second} | {no_producer:?}",
+                a_queued.trim()
+            ),
+        );
+
+        // With no producer of its own, A can capture B's: B's queue comes back once, and A trains there.
+        select_entity_near_probe(&mut client_a, attacker, BLD_PROBE_ENEMY_PRODUCER)?;
+        point_at_probe(&mut client_a, BLD_PROBE_ENEMY_PRODUCER)?;
+        let mark = server.offset();
+        client_a.key("c")?;
+        let producer_taken = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE unit=",
+                "from=2",
+                "to=1",
+                "kind=producer",
+                "captured=1",
+            ],
+            Duration::from_secs(40),
+            mark,
+        );
+        thread::sleep(Duration::from_millis(500));
+        let mark_train = server.offset();
+        client_a.key("b")?;
+        let spawned = server.wait_line(
+            &["RTS_PRODUCTION_SPAWN participant=1"],
+            Duration::from_secs(30),
+            mark_train,
+        );
+        let near_captured = spawned.as_ref().is_ok_and(|l| {
+            distance(
+                (number(l, "x").unwrap_or(0.0), number(l, "y").unwrap_or(0.0)),
+                (-BLD_OWN_PRODUCER.0, -BLD_OWN_PRODUCER.1),
+            ) < 800.0
+        });
+        report.artifact(
+            "client_a_producer_captured_png",
+            &client_a.screenshot(evidence, "06-producer-captured")?,
+        );
+        report.verdict(
+            "BLD-P12-THE-CAPTURED-PRODUCER-WORKS",
+            producer_taken
+                .as_ref()
+                .is_ok_and(|l| econ_int(l, "refunded") > 0)
+                && near_captured,
+            format!("{producer_taken:?} | {spawned:?}"),
+        );
+
+        // A's new rifleman holds its fire, or it would shoot B's soldier before the next check.
+        let rifleman = spawned.as_ref().map_or(0, |l| econ_int(l, "entity") as u64);
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", rifleman)?;
+        let held_new = set_hold_fire(&mut client_a, &mut server, 1)?;
+        report.fact("new_rifleman_stance", held_new.trim().to_owned());
+
+        // The harvester kept its load through the gap, and delivers to the captured producer.
+        let captured_mark = server.offset();
+        let delivered_there = server.wait_line(
+            &["RTS_HARVEST_TX participant=1 kind=deliver"],
+            Duration::from_secs(120),
+            captured_mark,
+        );
+        report.verdict(
+            "BLD-P16-THE-HARVESTER-DELIVERS-TO-THE-CAPTURED-PRODUCER",
+            delivered_there.is_ok(),
+            format!(
+                "{delivered_there:?}; hold and resume lines before it: {}",
+                server
+                    .text()
+                    .lines()
+                    .filter(|l| l.contains("RTS_HARVEST_TX participant=1 kind=holding")
+                        || l.contains("RTS_HARVEST_TX participant=1 kind=resumed"))
+                    .count()
+            ),
+        );
+
+        // B's soldier destroys it by fire with a queue on it: one refund, gone for both clients.
+        let mark_train = server.offset();
+        client_a.key("b")?;
+        server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=train"],
+            Duration::from_secs(5),
+            mark_train,
+        )?;
+        select_entity(&mut client_b, "MP_CLIENT_SAMPLE", defender)?;
+        let target = pan_to_probe(&mut client_b, BLD_PROBE_ENEMY_PRODUCER)?;
+        let (mark, mark_a, mark_b) = (server.offset(), client_a.offset(), client_b.offset());
+        client_b.click(target.0, target.1, "3")?;
+        let b_attack = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Attack",
+                &format!("unit={defender} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let destroyed = server.wait_line(
+            &[
+                "RTS_BUILDING_DAMAGE participant=1",
+                "kind=producer",
+                "producer_lost=1",
+            ],
+            Duration::from_secs(180),
+            mark,
+        );
+        let gone_a = client_a.wait_line(
+            &["RTS_STRUCTURE_WITHDRAWN", "kind=producer", "owner=1"],
+            Duration::from_secs(5),
+            mark_a,
+        );
+        let gone_b = client_b.wait_line(
+            &["RTS_STRUCTURE_WITHDRAWN", "kind=producer", "owner=1"],
+            Duration::from_secs(5),
+            mark_b,
+        );
+        let text = server.text();
+        let refunds = text[mark.min(text.len())..]
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_BUILDING_DAMAGE participant=1") && econ_int(l, "refunded") > 0
+            })
+            .count();
+        report.verdict(
+            "BLD-P13-FIRE-DESTROYS-A-PRODUCER-WITH-ONE-REFUND",
+            b_attack.is_ok()
+                && destroyed.is_ok()
+                && refunds == 1
+                && gone_a.is_ok()
+                && gone_b.is_ok(),
+            format!(
+                "{b_attack:?} | {destroyed:?} | {refunds} refunding hits | {gone_a:?} | {gone_b:?}"
+            ),
+        );
+
+        // Ammunition never goes below zero while firing at a building.
+        let lowest = client_b
+            .text()
+            .lines()
+            .filter(|l| {
+                l.contains("MP_CLIENT_SAMPLE")
+                    && field(l, "entity").and_then(|v| v.parse::<u64>().ok()) == Some(defender)
+            })
+            .map(|l| econ_int(l, "ammo"))
+            .min()
+            .unwrap_or(i64::MIN);
+        report.verdict(
+            "BLD-P14-AMMUNITION-STAYS-IN-RANGE",
+            lowest >= 0,
+            format!("lowest ammo the owner saw on {defender}: {lowest}"),
+        );
+
+        // The match ends with every ledger whole, and the next one starts with whole buildings.
+        select_entity_near_probe(&mut client_a, reserve, BLD_PROBE_OWN_GENERATOR)?;
+        let objective = pan_to_probe(&mut client_a, BLD_PROBE_OBJECTIVE)?;
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait(
+            &["MATCH_RESULTS outcome=objective_secured", &gen_tag],
+            Duration::from_secs(240),
+        )?;
+        let cleared_1 = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let cleared_2 = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=2", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let whole = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_POWER_START")
+                    && l.contains(&format!("generation={generation2}"))
+                    && field(l, "producer_powered") == Some("1")
+            })
+            .count();
+        report.verdict(
+            "BLD-P15-LEDGERS-WHOLE-AND-THE-NEXT-MATCH-FRESH",
+            generation2 != generation
+                && field(&cleared_1, "reconciles") == Some("1")
+                && field(&cleared_2, "reconciles") == Some("1")
+                && whole == 2
+                && !tail.lines().any(|l| l.contains("RTS_BUILDING_DAMAGE")),
+            format!(
+                "generation {generation} then {generation2}: {whole} powered seats | {} | {}",
+                cleared_1.trim(),
+                cleared_2.trim()
+            ),
+        );
+
+        // Repeatability: which buildings went down, came back and changed hands, in order. The
+        // amounts refunded depend on how far training got, so they are left out.
+        let mut trace = String::new();
+        for line in text.lines().filter(|l| l.contains("RTS_BUILDING_")) {
+            let parts: Vec<String> = ["participant", "from", "to", "kind", "captured", "new_id"]
+                .iter()
+                .filter_map(|k| Some(format!("{k}={}", field(line, k)?)))
+                .collect();
+            let tag = [
+                "RTS_BUILDING_DEMOLISH",
+                "RTS_BUILDING_REPAIR",
+                "RTS_BUILDING_CAPTURE unit=",
+            ]
+            .iter()
+            .find(|t| line.contains(**t));
+            if let Some(tag) = tag {
+                trace.push_str(&format!("{tag} {}\n", parts.join(" ")));
+            }
+        }
+        fs::write(evidence.join("buildings-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("buildings_trace", &evidence.join("buildings-trace.txt"));
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "BLD-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
+/// Pans to where a unit is expected, then selects it with real input.
+fn select_entity_near_probe(game: &mut Game, unit: u64, probe: usize) -> Result<(), String> {
+    pan_to_probe(game, probe)?;
+    thread::sleep(Duration::from_millis(1200));
+    select_entity(game, "MP_CLIENT_SAMPLE", unit)
+}
+
 // `--food SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E3) plays one food shortage with real
 // input. Seat 1 starts with two rations, so step 200 empties the reserve and step 400 cannot be
 // paid. Seat 2 keeps the normal reserve. Two purchases, the shortage, a refused purchase, N during
@@ -15674,6 +16504,14 @@ fn main() {
             "politika.econ.power-evidence.v1",
             "power",
             power_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--buildings") {
+        run_dedicated_session(
+            "--buildings",
+            "politika.econ.buildings-evidence.v1",
+            "buildings",
+            buildings_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--harvest") {

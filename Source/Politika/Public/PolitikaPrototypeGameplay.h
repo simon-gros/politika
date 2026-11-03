@@ -768,6 +768,9 @@ public:
     }
     // A destroyed producer leaves the map. A generator husk stays so it can be repaired.
     bool IsWithdrawn() const { return bWithdrawn; }
+    // Whether this plant is generating, for a client without the authority's ledger.
+    bool IsGeneratingPower() const { return bGenerating; }
+    void SetGeneratingPower(bool bInGenerating) { bGenerating = bInGenerating; }
     bool IsBodyHidden() const { return !Body || Body->bHiddenInGame; }
     void Adopt(uint32 InOwner, uint8 InTeam, uint32 InBuildingId, int32 InHealth, const FLinearColor& InTint);
     FLinearColor GetTint() const { return Tint; }
@@ -787,6 +790,7 @@ private:
     static constexpr uint8 FoodSourceKind = 3;
     UFUNCTION() void ApplyTint();
     UFUNCTION() void ApplyPresence();
+    void EnableCursorHits();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
     UPROPERTY(Replicated) uint8 Kind = 0;
     UPROPERTY(Replicated) uint64 StableId = 0;
@@ -797,6 +801,8 @@ private:
     UPROPERTY(ReplicatedUsing=ApplyTint) FLinearColor Tint = FLinearColor::White;
     UPROPERTY(ReplicatedUsing=ApplyPresence)
     bool bWithdrawn = false;
+    UPROPERTY(Replicated)
+    bool bGenerating = true;
     bool bLocalFogHidden = false;
     bool bLocalFogApplied = false;
     TWeakObjectPtr<APolitikaPrototypeMatch> AuthorityMatch;
@@ -1552,6 +1558,7 @@ public:
     UFUNCTION(Server, Reliable) void ServerBeginCapture(uint64 IssuerId, uint64 StructureId);
     void CaptureUnderCursor();
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(uint64 StructureId);
+    UFUNCTION(Server, Reliable) void ServerRepairBuilding(uint64 StructureId);
     void DemolishUnderCursor();
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
     // Formation ingress and result (FORM-F3); host-local calls execute directly on authority.
@@ -1872,6 +1879,7 @@ public:
 private:
     UPROPERTY() TWeakObjectPtr<APolitikaPrototypeMatch> Match;
     FString CommandFeedback;
+    FString LoggedBuildingLine;
     void DrawLocalFog(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch);
     void DrawLastKnownContacts(APlayerController& Controller, const APolitikaPrototypeMatch& ActiveMatch, float UiScale);
 };

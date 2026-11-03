@@ -3129,8 +3129,8 @@ void APolitikaPrototypePlayerController::ApplyMapCameraIfReady()
 void APolitikaPrototypePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
-    InputComponent->BindKey(EKeys::C, IE_Pressed, this, &APolitikaPrototypePlayerController::CaptureUnderCursor);
-    InputComponent->BindKey(EKeys::Z, IE_Pressed, this, &APolitikaPrototypePlayerController::DemolishUnderCursor);
+    InputComponent->BindAction(TEXT("PrototypeCaptureBuilding"), IE_Pressed, this, &APolitikaPrototypePlayerController::CaptureUnderCursor);
+    InputComponent->BindAction(TEXT("PrototypeDemolishBuilding"), IE_Pressed, this, &APolitikaPrototypePlayerController::DemolishUnderCursor);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
@@ -4035,6 +4035,15 @@ void APolitikaPrototypePlayerController::ServerDemolishBuilding_Implementation(u
     ActiveMatch->DemolishOwnedBuilding(ActiveMatch->FindStructureByStableId(StructureId), ActiveMatch->GetBoundParticipantId(this));
 }
 
+void APolitikaPrototypePlayerController::ServerRepairBuilding_Implementation(uint64 StructureId)
+{
+    APolitikaPrototypeMatch* ActiveMatch = ResolveMatch();
+    if (!ActiveMatch) return;
+    APolitikaPrototypeStructure* Structure = ActiveMatch->FindStructureByStableId(StructureId);
+    if (!Structure || Structure->GetOwnerPlayer() != ActiveMatch->GetBoundParticipantId(this)) return;
+    ActiveMatch->RepairOwnedBuilding(Structure);
+}
+
 void APolitikaPrototypePlayerController::OrderUnderCursor()
 {
     // The order goes where the button went down, which a long frame may have left behind the cursor.
@@ -4080,6 +4089,16 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
         const uint32 PlayerId = GetCommandPlayerId();
         if (Structure->GetOwnerPlayer() == PlayerId)
         {
+            if (!HasAuthority())
+            {
+                if (Structure->IsGenerator() && Structure->GetHealth() < politika::power::kGeneratorHealth)
+                {
+                    ServerRepairBuilding(Structure->GetStableId());
+                    ShowLocalFeedback(TEXT("Repairing generator."));
+                }
+                else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
+                return;
+            }
             if (ActiveMatch->RepairOwnedBuilding(Structure))
                 ShowLocalFeedback(TEXT("Generator repaired."));
             else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
@@ -4746,6 +4765,7 @@ void APolitikaPrototypeHUD::DrawHUD()
                 Economy.UpkeepRations > 0 ? Economy.Rations * UpkeepSeconds / (Economy.UpkeepRations * 60) : 0, *FoodCacheText, *PurchaseText);
         DrawText(FoodText, Economy.bFoodShortage ? FLinearColor(1.0f, 0.42f, 0.32f) : FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
         Y += 26.0f * UiScale;
+        FString BuildingLine;
         if (APolitikaPrototypePlayerController* CursorOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
         {
             FHitResult BuildingHit;
@@ -4755,7 +4775,7 @@ void APolitikaPrototypeHUD::DrawHUD()
                 {
                     const uint32 ViewerId = ActiveMatch->HasAuthority()
                         ? ActiveMatch->GetBoundParticipantId(CursorOwner) : CursorOwner->GetAssignedRuntimePlayerId();
-                    const FString BuildingLine = ActiveMatch->BuildingCursorText(Structure, ViewerId);
+                    BuildingLine = ActiveMatch->BuildingCursorText(Structure, ViewerId);
                     if (!BuildingLine.IsEmpty())
                     {
                         DrawText(BuildingLine, FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
@@ -4764,6 +4784,13 @@ void APolitikaPrototypeHUD::DrawHUD()
                 }
             }
         }
+#if !UE_BUILD_SHIPPING
+        if (BuildingLine != LoggedBuildingLine)
+        {
+            LoggedBuildingLine = BuildingLine;
+            UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_BUILDING_CURSOR text=\"%s\""), *BuildingLine);
+        }
+#endif
         // ECON-E4: the stock at the base, the harvesters, what the source has left and the next sale.
         if (Economy.bHasGoldSource)
         {
@@ -4782,7 +4809,7 @@ void APolitikaPrototypeHUD::DrawHUD()
         }
     }
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
-    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
+    DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  C capture  ·  Z demolish  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         *PolitikaShapeLabel(HelpShape)), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {

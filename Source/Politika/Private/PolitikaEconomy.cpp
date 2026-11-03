@@ -118,6 +118,7 @@ void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimePro
     DOREPLIFETIME(APolitikaPrototypeStructure, TeamId);
     DOREPLIFETIME(APolitikaPrototypeStructure, Tint);
     DOREPLIFETIME(APolitikaPrototypeStructure, bWithdrawn);
+    DOREPLIFETIME(APolitikaPrototypeStructure, bGenerating);
 }
 
 void APolitikaPrototypeStructure::ApplyPresence()
@@ -125,6 +126,19 @@ void APolitikaPrototypeStructure::ApplyPresence()
     if (!Body || !bWithdrawn) return;
     Body->SetHiddenInGame(true, true);
     Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+#if !UE_BUILD_SHIPPING
+    if (!HasAuthority())
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_STRUCTURE_WITHDRAWN kind=%s owner=%u x=%.1f y=%.1f"),
+            IsProducer() ? TEXT("producer") : TEXT("generator"), OwnerPlayer, GetActorLocation().X, GetActorLocation().Y);
+#endif
+}
+
+void APolitikaPrototypeStructure::EnableCursorHits()
+{
+    // Query only, so a click can choose the building without blocking movement or navigation.
+    Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+    Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 }
 
 bool APolitikaPrototypeStructure::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
@@ -143,10 +157,7 @@ void APolitikaPrototypeStructure::Configure(APolitikaPrototypeMatch* InMatch, po
     TeamId = InTeam;
     Tint = InTint;
     ApplyTint();
-    // Query only, so a click can choose the building without blocking movement or navigation.
-    Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-    Body->SetCollisionResponseToAllChannels(ECR_Ignore);
-    Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+    EnableCursorHits();
     // Non-replicated component state: a listen host does not see an enemy producer either.
     if (bHiddenLocally) Body->SetHiddenInGame(true, true);
 }
@@ -211,6 +222,9 @@ void APolitikaPrototypeStructure::BeginPlay()
     Super::BeginPlay();
     if (HasAuthority()) return;
     ApplyTint();
+    // Collision does not replicate, and a remote client's cursor needs it to reach a building.
+    if (IsBuilding()) EnableCursorHits();
+    ApplyPresence();
 #if !UE_BUILD_SHIPPING
     if (IsSource())
     {
@@ -380,7 +394,8 @@ FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32
 FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
 {
     if (!Structure || !Structure->IsBuilding() || ViewerId == 0) return FString();
-    if (IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, ViewerId)) return FString();
+    // A client only has the buildings relevance gives it; only the authority knows what else exists.
+    if (HasAuthority() && IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, ViewerId)) return FString();
     const bool bOurs = Structure->GetOwnerPlayer() == ViewerId;
     const uint8 ViewerTeam = GetTeamForParticipant(ViewerId);
     const bool bAllied = !bOurs && ViewerTeam != politika::rules::kNoTeam && ViewerTeam == Structure->GetTeamId();
@@ -394,9 +409,9 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
     {
         const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer());
         const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
-        const bool bOnline = Plant && Plant->generating;
+        const bool bOnline = HasAuthority() ? (Plant && Plant->generating) : Structure->IsGeneratingPower();
         State = bOnline ? TEXT("  \u00b7  online") : TEXT("  \u00b7  offline");
-        if (bOurs && !bOnline) State += TEXT("  \u00b7  click to repair");
+        if (bOurs && !bOnline) State += TEXT("  \u00b7  select a unit and right-click to repair");
     }
     const APolitikaPrototypeUnit* Captor = nullptr;
     for (const APolitikaPrototypeUnit* Unit : Units)
@@ -1204,6 +1219,14 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
 
 void APolitikaPrototypeMatch::SyncEconomyReplication()
 {
+    // The ledger stays on the authority, so a client reads a plant's state from the plant.
+    for (APolitikaPrototypeStructure* Structure : Structures)
+    {
+        if (!IsValid(Structure) || !Structure->IsGenerator()) continue;
+        const pe::Account* Account = Economy.Find(Structure->GetOwnerPlayer());
+        const politika::power::Building* Plant = Account ? Account->grid.Find(Structure->GetBuildingId()) : nullptr;
+        Structure->SetGeneratingPower(Plant && Plant->generating);
+    }
     if (!HasAuthority()) return;
     for (const FParticipantBinding& Binding : ParticipantBindings)
     {
