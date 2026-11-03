@@ -15268,7 +15268,8 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             format!("{repaired:?} | {trained:?}"),
         );
 
-        // Your own healthy building is not a refusal: the click is a move to the ground under it.
+        // Your own healthy building is not a refusal: the click is a move to the ground under the
+        // cursor, which on this camera lies about 290 cm past a point on the middle of the roof.
         let own_producer = pan_to_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
         let mark = server.offset();
         client_a.click(own_producer.0, own_producer.1, "3")?;
@@ -15281,7 +15282,7 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             &mut server,
             reserve,
             BLD_OWN_PRODUCER,
-            200.0,
+            400.0,
             Duration::from_secs(30),
         );
         report.verdict(
