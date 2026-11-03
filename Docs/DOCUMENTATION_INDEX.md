@@ -1,5 +1,7 @@
 # POLITIKA — Documentation Index and Ownership
 
+> **Current development baseline:** [Implementation Status and Evidence Index](IMPLEMENTATION_STATUS.md) is the concise status authority as of its stated revision. Architecture and gameplay documents specify intended behavior; acceptance records establish only their observed, scoped results. The [UI Overview](POLITIKA_UI_OVERVIEW.md#21-immediate-rts-ui-delivery-contract--3-november-2026-engineering-priority) now includes a prioritized tactical-UX and UE 5.8 acceptance contract.
+
 **Authority:** This file is for navigation and maintenance; it is not an additional game design, technical specification or release plan. Source files and committed assets alone do not prove runtime behavior; consult the scoped acceptance records for historically verified Linux Development builds and packages.
 
 ## Game design and canon
