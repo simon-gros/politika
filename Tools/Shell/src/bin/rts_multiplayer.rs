@@ -15268,6 +15268,28 @@ fn buildings_session(options: &DedicatedOptions, report: &mut Report) -> Result<
             format!("{repaired:?} | {trained:?}"),
         );
 
+        // Your own healthy building is not a refusal: the click is a move to the ground under it.
+        let own_producer = pan_to_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
+        let mark = server.offset();
+        client_a.click(own_producer.0, own_producer.1, "3")?;
+        let moved_under = server.wait_line(
+            &["RTS_ORDER_ADMITTED order=Move", &format!("unit={reserve} ")],
+            Duration::from_secs(5),
+            mark,
+        );
+        let arrived_under = wait_arrival(
+            &mut server,
+            reserve,
+            BLD_OWN_PRODUCER,
+            200.0,
+            Duration::from_secs(30),
+        );
+        report.verdict(
+            "BLD-P17-A-RIGHT-CLICK-ON-YOUR-BUILDING-IS-A-MOVE",
+            moved_under.is_ok() && arrived_under.is_ok(),
+            format!("{moved_under:?} | {arrived_under:?}"),
+        );
+
         // The walk: past the objective and the militia, into sight of the enemy base.
         select_entity(&mut client_a, "MP_CLIENT_SAMPLE", attacker)?;
         thread::sleep(Duration::from_millis(300));

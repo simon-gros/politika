@@ -4079,6 +4079,7 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
         SubmitGroupIntent(ActiveMatch, Selected, Target, politika::rules::AttackOrder{Target->GetStableId()});
         return;
     }
+    FVector ClickPoint = Hit.ImpactPoint;
     if (APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor()))
     {
         if (!Structure->IsBuilding())
@@ -4086,52 +4087,50 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
             ShowLocalFeedback(TEXT("That is a resource, not a building."));
             return;
         }
-        const uint32 PlayerId = GetCommandPlayerId();
-        if (Structure->GetOwnerPlayer() == PlayerId)
+        if (Structure->GetOwnerPlayer() != GetCommandPlayerId())
         {
-            if (!HasAuthority())
-            {
-                if (Structure->IsGenerator() && Structure->GetHealth() < politika::power::kGeneratorHealth)
-                {
-                    ServerRepairBuilding(Structure->GetStableId());
-                    ShowLocalFeedback(TEXT("Repairing generator."));
-                }
-                else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
-                return;
-            }
-            if (ActiveMatch->RepairOwnedBuilding(Structure))
-                ShowLocalFeedback(TEXT("Generator repaired."));
-            else ShowLocalFeedback(TEXT("Only a damaged generator can be repaired."));
+            // The same attack order used on a unit: the server walks each attacker into range and
+            // keeps firing. A click no longer spends the shot by itself.
+            SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackOrder{Structure->GetStableId()});
             return;
         }
-        // The same attack order used on a unit: the server walks each attacker into range and
-        // keeps firing. A click no longer spends the shot by itself.
-        SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackOrder{Structure->GetStableId()});
-        return;
+        if (Structure->IsGenerator() && Structure->GetHealth() < politika::power::kGeneratorHealth)
+        {
+            if (HasAuthority()) ActiveMatch->RepairOwnedBuilding(Structure);
+            else ServerRepairBuilding(Structure->GetStableId());
+            ShowLocalFeedback(TEXT("Generator repaired."));
+            return;
+        }
+        // Nothing to do to it, so this is a move to the ground under it, not to the point on its roof.
+        if (Cursor.X < 0.0 || Cursor.Y < 0.0 || !TraceOrderGround(*ActiveMatch, Cursor, ClickPoint))
+        {
+            ShowLocalFeedback(TEXT("Order rejected: click valid map ground or a hostile unit."));
+            return;
+        }
     }
     const FVector2D PlayableMin = ActiveMatch->GetPlayableMin();
     const FVector2D PlayableMax = ActiveMatch->GetPlayableMax();
-    const FVector2D MapPosition(Hit.ImpactPoint.X - PlayableMin.X, Hit.ImpactPoint.Y - PlayableMin.Y);
+    const FVector2D MapPosition(ClickPoint.X - PlayableMin.X, ClickPoint.Y - PlayableMin.Y);
     // FORM-FD: an eligible multi-unit ground press waits for its release, which is either a
     // plain click at this point or the end of a facing drag. Everything else acts on press.
     const bool bShift = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
-    const bool bInside = Hit.ImpactPoint.X >= PlayableMin.X && Hit.ImpactPoint.X <= PlayableMax.X
-        && Hit.ImpactPoint.Y >= PlayableMin.Y && Hit.ImpactPoint.Y <= PlayableMax.Y;
+    const bool bInside = ClickPoint.X >= PlayableMin.X && ClickPoint.X <= PlayableMax.X
+        && ClickPoint.Y >= PlayableMin.Y && ClickPoint.Y <= PlayableMax.Y;
     const bool bEligible = Selected.Num() >= 2 && !bShift && bInside && Cursor.X >= 0.0 && Cursor.Y >= 0.0
         && ActiveMatch->GetMatchPhase() == politika::rules::MatchPhase::Active && !bSelectPressed
         && ActiveMatch->IsLocalControllerBound(this);
     if (!bEligible)
     {
         SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::MoveOrder{{MapPosition.X, MapPosition.Y}},
-            &Hit.ImpactPoint);
+            &ClickPoint);
         return;
     }
     OrderPress = FOrderPress{};
     OrderPress.State = EOrderPress::Pending;
     OrderPress.PressScreen = Cursor;
     OrderPress.LastScreen = Cursor;
-    OrderPress.PressGround = Hit.ImpactPoint;
-    OrderPress.LastGround = Hit.ImpactPoint;
+    OrderPress.PressGround = ClickPoint;
+    OrderPress.LastGround = ClickPoint;
     OrderPress.bLastValid = true;
     OrderPress.Participant = GetCommandPlayerId();
     OrderPress.Generation = ActiveMatch->GetMatchGeneration();
@@ -4180,14 +4179,19 @@ bool APolitikaPrototypePlayerController::TraceOrderGround(const APolitikaPrototy
         FVector Origin, Direction;
         const UWorld* World = GetWorld();
         if (!World || !DeprojectScreenPositionToWorld(Screen.X, Screen.Y, Origin, Direction)) return false;
-        // The ground a drag ends on, even under a soldier: the same visibility channel as a
-        // click, with every unit ignored.
+        // The ground a drag ends on, even under a soldier or a building: the same visibility channel
+        // as a click, with every unit ignored and each building it meets skipped.
         FCollisionQueryParams Params(SCENE_QUERY_STAT(PolitikaOrderDrag), false);
         for (const APolitikaPrototypeUnit* Unit : ActiveMatch.GetUnits())
             if (IsValid(Unit)) Params.AddIgnoredActor(Unit);
         FHitResult Hit;
-        bHit = World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params)
-            && !Cast<APolitikaPrototypeUnit>(Hit.GetActor());
+        bHit = World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params);
+        for (int32 Skipped = 0; bHit && Skipped < 8 && Cast<APolitikaPrototypeStructure>(Hit.GetActor()); ++Skipped)
+        {
+            Params.AddIgnoredActor(Hit.GetActor());
+            bHit = World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 200000.0, ECC_Visibility, Params);
+        }
+        bHit = bHit && !Cast<APolitikaPrototypeUnit>(Hit.GetActor()) && !Cast<APolitikaPrototypeStructure>(Hit.GetActor());
         if (bHit) OutGround = Hit.ImpactPoint;
     }
     if (!bHit || !FMath::IsFinite(OutGround.X) || !FMath::IsFinite(OutGround.Y) || !FMath::IsFinite(OutGround.Z)) return false;
@@ -4451,10 +4455,15 @@ void APolitikaPrototypePlayerController::AttackMoveSelected()
     FHitResult Hit;
     if (GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit))
     {
-        const FVector2D MapPosition(Hit.ImpactPoint.X - ActiveMatch->GetPlayableMin().X,
-            Hit.ImpactPoint.Y - ActiveMatch->GetPlayableMin().Y);
+        // Over a building, the destination is the ground under the cursor, not the point on its roof.
+        FVector ClickPoint = Hit.ImpactPoint;
+        FVector2D Cursor;
+        if (Cast<APolitikaPrototypeStructure>(Hit.GetActor()) && GetOrderCursor(Cursor))
+            TraceOrderGround(*ActiveMatch, Cursor, ClickPoint);
+        const FVector2D MapPosition(ClickPoint.X - ActiveMatch->GetPlayableMin().X,
+            ClickPoint.Y - ActiveMatch->GetPlayableMin().Y);
         SubmitGroupIntent(ActiveMatch, Selected, nullptr, politika::rules::AttackMoveOrder{{MapPosition.X, MapPosition.Y}},
-            &Hit.ImpactPoint);
+            &ClickPoint);
     }
     else
         ShowLocalFeedback(TEXT("Attack-move rejected: click valid map ground."));
