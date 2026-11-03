@@ -8,11 +8,11 @@ POLITIKA combines asymmetric military strategy, Cold War espionage, political in
 
 The country is more than a battlefield. Its cities, industries, transport networks, armed forces, civilians, borders, and institutions form a living political environment. Players must decide when to cooperate with that environment, when to operate secretly within it, and when the consequences of open conflict are worth the cost.
 
-> Project status: POLITIKA has a native Unreal application shell and a bounded RTS prototype with selection, movement, combat, one control-point objective, and an accepted typed command/simulation contract. The prototype lifecycle and integrated participant-authority/implemented rifle-infantry behavior are qualified for Linux UE 5.8.3 Development: authorized commands work through typed admission, opposing/system-controlled command attempts are rejected, stale/dead issuers are retired, and the current rifleman prototype retains its supported movement, combat, abilities, presentation and return-to-menu behavior. See the [Stage 4A lifecycle and integration acceptance record](Docs/STAGE4A_MATCH_LIFECYCLE_ACCEPTANCE.md). This does not complete the broader Stage 4A match framework, a rules-complete single-player match, First Playable Skirmish, campaign, or release/platform qualification. See the [RTS vertical-slice acceptance record](Docs/RTS_VERTICAL_SLICE_MILESTONE.md), [command/simulation contract record](Docs/RTS_COMMAND_SIMULATION_CONTRACT.md), and [shell build and verification guide](Docs/SHELL_SKELETON.md). Standard faction orchestration, autonomous Unaligned behavior, economy/deployment, AI, visibility, full victory/defeat rules, persistence, faction rosters, and balance remain incomplete or design-stage.
+> **Development snapshot (3 November 2026):** POLITIKA is a **pre-alpha Unreal Engine 5.8.3 RTS prototype**, not a released or rules-complete game. Recorded Linux Development acceptance covers a typed server-authoritative simulation, a listen-server and headless dedicated-server foundation, packaged multi-client 1v1/2v1/3v1/2v2 test layouts, fog-of-war information filtering, and incremental production/economy mechanics. Recent economic slices include timed unit-driven building repair, capturable neutral works with placeholder income, finite crude-oil fields and manual harvester dispatch/sale. In the ECON-E29/E30 fixture, `--oil` passed 10/10 twice, `--works` 12/12 twice, `--buildings` 20/20 twice, and Automation 62/62. These are **scoped engineering qualifications**, not public multiplayer, complete faction design, stable economy balance, complete skirmish AI, campaign, or multi-platform release. An idle harvester still has a documented direct-click selection defect. See the [implementation status and evidence index](Docs/IMPLEMENTATION_STATUS.md) and [ECON-E29/E30 acceptance](Docs/RTS_ECONOMY_E29_E30_ACCEPTANCE.md) for exact limits; later commits require a fresh evidence check.
 
 ## Versioning and release management
 
-**Current development identity: 0.1.0-dev.0** — an initial development identity, **not** a playable RTS or public release. POLITIKA uses Semantic Versioning and separate compatibility counters, with [version.json](version.json) as the canonical manifest. The initial local-profile format is schema 1; campaign, network and world contracts remain unimplemented. Runtime startup diagnostics include the generated canonical version and Git build identity.
+**Documented development identity: 0.1.0-dev.0** — an initial development identity, **not** a public release or a claim of a complete playable RTS. Check [version.json](version.json) for the identity at the revision being built. POLITIKA uses Semantic Versioning and separate compatibility counters, with [version.json](version.json) as the canonical manifest. The initial local-profile format is schema 1; campaign, network and world contracts remain unimplemented. Runtime startup diagnostics include the generated canonical version and Git build identity.
 
 Verified development milestones can advance the version through dev, alpha, beta and release-candidate stages toward stable releases. Contributors and development agents may perform justified bumps alongside validated work; ordinary documentation/archive commits do not automatically increase the version. Future builds will record their Git revision, CI build number, engine/platform and artifact integrity independently from the public version.
 
@@ -98,7 +98,7 @@ The planned campaign presents faction-specific missions within a shared 1984–1
 
 Skirmish is intended to provide self-contained battles against AI opponents, independent of the campaign's fixed ending. Matches include a persistent Unaligned world authority alongside the selected playable factions. Match composition and faction-slot rules are covered in [Match Structure](Docs/MATCH_STRUCTURE.md).
 
-**Multiplayer is an immediate development priority**: the team will audit and adapt existing RTS code for server authority, build an early two-client networked vertical slice, and then support up to four humans through player-hosted and dedicated-server modes. **Current evidence (29 October 2026):** the MP-1 networked foundation is implemented.
+**Multiplayer remains an immediate development priority**: its authoritative listen/dedicated-server foundation and packaged multi-client layouts are implemented in bounded Linux Development tests. The next work is integration, scalability, UX, resilience and public-hosting readiness—not a restart of MP-0/MP-1. **Current evidence (29 October 2026):** the MP-1 networked foundation is implemented.
 - **What it is.** A listen server plus remote clients over Unreal IP networking, server-only simulation, connection-bound seats, one command intake, and team fog of war.
 - **Layouts.** 1v1, 2v1, 3v1 and 2v2, each with the Unaligned NPC side.
 - **Qualified so far.** Two packaged Linux Development processes over loopback (1v1, listen). Larger layouts (2v1, 3v1, 2v2) are packaged-qualified both on the dedicated server and with a listen host plus 2–3 clients (MP-2).
@@ -122,10 +122,11 @@ These are architecture and product targets, not evidence that the corresponding 
 
 ## Documentation and repository guide
 
-The main README introduces the project; concrete gameplay concepts and system-level design belong in the linked documents. The [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) is the starting point for proposed mechanics, faction interactions, and unresolved design questions.
+The main README introduces the project. **For what currently works, begin with the [Implementation Status and Evidence Index](Docs/IMPLEMENTATION_STATUS.md)**; concrete gameplay concepts and system-level design belong in the linked documents. The [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) is the starting point for proposed mechanics, faction interactions, and unresolved design questions.
 
 | Location | What it contains |
 |---|---|
+| [Implementation Status](Docs/IMPLEMENTATION_STATUS.md) | Current evidence-backed implementation snapshot, accepted scopes, known defects and next gates; historical acceptance files remain authoritative for their own runs. |
 | [Story Outline](Docs/STORY_OUTLINE.md) | Canonical 1984–1989 narrative and campaign progression (spoilers). |
 | [Concepts Outline](Docs/CONCEPTS_OUTLINE.md) | Central gameplay concepts, faction asymmetry, proposed systems, and open decisions. |
 | [Resource Economy](Docs/RESOURCE_ECONOMY.md) | Resources, refining, power, and faction economies. |
@@ -146,7 +147,7 @@ The main README introduces the project; concrete gameplay concepts and system-le
 | [Validation and Governance](Docs/VALIDATION_AND_GOVERNANCE.md) | Scope-appropriate Rust/C++ checks, evidence and documentation ownership. |
 | [Performance and Release Gates](Docs/PERFORMANCE_AND_RELEASE_GATES.md) | Unexecuted RTS benchmark fixtures, platform qualification and blocked release criteria. |
 | [Development Foundations](Docs/DEVELOPMENT_FOUNDATIONS.md) | Rust/C++20 regression tests, RTS content audit, UE 5.8.3 preflight, diagnostic verdicts, and staged automation without hosted workflows. |
-| [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Controls, interface, accessibility, and presentation. |
+| [UI Overview](Docs/POLITIKA_UI_OVERVIEW.md) | Controls, interface, accessibility, presentation, and prioritized player-facing UI engineering/acceptance contract. |
 | [Faction files](Factions/) | In-depth faction descriptions, logos, and banners. |
 | [Historical Reference Archive](Archive/README.md) | **288 sourced reference records** covering 69 political developments, 172 cartographic references and 47 historical/media sources. Includes [regional map research](Archive/REGIONAL_CARTOGRAPHIC_ATLAS.md) and newly documented [1983–1985 industry and civilian photographs](Archive/INDUSTRY_AND_CIVIC_LIFE_1980_1989.md). |
 
