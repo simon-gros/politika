@@ -41,6 +41,11 @@ constexpr double kSourceOffsetCm = 1000.0;
 constexpr double kSourceNearOffsetCm = 700.0;
 constexpr double kSourceSeparationCm = 600.0;
 constexpr FVector::FReal kSourceHalfHeightCm = 30.0;
+// ECON-E28: the works stands to the side of the middle of the map, as far from one start as from the
+// opposite one, and out of weapon range of the objective and the militia, so a hold there meets
+// nothing but the other side. A low block, so a unit at it stays visible.
+constexpr double kWorksOffsetFromCentreCm = 1800.0;
+constexpr FVector::FReal kWorksHalfHeightCm = 75.0;
 // How close a harvester must be: to the source to load, to the producer to unload.
 constexpr double kGoldPickupRadiusCm = 250.0;
 constexpr double kGoldDepotRadiusCm = 350.0;
@@ -50,6 +55,7 @@ constexpr float kHarvesterSpeedCmPerSecond = 280.0f;
 const FLinearColor kGoldSourceTint(0.95f, 0.72f, 0.12f);
 const FLinearColor kFoodSourceTint(0.3f, 0.72f, 0.2f);
 const FLinearColor kSourceEmptyTint(0.22f, 0.2f, 0.16f);
+const FLinearColor kWorksNeutralTint(0.5f, 0.32f, 0.72f);
 const FLinearColor kDeadBuildingTint(0.22f, 0.22f, 0.22f);
 // The plant is the same faction color as the producer, darkened so the two blocks stay distinct.
 constexpr float kGeneratorTintScale = 0.45f;
@@ -212,6 +218,18 @@ void APolitikaPrototypeStructure::ConfigureSource(APolitikaPrototypeMatch* InMat
     if (bHiddenLocally) Body->SetHiddenInGame(true, true);
 }
 
+void APolitikaPrototypeStructure::ConfigureWorks(APolitikaPrototypeMatch* InMatch, bool bHiddenLocally)
+{
+    AuthorityMatch = InMatch;
+    Kind = WorksKind;
+    OwnerPlayer = 0;
+    TeamId = politika::rules::kNoTeam;
+    Tint = kWorksNeutralTint;
+    ApplyTint();
+    EnableCursorHits();
+    if (bHiddenLocally) Body->SetHiddenInGame(true, true);
+}
+
 void APolitikaPrototypeStructure::MarkSourceEmpty()
 {
     if (Tint == kSourceEmptyTint) return;
@@ -225,9 +243,15 @@ void APolitikaPrototypeStructure::BeginPlay()
     if (HasAuthority()) return;
     ApplyTint();
     // Collision does not replicate, and a remote client's cursor needs it to reach a building.
-    if (IsBuilding()) EnableCursorHits();
+    if (IsCapturable()) EnableCursorHits();
     ApplyPresence();
 #if !UE_BUILD_SHIPPING
+    if (IsWorks())
+    {
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_WORKS_RELEVANT owner=%u team=%u x=%.1f y=%.1f"),
+            OwnerPlayer, static_cast<uint32>(TeamId), GetActorLocation().X, GetActorLocation().Y);
+        return;
+    }
     if (IsSource())
     {
         UE_LOG(LogPolitikaStartup, Display, TEXT("%s owner=%u team=%u x=%.1f y=%.1f"),
@@ -246,6 +270,7 @@ void APolitikaPrototypeStructure::ApplyTint()
     // The generator is the narrower of the two placeholder blocks, at the same height. A source is
     // a low slab, so a unit standing at it stays visible.
     if (IsSource()) Body->SetRelativeScale3D(FVector(1.5, 1.5, kSourceHalfHeightCm / 50.0));
+    else if (IsWorks()) Body->SetRelativeScale3D(FVector(2.5, 2.5, kWorksHalfHeightCm / 50.0));
     else if (!IsProducer()) Body->SetRelativeScale3D(FVector(2.0, 2.0, 3.0));
     if (UMaterialInstanceDynamic* Material = Body->CreateAndSetMaterialInstanceDynamic(0))
         Material->SetVectorParameterValue(TEXT("Color"), GetPresentedTint());
@@ -305,11 +330,18 @@ void APolitikaPrototypeStructure::SetLocalFogHidden(bool bHidden)
 #endif
 }
 
+bool APolitikaPrototypeMatch::IsWorksHeldByAlly(const APolitikaPrototypeStructure& Structure, const APolitikaPrototypeUnit& Unit) const
+{
+    return Structure.IsWorks() && Structure.GetOwnerPlayer() != 0 && Structure.GetOwnerPlayer() != Unit.GetOwnerPlayer()
+        && Structure.GetTeamId() == Unit.GetTeamId();
+}
+
 bool APolitikaPrototypeMatch::BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure)
 {
-    if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || !Structure || !Structure->IsBuilding() || !Structure->IsAlive())
+    if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || !Structure || !Structure->IsCapturable() || !Structure->IsAlive())
         return false;
-    if (Structure->GetOwnerPlayer() == 0 || Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer()) return false;
+    if ((Structure->GetOwnerPlayer() == 0 && !Structure->IsWorks()) || Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer()) return false;
+    if (IsWorksHeldByAlly(*Structure, *Unit)) return false;
     if (IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer())) return false;
     if (Structure->IsProducer())
     {
@@ -349,8 +381,8 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
         if (!IsValid(Unit)) continue;
         APolitikaPrototypeStructure* Structure = Unit->GetCaptureTarget();
         if (!Structure) continue;
-        const bool bCanHold = Unit->IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
-            && Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer()
+        const bool bCanHold = Unit->IsAlive() && Structure->IsCapturable() && Structure->IsAlive()
+            && Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer() && !IsWorksHeldByAlly(*Structure, *Unit)
             && (!IsFogOfWarEnabled() || IsStructureObservedByParticipant(Structure, Unit->GetOwnerPlayer()));
         const bool bInRange = FVector::Dist2D(Unit->GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm;
         // Out of range with no steps yet is the walk in. Leaving after the hold has started cancels it.
@@ -364,6 +396,20 @@ void APolitikaPrototypeMatch::AdvanceCaptures()
         Unit->SetCaptureSteps(Steps);
         if (Steps < politika::power::kCaptureSteps) continue;
         const uint32 PreviousOwner = Structure->GetOwnerPlayer();
+        if (Structure->IsWorks())
+        {
+            const bool bMoved = Economy.TransferWorks(PreviousOwner, Unit->GetOwnerPlayer());
+            if (bMoved)
+                Structure->Adopt(Unit->GetOwnerPlayer(), GetTeamForParticipant(Unit->GetOwnerPlayer()), 0, 0,
+                    BuildingTintFor(Unit->GetOwnerPlayer(), false));
+#if !UE_BUILD_SHIPPING
+            UE_LOG(LogPolitikaStartup, Display,
+                TEXT("RTS_BUILDING_CAPTURE unit=%llu from=%u to=%u kind=works captured=%d refused=%d refunded=0 new_id=0"),
+                Unit->GetStableId(), PreviousOwner, Unit->GetOwnerPlayer(), bMoved ? 1 : 0, bMoved ? 0 : 1);
+#endif
+            Unit->ClearCapture();
+            continue;
+        }
         const pe::Ledger::CaptureResult Result = Economy.CaptureBuilding(PreviousOwner, Unit->GetOwnerPlayer(), Structure->GetBuildingId());
         if (Result.captured)
             Structure->Adopt(Unit->GetOwnerPlayer(), GetTeamForParticipant(Unit->GetOwnerPlayer()), Result.newId, Structure->GetHealth(),
@@ -461,13 +507,14 @@ FString APolitikaPrototypeMatch::CargoPhrase(int32 Carried, int32 Holding, int32
 
 FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStructure* Structure, uint32 ViewerId) const
 {
-    if (!Structure || !Structure->IsBuilding() || ViewerId == 0) return FString();
+    if (!Structure || !Structure->IsCapturable() || ViewerId == 0) return FString();
     // A client only has the buildings relevance gives it; only the authority knows what else exists.
     if (HasAuthority() && IsFogOfWarEnabled() && !IsStructureObservedByParticipant(Structure, ViewerId)) return FString();
     const bool bOurs = Structure->GetOwnerPlayer() == ViewerId;
     const uint8 ViewerTeam = GetTeamForParticipant(ViewerId);
     const bool bAllied = !bOurs && ViewerTeam != politika::rules::kNoTeam && ViewerTeam == Structure->GetTeamId();
-    const TCHAR* Who = bOurs ? TEXT("Your") : bAllied ? TEXT("Allied") : TEXT("Enemy");
+    const TCHAR* Who = Structure->IsWorks() && Structure->GetOwnerPlayer() == 0 ? TEXT("Neutral")
+        : bOurs ? TEXT("Your") : bAllied ? TEXT("Allied") : TEXT("Enemy");
     const TCHAR* Kind = Structure->IsProducer() ? TEXT("producer") : TEXT("generator");
     // A producer at zero has left the map. A generator husk is still there and can be repaired.
     if (!Structure->IsAlive() && !Structure->IsGenerator()) return FString::Printf(TEXT("%s %s  destroyed"), Who, Kind);
@@ -502,6 +549,9 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
         else
             State += FString::Printf(TEXT("  \u00b7  capturing %d / %d"), Captor->GetCaptureSteps(), politika::power::kCaptureSteps);
     }
+    if (Structure->IsWorks())
+        return FString::Printf(TEXT("%s works  \u00b7  pays %s every %d s%s"), Who, UTF8_TO_TCHAR(pe::FormatUsd(pe::kWorksIncomeCents).c_str()),
+            static_cast<int32>(pe::kIncomeIntervalSteps / 20), *State);
     return FString::Printf(TEXT("%s %s  %d / %d%s"), Who, Kind, Structure->GetHealth(), MaxHealth, *State);
 }
 
@@ -597,6 +647,7 @@ void APolitikaPrototypeMatch::InitializeEconomy()
     // Each seat with a base starts with one harvester. Regression sessions that pin exact forces turn
     // it off with -PolitikaMPStartingHarvesters=0, and Automation fixtures opt in.
     bool bStartingHarvesters = true;
+    bool bFixedForces = false;
 #if !UE_BUILD_SHIPPING
     int32 StartingHarvesterSwitch = 1;
     if (FParse::Value(FCommandLine::Get(), TEXT("PolitikaMPStartingHarvesters="), StartingHarvesterSwitch) && StartingHarvesterSwitch == 0)
@@ -605,13 +656,19 @@ void APolitikaPrototypeMatch::InitializeEconomy()
     FString ScriptedMode;
     if ((FParse::Value(FCommandLine::Get(), TEXT("RTSAcceptance="), ScriptedMode) && ScriptedMode != TEXT("multiplayer"))
         || MapDefinition->StableId == TEXT("map.test.projection_displacement") || MapDefinition->StableId == TEXT("map.test.static_obstacle_detour"))
+    {
         bStartingHarvesters = false;
+        bFixedForces = true;
+    }
 #endif
 #if WITH_DEV_AUTOMATION_TESTS
     if (GIsAutomationTesting) bStartingHarvesters = StartingHarvestersForTest;
 #endif
     const FVector2D Centre = (PlayableMin + PlayableMax) * 0.5;
     const uint8 LocalTeam = LocalRuntimePlayerId != 0 ? GetTeamForParticipant(LocalRuntimePlayerId) : politika::rules::kNoTeam;
+    int32 SeatsWithBase = 0;
+    FVector2D WorksStart = FVector2D::ZeroVector;
+    float WorksGroundZ = 0.0f;
     for (const FPolitikaPrototypeRuntimeParticipant& Participant : RuntimeParticipants)
     {
         const FPolitikaPrototypePlayerSlot* Slot = MapDefinition->PlayerSlots.FindByPredicate(
@@ -700,6 +757,48 @@ void APolitikaPrototypeMatch::InitializeEconomy()
                 Participant.RuntimePlayerId, Account->rations, MatchGeneration);
 #endif
         if (Structure && bStartingHarvesters) SpawnStartingHarvester(Participant.RuntimePlayerId);
+        if (Structure)
+        {
+            ++SeatsWithBase;
+            if (SeatsWithBase == 1)
+            {
+                WorksStart = FVector2D(Slot->StartLocation.X, Slot->StartLocation.Y);
+                WorksGroundZ = Template->Location.Z;
+            }
+        }
+    }
+    // A scripted run and the navigation fixtures pin what stands on their map. One seat has nobody to contest it with.
+    if (SeatsWithBase >= 2 && !bFixedForces)
+        PlaceWorks(Centre, WorksStart, WorksGroundZ, bFogOfWar && LocalTeam != politika::rules::kNoTeam);
+}
+
+void APolitikaPrototypeMatch::PlaceWorks(const FVector2D& Centre, const FVector2D& Start, float GroundZ, bool bHiddenLocally)
+{
+    FVector2D Across = Start - Centre;
+    Across = Across.IsNearlyZero() ? FVector2D(1.0, 0.0) : FVector2D(-Across.Y, Across.X).GetSafeNormal();
+    for (const double Sign : {-1.0, 1.0})
+    {
+        const FVector2D Point = Centre + Across * Sign * kWorksOffsetFromCentreCm;
+        if (Point.X < PlayableMin.X || Point.Y < PlayableMin.Y || Point.X > PlayableMax.X || Point.Y > PlayableMax.Y) continue;
+        const FVector2D MapPosition = Point - PlayableMin;
+        bool bOpen = false;
+#if WITH_DEV_AUTOMATION_TESTS
+        if (FormationSlotProbeForTest) bOpen = FormationSlotProbeForTest(MapPosition);
+        else
+#endif
+        bOpen = IsGroundSlotOpen(GetWorld(), PlayableMin, PlayableMax, MapPosition, GroundZ);
+        if (!bOpen) continue;
+        const FVector Location(Point.X, Point.Y, GroundZ - kUnitOriginAboveGroundCm + kWorksHalfHeightCm);
+        APolitikaPrototypeStructure* Works = GetWorld()->SpawnActor<APolitikaPrototypeStructure>(Location, FRotator::ZeroRotator);
+        if (!Works) continue;
+        Works->ConfigureWorks(this, bHiddenLocally);
+        Works->SetBuildingIdentity(NextStableId++, 0, 0);
+        Structures.Add(Works);
+#if !UE_BUILD_SHIPPING
+        UE_LOG(LogPolitikaStartup, Display, TEXT("RTS_WORKS_START owner=0 pays=%lld x=%.1f y=%.1f generation=%llu"),
+            pe::kWorksIncomeCents, Point.X, Point.Y, MatchGeneration);
+#endif
+        return;
     }
 }
 
@@ -1246,6 +1345,7 @@ void APolitikaPrototypeMatch::RunEconomyPhase()
         const pe::StepResult Result = Economy.Advance(ParticipantId, Step, Admitted ? *Admitted : 0u, CountLivingUnits(ParticipantId));
         if (Result.upkeepDue) LogFood(TEXT("upkeep"), ParticipantId, Result.upkeepOwed, Result.upkeepPaid, Result.headRemainingSteps);
         if (Result.income != 0) LogMoney(TEXT("income"), ParticipantId, 0u, Result.income);
+        if (Result.worksIncome != 0) LogMoney(TEXT("works"), ParticipantId, 0u, Result.worksIncome);
 #if !UE_BUILD_SHIPPING
         if (Result.incomeOverflow)
             UE_LOG(LogPolitikaStartup, Warning, TEXT("RTS_ECONOMY_INCOME_OVERFLOW participant=%u step=%llu"), ParticipantId, Step);
@@ -1312,6 +1412,7 @@ void APolitikaPrototypeMatch::SyncEconomyReplication()
             View.bValid = true;
             View.bHasProducer = Account->hasProducer;
             View.AvailableCents = Account->available;
+            View.WorksHeld = static_cast<int32>(Account->worksHeld);
             View.CreditedCents = Account->credited;
             View.SpentCents = Account->spent;
             View.RefundedCents = Account->refunded;
@@ -1393,14 +1494,14 @@ void APolitikaPrototypePlayerController::LogOwnEconomy(const TCHAR* Source) cons
 {
 #if !UE_BUILD_SHIPPING
     UE_LOG(LogPolitikaStartup, Display,
-        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_store_full=%d food_source=%d"),
+        TEXT("RTS_ECONOMY_VIEW participant=%u source=%s valid=%d producer=%d available=%lld credited=%lld spent=%lld refunded=%lld queued=%d head_remaining=%d blocked=%d produced=%d supplied_kw=%d required_kw=%d powered=%d rations=%d upkeep=%d shortage=%d gold_held=%d gold_carried=%d gold_holding=%d gold_unloading=%d gold_source=%d harvesters=%d food_carried=%d food_holding=%d food_unloading=%d food_store_full=%d food_source=%d works=%d"),
         AssignedRuntimePlayerId != 0 ? AssignedRuntimePlayerId : GetCommandPlayerId(), Source, OwnEconomy.bValid ? 1 : 0,
         OwnEconomy.bHasProducer ? 1 : 0, OwnEconomy.AvailableCents, OwnEconomy.CreditedCents, OwnEconomy.SpentCents,
         OwnEconomy.RefundedCents, OwnEconomy.Queued, OwnEconomy.HeadRemainingSteps, OwnEconomy.bHeadBlocked ? 1 : 0, OwnEconomy.Produced,
         OwnEconomy.SuppliedKw, OwnEconomy.RequiredKw, OwnEconomy.bProducerPowered ? 1 : 0, OwnEconomy.Rations, OwnEconomy.UpkeepRations,
         OwnEconomy.bFoodShortage ? 1 : 0, OwnEconomy.GoldHeld, OwnEconomy.GoldCarried, OwnEconomy.GoldHolding, OwnEconomy.GoldUnloading,
         OwnEconomy.GoldAtSource, OwnEconomy.Harvesters, OwnEconomy.FoodCarried, OwnEconomy.FoodHolding, OwnEconomy.FoodUnloading,
-        OwnEconomy.FoodStoreFull, OwnEconomy.FoodAtSource);
+        OwnEconomy.FoodStoreFull, OwnEconomy.FoodAtSource, OwnEconomy.WorksHeld);
 #else
     (void)Source;
 #endif

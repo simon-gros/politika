@@ -270,6 +270,8 @@ struct POLITIKA_API FPolitikaNetEconomyView
     UPROPERTY() bool bProducerPowered = false;
     // ECON-E3: this participant's food reserve and what the living force eats per interval.
     UPROPERTY() int32 Rations = 0;
+    // ECON-E28: the works this participant holds, which add to its income.
+    UPROPERTY() int32 WorksHeld = 0;
     UPROPERTY() int32 UpkeepRations = 0;
     UPROPERTY() bool bFoodShortage = false;
     // ECON-E4: this participant's gold: the stock at its base, on the way, and left at its source.
@@ -296,7 +298,7 @@ struct POLITIKA_API FPolitikaNetEconomyView
     {
         return bValid == Other.bValid && bHasProducer == Other.bHasProducer && AvailableCents == Other.AvailableCents
             && CreditedCents == Other.CreditedCents && SpentCents == Other.SpentCents && RefundedCents == Other.RefundedCents
-            && Queued == Other.Queued && HeadRemainingSteps == Other.HeadRemainingSteps
+            && Queued == Other.Queued && WorksHeld == Other.WorksHeld && HeadRemainingSteps == Other.HeadRemainingSteps
             && bHeadBlocked == Other.bHeadBlocked && Produced == Other.Produced && SuppliedKw == Other.SuppliedKw
             && RequiredKw == Other.RequiredKw && bProducerPowered == Other.bProducerPowered && Rations == Other.Rations
             && UpkeepRations == Other.UpkeepRations && bFoodShortage == Other.bFoodShortage
@@ -503,6 +505,8 @@ private:
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;
     friend class FPolitikaMultiplayerBuildingRepairTest;
+    friend class FPolitikaMultiplayerWorksTest;
+    friend class FPolitikaMultiplayerWorksAlliesTest;
     friend class FPolitikaMultiplayerHarvestTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
@@ -766,9 +770,14 @@ public:
     // load and no grid entry, so it takes the kind values after the two power::BuildingKind values.
     void ConfigureSource(APolitikaPrototypeMatch* InMatch, politika::economy::Resource InResource, uint32 InOwner, uint8 InTeam, bool bHiddenLocally);
     void MarkSourceEmpty();
+    // The match's one neutral works (ECON-E28). Not a building: no health and no grid entry, so it
+    // cannot be attacked or demolished, only captured. It takes the kind value after the sources.
+    void ConfigureWorks(APolitikaPrototypeMatch* InMatch, bool bHiddenLocally);
     bool IsProducer() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Producer); }
     bool IsGenerator() const { return Kind == static_cast<uint8>(politika::power::BuildingKind::Generator); }
     bool IsBuilding() const { return IsProducer() || IsGenerator(); }
+    bool IsWorks() const { return Kind == WorksKind; }
+    bool IsCapturable() const { return IsBuilding() || IsWorks(); }
     bool IsAlive() const { return !IsBuilding() || Health > 0; }
     uint64 GetStableId() const { return StableId; }
     uint32 GetBuildingId() const { return BuildingId; }
@@ -802,6 +811,7 @@ protected:
 private:
     static constexpr uint8 GoldSourceKind = 2;
     static constexpr uint8 FoodSourceKind = 3;
+    static constexpr uint8 WorksKind = 4;
     UFUNCTION() void ApplyTint();
     UFUNCTION() void ApplyPresence();
     void EnableCursorHits();
@@ -876,6 +886,8 @@ public:
     // Starts a capture. In range, the hold begins at once. Farther away, the unit walks in on
     // the same route an attack uses, and the hold begins when it arrives. No route cancels it.
     bool BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    // Taking a works from an ally only moves money inside one side, so it is refused.
+    bool IsWorksHeldByAlly(const APolitikaPrototypeStructure& Structure, const APolitikaPrototypeUnit& Unit) const;
     // Starts a repair of the unit's owner's damaged generator, walking in first as a capture does.
     // Any unit that can move may do it, harvesters included, so a side with no soldiers left can still
     // restore its power. One unit works on a generator at a time. Asking the unit already on it again
@@ -1265,6 +1277,7 @@ private:
     TSet<uint64> HarvesterOrderSequences;
     UPROPERTY(Transient) TObjectPtr<UPolitikaUnitArchetypeDefinition> HarvesterDefinition;
     void PlaceSources(uint32 ParticipantId, uint8 InTeamId, const FVector2D& Start, const FVector2D& Side, float GroundZ, bool bHiddenLocally);
+    void PlaceWorks(const FVector2D& Centre, const FVector2D& Start, float GroundZ, bool bHiddenLocally);
     void LogHarvest(const TCHAR* Kind, uint32 ParticipantId, uint64 UnitId, politika::economy::Resource Resource, int64 Amount, int64 GrossCents, int64 FeeCents, uint64 Step) const;
     const APolitikaPrototypeStructure* FindSourceOf(uint32 ParticipantId, politika::economy::Resource Resource) const;
     void AssignNetOwner(APolitikaPrototypeUnit* Unit) const;
@@ -1309,6 +1322,8 @@ private:
     friend class FPolitikaMultiplayerBuildingSightTest;
     friend class FPolitikaMultiplayerBuildingCaptureTest;
     friend class FPolitikaMultiplayerBuildingRepairTest;
+    friend class FPolitikaMultiplayerWorksTest;
+    friend class FPolitikaMultiplayerWorksAlliesTest;
     friend class FPolitikaMultiplayerBuildingDemolishTest;
     friend class FPolitikaMultiplayerFoodTest;
     friend class FPolitikaMultiplayerGoldTest;

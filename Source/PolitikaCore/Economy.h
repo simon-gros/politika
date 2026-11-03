@@ -43,6 +43,9 @@ using Step = std::uint64_t;
 inline constexpr Cents kStartingCents = 100'000;          // $1,000.00
 inline constexpr Cents kIncomeCents = 2'000;              // $20.00
 inline constexpr std::uint32_t kIncomeIntervalSteps = 200; // 10 s at 20 Hz
+// A captured works pays on the same steps as the fixed income (ECON-E28), so holding it never moves
+// the base income's schedule. A prototype figure.
+inline constexpr Cents kWorksIncomeCents = 1'000;          // $10.00
 inline constexpr std::size_t kMaxQueue = 5;
 // Requests waiting for the next step, per participant; more are refused as RateLimited.
 inline constexpr std::size_t kMaxPendingRequests = 8;
@@ -296,6 +299,7 @@ struct Account {
     Cents spent = 0;
     Cents refunded = 0;
     Step nextIncomeStep = 0;
+    std::uint32_t worksHeld = 0;
     TransactionId lastTransaction = 0;
     std::uint32_t produced = 0;
     std::vector<QueueItem> queue;
@@ -379,6 +383,7 @@ struct RequestResult {
 // What one participant's account did in one step.
 struct StepResult {
     Cents income = 0;
+    Cents worksIncome = 0;
     bool incomeOverflow = false;
     // The head item finished training and wants to appear; see CompleteHead and BlockHead.
     bool spawnDue = false;
@@ -704,6 +709,18 @@ public:
         power::BuildingId newId = 0;
     };
 
+    // Moves one works to `to`. `from` is 0 for a neutral works, and otherwise must hold one. Money it
+    // already paid stays where it is: only future income moves.
+    bool TransferWorks(ParticipantId from, ParticipantId to) {
+        if (to == 0 || from == to) return false;
+        Account* winner = FindMutable(to);
+        Account* loser = from == 0 ? nullptr : FindMutable(from);
+        if (!winner || (from != 0 && (!loser || loser->worksHeld == 0))) return false;
+        if (loser) --loser->worksHeld;
+        ++winner->worksHeld;
+        return true;
+    }
+
     // Moves one living building from one account to another. A producer refunds its queue once and
     // is refused when the capturer already has a living producer. A generator keeps its health and
     // takes a free id. A dead building, a missing id or the same account changes nothing.
@@ -871,6 +888,16 @@ public:
                 result.income = kIncomeCents;
             } else {
                 result.incomeOverflow = true;
+            }
+            const Cents worksPay = static_cast<Cents>(account->worksHeld) * kWorksIncomeCents;
+            if (worksPay > 0) {
+                if (CheckedAdd(account->available, worksPay, available) && CheckedAdd(account->credited, worksPay, credited)) {
+                    account->available = available;
+                    account->credited = credited;
+                    result.worksIncome = worksPay;
+                } else {
+                    result.incomeOverflow = true;
+                }
             }
             account->nextIncomeStep = step + kIncomeIntervalSteps;
         }

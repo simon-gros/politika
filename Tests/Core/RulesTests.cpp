@@ -2570,6 +2570,36 @@ int main() {
         // A producer-less participant has money but cannot train.
         assert(Paid.Train(1, 1, Rifleman, 0, Cap).rejection == EconomyRejection::NoProducer);
 
+        // A works pays its holder on the income steps only, and only while held.
+        pe::Ledger Works;
+        assert(Works.AddParticipant(1, 0, false, 200) && Works.AddParticipant(2, 0, false, 200));
+        assert(!Works.TransferWorks(0, 0) && !Works.TransferWorks(0, 3) && !Works.TransferWorks(1, 1));
+        assert(!Works.TransferWorks(1, 2) && Works.Find(2)->worksHeld == 0);
+        assert(Works.Advance(1, 200).worksIncome == 0);
+        assert(Works.TransferWorks(0, 1) && Works.Find(1)->worksHeld == 1);
+        for (pe::Step Step = 201; Step < 400; ++Step) assert(Works.Advance(1, Step).worksIncome == 0);
+        const pe::StepResult FirstPay = Works.Advance(1, 400);
+        assert(FirstPay.income == pe::kIncomeCents && FirstPay.worksIncome == pe::kWorksIncomeCents);
+        assert(Works.Advance(1, 400).worksIncome == 0);
+        assert(Works.Find(1)->credited == 2 * pe::kIncomeCents + pe::kWorksIncomeCents && Works.Find(1)->Reconciles());
+        // Taken from its holder: what it paid stays, and its next payment goes to the new one.
+        const pe::Cents KeptByFirst = Works.Find(1)->available;
+        assert(Works.TransferWorks(1, 2) && Works.Find(1)->worksHeld == 0 && Works.Find(2)->worksHeld == 1);
+        assert(!Works.TransferWorks(1, 2) && Works.Find(2)->worksHeld == 1);
+        assert(Works.Find(1)->available == KeptByFirst);
+        assert(Works.Advance(1, 600).worksIncome == 0 && Works.Find(1)->available == KeptByFirst + pe::kIncomeCents);
+        assert(Works.Advance(2, 200).worksIncome == pe::kWorksIncomeCents && Works.Find(2)->Reconciles());
+        // A new match holds nothing.
+        Works.Clear();
+        assert(Works.AddParticipant(1, 0, false, 200) && Works.Find(1)->worksHeld == 0);
+        // A payment that would overflow is refused, and the balance is untouched.
+        pe::Ledger WorksFull;
+        assert(WorksFull.AddParticipant(1, std::numeric_limits<pe::Cents>::max() - pe::kIncomeCents, false, 1));
+        assert(WorksFull.TransferWorks(0, 1));
+        const pe::StepResult Overflowed = WorksFull.Advance(1, 1);
+        assert(Overflowed.income == pe::kIncomeCents && Overflowed.worksIncome == 0 && Overflowed.incomeOverflow);
+        assert(WorksFull.Find(1)->available == std::numeric_limits<pe::Cents>::max() && WorksFull.Find(1)->Reconciles());
+
         // Income that would overflow is refused, not wrapped, and the next interval still comes.
         pe::Ledger Full;
         assert(Full.AddParticipant(1, std::numeric_limits<pe::Cents>::max(), false, 1));

@@ -4148,8 +4148,9 @@ bool FPolitikaMultiplayerPowerTest::RunTest(const FString& Parameters)
     int32 Buildings = 0;
     for (const APolitikaPrototypeStructure* Structure : F.Match->Structures)
     {
-        // A gold source shares the actor but is not a building: it has no load and no grid entry.
-        Buildings += Structure->IsSource() ? 0 : 1;
+        // A gold source and the works share the actor but are not buildings: no load and no grid entry.
+        if (!Structure->IsBuilding()) continue;
+        ++Buildings;
         Producers += Structure->IsProducer() ? 1 : 0;
         APolitikaPrototypePlayerController* Owner = Structure->GetOwnerPlayer() == HostId ? Host : Enemy;
         APolitikaPrototypePlayerController* Opponent = Structure->GetOwnerPlayer() == HostId ? Enemy : Host;
@@ -4273,7 +4274,7 @@ bool FPolitikaMultiplayerEconomyTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("E-A01 a treasury starts at the fixture amount"), Account->available, pe::kStartingCents);
     TestTrue(TEXT("E-A01 each seat has a producer"), Account->hasProducer && Other->hasProducer);
     int32 Buildings = 0;
-    for (const APolitikaPrototypeStructure* Structure : F.Match->Structures) Buildings += Structure->IsSource() ? 0 : 1;
+    for (const APolitikaPrototypeStructure* Structure : F.Match->Structures) Buildings += Structure->IsBuilding() ? 1 : 0;
     TestEqual(TEXT("E-A02 a producer and a generator per seat"), Buildings, 4);
 
     // Structures reach their own team only.
@@ -5254,6 +5255,184 @@ bool FPolitikaMultiplayerBuildingDemolishTest::RunTest(const FString& Parameters
         static_cast<int64>(pw::kGeneratorAuxiliaryKw + pw::kProducerLoadKw));
     TestEqual(TEXT("BD-07 repair restores supply"), Host->allocation.suppliedKw, static_cast<int64>(pw::kGeneratorCapacityKw));
     TestTrue(TEXT("BD-07 the producer is powered again"), Host->producerPowered);
+    return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerWorksTest,
+    "Politika.RTS.Multiplayer.Works",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E28: one neutral works, taken by C as a building is, pays its holder on the income steps. It has
+// no health and no grid entry. Taken from its holder, what it paid stays and only future income moves.
+bool FPolitikaMultiplayerWorksTest::RunTest(const FString& Parameters)
+{
+    namespace pe = politika::economy;
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    // This world has no navmesh. The probe is what lets the works stand, as in the gold test.
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->InitializeEconomy();
+    const auto FindWorks = [&F]()
+    {
+        TArray<APolitikaPrototypeStructure*> Found;
+        for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+            if (Structure && Structure->IsWorks()) Found.Add(Structure);
+        return Found;
+    };
+    const auto Held = [&F](uint32 Id) { return F.Match->GetEconomy().Find(Id)->worksHeld; };
+    const auto Credited = [&F](uint32 Id) { return F.Match->GetEconomy().Find(Id)->credited; };
+
+    if (!TestEqual(TEXT("WK-01 one works stands"), FindWorks().Num(), 1)) return false;
+    APolitikaPrototypeStructure* Works = FindWorks()[0];
+    const FVector2D At(Works->GetActorLocation().X, Works->GetActorLocation().Y);
+    TestEqual(TEXT("WK-01 it starts neutral"), Works->GetOwnerPlayer(), 0u);
+    TestEqual(TEXT("WK-01 it has no team"), Works->GetTeamId(), politika::rules::kNoTeam);
+    TestFalse(TEXT("WK-01 it is not a building"), Works->IsBuilding());
+    TestTrue(TEXT("WK-01 it is alive"), Works->IsAlive());
+    TestEqual(TEXT("WK-01 nobody holds it"), Held(HostId) + Held(EnemyId), 0u);
+    TestEqual(TEXT("WK-01 under fog the cursor says nothing about an unseen works"), F.Match->BuildingCursorText(Works, HostId), FString());
+    TestFalse(TEXT("WK-01 under fog it does not reach a seat that cannot see it"), Works->IsNetRelevantFor(F.Host, F.Host, FVector::ZeroVector));
+
+    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, At + FVector2D(80.0, 0.0), 600.0f);
+    APolitikaPrototypeUnit* Rival = F.AddUnit(EnemyId, At + FVector2D(-80.0, 0.0), 600.0f);
+    if (!TestNotNull(TEXT("The captor spawns"), Captor) || !TestNotNull(TEXT("The rival spawns"), Rival)) return false;
+    TestEqual(TEXT("WK-01 the cursor names it once seen"), F.Match->BuildingCursorText(Works, HostId),
+        FString(TEXT("Neutral works  \u00b7  pays $10.00 every 10 s")));
+
+    // It is not a building, so nothing a building suffers applies.
+    TestFalse(TEXT("WK-02 it cannot be demolished"), F.Match->DemolishOwnedBuilding(Works, HostId));
+    TestEqual(TEXT("WK-02 it cannot be damaged"), F.Match->DamageOwnedBuilding(Works, 10), 0);
+    TestFalse(TEXT("WK-02 it cannot be repaired"), F.Match->BeginRepair(Captor, Works));
+    TestFalse(TEXT("WK-02 no unit is refused"), F.Match->BeginCapture(nullptr, Works));
+
+    // The hold is the same 3 seconds as a building's, and pays nothing until it is done.
+    TestTrue(TEXT("WK-03 the hold starts"), F.Match->BeginCapture(Captor, Works));
+    TestEqual(TEXT("WK-03 the works is the capture target"), Captor->GetCaptureTarget(), Works);
+    F.Step(pw::kCaptureSteps - 1);
+    TestEqual(TEXT("WK-03 still neutral one step short"), Works->GetOwnerPlayer(), 0u);
+    TestEqual(TEXT("WK-03 nothing held one step short"), Held(HostId), 0u);
+    TestTrue(TEXT("WK-03 the cursor shows the hold"),
+        F.Match->BuildingCursorText(Works, HostId).Contains(TEXT("capturing")));
+    F.Step();
+    TestEqual(TEXT("WK-03 it changes hands"), Works->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("WK-03 it takes the team"), Works->GetTeamId(), F.Match->GetTeamForParticipant(HostId));
+    TestEqual(TEXT("WK-03 the ledger holds it"), Held(HostId), 1u);
+    TestNull(TEXT("WK-03 the unit is done"), Captor->GetCaptureTarget());
+    TestEqual(TEXT("WK-03 the holder reads it as theirs"), F.Match->BuildingCursorText(Works, HostId),
+        FString(TEXT("Your works  \u00b7  pays $10.00 every 10 s")));
+    TestEqual(TEXT("WK-03 the other seat reads it as hostile"), F.Match->BuildingCursorText(Works, EnemyId),
+        FString(TEXT("Enemy works  \u00b7  pays $10.00 every 10 s")));
+    TestFalse(TEXT("WK-03 your own works is refused"), F.Match->BeginCapture(Captor, Works));
+
+    // One income interval pays the base and the works to the holder, and the base alone to the other.
+    pe::Cents HostBefore = Credited(HostId);
+    pe::Cents EnemyBefore = Credited(EnemyId);
+    F.Step(pe::kIncomeIntervalSteps);
+    TestEqual(TEXT("WK-04 the holder has base and works"), Credited(HostId) - HostBefore, pe::kIncomeCents + pe::kWorksIncomeCents);
+    TestEqual(TEXT("WK-04 the other seat has the base"), Credited(EnemyId) - EnemyBefore, pe::kIncomeCents);
+    TestTrue(TEXT("WK-04 the ledger reconciles"), F.Match->GetEconomy().Find(HostId)->Reconciles());
+
+    // Leaving and a hit each end the hold, as on a building.
+    TestTrue(TEXT("WK-05 the rival starts"), F.Match->BeginCapture(Rival, Works));
+    F.Step(2);
+    Rival->SetActorLocation(FVector(At.X - 900.0, At.Y, Rival->GetActorLocation().Z));
+    F.Step();
+    TestNull(TEXT("WK-05 leaving ends the hold"), Rival->GetCaptureTarget());
+    Rival->SetActorLocation(FVector(At.X - 80.0, At.Y, Rival->GetActorLocation().Z));
+    TestTrue(TEXT("WK-06 the rival starts again"), F.Match->BeginCapture(Rival, Works));
+    F.Step(2);
+    Rival->PendingDamage = 1.0f;
+    TestEqual(TEXT("WK-06 the hit lands"), Rival->ApplyPendingDamage(), 1);
+    TestNull(TEXT("WK-06 a hit ends the hold"), Rival->GetCaptureTarget());
+    TestEqual(TEXT("WK-06 it stays with its holder"), Works->GetOwnerPlayer(), HostId);
+
+    // Taken from its holder: what it paid stays, and the next payment goes to the new one.
+    TestTrue(TEXT("WK-07 the rival starts a third time"), F.Match->BeginCapture(Rival, Works));
+    const pe::Cents KeptByHost = F.Match->GetEconomy().Find(HostId)->available;
+    HostBefore = Credited(HostId);
+    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("WK-07 it changes hands"), Works->GetOwnerPlayer(), EnemyId);
+    TestEqual(TEXT("WK-07 the old holder has none"), Held(HostId), 0u);
+    TestEqual(TEXT("WK-07 the new holder has it"), Held(EnemyId), 1u);
+    TestTrue(TEXT("WK-07 what it paid stays"), F.Match->GetEconomy().Find(HostId)->available >= KeptByHost);
+    HostBefore = Credited(HostId);
+    EnemyBefore = Credited(EnemyId);
+    F.Step(pe::kIncomeIntervalSteps);
+    TestEqual(TEXT("WK-07 the old holder is back to the base"), Credited(HostId) - HostBefore, pe::kIncomeCents);
+    TestEqual(TEXT("WK-07 the new holder is paid"), Credited(EnemyId) - EnemyBefore, pe::kIncomeCents + pe::kWorksIncomeCents);
+
+    // A new match starts it neutral and pays nobody.
+    F.Match->ClearEconomy(TEXT("test"));
+    F.Match->InitializeEconomy();
+    if (!TestEqual(TEXT("WK-08 one works stands again"), FindWorks().Num(), 1)) return false;
+    TestEqual(TEXT("WK-08 it is neutral again"), FindWorks()[0]->GetOwnerPlayer(), 0u);
+    TestEqual(TEXT("WK-08 nobody holds it"), Held(HostId) + Held(EnemyId), 0u);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerWorksAlliesTest,
+    "Politika.RTS.Multiplayer.WorksAllies",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// ECON-E28: taking a works from an ally only moves money inside one side, so it is refused, and an ally
+// taking it during your hold ends the hold.
+bool FPolitikaMultiplayerWorksAlliesTest::RunTest(const FString& Parameters)
+{
+    namespace pw = politika::power;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("2v2"), true) || !TestTrue(TEXT("All 2v2 seats bind"), F.BindAll())) return false;
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->InitializeEconomy();
+    APolitikaPrototypeStructure* Works = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+        if (Structure && Structure->IsWorks()) Works = Structure;
+    if (!TestNotNull(TEXT("WA-01 a works stands"), Works)) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    uint32 AllyId = 0;
+    uint32 EnemyId = 0;
+    for (const APolitikaPrototypePlayerController* Remote : F.Remotes)
+    {
+        const uint32 Id = F.Match->GetBoundParticipantId(Remote);
+        if (F.Match->GetTeamForParticipant(Id) == F.Match->GetTeamForParticipant(HostId)) AllyId = Id;
+        else EnemyId = Id;
+    }
+    if (!TestTrue(TEXT("WA-01 the seats split"), AllyId != 0 && EnemyId != 0)) return false;
+    const FVector2D At(Works->GetActorLocation().X, Works->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Captor = F.AddUnit(HostId, At + FVector2D(80.0, 0.0), 600.0f);
+    APolitikaPrototypeUnit* Ally = F.AddUnit(AllyId, At + FVector2D(0.0, 80.0), 600.0f);
+    APolitikaPrototypeUnit* Enemy = F.AddUnit(EnemyId, At + FVector2D(-80.0, 0.0), 600.0f);
+    if (!TestTrue(TEXT("WA-01 the units spawn"), Captor && Ally && Enemy)) return false;
+
+    // Two allies hold at once. The first to finish takes it, and that ends the other's hold.
+    TestTrue(TEXT("WA-02 the host starts"), F.Match->BeginCapture(Captor, Works));
+    F.Step(pw::kCaptureSteps / 2);
+    TestTrue(TEXT("WA-02 the ally starts while it is neutral"), F.Match->BeginCapture(Ally, Works));
+    F.Step(pw::kCaptureSteps - pw::kCaptureSteps / 2);
+    TestEqual(TEXT("WA-02 the host takes it"), Works->GetOwnerPlayer(), HostId);
+    F.Step();
+    TestNull(TEXT("WA-02 the ally's hold ends"), Ally->GetCaptureTarget());
+    TestEqual(TEXT("WA-02 it stays with the host"), Works->GetOwnerPlayer(), HostId);
+    TestEqual(TEXT("WA-02 the ally holds none"), F.Match->GetEconomy().Find(AllyId)->worksHeld, 0u);
+    TestFalse(TEXT("WA-03 an ally cannot start on it"), F.Match->BeginCapture(Ally, Works));
+    TestTrue(TEXT("WA-03 the ally reads it as allied"),
+        F.Match->BuildingCursorText(Works, AllyId).StartsWith(TEXT("Allied works")));
+    TestTrue(TEXT("WA-04 an enemy can"), F.Match->BeginCapture(Enemy, Works));
+    F.Step(pw::kCaptureSteps);
+    TestEqual(TEXT("WA-04 the enemy takes it"), Works->GetOwnerPlayer(), EnemyId);
     return true;
 }
 

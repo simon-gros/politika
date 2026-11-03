@@ -16072,6 +16072,552 @@ fn select_entity_near_probe(game: &mut Game, unit: u64, probe: usize) -> Result<
     select_entity(game, "MP_CLIENT_SAMPLE", unit)
 }
 
+// `--works SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E28) plays the neutral works with real
+// input on two rendered clients: unseen at the start, taken by C from a walk, paying its holder on the
+// income step, taken by the other seat, and neutral again in the next generation.
+const WRK_WORKS: (f64, f64) = (-853.4, 1584.8);
+const WRK_NEAR_A: (f64, f64) = (-1230.0, 1320.0);
+const WRK_NEAR_B: (f64, f64) = (-430.0, 1720.0);
+const WRK_PAY_CENTS: i64 = 1_000;
+const WRK_INCOME_CENTS: i64 = 2_000;
+const WRK_INTERVAL_STEPS: i64 = 200;
+const WRK_PROBE_WORKS: usize = 0;
+const WRK_PROBE_NEAR_A: usize = 1;
+const WRK_PROBE_NEAR_B: usize = 2;
+const WRK_PROBE_OBJECTIVE: usize = 3;
+const WRK_PROBE_BASE_A: usize = 4;
+
+fn works_probes() -> String {
+    let points = [
+        WRK_WORKS,
+        WRK_NEAR_A,
+        WRK_NEAR_B,
+        BLD_OBJECTIVE,
+        BLD_OWN_GENERATOR,
+    ];
+    let joined: Vec<String> = points.iter().map(|p| format!("{}:{}", p.0, p.1)).collect();
+    format!("-PolitikaMPGroundProbe={}", joined.join("/"))
+}
+
+/// One seat's money lines of one kind after `mark`, oldest first.
+fn works_money(text: &str, participant: u32, kind: &str, mark: usize) -> Vec<String> {
+    let tag = format!("RTS_ECONOMY_TX participant={participant} kind={kind} ");
+    text[mark.min(text.len())..]
+        .lines()
+        .filter(|l| l.contains(&tag))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.retain(|a| a != NO_STARTING_HARVESTERS);
+    args.push(STARTING_HARVESTERS.to_owned());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let launch = |label: &str, participant: u32, server: &mut Game| {
+        let display = Display::start(evidence, label)?;
+        let mut args = client_args(client_options, true, false, false);
+        args.push(works_probes());
+        let game = Game::launch(
+            &client_options.binary,
+            label,
+            evidence,
+            &args,
+            Some(&display.name()),
+        )?;
+        server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={participant}"),
+                "remote=1",
+            ],
+            Duration::from_secs(90),
+        )?;
+        Ok::<(Game, Display), String>((game, display))
+    };
+    let (mut client_a, _display_a) = launch("client-a", 1, &mut server)?;
+    let (mut client_b, _display_b) = launch("client-b", 2, &mut server)?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(60),
+        )?;
+        client.attach_window()?;
+    }
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let gen_tag = format!("generation={generation}");
+        let owners = entity_owners(&server.text());
+        let soldiers = |owner: u32| -> Vec<u64> {
+            owners
+                .iter()
+                .filter(|(_, o)| *o == owner)
+                .map(|(e, _)| *e)
+                .collect()
+        };
+        let (team_a, team_b) = (soldiers(1), soldiers(2));
+        if team_a.len() < 3 || team_b.len() < 3 {
+            return Err(format!("unexpected 1v1 roster {owners:?}"));
+        }
+        let (walker_a, reserve_a, walker_b) = (team_a[0], team_a[1], team_b[0]);
+        report.fact("team_a", format!("{team_a:?}"));
+        report.fact("team_b", format!("{team_b:?}"));
+        zoom_out(&client_a, 5)?;
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(1500));
+
+        // Nobody fires, so nothing but the capture changes hands and no hit ends a hold.
+        let (near, far) = (
+            (24.0, 24.0),
+            (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+        );
+        client_a.drag_hold(near, far)?;
+        client_a.release()?;
+        client_b.drag_hold(near, far)?;
+        client_b.release()?;
+        thread::sleep(Duration::from_millis(500));
+        report.fact(
+            "team_a_stance",
+            set_hold_fire(&mut client_a, &mut server, 1)?
+                .trim()
+                .to_owned(),
+        );
+        report.fact(
+            "team_b_stance",
+            set_hold_fire(&mut client_b, &mut server, 2)?
+                .trim()
+                .to_owned(),
+        );
+
+        // It starts neutral, and under fog neither client has it.
+        let started = server.wait(
+            &["RTS_WORKS_START owner=0", &gen_tag],
+            Duration::from_secs(5),
+        )?;
+        let at_start = (
+            number(&started, "x").unwrap_or(f64::MAX),
+            number(&started, "y").unwrap_or(f64::MAX),
+        );
+        let unseen = |game: &Game| !game.text().contains("RTS_WORKS_RELEVANT");
+        report.verdict(
+            "WRK-P01-THE-WORKS-STARTS-NEUTRAL-AND-UNSEEN",
+            (at_start.0 - WRK_WORKS.0).abs() < 5.0
+                && (at_start.1 - WRK_WORKS.1).abs() < 5.0
+                && field(&started, "pays") == Some("1000")
+                && unseen(&client_a)
+                && unseen(&client_b),
+            format!(
+                "{} | client A unseen {}, client B unseen {}",
+                started.trim(),
+                unseen(&client_a),
+                unseen(&client_b)
+            ),
+        );
+
+        // Seat 1 walks into sight of it, and only seat 1 receives it.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", walker_a)?;
+        thread::sleep(Duration::from_millis(300));
+        let at = pan_to_probe(&mut client_a, WRK_PROBE_NEAR_A)?;
+        let mark = server.offset();
+        client_a.click(at.0, at.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Move",
+                    &format!("unit={walker_a} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("the walk to the works: {e}"))?;
+        wait_arrival(
+            &mut server,
+            walker_a,
+            WRK_NEAR_A,
+            150.0,
+            Duration::from_secs(120),
+        )
+        .map_err(|e| format!("the walk to the works: {e}"))?;
+        let seen = client_a.wait(&["RTS_WORKS_RELEVANT", "owner=0"], Duration::from_secs(10));
+        report.verdict(
+            "WRK-P02-IT-ARRIVES-WHEN-SEEN",
+            seen.is_ok() && unseen(&client_b),
+            format!("{seen:?} | client B unseen {}", unseen(&client_b)),
+        );
+
+        // The cursor names it, Z leaves it alone, and C walks the unit in and holds.
+        let mark_cursor = client_a.offset();
+        point_at_probe(&mut client_a, WRK_PROBE_WORKS)?;
+        let named = wait_cursor(
+            &mut client_a,
+            &["Neutral works", "pays $10.00 every 10 s"],
+            mark_cursor,
+        );
+        report.artifact(
+            "client_a_neutral_png",
+            &client_a.screenshot(evidence, "01-neutral-works")?,
+        );
+        let mark = server.offset();
+        client_a.key("z")?;
+        let demolished = appears(
+            &mut server,
+            &["RTS_BUILDING_DEMOLISH"],
+            Duration::from_millis(1500),
+            mark,
+        );
+        report.verdict(
+            "WRK-P03-THE-CURSOR-NAMES-IT-AND-Z-LEAVES-IT",
+            named.is_ok() && !demolished,
+            format!("{named:?} | Z logged {demolished}"),
+        );
+        let mark = server.offset();
+        let mark_view = client_a.offset();
+        let mark_cursor = client_a.offset();
+        press_on_building(
+            &client_a,
+            &mut server,
+            report,
+            "capture_neutral",
+            "c",
+            &["RTS_BUILDING_CAPTURE phase="],
+        )?;
+        let approach = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE phase=approach",
+                &format!("unit={walker_a} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let taken = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE unit=",
+                "from=0",
+                "to=1",
+                "kind=works",
+                "captured=1",
+            ],
+            Duration::from_secs(40),
+            mark,
+        );
+        let mark_after_take = server.offset();
+        let mine = wait_cursor(&mut client_a, &["Your works"], mark_cursor);
+        let view = client_a.wait_line(
+            &["RTS_ECONOMY_VIEW participant=1", "works=1"],
+            Duration::from_secs(5),
+            mark_view,
+        );
+        report.verdict(
+            "WRK-P04-C-TAKES-THE-NEUTRAL-WORKS",
+            approach.is_ok() && taken.is_ok() && mine.is_ok() && view.is_ok(),
+            format!("{approach:?} | {taken:?} | {mine:?} | {}", view.is_ok()),
+        );
+        report.artifact(
+            "client_a_taken_png",
+            &client_a.screenshot(evidence, "02-works-taken")?,
+        );
+
+        // Two payments to the holder, each on its base income's step and an interval apart.
+        server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=works"],
+            Duration::from_secs(15),
+            mark_after_take,
+        )?;
+        let first_pay = server.offset();
+        server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=works"],
+            Duration::from_secs(15),
+            first_pay,
+        )?;
+        let text = server.text();
+        let pays = works_money(&text, 1, "works", mark_after_take);
+        let incomes = works_money(&text, 1, "income", mark_after_take);
+        let other_pays = works_money(&text, 2, "works", 0);
+        let steps: Vec<i64> = pays.iter().map(|l| econ_int(l, "step")).collect();
+        let income_steps: Vec<i64> = incomes.iter().map(|l| econ_int(l, "step")).collect();
+        report.verdict(
+            "WRK-P05-IT-PAYS-ITS-HOLDER-ON-THE-INCOME-STEP",
+            pays.len() >= 2
+                && steps[1] - steps[0] == WRK_INTERVAL_STEPS
+                && steps.iter().all(|s| income_steps.contains(s))
+                && pays.iter().all(|l| econ_int(l, "amount") == WRK_PAY_CENTS)
+                && pays.iter().all(|l| field(l, "reconciles") == Some("1"))
+                && other_pays.is_empty(),
+            format!(
+                "paid on steps {steps:?}, base income on {income_steps:?}, seat 2 paid {} times: {}",
+                other_pays.len(),
+                pays.last().map_or("", |l| l.trim())
+            ),
+        );
+
+        // Seat 2 walks over. To it the works is the enemy's, and a right-click is only a move.
+        select_entity(&mut client_b, "MP_CLIENT_SAMPLE", walker_b)?;
+        thread::sleep(Duration::from_millis(300));
+        let at = pan_to_probe(&mut client_b, WRK_PROBE_NEAR_B)?;
+        let mark = server.offset();
+        client_b.click(at.0, at.1, "3")?;
+        server
+            .wait_line(
+                &[
+                    "RTS_ORDER_ADMITTED order=Move",
+                    &format!("unit={walker_b} "),
+                ],
+                Duration::from_secs(5),
+                mark,
+            )
+            .map_err(|e| format!("seat 2's walk to the works: {e}"))?;
+        wait_arrival(
+            &mut server,
+            walker_b,
+            WRK_NEAR_B,
+            150.0,
+            Duration::from_secs(180),
+        )
+        .map_err(|e| format!("seat 2's walk to the works: {e}"))?;
+        client_b.wait(&["RTS_WORKS_RELEVANT", "owner=1"], Duration::from_secs(10))?;
+        let mark_cursor = client_b.offset();
+        let works_at = point_at_probe(&mut client_b, WRK_PROBE_WORKS)?;
+        let enemy = wait_cursor(
+            &mut client_b,
+            &["Enemy works", "pays $10.00 every 10 s"],
+            mark_cursor,
+        );
+        let mark = server.offset();
+        client_b.click(works_at.0, works_at.1, "3")?;
+        let moved = server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={walker_b} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let attacked = appears(
+            &mut server,
+            &[
+                "RTS_ORDER_ADMITTED order=Attack",
+                &format!("unit={walker_b} "),
+            ],
+            Duration::from_millis(500),
+            mark,
+        );
+        let arrived = wait_arrival(
+            &mut server,
+            walker_b,
+            WRK_WORKS,
+            180.0,
+            Duration::from_secs(60),
+        );
+        report.verdict(
+            "WRK-P06-A-RIGHT-CLICK-ON-IT-IS-A-MOVE",
+            enemy.is_ok() && moved.is_ok() && !attacked && arrived.is_ok(),
+            format!("{enemy:?} | {moved:?} | attack logged {attacked} | {arrived:?}"),
+        );
+
+        // C from beside it goes straight to the hold, and it changes hands.
+        let credit_before = works_money(&server.text(), 1, "income", 0)
+            .last()
+            .map_or(0, |l| econ_int(l, "available"));
+        let mark = server.offset();
+        let mark_view = client_b.offset();
+        let mark_cursor = client_b.offset();
+        press_on_building(
+            &client_b,
+            &mut server,
+            report,
+            "capture_enemy",
+            "c",
+            &["RTS_BUILDING_CAPTURE phase="],
+        )?;
+        let hold = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE phase=hold",
+                &format!("unit={walker_b} "),
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let retaken = server.wait_line(
+            &[
+                "RTS_BUILDING_CAPTURE unit=",
+                "from=1",
+                "to=2",
+                "kind=works",
+                "captured=1",
+            ],
+            Duration::from_secs(20),
+            mark,
+        );
+        let mark_retaken = server.offset();
+        let theirs = wait_cursor(&mut client_b, &["Your works"], mark_cursor);
+        let view_b = client_b.wait_line(
+            &["RTS_ECONOMY_VIEW participant=2", "works=1"],
+            Duration::from_secs(5),
+            mark_view,
+        );
+        let view_a = client_a.wait(
+            &["RTS_ECONOMY_VIEW participant=1", "works=0"],
+            Duration::from_secs(5),
+        );
+        let mark_cursor_a = client_a.offset();
+        client_a.hover(1.0, 1.0)?;
+        thread::sleep(Duration::from_millis(350));
+        point_at_probe(&mut client_a, WRK_PROBE_WORKS)?;
+        let lost = wait_cursor(&mut client_a, &["Enemy works"], mark_cursor_a);
+        report.verdict(
+            "WRK-P07-THE-OTHER-SEAT-TAKES-IT",
+            hold.is_ok()
+                && retaken.is_ok()
+                && theirs.is_ok()
+                && view_b.is_ok()
+                && view_a.is_ok()
+                && lost.is_ok(),
+            format!(
+                "{hold:?} | {retaken:?} | {theirs:?} | views {} {} | {lost:?}",
+                view_b.is_ok(),
+                view_a.is_ok()
+            ),
+        );
+        report.artifact(
+            "client_b_taken_png",
+            &client_b.screenshot(evidence, "03-works-retaken")?,
+        );
+
+        // The next payment goes to seat 2. Seat 1 keeps what it was paid and is back to the base.
+        server.wait_line(
+            &["RTS_ECONOMY_TX participant=2", "kind=works"],
+            Duration::from_secs(15),
+            mark_retaken,
+        )?;
+        let first_income = server.offset();
+        server.wait_line(
+            &["RTS_ECONOMY_TX participant=1", "kind=income"],
+            Duration::from_secs(15),
+            first_income,
+        )?;
+        let text = server.text();
+        let later_pays = works_money(&text, 1, "works", mark_retaken);
+        let incomes_a = works_money(&text, 1, "income", mark_retaken);
+        let available: Vec<i64> = incomes_a.iter().map(|l| econ_int(l, "available")).collect();
+        let base_only = available
+            .iter()
+            .enumerate()
+            .all(|(i, a)| *a == credit_before + WRK_INCOME_CENTS * (i as i64 + 1));
+        report.verdict(
+            "WRK-P08-THE-PAY-MOVES-AND-WHAT-IT-PAID-STAYS",
+            later_pays.is_empty() && !available.is_empty() && base_only,
+            format!(
+                "seat 1 paid {} times after losing it; available {credit_before} then {available:?}",
+                later_pays.len()
+            ),
+        );
+
+        // The match ends with both ledgers whole, and the next one starts it neutral.
+        select_entity_near_probe(&mut client_a, reserve_a, WRK_PROBE_BASE_A)?;
+        let objective = pan_to_probe(&mut client_a, WRK_PROBE_OBJECTIVE)?;
+        client_a.click(objective.0, objective.1, "3")?;
+        server.wait(
+            &["MATCH_RESULTS outcome=objective_secured", &gen_tag],
+            Duration::from_secs(240),
+        )?;
+        let cleared_1 = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=1", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let cleared_2 = server.wait(
+            &["RTS_ECONOMY_CLEARED participant=2", "reason=match_ended"],
+            Duration::from_secs(5),
+        )?;
+        let at_reset = server.offset();
+        client_a.hover(640.0, 360.0)?;
+        client_a.key("Escape")?;
+        client_b.stop();
+        server.wait_line(
+            &["MP_DEDICATED_SESSION_RESET", "travel=1"],
+            Duration::from_secs(60),
+            at_reset,
+        )?;
+        let next = server.wait_line(
+            &["MP_MATCH_AWAITING_PARTICIPANTS"],
+            Duration::from_secs(90),
+            at_reset,
+        )?;
+        let generation2 = field(&next, "generation").unwrap_or("0").to_owned();
+        let text = server.text();
+        let tail = &text[at_reset.min(text.len())..];
+        let neutral = tail
+            .lines()
+            .filter(|l| {
+                l.contains("RTS_WORKS_START owner=0")
+                    && l.contains(&format!("generation={generation2}"))
+            })
+            .count();
+        report.verdict(
+            "WRK-P09-LEDGERS-WHOLE-AND-THE-NEXT-MATCH-NEUTRAL",
+            generation2 != generation
+                && field(&cleared_1, "reconciles") == Some("1")
+                && field(&cleared_2, "reconciles") == Some("1")
+                && neutral == 1
+                && !tail.lines().any(|l| l.contains("kind=works")),
+            format!(
+                "generation {generation} then {generation2}: {neutral} neutral works | {} | {}",
+                cleared_1.trim(),
+                cleared_2.trim()
+            ),
+        );
+
+        // Repeatability: who took it, in order, and who was paid next. How many payments fall
+        // inside the session depends on the walks, so only the first after each capture counts.
+        let mut trace = String::new();
+        let mut awaiting_pay = false;
+        for line in text.lines() {
+            if line.contains("RTS_BUILDING_CAPTURE unit=") && line.contains("kind=works") {
+                trace.push_str(&format!(
+                    "capture from={} to={} captured={}\n",
+                    field(line, "from").unwrap_or(""),
+                    field(line, "to").unwrap_or(""),
+                    field(line, "captured").unwrap_or("")
+                ));
+                awaiting_pay = true;
+            } else if awaiting_pay && line.contains("RTS_ECONOMY_TX") && line.contains("kind=works")
+            {
+                trace.push_str(&format!(
+                    "paid participant={} amount={}\n",
+                    field(line, "participant").unwrap_or(""),
+                    field(line, "amount").unwrap_or("")
+                ));
+                awaiting_pay = false;
+            }
+        }
+        fs::write(evidence.join("works-trace.txt"), &trace).map_err(|e| e.to_string())?;
+        report.artifact("works_trace", &evidence.join("works-trace.txt"));
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "WRK-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 // `--food SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E3) plays one food shortage with real
 // input. Seat 1 starts with two rations, so step 200 empties the reserve and step 400 cannot be
 // paid. Seat 2 keeps the normal reserve. Two purchases, the shortage, a refused purchase, N during
@@ -16770,6 +17316,14 @@ fn main() {
             "politika.econ.buildings-evidence.v1",
             "buildings",
             buildings_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--works") {
+        run_dedicated_session(
+            "--works",
+            "politika.econ.works-evidence.v1",
+            "works",
+            works_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--harvest") {

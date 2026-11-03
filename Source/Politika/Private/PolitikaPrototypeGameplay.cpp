@@ -337,7 +337,7 @@ void APolitikaPrototypeUnit::SetGuardOrder()
 
 void APolitikaPrototypeUnit::HoldForCapture(APolitikaPrototypeStructure* Structure)
 {
-    CaptureTarget = Structure && Structure->IsBuilding() ? Structure : nullptr;
+    CaptureTarget = Structure && Structure->IsCapturable() ? Structure : nullptr;
     CaptureSteps = 0;
 }
 
@@ -469,11 +469,11 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     StepStartPosition = GetActorLocation();
     if (APolitikaPrototypeStructure* Structure = CaptureTarget.Get())
     {
-        const bool bHold = IsAlive() && Structure->IsBuilding() && Structure->IsAlive()
+        const bool bHold = IsAlive() && Structure->IsCapturable() && Structure->IsAlive()
             && Structure->GetOwnerPlayer() != OwnerPlayer
             && FlatDistance(GetActorLocation(), Structure->GetActorLocation()) <= politika::power::kCaptureRangeCm;
         if (bHold) return politika::rules::OrderEndReason::None;
-        if (!IsAlive() || !CanMove() || !Structure->IsBuilding() || !Structure->IsAlive()
+        if (!IsAlive() || !CanMove() || !Structure->IsCapturable() || !Structure->IsAlive()
             || Structure->GetOwnerPlayer() == OwnerPlayer)
         {
             ClearCapture();
@@ -4011,7 +4011,7 @@ void APolitikaPrototypePlayerController::CaptureUnderCursor()
     FHitResult Hit;
     if (!GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit)) return;
     APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor());
-    if (!Structure || !Structure->IsBuilding())
+    if (!Structure || !Structure->IsCapturable())
     {
         ShowLocalFeedback(TEXT("Point at a hostile building to capture it."));
         return;
@@ -4178,12 +4178,12 @@ void APolitikaPrototypePlayerController::PressOrderAt(APolitikaPrototypeMatch* A
     FVector ClickPoint = Hit.ImpactPoint;
     if (APolitikaPrototypeStructure* Structure = Cast<APolitikaPrototypeStructure>(Hit.GetActor()))
     {
-        if (!Structure->IsBuilding())
+        if (Structure->IsSource())
         {
             ShowLocalFeedback(TEXT("That is a resource, not a building."));
             return;
         }
-        if (Structure->GetOwnerPlayer() != GetCommandPlayerId())
+        if (Structure->IsBuilding() && Structure->GetOwnerPlayer() != GetCommandPlayerId())
         {
             // The same attack order used on a unit: the server walks each attacker into range and
             // keeps firing. A click no longer spends the shot by itself.
@@ -4849,7 +4849,7 @@ void APolitikaPrototypeHUD::DrawHUD()
         if (Economy.Queued > 1) Training += FString::Printf(TEXT("  +%d queued"), Economy.Queued - 1);
         const pe::RecipeDefinition Rifleman = *pe::FindRecipe(static_cast<uint8>(pe::Recipe::Rifleman));
         DrawText(FString::Printf(TEXT("%s  +%s / %d s  ·  POWER %d / %d kW  ·  TRAINING: %s  ·  B rifleman %s  ·  Shift+B cancel"),
-            UTF8_TO_TCHAR(pe::FormatUsd(Economy.AvailableCents).c_str()), UTF8_TO_TCHAR(pe::FormatUsd(pe::kIncomeCents).c_str()),
+            UTF8_TO_TCHAR(pe::FormatUsd(Economy.AvailableCents).c_str()), UTF8_TO_TCHAR(pe::FormatUsd(pe::kIncomeCents + Economy.WorksHeld * pe::kWorksIncomeCents).c_str()),
             static_cast<int32>(pe::kIncomeIntervalSteps * SimulationStepSecondsForHud), Economy.SuppliedKw, Economy.RequiredKw, *Training,
             UTF8_TO_TCHAR(pe::FormatUsd(Rifleman.cost).c_str())),
             Economy.bProducerPowered || !Economy.bHasProducer ? FLinearColor(0.95f, 0.86f, 0.45f) : FLinearColor(1.0f, 0.42f, 0.32f),
