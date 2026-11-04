@@ -1,6 +1,6 @@
 # Prototype garrison, crush, concealment and building selection
 
-**Status: implemented for owner playtesting. Not accepted.** All numbers marked as fixtures are placeholders, not balance.
+**Status: implemented for owner playtesting. Not accepted; the [TAC-1 record](RTS_TACTICAL_TAC1_QUALIFICATION.md) says what has been tested.** All numbers marked as fixtures are placeholders, not balance.
 
 Rules are in `Source/PolitikaCore/Tactical.h`; the game code is in `Source/Politika/Private/PolitikaTactical.cpp`. `network_protocol` went from 26 to 27 for the new requests and replicated state.
 
