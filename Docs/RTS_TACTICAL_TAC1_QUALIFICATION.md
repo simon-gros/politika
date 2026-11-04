@@ -19,7 +19,7 @@ The rules, keys and cues are in [the prototype's own document](RTS_TACTICAL_PROT
 | **`--tactical` failed before that: a click missed a moving harvester, and `TAC-P10` stood 330 cm from the enemy** | Harness. Positions are sampled once a second, and 330 cm is inside the 420 cm a concealed unit is still seen at | The harvester is selected while loading at its source, and the distance is about 600 cm |
 | **The comparison reports `regressions=1`** | `default-fog-memory`'s `MP2-FOG-EXPLORED-PERSISTS` went from FAIL to PASS, and the script counts any change. It is the known intermittent check, not a gate | No check went from PASS to anything else |
 | **`listen-none` and `profile-lag-loss` exit 1** | The three expected `NOT_RUN` checks, as in OPP-1 | None. `matrix-none` covers the legacy refusal |
-| **Host during the run** | A Steam client was open with no game running. Video memory at each session's start was 1.7–3.2 GB of 16 GB, and a session would have waited below 8 GB free | None needed |
+| **Host during the run** | The Steam client, the Battle.net launcher under Proton and Firefox were open. Video memory at each session's start was 1.7–3.2 GB of 16 GB, and a session would have waited below 8 GB free | None needed |
 
 ## C. Verification
 
