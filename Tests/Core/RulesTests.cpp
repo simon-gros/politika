@@ -9,6 +9,7 @@
 #include "Discipline.h"
 #include "Economy.h"
 #include "Opponent.h"
+#include "Tactical.h"
 
 #include <array>
 #include <cassert>
@@ -3179,5 +3180,46 @@ int main() {
         static_assert(po::kDesiredRiflemanForce < 20 && po::kMinimumAdvanceForce <= po::kDesiredRiflemanForce);
         static_assert(po::kFoodReserveThreshold + pe::kFoodPurchaseRations <= pe::kFoodCapacityRations && po::kFoodReserveThreshold < pe::kStartingRations);
     }
+
+    {
+        namespace pt = politika::tactical;
+        // Occupants leave at 20 % structure health, and not above it.
+        assert(!pt::EjectsOccupants(41, 200) && pt::EjectsOccupants(40, 200) && pt::EjectsOccupants(0, 100));
+
+        // A crush is a passage over the victim: along the path, not beyond the radius, not standing still.
+        assert(pt::Crushes(0.0, 0.0, 100.0, 0.0, 50.0, 90.0));
+        assert(!pt::Crushes(0.0, 0.0, 100.0, 0.0, 50.0, 91.0));
+        assert(pt::Crushes(0.0, 0.0, 100.0, 0.0, 190.0, 0.0));
+        assert(!pt::Crushes(0.0, 0.0, 100.0, 0.0, 191.0, 0.0));
+        assert(!pt::Crushes(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+
+        // No invisibility: an observer at this range still sees it.
+        assert(pt::ConcealedObserveRange(1200.0) == 420.0);
+        assert(pt::ConcealedObserveRange(100.0) == 250.0);
+
+        pt::Concealment State;
+        // Nothing happens without the order, however long the unit stands still.
+        for (int Step = 0; Step < 200; ++Step) assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::None);
+        assert(!State.concealed);
+        // With it, three seconds of standing still.
+        State.posture = true;
+        for (int Step = 1; Step < pt::kConcealSteps; ++Step) assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::None);
+        assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::On && State.concealed);
+        // Moving breaks it, and it comes back three seconds after stopping.
+        assert(pt::AdvanceConcealment(State, true, false, false) == pt::ConcealChange::Off && State.posture);
+        for (int Step = 1; Step < pt::kConcealSteps; ++Step) assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::None);
+        assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::On);
+        // Firing or a hit reveals it for four seconds, and a second shot starts them again.
+        assert(pt::AdvanceConcealment(State, false, true, false) == pt::ConcealChange::Off);
+        for (int Step = 1; Step < pt::kRevealSteps; ++Step) assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::None);
+        assert(pt::AdvanceConcealment(State, false, false, true) == pt::ConcealChange::None);
+        for (int Step = 1; Step < pt::kRevealSteps; ++Step) assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::None);
+        assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::On);
+        // Withdrawing the order ends it at once and forgets the count.
+        State.posture = false;
+        assert(pt::AdvanceConcealment(State, false, false, false) == pt::ConcealChange::Off);
+        assert(!State.concealed && State.stillSteps == 0 && State.revealSteps == 0);
+    }
+
     return 0;
 }

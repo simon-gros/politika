@@ -249,7 +249,7 @@ Rules: (1) Terrain classes require map authoring support, and the current map sc
 | FA | n/a while airborne; occupies a pad or runway slot when landed | Aircraft | Airborne units do not collide with ground units |
 | FN | per hull, 250–900 cm | Ships, boats | Water-only collision |
 
-Crush and overrun of infantry by vehicles is **U-07**, deferred: it needs collision and navigation evidence that the current Actor-based route follower has not produced.
+Crush and overrun of infantry by vehicles is **U-07**, deferred: it needs collision and navigation evidence that the current Actor-based route follower has not produced. An unaccepted owner-playtest version exists: [tactical prototype](RTS_TACTICAL_PROTOTYPE.md).
 
 ### 5.4 Squad representation (P; U-01)
 
@@ -377,6 +377,8 @@ Server authority is state replication, not lockstep (E: [Multiplayer Architectur
 
 ### 6.9 Garrison and cover (P; U-08)
 
+An unaccepted owner-playtest version of garrison, without the damage split, exists: [tactical prototype](RTS_TACTICAL_PROTOTYPE.md).
+
 - Garrison: eligible infantry enter eligible owned or neutral-permitted structures (Unaligned permission rules apply, E). Garrisoned squads fire through building ports at +15 % range. They take 50 % of SMALL_ARMS, PRECISION and HIGH_EXPLOSIVE damage, and **200 % INCENDIARY** plus +50 % grenade damage (flame and grenadiers clear buildings). Occupants eject at 20 % structure HP.
 - Map cover: light cover gives −25 % SMALL_ARMS, PRECISION and HIGH_EXPLOSIVE; heavy cover gives −50 %. It applies only to infantry standing in authored cover volumes. The current map schema has no cover data (U-08).
 
@@ -461,6 +463,8 @@ The Tempest Rising config declares three veterancy statuses, `Veteran`, `Hardene
 There is no literal invisibility (E: roster rule 7). Every hidden state has a range at which ordinary sight defeats it, plus a tell.
 
 ### 9.1 States
+
+An unaccepted owner-playtest version of **Concealed**, entered by order and with no detectors, exists: [tactical prototype](RTS_TACTICAL_PROTOTYPE.md).
 
 | State | Who | Effect on enemy observation | Broken by |
 | --- | --- | --- | --- |

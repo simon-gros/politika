@@ -116,6 +116,16 @@ APolitikaPrototypeStructure::APolitikaPrototypeStructure()
     if (CubeMesh.Succeeded()) Body->SetStaticMesh(CubeMesh.Object);
     if (ShapeMaterial.Succeeded()) Body->SetMaterial(0, ShapeMaterial.Object);
     Body->SetRelativeScale3D(FVector(3.0, 3.0, 3.0));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
+    SelectionRing = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SelectionRing"));
+    SelectionRing->SetupAttachment(Body);
+    SelectionRing->SetAbsolute(false, false, true);
+    SelectionRing->SetRelativeLocation(FVector(0, 0, -50));
+    SelectionRing->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    SelectionRing->SetCanEverAffectNavigation(false);
+    SelectionRing->SetVisibility(false, true);
+    if (CylinderMesh.Succeeded()) SelectionRing->SetStaticMesh(CylinderMesh.Object);
+    if (ShapeMaterial.Succeeded()) SelectionRing->SetMaterial(0, ShapeMaterial.Object);
 }
 
 void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -130,6 +140,7 @@ void APolitikaPrototypeStructure::GetLifetimeReplicatedProps(TArray<FLifetimePro
     DOREPLIFETIME(APolitikaPrototypeStructure, Tint);
     DOREPLIFETIME(APolitikaPrototypeStructure, bWithdrawn);
     DOREPLIFETIME(APolitikaPrototypeStructure, bGenerating);
+    DOREPLIFETIME(APolitikaPrototypeStructure, Occupants);
 }
 
 void APolitikaPrototypeStructure::ApplyPresence()
@@ -343,7 +354,7 @@ bool APolitikaPrototypeMatch::IsWorksHeldByAlly(const APolitikaPrototypeStructur
 
 bool APolitikaPrototypeMatch::BeginCapture(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure)
 {
-    if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || !Structure || !Structure->IsCapturable() || !Structure->IsAlive())
+    if (!HasAuthority() || !Unit || !Unit->IsAlive() || !Unit->CanAttack() || Unit->IsGarrisoned() || !Structure || !Structure->IsCapturable() || !Structure->IsAlive())
         return false;
     if ((Structure->GetOwnerPlayer() == 0 && !Structure->IsWorks()) || Structure->GetOwnerPlayer() == Unit->GetOwnerPlayer()) return false;
     if (IsWorksHeldByAlly(*Structure, *Unit)) return false;
@@ -440,7 +451,7 @@ const APolitikaPrototypeUnit* APolitikaPrototypeMatch::FindRepairer(const APolit
 bool APolitikaPrototypeMatch::BeginRepair(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure)
 {
     if (!HasAuthority() || GetMatchPhase() != politika::rules::MatchPhase::Active) return false;
-    if (!Unit || !Unit->IsAlive() || Unit->IsRouted() || !Unit->CanMove() || !Structure || !Structure->IsGenerator()) return false;
+    if (!Unit || !Unit->IsAlive() || Unit->IsRouted() || Unit->IsGarrisoned() || !Unit->CanMove() || !Structure || !Structure->IsGenerator()) return false;
     if (Structure->GetOwnerPlayer() != Unit->GetOwnerPlayer() || Structure->GetHealth() >= politika::power::kGeneratorHealth) return false;
     if (Unit->GetRepairTarget() == Structure) return true;
     if (FindRepairer(Structure)) return false;
@@ -585,6 +596,8 @@ FString APolitikaPrototypeMatch::BuildingCursorText(const APolitikaPrototypeStru
         else
             State += FString::Printf(TEXT("  \u00b7  capturing %d / %d"), Captor->GetCaptureSteps(), politika::power::kCaptureSteps);
     }
+    if (Structure->GetOccupants() > 0)
+        State += FString::Printf(TEXT("  \u00b7  garrisoned %d / %d"), Structure->GetOccupants(), politika::tactical::kGarrisonCapacity);
     if (Structure->IsWorks())
         return FString::Printf(TEXT("%s works  \u00b7  pays %s every %d s%s"), Who, UTF8_TO_TCHAR(pe::FormatUsd(pe::kWorksIncomeCents).c_str()),
             static_cast<int32>(pe::kIncomeIntervalSteps / 20), *State);

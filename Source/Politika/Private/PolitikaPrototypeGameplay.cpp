@@ -368,11 +368,16 @@ void APolitikaPrototypeUnit::ClearBuildingWork()
 {
     ClearCapture();
     ClearRepair();
+    GarrisonTarget = nullptr;
 }
 
 FString APolitikaPrototypeUnit::GetOrderLabel() const
 {
     if (IsRouted()) return TEXT("ROUTED");
+    if (IsGarrisoned()) return TEXT("Garrisoned");
+    if (GetGarrisonTarget()) return TEXT("Moving to garrison");
+    if (IsConcealed()) return TEXT("Concealed");
+    if (IsConcealPosture() && GetCurrentOrder() != EPolitikaPrototypeOrder::Move) return TEXT("Concealing");
     if (GetCaptureTarget()) return TEXT("Capturing");
     if (GetRepairTarget()) return TEXT("Repairing");
     if (CargoPose == CargoPoseStoreFull && IsCarryingFood()) return TEXT("Store full");
@@ -469,6 +474,19 @@ politika::rules::OrderEndReason APolitikaPrototypeUnit::SimulateMovement(float D
     // Replicated observers never advance navigation; only the match authority does.
     if (!HasAuthority()) return politika::rules::OrderEndReason::None;
     StepStartPosition = GetActorLocation();
+    if (bGarrisoned) return politika::rules::OrderEndReason::None;
+    if (APolitikaPrototypeStructure* Structure = GarrisonTarget.Get())
+    {
+        const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
+        if (!Match || !Match->CanGarrisonIn(this, Structure))
+        {
+            GarrisonTarget = nullptr;
+            return politika::rules::OrderEndReason::None;
+        }
+        if (FlatDistance(GetActorLocation(), Structure->GetActorLocation()) <= politika::tactical::kGarrisonEntryRangeCm)
+            return politika::rules::OrderEndReason::None;
+        return ApproachBuilding(*Structure, politika::tactical::kGarrisonEntryRangeCm, DeltaSeconds);
+    }
     if (APolitikaPrototypeStructure* Structure = CaptureTarget.Get())
     {
         const bool bHold = IsAlive() && Structure->IsCapturable() && Structure->IsAlive()
@@ -913,8 +931,9 @@ void APolitikaPrototypeUnit::AutoAcquireForAttackMove(float RangeCm, const FVect
         // Automatic acquisition never crosses the (normally neutral) Unaligned boundary.
         if (!Candidate || Candidate == this || !Candidate->IsAlive() || !Candidate->IsAttackable()
             || !politika::rules::CanAutoEngage(OwnerPlayer, TeamId, Candidate->OwnerPlayer, Candidate->TeamId)) continue;
-        // Under fog, only enemies the owning team currently observes can be acquired.
-        if (bFog && !Candidate->IsObservedByTeam(TeamId)) continue;
+        // Under fog, only enemies the owning team currently observes can be acquired. Concealment
+        // holds without fog as well, so it means the same in the offline sandbox.
+        if ((bFog || Candidate->IsConcealed()) && !Candidate->IsObservedByTeam(TeamId)) continue;
         // A leashed unit only takes targets it can fire at from inside its leash.
         if (PostLocation && !politika::stance::WithinReach({PostLocation->X, PostLocation->Y},
                 {Candidate->GetActorLocation().X, Candidate->GetActorLocation().Y}, LeashCm, WeaponRange))
@@ -986,7 +1005,8 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     const bool bIdle = CurrentOrder == EPolitikaPrototypeOrder::Idle;
     // Idle fire follows the combat stance (FORM-F4): Hold Fire never fires on its own, and a
     // unit walking back to its post does not stop to fight. Explicit orders are not idle.
-    if (bIdle && (!IdleBehavior.acquire || Autonomy == EPolitikaUnitAutonomy::Returning))
+    // Section 9.1: a soldier holding concealment does not give itself away. An order still fires.
+    if (bIdle && (!IdleBehavior.acquire || bConcealPosture || Autonomy == EPolitikaUnitAutonomy::Returning))
     {
         OrderTarget.Reset();
         return;
@@ -997,7 +1017,12 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         bHasPost = true;
         MaxPostDisplacement = 0.0f;
     }
-    if ((CurrentOrder == EPolitikaPrototypeOrder::AttackMove
+    if (bGarrisoned)
+    {
+        // It cannot chase, so it only takes what it can already hit from inside.
+        if (!OrderTarget.IsValid()) AutoAcquireForAttackMove(GetFireRange());
+    }
+    else if ((CurrentOrder == EPolitikaPrototypeOrder::AttackMove
         || (InfantryBehavior && InfantryBehavior->bAutoAcquireWhenIdle && bIdle))
         && !OrderTarget.IsValid())
     {
@@ -1040,6 +1065,7 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
             if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get())
                 Match->DamageOwnedBuilding(Structure, FMath::Max(1, FMath::RoundToInt(WeaponDamage)));
             CooldownRemaining = NextFireInterval(DeltaSeconds);
+            bFiredThisStep = true;
             if (InfantryBehavior) --Ammo;
             if (InfantryPresentation) InfantryPresentation->Shot(Structure->GetActorLocation(), CooldownRemaining);
         }
@@ -1047,7 +1073,9 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     }
 
     APolitikaPrototypeUnit* Target = OrderTarget.Get();
-    if (!Target || !Target->IsAlive() || !IsHostileTo(Target))
+    // A soldier who went inside is no target, and an occupant drops one it can no longer reach.
+    if (!Target || !Target->IsAlive() || !IsHostileTo(Target) || Target->IsGarrisoned()
+        || (bGarrisoned && FlatDistance(GetActorLocation(), Target->GetActorLocation()) > GetFireRange()))
     {
         if (CurrentOrder == EPolitikaPrototypeOrder::Attack) CurrentOrder = EPolitikaPrototypeOrder::Idle;
         OrderTarget.Reset();
@@ -1055,7 +1083,7 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
     }
     // Never fire at a target the owning team cannot see; cleanup reports it as lost.
     if (const APolitikaPrototypeMatch* Match = AuthorityMatch.Get();
-        Match && Match->IsFogOfWarEnabled() && !Target->IsObservedByTeam(TeamId))
+        Match && (Match->IsFogOfWarEnabled() || Target->IsConcealed()) && !Target->IsObservedByTeam(TeamId))
         return;
     if (InfantryBehavior)
     {
@@ -1063,12 +1091,14 @@ void APolitikaPrototypeUnit::ResolveCombat(float DeltaSeconds)
         SetActorRotation(FMath::RInterpConstantTo(GetActorRotation(), FRotator(0, Aim.Yaw, 0), DeltaSeconds,
             InfantryBehavior->TurnDegreesPerSecond));
         if (bMovedThisStep || FMath::Abs(FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, Aim.Yaw))
-            > InfantryBehavior->AcceptableAimDegrees || !HasLineOfFire(Target)) return;
+            // An occupant stands inside the building's mesh, so a line-of-fire trace would always hit it.
+            > InfantryBehavior->AcceptableAimDegrees || (!bGarrisoned && !HasLineOfFire(Target))) return;
     }
-    if (Target->IsAttackable() && FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= WeaponRange && CooldownRemaining <= 0.0f)
+    if (Target->IsAttackable() && FlatDistance(GetActorLocation(), Target->GetActorLocation()) <= GetFireRange() && CooldownRemaining <= 0.0f)
     {
         Target->ReceiveWeaponHit(WeaponDamage, this, false);
         CooldownRemaining = NextFireInterval(DeltaSeconds);
+        bFiredThisStep = true;
         if (InfantryBehavior) --Ammo;
         if (APolitikaPrototypeMatch* Match = AuthorityMatch.Get())
             Match->DistributeShotPresentation(this, Target, CooldownRemaining);
@@ -2209,7 +2239,8 @@ bool APolitikaPrototypeMatch::IsCommandableUnit(const APolitikaPrototypeUnit* Un
 {
     if (!IsValid(Unit) || !Unit->IsAlive() || PlayerId == 0 || !Units.Contains(const_cast<APolitikaPrototypeUnit*>(Unit)))
         return false;
-    if (Unit->GetOwnerPlayer() != PlayerId) return false;
+    // A soldier inside a building is reached through the building.
+    if (Unit->GetOwnerPlayer() != PlayerId || Unit->IsGarrisoned()) return false;
     const FPolitikaPrototypeRuntimeParticipant* Participant = RuntimeParticipants.FindByPredicate(
         [PlayerId](const FPolitikaPrototypeRuntimeParticipant& Candidate)
         { return Candidate.RuntimePlayerId == PlayerId; });
@@ -2432,7 +2463,7 @@ politika::rules::OrderResult APolitikaPrototypeMatch::ValidateOrder(const FPendi
     if (Issuer) { IssuerRules.id = Issuer->GetStableId(); IssuerRules.owner_player = Issuer->GetOwnerPlayer();
         IssuerRules.movable = Issuer->CanMove(); IssuerRules.can_attack = Issuer->CanAttack();
         IssuerRules.alive = Issuer->IsAlive(); IssuerRules.operational = Issuer->IsAlive();
-        IssuerRules.team = Issuer->GetTeamId(); IssuerRules.routed = Issuer->IsRouted(); }
+        IssuerRules.team = Issuer->GetTeamId(); IssuerRules.routed = Issuer->IsRouted() || Issuer->IsGarrisoned(); }
 
     politika::rules::Entity TargetRules;
     const APolitikaPrototypeUnit* Target = Pending.Target.Get();
@@ -2955,6 +2986,8 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
     }
     AdvanceCaptures();
     AdvanceRepairs();
+    AdvanceGarrisons();
+    AdvanceCrushes();
     // Team vision follows movement so acquisition, firing and target loss use current
     // positions; offline (no fog) this marks every unit observed and changes nothing.
     UpdateTeamVisibility();
@@ -2965,6 +2998,7 @@ void APolitikaPrototypeMatch::RunSimulationStep(float DeltaSeconds)
         if (!IsValid(Unit)) continue;
         const EPolitikaPrototypeOrder PreviousOrder = Unit->GetCurrentOrder();
         const int32 AppliedDamage = Unit->ApplyPendingDamage();
+        Unit->AdvanceConcealment(AppliedDamage, DeltaSeconds);
         if (AppliedDamage > 0)
             QueueGameplayEvent(politika::rules::UnitDamagedEvent{SimulationStepsExecuted, Unit->GetStableId(), AppliedDamage});
         if (PreviousOrder != Unit->GetCurrentOrder())
@@ -3192,6 +3226,8 @@ void APolitikaPrototypePlayerController::SetupInputComponent()
     Super::SetupInputComponent();
     InputComponent->BindAction(TEXT("PrototypeCaptureBuilding"), IE_Pressed, this, &APolitikaPrototypePlayerController::CaptureUnderCursor);
     InputComponent->BindAction(TEXT("PrototypeDemolishBuilding"), IE_Pressed, this, &APolitikaPrototypePlayerController::DemolishUnderCursor);
+    InputComponent->BindAction(TEXT("PrototypeGarrison"), IE_Pressed, this, &APolitikaPrototypePlayerController::GarrisonOrUnload);
+    InputComponent->BindAction(TEXT("PrototypeConceal"), IE_Pressed, this, &APolitikaPrototypePlayerController::ToggleConcealment);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::BeginSelectPress);
     InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &APolitikaPrototypePlayerController::EndSelectPress);
     InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &APolitikaPrototypePlayerController::OrderUnderCursor);
@@ -3382,8 +3418,9 @@ void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::
     // The unit where the button went down, which a long frame may have left behind the cursor.
     const bool bHit = GetHitResultAtScreenPosition(SelectPressPosition, UEngineTypes::ConvertToTraceType(ECC_Visibility), true, Hit);
     APolitikaPrototypeUnit* Unit = bHit ? Cast<APolitikaPrototypeUnit>(Hit.GetActor()) : nullptr;
-    // ECON-E31: a click prefers the unit. A building only selects what stands in it or behind it, and
-    // C, Z and right-clicks still find the building.
+    APolitikaPrototypeStructure* ClickedStructure = bHit ? Cast<APolitikaPrototypeStructure>(Hit.GetActor()) : nullptr;
+    // ECON-E31: a click prefers the unit. With no unit in it or behind it, a click selects the building,
+    // and C, Z and right-clicks still find the building either way.
     FVector Origin, Direction;
     if (bHit && !Unit && Cast<APolitikaPrototypeStructure>(Hit.GetActor())
         && DeprojectScreenPositionToWorld(SelectPressPosition.X, SelectPressPosition.Y, Origin, Direction))
@@ -3411,6 +3448,7 @@ void APolitikaPrototypePlayerController::SelectUnderCursor(politika::selection::
             return;
         }
         SelectUnitForInput(Unit);
+        SelectStructure(Unit ? nullptr : ClickedStructure);
         return;
     }
     // Shift+click on empty ground or a unit this participant cannot command changes nothing.
@@ -3854,6 +3892,7 @@ void APolitikaPrototypePlayerController::ClearSelectionState()
     RecallTaps.Reset();
     ActiveSubgroup = 0;
     LastClickUnit = 0;
+    SelectStructure(nullptr);
     if (APolitikaPrototypeMatch* ActiveMatch = Match.Get())
     {
         const uint32 LocalPlayerId = ActiveMatch->GetLocalRuntimePlayerId();
@@ -4767,6 +4806,7 @@ static constexpr float SimulationStepSecondsForHud = 0.05f;
 void APolitikaPrototypeHUD::DrawHUD()
 {
     Super::DrawHUD();
+    if (auto* SelectionOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController())) SelectionOwner->RefreshStructureSelection();
     if (!Canvas || !GetWorld()) return;
     APolitikaPrototypeMatch* ActiveMatch = Match.Get();
     if (!ActiveMatch) return;
@@ -4790,7 +4830,7 @@ void APolitikaPrototypeHUD::DrawHUD()
         for (const APolitikaPrototypeUnit* Unit : ActiveMatch->GetUnits())
         {
             // A listen host keeps every unit in memory; labels follow its team's fog view.
-            if (!Unit || !Unit->IsAlive() || Unit->IsLocalFogHidden()) continue;
+            if (!Unit || !Unit->IsAlive() || Unit->IsLocalFogHidden() || Unit->IsGarrisoned()) continue;
             FVector2D Screen;
             if (!Controller->ProjectWorldLocationToScreen(Unit->GetActorLocation() + FVector(0,0,100), Screen, true)) continue;
             const uint32 Viewer = ActiveMatch->GetLocalRuntimePlayerId();
@@ -4922,6 +4962,18 @@ void APolitikaPrototypeHUD::DrawHUD()
         bool bBuildingThroughUnit = false;
         if (APolitikaPrototypePlayerController* CursorOwner = Cast<APolitikaPrototypePlayerController>(GetOwningPlayerController()))
         {
+            if (const APolitikaPrototypeStructure* Picked = CursorOwner->GetSelectedStructure())
+            {
+                const uint32 ViewerId = ActiveMatch->HasAuthority()
+                    ? ActiveMatch->GetBoundParticipantId(CursorOwner) : CursorOwner->GetAssignedRuntimePlayerId();
+                FString PickedLine = ActiveMatch->BuildingCursorText(Picked, ViewerId);
+                if (Picked->GetOwnerPlayer() == ViewerId && Picked->GetOccupants() > 0) PickedLine += TEXT("  \u00b7  U to unload");
+                if (!PickedLine.IsEmpty())
+                {
+                    DrawText(TEXT("Selected: ") + PickedLine, FLinearColor(0.95f, 0.86f, 0.45f), Left, Y, nullptr, UiScale);
+                    Y += 26.0f * UiScale;
+                }
+            }
             if (const APolitikaPrototypeStructure* Structure = CursorOwner->StructureUnderCursor(*ActiveMatch, &bBuildingThroughUnit))
             {
                 const uint32 ViewerId = ActiveMatch->HasAuthority()
@@ -4978,6 +5030,7 @@ void APolitikaPrototypeHUD::DrawHUD()
     const politika::formation::Shape HelpShape = PrototypeOwner ? PrototypeOwner->GetGroupMoveShape() : politika::formation::Shape::Line;
     DrawText(FString::Printf(TEXT("RMB move / attack  ·  Q attack-move  ·  G guard  ·  X stop  ·  C capture  ·  Z demolish  ·  V / Shift+V group shape: %s  ·  T form  ·  Y release  ·  H stance  ·  J adherence  ·  WASD pan  ·  wheel zoom  ·  Esc menu"),
         *PolitikaShapeLabel(HelpShape)), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
+    DrawText(TEXT("U garrison the building under the cursor, or unload the selected one  \u00b7  M conceal"), Ink, Left, Y, nullptr, UiScale); Y += 28.0f * UiScale;
     const TArray<APolitikaPrototypeUnit*> SelectedUnits = ActiveMatch->GetSelectedUnitsForPlayer(ActiveMatch->GetLocalRuntimePlayerId());
     {
         APolitikaPrototypeUnit* Selected = SelectedUnits.IsEmpty() ? nullptr : SelectedUnits[0];

@@ -121,6 +121,10 @@ void APolitikaPrototypeUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME(APolitikaPrototypeUnit, CaptureSteps);
     DOREPLIFETIME(APolitikaPrototypeUnit, RepairTarget);
     DOREPLIFETIME(APolitikaPrototypeUnit, RepairSteps);
+    DOREPLIFETIME(APolitikaPrototypeUnit, GarrisonTarget);
+    DOREPLIFETIME(APolitikaPrototypeUnit, bGarrisoned);
+    DOREPLIFETIME(APolitikaPrototypeUnit, bConcealed);
+    DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, bConcealPosture, COND_OwnerOnly);
     // Owner-only: the issued order and ability timers belong to the controlling participant.
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, CurrentOrder, COND_OwnerOnly);
     DOREPLIFETIME_CONDITION(APolitikaPrototypeUnit, Ammo, COND_OwnerOnly);
@@ -310,17 +314,26 @@ uint8 APolitikaPrototypeMatch::GetTeamForParticipant(uint32 PlayerId) const
 void APolitikaPrototypeMatch::UpdateTeamVisibility()
 {
     if (!HasAuthority()) return;
+    // Concealment holds without fog as well, so it means the same in the offline sandbox.
+    bool bAnyConcealed = false;
     if (!bFogOfWar)
     {
-        for (APolitikaPrototypeUnit* Unit : Units) if (IsValid(Unit)) Unit->ObservedByTeams = 0xFF;
-        return;
+        for (APolitikaPrototypeUnit* Unit : Units)
+        {
+            if (!IsValid(Unit)) continue;
+            Unit->ObservedByTeams = 0xFF;
+            bAnyConcealed |= Unit->IsConcealed();
+        }
+        if (!bAnyConcealed) return;
     }
     TArray<politika::rules::VisionSource, TInlineAllocator<16>> Sources;
+    TArray<politika::rules::VisionSource, TInlineAllocator<16>> ConcealedSources;
     for (const APolitikaPrototypeUnit* Unit : Units)
     {
         if (!IsValid(Unit) || !Unit->IsAlive() || Unit->GetTeamId() == politika::rules::kNoTeam) continue;
         const FVector Location = Unit->GetActorLocation();
         Sources.Add({Unit->GetTeamId(), {Location.X, Location.Y}, Unit->GetSightRadius()});
+        ConcealedSources.Add({Unit->GetTeamId(), {Location.X, Location.Y}, politika::tactical::ConcealedObserveRange(Unit->GetSightRadius())});
     }
     // Player teams plus the Unaligned NPC side, which keeps its own (server-only) vision.
     TArray<uint8, TInlineAllocator<4>> Teams;
@@ -329,12 +342,14 @@ void APolitikaPrototypeMatch::UpdateTeamVisibility()
     Teams.AddUnique(politika::rules::kUnalignedTeam);
     for (APolitikaPrototypeUnit* Unit : Units)
     {
-        if (!IsValid(Unit)) continue;
+        if (!IsValid(Unit) || (!bFogOfWar && !Unit->IsConcealed())) continue;
         const FVector Location = Unit->GetActorLocation();
+        const auto& Observers = Unit->IsConcealed() ? ConcealedSources : Sources;
         uint8 Mask = 0;
         for (const uint8 Team : Teams)
-            if (Team == Unit->GetTeamId() || politika::rules::IsObservedBy(Team, {Location.X, Location.Y},
-                    std::span<const politika::rules::VisionSource>(Sources.GetData(), Sources.Num())))
+            // Only its own side knows who is inside a building.
+            if (Team == Unit->GetTeamId() || (!Unit->IsGarrisoned() && politika::rules::IsObservedBy(Team, {Location.X, Location.Y},
+                    std::span<const politika::rules::VisionSource>(Observers.GetData(), Observers.Num()))))
                 Mask |= static_cast<uint8>(1u << Team);
         Unit->ObservedByTeams = Mask;
     }
@@ -1235,6 +1250,7 @@ void APolitikaPrototypeUnit::MulticastAbilityPresentation_Implementation(uint8 C
     if (HasAuthority()) return;
     if (Cue == 0) InfantryPresentation->Reload(Seconds);
     else if (Cue == 1) InfantryPresentation->Grenade(Seconds);
+    else if (Cue == 2) PresentCrush();
 }
 
 void APolitikaPrototypeUnit::PlayLocalAcknowledgement(FName Event)

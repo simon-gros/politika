@@ -16747,6 +16747,524 @@ fn works_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), 
     result
 }
 
+/// Where seat 2's soldier is sent: in seat 1's base, on the line between its two buildings.
+const TAC_MEET: (f64, f64) = (-1657.0, -1091.0);
+const TAC_PROBE_MEET: usize = 8;
+/// Where seat 1's soldier conceals itself, 600 cm from TAC_MEET: inside the enemy soldier's 1200 cm sight,
+/// outside the 420 cm it keeps on a concealed unit.
+const TAC_NEAR: (f64, f64) = (-1057.0, -1091.0);
+const TAC_PROBE_NEAR: usize = 9;
+/// Where the harvester waits, on the far side of the producer from the soldier. Left at work, its routine
+/// drives through the base and runs the soldier over on the way in.
+const TAC_PARK: (f64, f64) = (-1894.0, -651.0);
+const TAC_PROBE_PARK: usize = 10;
+
+/// The cue request for an event after `mark`. These events have no authored sound, so a cue is as far as
+/// a session can follow one.
+fn tactical_cue(game: &mut Game, event: &str, mark: usize) -> (bool, String) {
+    let wanted = ["RTS_TACTICAL_CUE", &format!("event={event}") as &str];
+    match game.wait_line(&wanted, Duration::from_secs(6), mark) {
+        Ok(line) => (true, line.trim().to_owned()),
+        Err(error) => (false, error),
+    }
+}
+
+// Prototype garrison, crush, concealment and building selection, all with real input on rendered remote
+// clients. Seat 1 clicks a building, walks a soldier in with U, empties it from the selected building,
+// conceals a soldier with M so that seat 2's soldier standing in its base loses sight of it, and runs that
+// soldier over with its harvester. Each event's cue has to reach the client that should get it.
+fn tactical_session(options: &DedicatedOptions, report: &mut Report) -> Result<(), String> {
+    let client_options = &options.client;
+    let evidence = &client_options.evidence;
+    let mut args = server_args(client_options.port, "1v1");
+    args.retain(|a| a != NO_STARTING_HARVESTERS);
+    args.push(STARTING_HARVESTERS.to_owned());
+    let mut server = Game::launch_server(&options.server, "server", evidence, &args)?;
+    report.fact("server_command", server.command.join(" "));
+    server.wait(&["MP_DEDICATED_SERVER_READY"], Duration::from_secs(180))?;
+    let awaiting = server.wait(&["MP_MATCH_AWAITING_PARTICIPANTS"], Duration::from_secs(60))?;
+    let generation = field(&awaiting, "generation").unwrap_or("0").to_owned();
+    let probes = format!(
+        "{}/{}:{}/{}:{}/{}:{}",
+        building_probes(),
+        TAC_MEET.0,
+        TAC_MEET.1,
+        TAC_NEAR.0,
+        TAC_NEAR.1,
+        TAC_PARK.0,
+        TAC_PARK.1
+    );
+    let launch = |label: &str, participant: u32, server: &mut Game| {
+        let display = Display::start(evidence, label)?;
+        let mut args = client_args(client_options, true, false, false);
+        args.push(probes.clone());
+        let game = Game::launch(
+            &client_options.binary,
+            label,
+            evidence,
+            &args,
+            Some(&display.name()),
+        )?;
+        server.wait(
+            &[
+                &format!("MP_PARTICIPANT_BOUND participant={participant}"),
+                "remote=1",
+            ],
+            Duration::from_secs(90),
+        )?;
+        Ok::<(Game, Display), String>((game, display))
+    };
+    let (mut client_a, _display_a) = launch("client-a", 1, &mut server)?;
+    let (mut client_b, _display_b) = launch("client-b", 2, &mut server)?;
+    report.fact("client_a_command", client_a.command.join(" "));
+    report.fact("client_b_command", client_b.command.join(" "));
+    server.wait(
+        &["MP_MATCH_ACTIVE", &format!("generation={generation}")],
+        Duration::from_secs(30),
+    )?;
+    for client in [&mut client_a, &mut client_b] {
+        client.wait(
+            &[
+                "MP_CLIENT_MATCH_OBSERVED",
+                "map=map.test.multiplayer_skirmish",
+            ],
+            Duration::from_secs(60),
+        )?;
+        client.attach_window()?;
+    }
+    thread::sleep(Duration::from_secs(6));
+
+    let result = (|| -> Result<(), String> {
+        let owners = entity_owners(&server.text());
+        let side = |owner: u32| -> Vec<u64> {
+            owners
+                .iter()
+                .filter(|(_, o)| *o == owner)
+                .map(|(e, _)| *e)
+                .collect()
+        };
+        let (team_a, team_b) = (side(1), side(2));
+        if team_a.len() < 3 || team_b.len() < 3 {
+            return Err(format!("unexpected 1v1 roster {owners:?}"));
+        }
+        // The two authored soldiers come first; the free harvester has a later id.
+        let (soldier, reserve, harvester) = (team_a[0], team_a[1], team_a[2]);
+        let defender = team_b[0];
+        report.fact("team_a", format!("{team_a:?}"));
+        report.fact("team_b", format!("{team_b:?}"));
+        zoom_out(&client_a, 5)?;
+        zoom_out(&client_b, 5)?;
+        thread::sleep(Duration::from_millis(1500));
+
+        // Neither side fires by itself, so everything below is the feature under test.
+        for (client, participant) in [(&mut client_a, 1), (&mut client_b, 2)] {
+            client.drag_hold(
+                (24.0, 24.0),
+                (f64::from(WIDTH) - 24.0, f64::from(HEIGHT) - 24.0),
+            )?;
+            client.release()?;
+            thread::sleep(Duration::from_millis(500));
+            set_hold_fire(client, &mut server, participant)?;
+        }
+
+        // The harvester leaves its routine and waits out of the way. It is selected while it stands at
+        // its source, because a sampled position trails a moving unit and samples come once a second.
+        let mut standing = false;
+        for _ in 0..4 {
+            let server_mark = server.offset();
+            server.wait_line(
+                &[
+                    "RTS_HARVEST_TX participant=1 kind=loading",
+                    &format!("unit={harvester} "),
+                ],
+                Duration::from_secs(40),
+                server_mark,
+            )?;
+            thread::sleep(Duration::from_millis(1100));
+            let at = wait_screen(
+                &mut client_a,
+                |t| entity_screen(t, "MP_CLIENT_SAMPLE", harvester),
+                "the harvester at its source",
+            )?;
+            for (dx, dy) in [(0.0, 0.0), (0.0, -8.0), (4.0, -4.0)] {
+                let mark = client_a.offset();
+                client_a.click(at.0 + dx, at.1 + dy, "1")?;
+                standing = client_a
+                    .wait_line(
+                        &["RTS_SELECTION player=", &format!("unit={harvester}")],
+                        Duration::from_millis(400),
+                        mark,
+                    )
+                    .is_ok();
+                if standing {
+                    break;
+                }
+            }
+            if standing {
+                break;
+            }
+        }
+        if !standing {
+            return Err(format!(
+                "could not select harvester {harvester} at its source"
+            ));
+        }
+        let park = pan_to_probe(&mut client_a, TAC_PROBE_PARK)?;
+        client_a.click(park.0, park.1, "3")?;
+        let parking = Instant::now();
+        loop {
+            if let Some((at, _, _)) = server_unit(&server.text(), harvester) {
+                if distance(at, TAC_PARK) < 100.0 {
+                    break;
+                }
+            }
+            if parking.elapsed() > Duration::from_secs(60) {
+                return Err(format!(
+                    "harvester {harvester} never reached its parking spot"
+                ));
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+
+        // A click on a building selects it, and it answers.
+        let generator = point_at_probe(&mut client_a, BLD_PROBE_OWN_GENERATOR)?;
+        let mark = client_a.offset();
+        client_a.click(generator.0, generator.1, "1")?;
+        let selected = client_a.wait_line(
+            &["RTS_STRUCTURE_SELECTED participant=1", "role=Generator"],
+            Duration::from_secs(5),
+            mark,
+        );
+        let (cued, cue_text) = tactical_cue(&mut client_a, "Select", mark);
+        report.verdict(
+            "TAC-P01-A-CLICK-SELECTS-A-BUILDING-AND-IT-ANSWERS",
+            selected.is_ok() && cued,
+            format!("{selected:?}; {cue_text}"),
+        );
+        report.artifact(
+            "building_selected_png",
+            &client_a.screenshot(evidence, "01-building-selected")?,
+        );
+        let selected_unit = select_entity(&mut client_a, "MP_CLIENT_SAMPLE", soldier);
+        report.verdict(
+            "TAC-P02-A-UNIT-TAKES-THE-SELECTION-BACK",
+            selected_unit.is_ok(),
+            format!("{selected_unit:?}"),
+        );
+        selected_unit?;
+
+        // U with the cursor on the building: the order cues, the soldier walks in, the door cues.
+        let generator = point_at_probe(&mut client_a, BLD_PROBE_OWN_GENERATOR)?;
+        let mark = client_a.offset();
+        let server_mark = server.offset();
+        client_a.key("u")?;
+        let approach = server.wait_line(
+            &["RTS_GARRISON phase=approach", &format!("unit={soldier} ")],
+            Duration::from_secs(5),
+            server_mark,
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "Garrison", mark);
+        report.verdict(
+            "TAC-P03-U-ORDERS-A-GARRISON",
+            approach.is_ok() && cue,
+            format!("{approach:?}; {cue_text}"),
+        );
+        approach?;
+        let entered = server.wait_line(
+            &[
+                "RTS_GARRISON phase=enter",
+                &format!("unit={soldier} "),
+                "occupants=1",
+            ],
+            Duration::from_secs(60),
+            server_mark,
+        );
+        let client_saw = client_a.wait_line(
+            &[
+                "RTS_CLIENT_GARRISON",
+                &format!("unit={soldier} "),
+                "garrisoned=1",
+            ],
+            Duration::from_secs(5),
+            mark,
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "Enter", mark);
+        report.verdict(
+            "TAC-P04-THE-SOLDIER-GOES-IN-AND-THE-CUE-FIRES",
+            entered.is_ok() && client_saw.is_ok() && cue,
+            format!("{entered:?}; {client_saw:?}; {cue_text}"),
+        );
+        entered?;
+        client_a.hover(640.0, 40.0)?;
+        thread::sleep(Duration::from_millis(300));
+        let cursor_mark = client_a.offset();
+        client_a.hover(generator.0, generator.1)?;
+        let cursor = wait_cursor(&mut client_a, &["garrisoned 1 / 5"], cursor_mark);
+        report.verdict(
+            "TAC-P05-THE-BUILDING-LINE-COUNTS-IT",
+            cursor.is_ok(),
+            format!("{cursor:?}"),
+        );
+        report.artifact(
+            "garrisoned_png",
+            &client_a.screenshot(evidence, "02-garrisoned")?,
+        );
+
+        // Selecting the building and pressing U empties it.
+        let mark = client_a.offset();
+        client_a.click(generator.0, generator.1, "1")?;
+        let selected = client_a.wait_line(
+            &["RTS_STRUCTURE_SELECTED participant=1", "occupants=1"],
+            Duration::from_secs(5),
+            mark,
+        );
+        let server_mark = server.offset();
+        client_a.key("u")?;
+        let left = server.wait_line(
+            &[
+                "RTS_GARRISON phase=exit",
+                &format!("unit={soldier} "),
+                "reason=unload",
+                "occupants=0",
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "Exit", mark);
+        report.verdict(
+            "TAC-P06-THE-SELECTED-BUILDING-UNLOADS",
+            selected.is_ok() && left.is_ok() && cue,
+            format!("{selected:?}; {left:?}; {cue_text}"),
+        );
+        left?;
+        thread::sleep(Duration::from_secs(2));
+        let again = select_entity(&mut client_a, "MP_CLIENT_SAMPLE", soldier);
+        report.verdict(
+            "TAC-P07-THE-SOLDIER-CAN-BE-SELECTED-AGAIN",
+            again.is_ok(),
+            format!("{again:?}"),
+        );
+
+        // Seat 2 sends a soldier into seat 1's base and it stands there, holding its fire.
+        let selected_b = select_entity(&mut client_b, "MP_CLIENT_SAMPLE", defender);
+        selected_b?;
+        let meet = pan_to_probe(&mut client_b, TAC_PROBE_MEET)?;
+        let server_mark = server.offset();
+        client_b.click(meet.0, meet.1, "3")?;
+        server.wait_line(
+            &[
+                "RTS_ORDER_ADMITTED order=Move",
+                &format!("unit={defender} "),
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let arrive = Instant::now();
+        loop {
+            if let Some((at, _, _)) = server_unit(&server.text(), defender) {
+                if distance(at, TAC_MEET) < 150.0 {
+                    break;
+                }
+            }
+            if arrive.elapsed() > Duration::from_secs(90) {
+                return Err(format!("soldier {defender} never reached seat 1's base"));
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+        thread::sleep(Duration::from_secs(2));
+
+        // M: three seconds still and the enemy standing in the base loses sight of it. Withdrawing it
+        // brings it back. The order, the cues and what seat 2 receives are all real.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", reserve)?;
+        let near = pan_to_probe(&mut client_a, TAC_PROBE_NEAR)?;
+        let server_mark = server.offset();
+        client_a.click(near.0, near.1, "3")?;
+        server.wait_line(
+            &["RTS_ORDER_ADMITTED order=Move", &format!("unit={reserve} ")],
+            Duration::from_secs(5),
+            server_mark,
+        )?;
+        let arrive = Instant::now();
+        loop {
+            if let Some((at, _, _)) = server_unit(&server.text(), reserve) {
+                if distance(at, TAC_NEAR) < 60.0 {
+                    break;
+                }
+            }
+            if arrive.elapsed() > Duration::from_secs(60) {
+                return Err(format!("soldier {reserve} never reached its spot"));
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+        thread::sleep(Duration::from_secs(3));
+        let unit_at = server_unit(&server.text(), reserve).map(|u| u.0);
+        let defender_at = server_unit(&server.text(), defender).map(|u| u.0);
+        let apart = unit_at
+            .zip(defender_at)
+            .map(|(a, b)| distance(a, b))
+            .unwrap_or(0.0);
+        report.fact("conceal_separation_cm", format!("{apart:.1}"));
+        let sampled = |game: &mut Game, unit: u64, window: Duration| -> bool {
+            let mark = game.offset();
+            game.wait_line(
+                &["MP_CLIENT_SAMPLE", &format!("entity={unit} ")],
+                window,
+                mark,
+            )
+            .is_ok()
+        };
+        let saw_before = sampled(&mut client_b, reserve, Duration::from_secs(4));
+        let mark = client_a.offset();
+        let mark_b = client_b.offset();
+        let server_mark = server.offset();
+        client_a.key("m")?;
+        let posture = server.wait_line(
+            &[
+                "RTS_CONCEAL phase=posture",
+                &format!("unit={reserve} "),
+                "posture=1",
+            ],
+            Duration::from_secs(5),
+            server_mark,
+        );
+        let on = server.wait_line(
+            &["RTS_CONCEAL phase=on", &format!("unit={reserve} ")],
+            Duration::from_secs(8),
+            server_mark,
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "StealthOn", mark);
+        report.verdict(
+            "TAC-P08-M-CONCEALS-AFTER-THREE-SECONDS-AND-THE-CUE-FIRES",
+            posture.is_ok() && on.is_ok() && cue,
+            format!("{posture:?}; {on:?}; {cue_text}"),
+        );
+        on?;
+        let withdrawn = client_b.wait_line(
+            &[
+                "MP_CLIENT_UNIT_WITHDRAWN",
+                &format!("entity={reserve} "),
+                "alive=1",
+            ],
+            Duration::from_secs(4),
+            mark_b,
+        );
+        thread::sleep(Duration::from_secs(1));
+        let saw_during = sampled(&mut client_b, reserve, Duration::from_secs(3));
+        report.artifact(
+            "concealed_png",
+            &client_a.screenshot(evidence, "03-concealed")?,
+        );
+        let mark = client_a.offset();
+        let server_mark = server.offset();
+        client_a.key("m")?;
+        let off = server.wait_line(
+            &["RTS_CONCEAL phase=off", &format!("unit={reserve} ")],
+            Duration::from_secs(5),
+            server_mark,
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "StealthOff", mark);
+        report.verdict(
+            "TAC-P09-WITHDRAWING-IT-REVEALS-AND-THE-CUE-FIRES",
+            off.is_ok() && cue,
+            format!("{off:?}; {cue_text}"),
+        );
+        thread::sleep(Duration::from_secs(1));
+        let saw_after = sampled(&mut client_b, reserve, Duration::from_secs(4));
+        report.verdict(
+            "TAC-P10-THE-ENEMY-LOSES-SIGHT-OF-IT-AND-GETS-IT-BACK",
+            saw_before && withdrawn.is_ok() && !saw_during && saw_after,
+            format!("{apart:.1} cm apart; seat 2 received it before {saw_before}, while concealed {saw_during}, after {saw_after}; {withdrawn:?}"),
+        );
+
+        // The harvester drives through the enemy soldier, up to four passes, each aimed from where it is.
+        select_entity(&mut client_a, "MP_CLIENT_SAMPLE", harvester)?;
+        pan_to_probe(&mut client_a, TAC_PROBE_MEET)?;
+        thread::sleep(Duration::from_millis(1500));
+        let mark = client_a.offset();
+        let mark_b = client_b.offset();
+        let server_mark = server.offset();
+        let mut crushed = Err("the harvester never reached the soldier".to_owned());
+        for pass in 0..4 {
+            let to = wait_screen(
+                &mut client_a,
+                |t| entity_screen(t, "MP_CLIENT_SAMPLE", defender),
+                "the soldier",
+            )?;
+            let from = wait_screen(
+                &mut client_a,
+                |t| entity_screen(t, "MP_CLIENT_SAMPLE", harvester),
+                "the harvester",
+            )?;
+            let length = distance(from, to).max(1.0);
+            let past = (
+                (to.0 + (to.0 - from.0) / length * 120.0).clamp(16.0, f64::from(WIDTH) - 16.0),
+                (to.1 + (to.1 - from.1) / length * 120.0).clamp(16.0, f64::from(HEIGHT) - 16.0),
+            );
+            report.fact(
+                &format!("crush_pass_{pass}"),
+                format!("from {from:?} through {to:?} to {past:?}"),
+            );
+            client_a.click(past.0, past.1, "3")?;
+            crushed = server.wait_line(
+                &[
+                    "RTS_CRUSH",
+                    &format!("vehicle={harvester} "),
+                    &format!("victim={defender} "),
+                ],
+                Duration::from_secs(20),
+                server_mark,
+            );
+            if crushed.is_ok() {
+                break;
+            }
+        }
+        let destroyed = client_b.wait_line(
+            &["MP_CLIENT_UNIT_DESTROYED", &format!("entity={defender} ")],
+            Duration::from_secs(8),
+            mark_b,
+        );
+        report.verdict(
+            "TAC-P11-THE-HARVESTER-CRUSHES-THE-ENEMY-SOLDIER",
+            crushed.is_ok() && destroyed.is_ok(),
+            format!("{crushed:?}; {destroyed:?}"),
+        );
+        let (cue, cue_text) = tactical_cue(&mut client_a, "Crush", mark);
+        let (cue_b, cue_b_text) = tactical_cue(&mut client_b, "Crush", mark_b);
+        report.verdict(
+            "TAC-P12-THE-CRUSH-CUE-REACHES-BOTH-SIDES",
+            cue && cue_b,
+            format!("seat 1: {cue_text}; seat 2: {cue_b_text}"),
+        );
+        report.artifact("crushed_png", &client_a.screenshot(evidence, "04-crushed")?);
+
+        // The harvester has left the producer, so a click there finds the building.
+        let producer = point_at_probe(&mut client_a, BLD_PROBE_OWN_PRODUCER)?;
+        let mark = client_a.offset();
+        client_a.click(producer.0, producer.1, "1")?;
+        let selected = client_a.wait_line(
+            &["RTS_STRUCTURE_SELECTED participant=1", "role=Producer"],
+            Duration::from_secs(5),
+            mark,
+        );
+        let (cued, cue_text) = tactical_cue(&mut client_a, "Select", mark);
+        report.verdict(
+            "TAC-P13-THE-PRODUCER-SELECTS-AND-ITS-CUE-FIRES",
+            selected.is_ok() && cued,
+            format!("{selected:?}; {cue_text}"),
+        );
+        Ok(())
+    })();
+    launch_options_verdict(
+        report,
+        "TAC-P00-LAUNCH-OPTIONS",
+        &[&server, &client_a, &client_b],
+    );
+    client_a.stop();
+    client_b.stop();
+    server.stop();
+    result
+}
+
 // `--plant SERVER CLIENT [--evidence DIR] [--port N]` (ECON-E32) buys a conventional plant with real
 // input on two rendered clients: P charges once and builds for 20 s, one a match, the owner alone sees
 // it, it carries the base when the first plant dies, and the producer stops only when both are down.
@@ -19359,6 +19877,14 @@ fn main() {
             "politika.econ.plant-evidence.v1",
             "plant",
             plant_session,
+        );
+    }
+    if env::args().nth(1).as_deref() == Some("--tactical") {
+        run_dedicated_session(
+            "--tactical",
+            "politika.rts.tactical-evidence.v1",
+            "tactical",
+            tactical_session,
         );
     }
     if env::args().nth(1).as_deref() == Some("--works") {

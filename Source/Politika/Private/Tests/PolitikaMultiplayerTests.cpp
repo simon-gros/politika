@@ -6106,4 +6106,184 @@ bool FPolitikaMultiplayerOpponentTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolitikaMultiplayerTacticalTest,
+    "Politika.RTS.Multiplayer.Tactical",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Prototype garrison, crush and concealment on the authority (Tactical.h). Real input and the cues
+// are the packaged session's: rts_multiplayer --tactical.
+bool FPolitikaMultiplayerTacticalTest::RunTest(const FString& Parameters)
+{
+    namespace pt = politika::tactical;
+    FPolitikaMultiplayerFixture F(*this);
+    if (!F.Create(TEXT("1v1"), true) || !TestTrue(TEXT("Both 1v1 seats bind"), F.BindAll())) return false;
+    const uint32 HostId = F.Match->GetBoundParticipantId(F.Host);
+    const uint32 EnemyId = F.Match->GetBoundParticipantId(F.Remotes[0]);
+    UPolitikaPrototypeContentCatalog* Catalog = LoadObject<UPolitikaPrototypeContentCatalog>(nullptr,
+        TEXT("/Game/Politika/TestFixtures/Multiplayer/DA_MultiplayerCatalog.DA_MultiplayerCatalog"));
+    if (!TestNotNull(TEXT("The multiplayer catalog loads"), Catalog)) return false;
+    F.Match->ContentCatalog = Catalog;
+    F.Match->MapDefinition = const_cast<UPolitikaPrototypeMapDefinition*>(Catalog->FindMap(TEXT("map.test.multiplayer_skirmish")));
+    F.Match->FormationSlotProbeForTest = [](const FVector2D&) { return true; };
+    F.Match->InitializeEconomy();
+    F.Match->bFogOfWar = true;
+
+    APolitikaPrototypeStructure* OwnProducer = nullptr;
+    APolitikaPrototypeStructure* EnemyProducer = nullptr;
+    for (APolitikaPrototypeStructure* Structure : F.Match->Structures)
+    {
+        if (!Structure || !Structure->IsProducer()) continue;
+        if (Structure->GetOwnerPlayer() == HostId) OwnProducer = Structure;
+        else if (Structure->GetOwnerPlayer() == EnemyId) EnemyProducer = Structure;
+    }
+    if (!TestNotNull(TEXT("The host has a producer"), OwnProducer) || !TestNotNull(TEXT("The enemy has a producer"), EnemyProducer)) return false;
+    const FVector2D At(OwnProducer->GetActorLocation().X, OwnProducer->GetActorLocation().Y);
+    APolitikaPrototypeUnit* Soldier = F.AddUnit(HostId, At + FVector2D(80.0, 0.0));
+    if (!TestNotNull(TEXT("The soldier spawns"), Soldier)) return false;
+
+    // What a garrison refuses.
+    TestFalse(TEXT("TAC-G01 an enemy building is refused"), F.Match->BeginGarrison(Soldier, EnemyProducer));
+    TestFalse(TEXT("TAC-G01 no building is refused"), F.Match->BeginGarrison(Soldier, nullptr));
+    APolitikaPrototypeUnit* Vehicle = F.AddUnit(HostId, At + FVector2D(-120.0, 0.0));
+    Vehicle->SetArchetypeId(APolitikaPrototypeMatch::HarvesterArchetypeId());
+    TestTrue(TEXT("TAC-G01 the harvester is a vehicle"), Vehicle->IsVehicle());
+    TestFalse(TEXT("TAC-G01 a vehicle is refused"), F.Match->BeginGarrison(Vehicle, OwnProducer));
+    Vehicle->SetConcealPosture(true);
+    TestFalse(TEXT("TAC-G01 a vehicle does not conceal"), Vehicle->IsConcealPosture());
+
+    // In range, it goes in on the next step. Nobody can reach it there, and its own side cannot order it.
+    TestTrue(TEXT("TAC-G02 the order is taken"), F.Match->BeginGarrison(Soldier, OwnProducer));
+    TestEqual(TEXT("TAC-G02 it reads as on its way"), Soldier->GetOrderLabel(), FString(TEXT("Moving to garrison")));
+    F.Step();
+    TestTrue(TEXT("TAC-G02 it is inside"), Soldier->IsGarrisoned());
+    TestEqual(TEXT("TAC-G02 the building counts it"), OwnProducer->GetOccupants(), 1);
+    TestFalse(TEXT("TAC-G02 it cannot be attacked"), Soldier->IsAttackable());
+    TestFalse(TEXT("TAC-G02 its owner cannot select it"), F.Match->IsCommandableUnit(Soldier, HostId));
+    APolitikaPrototypeUnit* Enemy = F.AddUnit(EnemyId, At + FVector2D(100.0, 100.0));
+    F.Step();
+    const uint8 EnemyTeam = Enemy->GetTeamId();
+    TestFalse(TEXT("TAC-G02 an enemy standing beside it does not observe it"), Soldier->IsObservedByTeam(EnemyTeam));
+    TestTrue(TEXT("TAC-G02 its own team does"), Soldier->IsObservedByTeam(Soldier->GetTeamId()));
+
+    // It fires at +15 % range from inside, and only as far as that.
+    Enemy->SetActorLocation(FVector(At.X + 650.0, At.Y, 42.0));
+    const int32 EnemyHealth = Enemy->GetHealth();
+    F.Step(30);
+    TestTrue(TEXT("TAC-G03 an occupant hits at 650 cm with a 600 cm weapon"), Enemy->GetHealth() < EnemyHealth);
+    Enemy->SetActorLocation(FVector(At.X + 800.0, At.Y, 42.0));
+    F.Step(2);
+    const int32 OutOfRange = Enemy->GetHealth();
+    F.Step(30);
+    TestEqual(TEXT("TAC-G03 and not at 800 cm"), Enemy->GetHealth(), OutOfRange);
+
+    // Unloading puts it back where it went in.
+    const FVector Entry(At.X + 80.0, At.Y, 42.0);
+    TestEqual(TEXT("TAC-G04 one comes out"), F.Match->UnloadGarrison(OwnProducer), 1);
+    TestFalse(TEXT("TAC-G04 it is out"), Soldier->IsGarrisoned());
+    TestEqual(TEXT("TAC-G04 the building is empty"), OwnProducer->GetOccupants(), 0);
+    TestTrue(TEXT("TAC-G04 it stands where it entered"), FVector::Dist2D(Soldier->GetActorLocation(), Entry) < 1.0);
+    TestTrue(TEXT("TAC-G04 it can be selected again"), F.Match->IsCommandableUnit(Soldier, HostId));
+
+    // A building at 20 % health throws them out, and will not take them back.
+    TestTrue(TEXT("TAC-G05 back in"), F.Match->BeginGarrison(Soldier, OwnProducer));
+    F.Step();
+    TestTrue(TEXT("TAC-G05 inside"), Soldier->IsGarrisoned());
+    OwnProducer->SetHealth(politika::power::kProducerHealth / 5);
+    F.Step();
+    TestFalse(TEXT("TAC-G05 ejected at 20 %"), Soldier->IsGarrisoned());
+    TestFalse(TEXT("TAC-G05 refused at 20 %"), F.Match->BeginGarrison(Soldier, OwnProducer));
+    OwnProducer->SetHealth(politika::power::kProducerHealth);
+
+    // Capacity.
+    TArray<APolitikaPrototypeUnit*> Crowd;
+    for (int32 Index = 0; Index < pt::kGarrisonCapacity; ++Index)
+    {
+        Crowd.Add(F.AddUnit(HostId, At + FVector2D(0.0, 50.0 + Index)));
+        TestTrue(TEXT("TAC-G06 room for this one"), F.Match->BeginGarrison(Crowd.Last(), OwnProducer));
+        F.Step();
+    }
+    TestEqual(TEXT("TAC-G06 it fills"), OwnProducer->GetOccupants(), pt::kGarrisonCapacity);
+    TestFalse(TEXT("TAC-G06 one more is refused"), F.Match->BeginGarrison(Soldier, OwnProducer));
+    TestEqual(TEXT("TAC-G06 all of them come out"), F.Match->UnloadGarrison(OwnProducer), pt::kGarrisonCapacity);
+
+    // A vehicle crushes the enemy it drives over: not an ally, not one it passes wide of, and not at rest.
+    const auto Drive = [&](float FromX, float ToX)
+    {
+        Vehicle->StepStartPosition = FVector(FromX, At.Y + 500.0, 42.0);
+        Vehicle->SetActorLocation(FVector(ToX, At.Y + 500.0, 42.0));
+        F.Match->AdvanceCrushes();
+    };
+    APolitikaPrototypeUnit* Victim = F.AddUnit(EnemyId, FVector2D(At.X + 50.0, At.Y + 500.0));
+    APolitikaPrototypeUnit* Wide = F.AddUnit(EnemyId, FVector2D(At.X + 50.0, At.Y + 500.0 + pt::kCrushRadiusCm + 5.0));
+    APolitikaPrototypeUnit* Friend = F.AddUnit(HostId, FVector2D(At.X + 50.0, At.Y + 500.0));
+    Drive(At.X + 50.0, At.X + 50.0);
+    Victim->ApplyPendingDamage();
+    TestTrue(TEXT("TAC-C01 a vehicle at rest crushes nobody"), Victim->IsAlive());
+    Drive(At.X, At.X + 100.0);
+    Victim->ApplyPendingDamage();
+    Wide->ApplyPendingDamage();
+    Friend->ApplyPendingDamage();
+    TestFalse(TEXT("TAC-C02 the enemy under it dies"), Victim->IsAlive());
+    TestTrue(TEXT("TAC-C02 the one beside it lives"), Wide->IsAlive());
+    TestTrue(TEXT("TAC-C02 an ally under it lives"), Friend->IsAlive());
+    Friend->SetActorLocation(FVector(At.X - 2000.0, At.Y, 42.0));
+    APolitikaPrototypeUnit* Enemy2 = F.AddUnit(EnemyId, FVector2D(At.X + 50.0, At.Y + 500.0));
+    Drive(At.X, At.X + 100.0);
+    Enemy2->ApplyPendingDamage();
+    TestFalse(TEXT("TAC-C03 the second crush kills as the first did, though its voice is on a cooldown"), Enemy2->IsAlive());
+    Wide->SetActorLocation(FVector(At.X + 5000.0, At.Y + 5000.0, 42.0));
+
+    // A harvester on its routine drives past the enemy; once a player's order takes it off, it crushes.
+    APolitikaPrototypeUnit* Hauler = F.Match->SpawnHarvester(HostId, FVector(At.X, At.Y + 900.0, 42.0), FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("TAC-C04 the harvester spawns"), Hauler)
+        || !TestTrue(TEXT("TAC-C04 it joins the account"), F.Match->Economy.AddHarvester(HostId, Hauler->GetStableId()))) return false;
+    APolitikaPrototypeUnit* InItsWay = F.AddUnit(EnemyId, FVector2D(At.X + 50.0, At.Y + 900.0));
+    const auto Haul = [&]
+    {
+        Hauler->StepStartPosition = FVector(At.X, At.Y + 900.0, 42.0);
+        Hauler->SetActorLocation(FVector(At.X + 100.0, At.Y + 900.0, 42.0));
+        F.Match->AdvanceCrushes();
+        InItsWay->ApplyPendingDamage();
+    };
+    Haul();
+    TestTrue(TEXT("TAC-C04 its routine crushes nobody"), InItsWay->IsAlive());
+    TestTrue(TEXT("TAC-C05 a player's order takes it off its routine"), F.Match->Economy.DetachHarvester(HostId, Hauler->GetStableId()));
+    Haul();
+    TestFalse(TEXT("TAC-C05 under that order it crushes"), InItsWay->IsAlive());
+    Hauler->StepStartPosition = FVector(At.X - 2000.0, At.Y + 300.0, 42.0);
+    Hauler->SetActorLocation(Hauler->StepStartPosition);
+
+    // Concealment: three seconds still, then only a nearby observer sees it.
+    Soldier->SetActorLocation(FVector(At.X + 80.0, At.Y, 42.0));
+    Enemy->SetActorLocation(FVector(At.X + 1080.0, At.Y, 42.0));
+    F.Step(2);
+    TestTrue(TEXT("TAC-S01 at 1000 cm it is in plain sight"), Soldier->IsObservedByTeam(EnemyTeam));
+    Soldier->SetConcealPosture(true);
+    F.Step(pt::kConcealSteps - 1);
+    TestFalse(TEXT("TAC-S02 not yet"), Soldier->IsConcealed());
+    F.Step(2);
+    TestTrue(TEXT("TAC-S02 concealed after 3 s still"), Soldier->IsConcealed());
+    TestEqual(TEXT("TAC-S02 it reads as concealed"), Soldier->GetOrderLabel(), FString(TEXT("Concealed")));
+    TestFalse(TEXT("TAC-S03 unseen at 1000 cm"), Soldier->IsObservedByTeam(EnemyTeam));
+    Enemy->SetActorLocation(FVector(At.X + 380.0, At.Y, 42.0));
+    F.Step();
+    TestTrue(TEXT("TAC-S03 but seen at 300 cm, inside 35 % of a 1200 cm sight"), Soldier->IsObservedByTeam(EnemyTeam));
+    Enemy->SetActorLocation(FVector(At.X + 1080.0, At.Y, 42.0));
+    F.Step();
+    Soldier->bFiredThisStep = true;
+    F.Step();
+    TestFalse(TEXT("TAC-S04 firing reveals it"), Soldier->IsConcealed());
+    F.Step(pt::kRevealSteps - 2);
+    TestFalse(TEXT("TAC-S04 for four seconds"), Soldier->IsConcealed());
+    F.Step(2);
+    TestTrue(TEXT("TAC-S04 then it is concealed again"), Soldier->IsConcealed());
+    Soldier->SetConcealPosture(false);
+    F.Step();
+    TestFalse(TEXT("TAC-S05 withdrawing the order ends it"), Soldier->IsConcealed());
+    // Vision is worked out before this step's concealment, so it follows on the next one.
+    F.Step();
+    TestTrue(TEXT("TAC-S05 and it is in plain sight"), Soldier->IsObservedByTeam(EnemyTeam));
+    return true;
+}
+
 #endif

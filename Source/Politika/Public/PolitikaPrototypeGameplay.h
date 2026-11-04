@@ -14,6 +14,7 @@
 #include "Formation.h"
 #include "Stance.h"
 #include "Discipline.h"
+#include "Tactical.h"
 #include "Economy.h"
 #include "Opponent.h"
 #include "Modifiers.h"
@@ -385,6 +386,18 @@ public:
     APolitikaPrototypeStructure* GetRepairTarget() const { return RepairTarget.Get(); }
     int32 GetRepairSteps() const { return RepairSteps; }
     void SetRepairSteps(int32 Steps) { RepairSteps = Steps; }
+    // Prototype garrison, crush and concealment (Tactical.h). A vehicle crushes; other armed units
+    // garrison and conceal. The rule follows the archetype.
+    bool IsVehicle() const;
+    bool CanGarrison() const { return !IsVehicle() && CanMove() && CanAttack(); }
+    bool CanConceal() const { return CanGarrison(); }
+    void HoldForGarrison(APolitikaPrototypeStructure* Structure);
+    APolitikaPrototypeStructure* GetGarrisonTarget() const { return GarrisonTarget.Get(); }
+    bool IsGarrisoned() const { return bGarrisoned; }
+    APolitikaPrototypeStructure* GetGarrisonStructure() const { return GarrisonedIn.Get(); }
+    bool IsConcealed() const { return bConcealed; }
+    bool IsConcealPosture() const { return bConcealPosture; }
+    void SetConcealPosture(bool bInPosture);
     void SetGuardOrder();
     void StopOrder();
     void SetSelectedVisual(bool bSelected);
@@ -420,7 +433,7 @@ public:
     int32 GetHealth() const { return Health; }
     int32 GetMaxHealth() const { return MaxHealth; }
     bool IsAlive() const { return Health > 0; }
-    bool IsAttackable() const { return bAttackable; }
+    bool IsAttackable() const { return bAttackable && !bGarrisoned; }
     bool CanMove() const { return MoveSpeed > 0.0f; }
     bool CanAttack() const { return WeaponDamage > 0.0f && WeaponCooldown > 0.0f && WeaponRange > 0.0f; }
     float GetWeaponRange() const { return WeaponRange; }
@@ -525,6 +538,7 @@ private:
     friend class FPolitikaMultiplayerWorksTest;
     friend class FPolitikaMultiplayerWorksAlliesTest;
     friend class FPolitikaMultiplayerHarvestTest;
+    friend class FPolitikaMultiplayerTacticalTest;
 #endif
     UFUNCTION() void OnRep_ArchetypeId();
     UFUNCTION() void OnRep_Health();
@@ -635,6 +649,31 @@ private:
     TObjectPtr<APolitikaPrototypeStructure> RepairTarget;
     UPROPERTY(Replicated)
     int32 RepairSteps = 0;
+    UPROPERTY(Replicated)
+    TObjectPtr<APolitikaPrototypeStructure> GarrisonTarget;
+    // Public: a viewer who has this unit needs to stop drawing it. An enemy never has it while it is inside.
+    UPROPERTY(ReplicatedUsing=OnRep_Garrisoned) bool bGarrisoned = false;
+    UFUNCTION() void OnRep_Garrisoned();
+    void ApplyGarrisonPresentation();
+    void EnterGarrison(APolitikaPrototypeStructure& Structure);
+    void LeaveGarrison();
+    // Weapon range with the garrison bonus.
+    float GetFireRange() const;
+    // Authority only: the building it is in and where it stood when it went in, which is where it comes out.
+    TWeakObjectPtr<APolitikaPrototypeStructure> GarrisonedIn;
+    FVector GarrisonEntryLocation = FVector::ZeroVector;
+    // Owner-only: the order. Public: whether it is concealed now, which any cue for it can tell.
+    UPROPERTY(Replicated) bool bConcealPosture = false;
+    UPROPERTY(ReplicatedUsing=OnRep_Concealed) bool bConcealed = false;
+    UFUNCTION() void OnRep_Concealed();
+    void PresentConcealment();
+    void AdvanceConcealment(int32 AppliedDamage, float DeltaSeconds);
+    politika::tactical::Concealment Concealment;
+    bool bFiredThisStep = false;
+    bool bConcealmentPresented = false;
+    uint64 LastCrushCueStep = 0;
+    // Reaches wherever the vehicle is observed, and the authority itself in standalone or listen play.
+    void PresentCrush();
     // Walks towards a building on the route an attack uses, stopping inside the given ring.
     politika::rules::OrderEndReason ApproachBuilding(const APolitikaPrototypeStructure& Structure, float RangeCm, float DeltaSeconds);
     void ClearBuildingWork();
@@ -824,6 +863,14 @@ public:
     uint8 GetTeamId() const { return TeamId; }
     void SetLocalFogHidden(bool bHidden);
     bool IsLocalFogHidden() const { return bLocalFogHidden; }
+    int32 GetMaxBuildingHealth() const { return IsProducer() ? politika::power::kProducerHealth : politika::power::kGeneratorHealth; }
+    // Garrison count. Public to anyone who can see the building, as a capture is.
+    int32 GetOccupants() const { return Occupants; }
+    void SetOccupants(int32 InOccupants);
+    // A local player's selection, for that player's view only: a ring and a select cue.
+    void SetSelectedVisual(bool bSelected, bool bOwnedByViewer = false);
+    // The name this kind goes by in cue requests and logs.
+    FName GetSoundRole() const;
 protected:
     virtual void BeginPlay() override;
 private:
@@ -835,6 +882,11 @@ private:
     UFUNCTION() void ApplyPresence();
     void EnableCursorHits();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Body;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SelectionRing;
+    UPROPERTY(ReplicatedUsing=OnRep_Occupants) int32 Occupants = 0;
+    UFUNCTION() void OnRep_Occupants();
+    void PresentOccupants();
+    int32 PresentedOccupants = 0;
     UPROPERTY(Replicated) uint8 Kind = 0;
     UPROPERTY(Replicated) uint64 StableId = 0;
     UPROPERTY(Replicated) uint32 BuildingId = 0;
@@ -916,6 +968,10 @@ public:
     // restore its power. One unit works on a generator at a time. Asking the unit already on it again
     // changes nothing.
     bool BeginRepair(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    // Prototype garrison (Tactical.h): an armed non-vehicle walks into its owner's standing building.
+    bool CanGarrisonIn(const APolitikaPrototypeUnit* Unit, const APolitikaPrototypeStructure* Structure) const;
+    bool BeginGarrison(APolitikaPrototypeUnit* Unit, APolitikaPrototypeStructure* Structure);
+    int32 UnloadGarrison(APolitikaPrototypeStructure* Structure);
     const APolitikaPrototypeUnit* FindRepairer(const APolitikaPrototypeStructure* Structure) const;
     // The faction color of a participant's producer, or that color darkened for a generator.
     FLinearColor BuildingTintFor(uint32 ParticipantId, bool bGenerator) const;
@@ -924,6 +980,9 @@ public:
     bool SupplyCaptureApproachRoute(const APolitikaPrototypeUnit& Unit, const FVector& Destination, TArray<FVector>& OutRoute) const;
     void AdvanceCaptures();
     void AdvanceRepairs();
+    void AdvanceGarrisons();
+    void AdvanceCrushes();
+    void EjectOccupant(APolitikaPrototypeUnit& Unit, const TCHAR* Reason);
     bool IsStructureRelevantToViewer(const APolitikaPrototypeStructure* Structure, const AActor* RealViewer) const;
     const politika::formation::Registry& GetFormations() const { return Formations; }
     // Advisory slot check shared by the client planner and the server's formation planner:
@@ -1385,6 +1444,7 @@ private:
     friend class FPolitikaMultiplayerBuildingAttackTest;
     friend class FPolitikaMultiplayerBuildingSightTest;
     friend class FPolitikaMultiplayerBuildingCaptureTest;
+    friend class FPolitikaMultiplayerTacticalTest;
     friend class FPolitikaMultiplayerBuildingRepairTest;
     friend class FPolitikaMultiplayerWorksTest;
     friend class FPolitikaMultiplayerWorksAlliesTest;
@@ -1669,6 +1729,17 @@ public:
     void CaptureUnderCursor();
     UFUNCTION(Server, Reliable) void ServerDemolishBuilding(uint64 StructureId);
     UFUNCTION(Server, Reliable) void ServerBeginRepair(uint64 IssuerId, uint64 StructureId);
+    // U: with soldiers selected, garrison the building under the cursor; with a building selected, empty it.
+    void GarrisonOrUnload();
+    // M: orders the selected soldiers to conceal themselves, or back out of it.
+    void ToggleConcealment();
+    UFUNCTION(Server, Reliable) void ServerBeginGarrison(const TArray<uint64>& UnitIds, uint64 StructureId);
+    UFUNCTION(Server, Reliable) void ServerUnloadGarrison(uint64 StructureId);
+    UFUNCTION(Server, Reliable) void ServerSetConcealment(const TArray<uint64>& UnitIds, bool bConceal);
+    // The one building this player has selected, if any. Selecting units ends it.
+    APolitikaPrototypeStructure* GetSelectedStructure() const { return SelectedStructure.Get(); }
+    void SelectStructure(APolitikaPrototypeStructure* Structure);
+    void RefreshStructureSelection();
     void RepairWithSelected(APolitikaPrototypeMatch* ActiveMatch, TConstArrayView<APolitikaPrototypeUnit*> Selected, APolitikaPrototypeStructure* Structure);
     void DemolishUnderCursor();
     UFUNCTION(Client, Reliable) void ClientReceiveCommandOutcome(const FPolitikaNetCommandOutcome& Outcome);
@@ -1790,6 +1861,7 @@ private:
     void SampleSelectDrag(const FVector2D& Cursor);
     politika::selection::SelectionOp ModifierSelectionOp(bool bBox) const;
     void SelectUnderCursor(politika::selection::SelectionOp Op);
+    TWeakObjectPtr<APolitikaPrototypeStructure> SelectedStructure;
     void BoxSelect(const FVector2D& CornerA, const FVector2D& CornerB, politika::selection::SelectionOp Op);
     void ApplySelection(TConstArrayView<APolitikaPrototypeUnit*> Hits, politika::selection::SelectionOp Op, const TCHAR* Source);
     void SelectUnitForInput(APolitikaPrototypeUnit* Unit);

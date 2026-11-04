@@ -368,6 +368,8 @@ void APolitikaPrototypeMatch::ProcessDisciplineBreaks()
 
 void APolitikaPrototypeMatch::BreakUnit(APolitikaPrototypeUnit& Unit)
 {
+    // It flees from where it went in, not from inside the building.
+    if (Unit.IsGarrisoned()) EjectOccupant(Unit, TEXT("routed"));
     const EPolitikaPrototypeOrder PreviousOrder = Unit.GetCurrentOrder();
     const pf::FormationId Formation = Formations.FormationOf(Unit.GetStableId());
     // Routed first: the formation loss and any later Form see a unit that is no longer operational.

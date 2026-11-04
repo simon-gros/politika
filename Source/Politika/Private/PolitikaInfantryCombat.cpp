@@ -99,6 +99,7 @@ void APolitikaPrototypeMatch::LaunchGrenade(APolitikaPrototypeUnit* Unit, const 
     P.Radius = Data->GrenadeRadiusCm;
     P.Generation = MatchGeneration;
     InfantryProjectiles.Add(P);
+    Unit->bFiredThisStep = true;
     Unit->InfantryPresentation->Grenade(0.2f);
     Unit->MulticastAbilityPresentation(1, 0.2f);
     UE_LOG(LogPolitikaStartup, Display, TEXT("INFANTRY_GRENADE_LAUNCHED unit=%llu duration=%.3f radius=%.1f"),
